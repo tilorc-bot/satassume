@@ -9,6 +9,9 @@ default: nothing here runs unless a caller installs it.
    dispatch, the engine and everything else stay Python and take the pattern as they take Python's.
 3. `value_units`, as `functions._value_units` and `special.py` call it, gets its pattern the same way. Those callers stay
    Python, so the value they pass was built there: it usually isn't an input term, and takes the derived path below.
+4. `_common.resolve` and `_common.Pattern`, the module globals `facts` and `units` call, are Rust's, so every template in the
+   engine goes through them. They take no term table, so this holds with or without a query on the stack, and on a kept query.
+   `facts`, `units` and `_CACHE` stay Python, and a constant's facts are read by `const_value`, in Python, in Python's order.
 
 Stays on Python, counted by reason in `COUNTS`: a query conversion keeps (`kept:<reason>`), and a template reached with no
 query on the stack, by a caller using `Engine` directly (`py:no-query`). A node that isn't an input term (`derived`, such
@@ -16,7 +19,8 @@ as a Zero the engine built): Python reads its facts, and Rust closes them. That 
 section 10's row, and it goes when 4 and 5 stop building those nodes in Python.
 
 A fault from Rust raises `KnowledgeFault`, a BaseException, so `engine.py:1906` and `sympy_api.py:1107` can't turn it into
-a quiet "unknown". There is no discarded run in this family: conversion finishes before the engine starts, and a template
+a quiet "unknown". What `const_value` raises and `cnf_of`'s KeyError for an unknown predicate come through as themselves, as
+on Python. There is no discarded run in this family: conversion finishes before the engine starts, and a template
 never refuses mid-run.
 """
 import collections
@@ -29,7 +33,7 @@ import sympy
 
 import satassume
 from satassume import sympy_api
-from satassume.knowledge.templates import atoms, registry
+from satassume.knowledge.templates import _common, atoms, registry
 from satassume.knowledge.templates._common import Compiled, Pattern, VOCAB, const_value
 
 import convert
@@ -41,6 +45,9 @@ COUNTS = collections.Counter()
 #: With `shadow=True`: (kind, repr of the term, field, Rust's, Python's), the first few of each run's differences.
 MISMATCHES = []
 MAX_MISMATCHES = 50
+#: With `shadow=True`: a field that's equal but prints differently: a dict's order, or a set's. The engine iterates `child_preds`.
+ORDER_DIFFS = []
+CONTRADICTION = 'template asserts a contradiction'
 #: (kind, id, exception type) of the first few reads that raised, across queries.
 RAISED = []
 
@@ -91,14 +98,21 @@ def _wrap(r):
 FIELDS = ('rules', 'node', 'nobjs', 'clauses', 'used', 'child_preds', 'complete', 'wide')
 
 
+def _mismatch(kind, expr, f, a, b):
+    if a != b or type(a) is not type(b):
+        COUNTS['shadow:mismatch'] += 1
+        if len(MISMATCHES) < MAX_MISMATCHES:
+            MISMATCHES.append((kind, repr(expr), f, repr(a)[:300], repr(b)[:300]))
+    elif repr(a) != repr(b):
+        COUNTS['shadow:order'] += 1
+        if len(ORDER_DIFFS) < MAX_MISMATCHES:
+            ORDER_DIFFS.append((kind, repr(expr), f, repr(a)[:300], repr(b)[:300]))
+
+
 def _compare(kind, expr, ours, theirs):
     COUNTS['shadow:compared'] += 1
     for f in FIELDS:
-        a, b = getattr(ours, f), getattr(theirs, f)
-        if a != b or type(a) is not type(b):
-            COUNTS['shadow:mismatch'] += 1
-            if len(MISMATCHES) < MAX_MISMATCHES:
-                MISMATCHES.append((kind, repr(expr), f, repr(a)[:300], repr(b)[:300]))
+        _mismatch(kind, expr, f, getattr(ours, f), getattr(theirs, f))
 
 
 def _derived_facts(kn, expr, is_symbol):
@@ -121,6 +135,7 @@ def _bind_value_units(f):
 def install(shadow=False, data=None):
     """`shadow`: also run Python's template on each call and compare every field. Rust's result is still the one used."""
     py_symbol, py_constant, py_value = atoms.symbol_units, atoms.constant_units, atoms.value_units
+    py_resolve, py_pattern = _common.resolve, _common.Pattern
     offline = sa_solver.OfflineData(data or os.path.join(HERE, 'offline_data.json'),
                                     os.path.dirname(os.path.dirname(os.path.abspath(satassume.__file__))), sympy.__version__)
     kn = sa_solver.Knowledge(offline)
@@ -170,6 +185,70 @@ def install(shadow=False, data=None):
         return rust_compiled(lambda: py_value(value, obj), 'value', False, value, obj)
     rust_value_units.__wrapped__ = py_value
 
+    def rust_resolve(rules, consts):
+        COUNTS['common:resolve'] += 1
+        if shadow:      # `gen()` may return a non-list, and Python's run below reads it again
+            rules = list(rules)
+        slots = [k for k, c in consts.items() if c is not None]
+        raised = []
+
+        def read(k, pred):
+            try:
+                return _common.const_value(consts[k], pred)
+            except BaseException as e:
+                raised.append(e)
+                raise
+        try:
+            r = kn.resolve(rules, slots, read)
+        except Exception as e:
+            if raised and raised[-1] is e:      # the read's own, as on Python
+                raise
+            COUNTS['fault'] += 1
+            raise KnowledgeFault(f'resolve: {e}') from e
+        if shadow:
+            COUNTS['shadow:common'] += 1
+            try:
+                theirs = py_resolve(rules, consts)
+            except ValueError as e:
+                if str(e) != CONTRADICTION:
+                    raise
+                theirs = None
+            _mismatch('resolve', consts, 'rules', r, theirs)
+        if r is None:
+            COUNTS['common:contradiction'] += 1
+            raise ValueError(CONTRADICTION)
+        return r
+
+    def rust_pattern(rules, node, nobjs=1):
+        COUNTS['common:pattern'] += 1
+        try:
+            clauses, used, child_preds, wide = kn.build_pattern(rules, node, _common.MAX_EXPAND)
+        except KeyError:        # `cnf_of`'s, an unknown predicate
+            raise
+        except Exception as e:
+            COUNTS['fault'] += 1
+            raise KnowledgeFault(f'Pattern: {e}') from e
+        p = Pattern.__new__(Pattern)
+        p.rules = rules
+        p.node = node
+        p.nobjs = nobjs
+        p.complete = False
+        p.clauses = clauses
+        p.used = used
+        p.child_preds = child_preds
+        p.wide = [tuple(rules[i]) for i in wide]
+        if p.wide:
+            COUNTS['common:wide'] += len(p.wide)
+        if shadow:
+            COUNTS['shadow:common'] += 1
+            theirs = py_pattern(rules, node, nobjs)
+            for f in FIELDS:
+                _mismatch('pattern', node, f, getattr(p, f), getattr(theirs, f))
+        return p
+    rust_resolve.__wrapped__ = py_resolve
+    rust_pattern.__wrapped__ = py_pattern
+    _common.resolve, _common.Pattern = rust_resolve, rust_pattern
+
     # `py_constant` calls `atoms.value_units`, which is about to be Rust's: its Python path goes straight to Python's.
     swap = {py_symbol: template(py_symbol, 'symbol', True),
             py_constant: template(py_constant, 'constant', False, lambda e: py_value(e, e))}
@@ -211,6 +290,7 @@ def install(shadow=False, data=None):
 
     def undo():
         sympy_api._ask = py_ask
+        _common.resolve, _common.Pattern = py_resolve, py_pattern
         for cls, ts in saved_lists.items():
             registry._by_class[cls][:] = ts
         registry._mro_cache.clear()
