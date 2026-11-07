@@ -9,11 +9,13 @@ Python (6d's `_common`): keys are built from the query's objects, or from p/q, w
 Stays on Python, counted in `COUNTS`: a kept query (`core:kept`), no query on the stack (`core:no-query`), an arg that isn't an
 input term (`core:derived`). Scaffolding, by the planner's ruling: `kept_product`'s rest of a Mul is built by SymPy
 (`core:kept_product`) and checked against Rust's `mul`; a mismatch refuses the query (`core:kept_product:mismatch`), and a
-product Rust's algebra refuses is used unchecked (`core:kept_product:unchecked`). Not yet ported: the Mul and Pow families,
-and `_imag_templates`' all-number branch (an `Add` of numbers, on Python, `core:imag_number:python`).
+product Rust's algebra refuses is used unchecked (`core:kept_product:unchecked`). Named SymPy-semantics callbacks (planner,
+7 Nov), counted and loud through `fallback`: `_imag_templates`' all-number branch (`core:imag_number:python`) and
+`_unit_power_units` for a non-Rational exponent (`core:unit_power:python`).
 """
 import os
 import types
+import sys
 
 import sa_solver
 from sympy import Add, Mul, Rational, S
@@ -33,6 +35,18 @@ MULPOW = ('_mul_factor_sets', '_quotient_rules', '_quotient_templates', '_unit_a
 #: A planted bug for the comparisons (`--plant core-...` in knowledge_fresh / the bar): name -> what it breaks. Python side only;
 #: the Rust plants are source mutants (mutate_knowledge.py).
 PLANT = [os.environ.get('SA_CORE_PLANT') or None]
+if not PLANT[0] and (os.environ.get('SLICE_SESSION_PLANT') or '').startswith('core-'):
+    PLANT[0] = os.environ['SLICE_SESSION_PLANT']   # the bar's channel (bar.sh's plants phase)
+
+
+def _hit(name):
+    """True when plant `name` is on; counts the firing where the bar's `fired` reads it (knowledge_live._fired)."""
+    if PLANT[0] != name:
+        return False
+    kl = sys.modules.get('knowledge_live')
+    if kl is not None:
+        kl._fired()
+    return True
 
 
 def _pq(c):
@@ -93,6 +107,16 @@ def install(shadow, counts, fault_cls, mismatch):
             counts['fault'] += 1
             raise fault_cls(f'core.{name}: {e}') from e
 
+    def fallback(key, f, *a):
+        """A named SymPy-semantics callback (planner, 7 Nov, the same class as R9 `enclose`): counted under `key`, and loud on
+        any exception (KnowledgeFault is a BaseException), so it can't come back from a quiet handler as "unknown"."""
+        counts[key] += 1
+        try:
+            return f(*a)
+        except Exception as e:
+            counts['fault'] += 1
+            raise fault_cls(f'{key}: {type(e).__name__}: {e}') from e
+
     def rest(q, t):
         """`_coeff_term`'s `t`: an id, or factor ids that SymPy's `kept_product` builds, checked against Rust's `mul`."""
         if isinstance(t, int):
@@ -137,7 +161,7 @@ def install(shadow, counts, fault_cls, mismatch):
                 if t is None:
                     out = None
                     break
-                out.append((a if PLANT[0] != 'core-half-parity' else 1 - a, t))
+                out.append((1 - a if _hit('core-half-parity') else a, t))
             r = None if out is None else (a0, out)
         return check('_half_split', args, r, lambda: py['_half_split'](args))
 
@@ -193,8 +217,8 @@ def install(shadow, counts, fault_cls, mismatch):
             return py['_imag_templates'](expr, terms)
         nums = [call('_imag_templates', sa_solver.core_is_number, q.table, i) for i in ids or ()]
         if all(nums):
-            counts['core:imag_number:python'] += 1          # builds an Add of numbers: on Python
-            return py['_imag_templates'](expr, terms)
+            # Builds an Add of numbers with SymPy's arithmetic. Later question: can Rust's constfield do it exactly?
+            return fallback('core:imag_number:python', py['_imag_templates'], expr, terms)
         counts['core:imag_templates'] += 1
         if len(xs) > core.MAX_ONEOUT:
             return None
@@ -219,7 +243,7 @@ def install(shadow, counts, fault_cls, mismatch):
                 return f(*a)
             counts['core:' + name] += 1
             r = call(name, rs, *conv(*a))
-            if PLANT[0] == 'core-rules-drop-last' and len(r) > 1:
+            if len(r) > 1 and _hit('core-rules-drop-last'):
                 r = r[:-1]
             return check(name, a, r, lambda: f(*a))
         g.__name__ = g.__qualname__ = name
@@ -247,7 +271,7 @@ def install(shadow, counts, fault_cls, mismatch):
         if r is not None:
             c, s_ = r
             c = _rat(*c)
-            if PLANT[0] == 'core-pi-coeff':
+            if _hit('core-pi-coeff'):
                 c = c + 1
             if s_ is not None:
                 s_ = rest(q, s_)
@@ -271,7 +295,7 @@ def install(shadow, counts, fault_cls, mismatch):
             c, s_ = ipi
             c = _rat(*c)
             s_ = rest(q, s_)
-            if s_ is not None and s_.is_Mul and PLANT[0] != 'core-mul-drop-ipi':
+            if s_ is not None and s_.is_Mul and not _hit('core-mul-drop-ipi'):
                 out.append(((c,) if c != 1 else ()) + (S.ImaginaryUnit, S.Pi, s_))
         return check('_mul_factor_sets', expr, out, lambda: pure['_mul_factor_sets'](expr))
 
@@ -319,7 +343,7 @@ def install(shadow, counts, fault_cls, mismatch):
             return py['ipi_rules'](rule, c, iS, N)
         counts['core:ipi_rules'] += 1
         r = call('ipi_rules', sa_solver.core_ipi_rules, *_pq(c), iS, N)
-        if PLANT[0] == 'core-rules-drop-last' and len(r) > 1:
+        if len(r) > 1 and _hit('core-rules-drop-last'):
             r = r[:-1]
         if shadow:
             theirs = []
@@ -344,8 +368,8 @@ def install(shadow, counts, fault_cls, mismatch):
         ids = q and ids_of(q, (e,), '_unit_power_units')
         r = ids and call('_unit_power_units', sa_solver.core_unit_power_units, q.table, *_pq(angle), ids[0])
         if r is None or not ids:
-            counts['core:unit_power:python'] += 1           # as_real_imag of a non-Rational exponent: on Python
-            return py['_unit_power_units'](angle, e, expr)
+            # SymPy's as_real_imag of a non-Rational exponent. Later question: can Rust's constfield do it exactly?
+            return fallback('core:unit_power:python', py['_unit_power_units'], angle, e, expr)
         counts['core:_unit_power_units'] += 1
         out = [P(p, expr) if v else Not(P(p, expr)) for p, v in r]
         return check('_unit_power_units', (angle, e, expr), out, lambda: py['_unit_power_units'](angle, e, expr))
