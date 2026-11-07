@@ -3,7 +3,7 @@
 For ports that hold terms before component 0 lands everywhere. Section 9 of `PORT-INVENTORY.md` is the format; this is
 the part another component codes against. Stable from this commit: additions only, and any change gets a note here.
 
-**Built so far:** the handle types, `convert.py` and `TermTable`'s reads (`row`, `class_of`, `find`, `compare`, `key_cmp` on input terms), run on dev under a shadow. The algebra (`neg`, `sub`, `add`, `mul`, `coeff_add`, `coeff_mul`) and keys of derived terms are the agreed interface, not code yet.
+**Built so far:** the handle types, `convert.py` and `TermTable`'s reads (`row`, `class_of`, `find`, `compare`, `key_cmp` on input terms), run on dev under a shadow. The algebra (`neg`, `sub`, `add`, `mul`, `coeff_add`, `coeff_mul`, `raw_add`, `raw_mul`, `number`) and `sort_key` of derived terms are code in `solver_rs/src/term/algebra.rs`, checked by hand cases only so far and not yet under the real engine.
 
 ## The handle
 

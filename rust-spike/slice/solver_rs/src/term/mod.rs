@@ -30,6 +30,7 @@ impl ClassId {
     }
 }
 
+pub mod algebra;
 pub mod offline;
 pub mod py;
 pub mod rat;

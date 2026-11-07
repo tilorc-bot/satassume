@@ -8,6 +8,7 @@ Each row of Rust's table is read back and compared with what SymPy says now. Any
 """
 import json
 import struct
+import sys
 from collections import Counter
 
 from sympy.core.basic import Basic, ordering_of_classes
@@ -15,7 +16,7 @@ from sympy.core.exprtools import decompose_power
 from sympy.core.function import AppliedUndef
 from sympy.core.numbers import Float, Rational
 from sympy.core.sorting import default_sort_key
-from sympy import S
+from sympy import S, Add, Mul, Expr, sympify
 
 import sa_solver
 
@@ -27,6 +28,7 @@ from satassume.knowledge.domain import constructed_noncommutative
 from satassume.knowledge.templates import _may_be_nan
 from satassume.theories.euf.euf_adapter import structural
 from satassume.theories.lra import lra_adapter as L
+from satassume import engine as E
 
 import convert as C
 
@@ -38,6 +40,9 @@ SAMPLE = 40                 # pairs among the first SAMPLE terms of each query
 CUR = [None]                # (Converted, TermTable) of the running top-level query
 DEPTH = [0]
 CHECK_ON = [True]
+SITES = Counter()           # (op, caller file:line, outcome): which sites reach the algebra
+EXAMPLES = {}               # refusal reason: first few (op, operands)
+SAMPLE_DERIVED = 9          # a new derived term is compared against this many of the query's first terms
 
 
 def bad(kind, *detail):
@@ -120,7 +125,8 @@ def check_table(c, table):
         want = C.F_READ
         number = getattr(t, 'is_number', False) is True
         for bit, v in ((C.F_NUMBER, number), (C.F_NAN, t.has(S.NaN)), (C.F_BAD, t.has(*L._BAD)), (C.F_FLOAT, t.has(Float)),
-                       (C.F_UNDEF, t.atoms(AppliedUndef)), (C.F_MAYBE_NAN, _may_be_nan(t))):
+                       (C.F_UNDEF, t.atoms(AppliedUndef)), (C.F_MAYBE_NAN, _may_be_nan(t)),
+                       (C.F_COMMUTATIVE, t.is_commutative is True)):
             if v:
                 want |= bit
         if bits != want:
@@ -216,6 +222,304 @@ def rebuild(v, objs):
     return {'and': F.And, 'or': F.Or, 'not': F.Not, 'implies': F.Implies, 'equivalent': F.Equivalent, 'ite': F.ITE}[tag](*kids)
 
 
+# ---- the algebra: Rust's derived terms against what SymPy builds
+
+def _here(frame):
+    return f"{frame.f_globals.get('__name__', '?')}:{frame.f_lineno}"
+
+
+def operand_id(x, c, table):
+    """Rust's id of an operand, or None if it's a term Rust was never told about."""
+    if not isinstance(x, Basic):
+        try:
+            x = sympify(x)
+        except Exception:
+            return None
+    i = c.ids.get(x)
+    if i is None and isinstance(x, Rational):
+        i = table.number(x.p, x.q)
+        settle('number', x, i, c, table)
+    return i
+
+
+def same_term(real, i, c, table):
+    """Class and args, recursively, arg order included."""
+    name = table.class_row(i)[0]
+    if name != type(real).__name__:
+        return False
+    args = table.row(i)[0]
+    if len(args) != len(real.args):
+        return False
+    if not args:
+        if isinstance(real, Rational):
+            return table.row(i)[1] == (real.p, real.q)
+        return c.ids.get(real) == i
+    return all(same_term(a, k, c, table) for a, k in zip(real.args, args))
+
+
+def show(i, c, table):
+    args = table.row(i)[0]
+    if not args:
+        return str(table.row(i)[1]) if i >= table.n_input else str(c.objects[i])
+    return f"{table.class_row(i)[0]}({', '.join(show(a, c, table) for a in args)})"
+
+
+def settle(site, real, i, c, table):
+    """Rust built `i` where SymPy built `real`: same form, and they must merge exactly as SymPy's hash and == do."""
+    rev = c.__dict__.setdefault('rev', {})
+    k = c.ids.get(real)
+    if k is not None:
+        COUNTS['alg:same-as-known'] += 1
+        if i < table.n_input:
+            COUNTS['alg:merged-with-input'] += 1
+        if k != i:
+            bad('merge', site, real, show(i, c, table))
+        return
+    if not same_term(real, i, c, table):
+        bad('derived-form', site, real, show(i, c, table))
+        return
+    if i in rev or i < len(c.objects):
+        bad('two-terms-one-id', site, real, show(i, c, table))
+        return
+    c.ids[real] = i
+    rev[i] = real
+    COUNTS['alg:derived-terms'] += 1
+    check_derived(site, real, i, c, table)
+
+
+def check_derived(site, real, i, c, table):
+    """The new row's key, facts and order against SymPy's."""
+    try:
+        real_key = default_sort_key(real)
+    except Exception as e:
+        real_key = e
+    COUNTS['alg:derived-keys'] += 1
+    try:
+        got = table.sort_key(i)
+    except sa_solver.TermRefuse as e:
+        COUNTS['alg:key-refused'] += 1
+        REFUSED[f'derived key: {e}'] += 1
+        _example(f'derived key: {e}', 'key', real)
+    else:
+        if isinstance(real_key, Exception) or not same_value(got, real_key, c, True):
+            bad('derived-key', site, real, got, real_key)
+    row = table.row(i)
+    if sorted(row[3]) != sorted(c.ids[x] for x in real.free_symbols if x in c.ids) or any(x not in c.ids for x in real.free_symbols):
+        bad('derived-free', site, real, row[3])
+    number = getattr(real, 'is_number', False) is True
+    if bool(row[4] & C.F_NUMBER) != number:
+        bad('derived-number', site, real, row[4])
+    for j, o in enumerate(c.objects[:SAMPLE_DERIVED]):
+        COUNTS['alg:derived-compare'] += 1
+        want = real.compare(o)
+        try:
+            have = table.compare(i, j)
+        except sa_solver.TermRefuse as e:
+            REFUSED[f'derived compare: {e}'] += 1
+        else:
+            if have != want:
+                bad('derived-compare', real, o, have, want)
+
+
+def _example(reason, op, *operands):
+    ex = EXAMPLES.setdefault(reason, [])
+    if len(ex) < 5:
+        ex.append((op,) + tuple(str(o)[:120] for o in operands))
+
+
+def check_op(op, site, operands, real, ask_rust):
+    """One operation a satassume frame asked SymPy for. `real` is a term, or a tuple of them for the coefficient splits."""
+    cur = CUR[0]
+    if cur is None or not CHECK_ON[0]:
+        return
+    c, table = cur
+    COUNTS['alg:ops'] += 1
+    COUNTS['alg:op:' + op] += 1
+    ids = [operand_id(x, c, table) for x in operands]
+    if any(i is None for i in ids):
+        COUNTS['alg:unknown-operand'] += 1
+        SITES[f'{op} {site} unknown-operand'] += 1
+        unknown = next(x for x, i in zip(operands, ids) if i is None)
+        _example(f'unknown operand at {op}', op, unknown, type(unknown).__name__)
+        return
+    try:
+        got = ask_rust(table, *ids)
+    except sa_solver.TermRefuse as e:
+        COUNTS['alg:refused'] += 1
+        REFUSED[f'{op}: {e}'] += 1
+        SITES[f'{op} {site} refused'] += 1
+        _example(f'{op}: {e}', op, *operands)
+        c.__dict__.setdefault('refused_at', str(e))
+        return
+    SITES[f'{op} {site} checked'] += 1
+    if isinstance(real, tuple):
+        for r, g in zip(real, got):
+            settle(op, r, g, c, table)
+    else:
+        settle(op, real, got, c, table)
+
+
+def _div(t, a, b):
+    r = t.row(b)[1]
+    if not (isinstance(r, tuple) and len(r) == 2 and all(type(x) is int for x in r) and r[0] != 0):
+        raise sa_solver.TermRefuse('div: a denominator that is not a nonzero rational')
+    return t.mul([a, t.number(r[1], r[0])])
+
+
+_OPS = {
+    '__neg__': lambda t, a: t.neg(a),
+    '__add__': lambda t, a, b: t.add([a, b]),
+    '__radd__': lambda t, a, b: t.add([b, a]),
+    '__sub__': lambda t, a, b: t.sub(a, b),
+    '__rsub__': lambda t, a, b: t.sub(b, a),
+    '__mul__': lambda t, a, b: t.mul([a, b]),
+    '__rmul__': lambda t, a, b: t.mul([b, a]),
+    '__truediv__': _div,
+    'as_coeff_Add': lambda t, a: t.coeff_add(a),
+    'as_coeff_Mul': lambda t, a: t.coeff_mul(a),
+}
+
+
+def _wrap_op(cls, name, f, static):
+    rust = _OPS[name]
+    nargs = 1 if name in ('__neg__', 'as_coeff_Add', 'as_coeff_Mul') else 2
+
+    def wrapper(self, *a, **k):
+        real = f() if static else f(self, *a, **k)
+        fr = sys._getframe(1)
+        if CUR[0] is not None and fr.f_globals.get('__name__', '').startswith('satassume'):
+            if real is NotImplemented:
+                return real
+            operands = (self,) + a[:nargs - 1]
+            try:
+                check_op(name, _here(fr), operands, real, rust)
+            except Exception as e:
+                bad('check-raised', name, type(e).__name__, e)
+        return real
+    wrapper.__wrapped__ = f
+    wrapper.__name__ = name
+    setattr(cls, name, wrapper)
+
+
+def _wrap_new(cls, name):
+    f = cls.__dict__['__new__']
+    f = f.__func__ if isinstance(f, staticmethod) else f
+    raw = {'Add': lambda t, *x: t.raw_add(list(x)), 'Mul': lambda t, *x: t.raw_mul(list(x))}[name]
+    ev = {'Add': lambda t, *x: t.add(list(x)), 'Mul': lambda t, *x: t.mul(list(x))}[name]
+
+    def new(klass, *args, **k):
+        real = f(klass, *args, **k)
+        fr = sys._getframe(1)
+        if CUR[0] is not None and klass is cls and fr.f_globals.get('__name__', '').startswith('satassume'):
+            evaluate = k.get('evaluate')
+            try:
+                check_op(f'{name}.__new__' + ('' if evaluate is None else f'(evaluate={evaluate})'), _here(fr), args, real,
+                         raw if evaluate is False else ev)
+            except Exception as e:
+                bad('check-raised', name, type(e).__name__, e)
+        return real
+    cls.__new__ = staticmethod(new)
+
+
+def install_algebra():
+    seen, stack = set(), [Expr]
+    while stack:
+        k = stack.pop()
+        if k in seen:
+            continue
+        seen.add(k)
+        stack.extend(k.__subclasses__())
+    for k in sorted(seen, key=lambda k: (k.__module__, k.__qualname__)):
+        for name in _OPS:
+            f = k.__dict__.get(name)
+            if f is None:
+                continue
+            if isinstance(f, staticmethod):
+                _wrap_op(k, name, f.__func__, True)
+            elif callable(f):
+                _wrap_op(k, name, f, False)
+    _wrap_new(Add, 'Add')
+    _wrap_new(Mul, 'Mul')
+
+    real_node = E.Session.node
+
+    def node(self, n, demanded=None):
+        cur = CUR[0]
+        if cur is not None and CHECK_ON[0] and n not in self.base:
+            c, table = cur
+            if isinstance(n, Basic):
+                COUNTS['node:new'] += 1
+                i = c.ids.get(n)
+                if i is None:
+                    COUNTS['node:unknown'] += 1
+                    fr = sys._getframe(1)
+                    SITES[f'node {_here(fr)} unknown'] += 1
+                    _example('node unknown', 'node', n, type(n).__name__)
+                elif i >= table.n_input:
+                    COUNTS['node:derived'] += 1
+        return real_node(self, n, demanded)
+    E.Session.node = node
+
+    real_struct = E.Engine._struct
+    real_cone = E.Engine._cone_info
+
+    def cone_id(o, c):
+        if isinstance(o, Basic):
+            i = c.ids.get(o)
+            return None if i is None else ('T', i)
+        pred, arg = getattr(o, 'pred', None), getattr(o, 'arg', None)
+        parts = arg if isinstance(arg, Args) else (arg,)
+        ids = []
+        for a in parts:
+            i = c.ids.get(a) if isinstance(a, Basic) else None
+            if i is None:
+                return None
+            ids.append(i)
+        return ('P', str(pred), tuple(ids))
+
+    def struct_(self, o):
+        r = real_struct(self, o)
+        cur = CUR[0]
+        if cur is not None and CHECK_ON[0]:
+            c, _ = cur
+            COUNTS['struct:calls'] += 1
+            ci = cone_id(o, c)
+            if ci is None:
+                COUNTS['struct:unknown-object'] += 1
+                _example('struct unknown object', 'struct', o, type(o).__name__)
+            else:
+                w = c.__dict__.setdefault('weights', {})
+                if w.setdefault(ci, r[1]) != r[1]:
+                    bad('struct-weight', o, w[ci], r[1])
+        return r
+    E.Engine._struct = struct_
+
+    def cone(self, d):
+        r = real_cone(self, d)
+        cur = CUR[0]
+        if cur is not None and CHECK_ON[0]:
+            c, _ = cur
+            cn, w, _rel = r
+            COUNTS['cone:calls'] += 1
+            if cn is None:
+                COUNTS['cone:over-budget'] += 1
+            else:
+                cids = [cone_id(o, c) for o in cn]
+                unknown = sum(x is None for x in cids)
+                COUNTS['cone:objects'] += len(cids)
+                COUNTS['cone:unknown-objects'] += unknown
+                COUNTS['cone:weight'] += w
+                if not unknown:
+                    COUNTS['cone:fully-known'] += 1
+                    if len(set(cids)) != len(cn):
+                        bad('cone-merge', d, len(set(cids)), len(cn))
+                    total = sum(real_struct(self, o)[1] for o in cn)
+                    if total != w:
+                        bad('cone-weight', d, total, w)
+        return r
+    E.Engine._cone_info = cone
+
+
 def _outcome(f, *a):
     try:
         return f(*a)
@@ -291,9 +595,20 @@ def install():
                 c, table = cur
                 i = c.ids.get(e)
                 if i is None:
-                    COUNTS['keys-used-derived'] += 1
-                elif CHECK_ON[0] and not same_value(table.row(i)[2], r, c, True):
-                    bad('key-used', e, site)
+                    COUNTS['keys-used-unknown'] += 1
+                    _example('key of an unknown term', site, e)
+                else:
+                    if i >= table.n_input:
+                        COUNTS['keys-used-derived'] += 1
+                    if CHECK_ON[0]:
+                        try:
+                            got = table.sort_key(i)
+                        except sa_solver.TermRefuse as x:
+                            REFUSED[f'key used: {x}'] += 1
+                            _example(f'key used: {x}', site, e)
+                        else:
+                            if not same_value(got, r, c, True):
+                                bad('key-used', e, site)
             return r
         return key
 
@@ -303,4 +618,4 @@ def install():
 
 def report(path):
     with open(path, 'w') as f:
-        json.dump(dict(counts=COUNTS, kept=KEPT, refused=REFUSED, bad=BAD), f, indent=0, sort_keys=True)
+        json.dump(dict(counts=COUNTS, kept=KEPT, refused=REFUSED, bad=BAD, sites=SITES, examples=EXAMPLES), f, indent=0, sort_keys=True)
