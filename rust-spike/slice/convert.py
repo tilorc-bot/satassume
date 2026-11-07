@@ -40,7 +40,10 @@ REASONS = (
 )
 
 # Tokens of a value: Rust's `V`, solver_rs/src/term/table.rs. Keep the two in step.
-T_NONE, T_FALSE, T_TRUE, T_INT, T_BIG, T_STR, T_TUPLE, T_TERM, T_RAT, T_OPAQUE = range(10)
+T_NONE, T_FALSE, T_TRUE, T_INT, T_BIG, T_STR, T_TUPLE, T_TERM, T_RAT, T_OPAQUE, T_MISS = range(11)
+# What Rust reads lazily: Rust's `Read`, same order. Each can evaluate (surveyed in lazy_probe.py), so nothing here runs in
+# conversion: Rust asks, on the original object, when a key needs it, and memoizes in the table, which dies with the query.
+READS = ('key', 'finite', 'complex', 'power', 'commutative')
 _I64 = 1 << 63
 
 # Kind enum: Rust's `Kind`, same order. Exact class only: a subclass is Other, or Function for a function.
@@ -93,6 +96,10 @@ class Converted:
         self.classes = classes
 
 
+class _NotInTable(Exception):
+    """A lazy read's value holds a term the table doesn't. Rust's derived ids follow the input ids, so it can't add one."""
+
+
 class _Keep(Exception):
     def __init__(self, reason, detail=''):
         self.reason = reason
@@ -112,7 +119,10 @@ class _Walk:
         self.classes = {}
         self.class_rows = []
         self.opaque = []
-        self.counts = {'keys': 0, 'decompose_power': 0, 'pow_base_not_input': 0, 'opaque': 0, 'closed': 0}
+        self.reading = False        # True once the tables are built: only `read` runs after that
+        self.counts = {'pow_base_not_input': 0, 'opaque': 0, 'read_term_missing': 0, 'read_raised': 0}
+        for name in READS:
+            self.counts['read:' + name] = 0
 
     def s(self, text):
         i = self.string_ids.get(text)
@@ -161,6 +171,8 @@ class _Walk:
         """The id of a term not necessarily walked yet: a Basic in a key or a hashable content that isn't in `.args`."""
         i = self.ids.get(t)
         if i is None:
+            if self.reading:
+                raise _NotInTable
             self.walk(t)
             i = self.ids[t]
         return i
@@ -235,7 +247,7 @@ class _Walk:
     # ---- rows
 
     def term_row(self, t, out):
-        out += (T_TUPLE, 8, T_INT, self.classes[type(t)], T_TUPLE, len(t.args))
+        out += (T_TUPLE, 6, T_INT, self.classes[type(t)], T_TUPLE, len(t.args))
         ids = self.ids
         for a in t.args:
             out += (T_TERM, ids[a])
@@ -244,16 +256,14 @@ class _Walk:
         else:
             self.enc(tuple(t._hashable_content()), out)
         if isinstance(t, _SKELETON):
-            out += (T_NONE, T_NONE, T_INT, 0, T_INT, 0, T_NONE)
+            out += (T_NONE, T_INT, 0, T_INT, 0)
             return
-        # The key, and the facts of section 9's Term facts row, each read as its site reads it.
-        self.counts['keys'] += 1
-        try:
-            k = default_sort_key(t)
-        except Exception:
-            out.append(T_NONE)
-        else:
-            self.enc(k, out, True)
+        # NaN's key holds -oo (numbers.py:3456), the one key that holds a term `.args` doesn't reach on dev, fuzz and corpus
+        # (key_growth.py). A lazy key can't add a term, so its row goes in here, where the eager key's walk put it.
+        if t is S.NaN:
+            self.term(S.NegativeInfinity)
+        # The facts of section 9's Term facts row, each read as its site reads it. Key, is_finite, complex, decompose_power
+        # and is_commutative can evaluate, so they're lazy: `read`.
         free = t.free_symbols
         # Ordered by id: free_symbols is a set, so no hash order reaches the row.
         fid = sorted(self.term(x) for x in free)
@@ -274,44 +284,72 @@ class _Walk:
             bits |= F_UNDEF
         if _may_be_nan(t):
             bits |= F_MAYBE_NAN
-        if t.is_commutative is True:
-            bits |= F_COMMUTATIVE
         out += (T_INT, bits, T_INT, constructed_noncommutative(t))
-        if number and isinstance(t, Expr):
-            self.closed(t, out)
-        else:
-            out.append(T_NONE)
-
-    def closed(self, t, out):
-        """Closed term: is_finite and complex() as bit patterns (R17, section 3). Either read can write SymPy's caches."""
-        self.counts['closed'] += 1
-        out += (T_TUPLE, 3)
-        self.enc(t.is_finite, out)
-        try:
-            z = complex(t)
-        except Exception:
-            out += (T_NONE, T_NONE)
-            return
-        for x in (z.real, z.imag):
-            self.enc_int(struct.unpack('<q', struct.pack('<d', x))[0], out)
 
     def power_rows(self, n):
-        """(term, base id or -1, exponent): decompose_power of each term whose as_base_exp can split. Last, so a base
-        counts as an input term wherever in the walk it appears. Never walks the base: that's the refusal's point."""
+        """Ids of the terms whose as_base_exp can split, so a key reads `decompose_power` of them. None of this test
+        evaluates. Last, so it covers every row."""
         out = []
         for i in range(n):
             t = self.objects[i]
             if (not isinstance(t, Expr) or t.is_Mul or t.is_Number
                     or type(t).as_base_exp is Expr.as_base_exp or getattr(t, 'is_number', False)):
                 continue
-            self.counts['decompose_power'] += 1
-            base, e = decompose_power(t)
-            b = self.ids.get(base, -1)
-            if b < 0:
-                self.counts['pow_base_not_input'] += 1
-            out += (T_TUPLE, 3, T_INT, i, T_INT, b)
-            self.enc(e, out)
+            out.append(i)
         return out
+
+    # ---- lazy reads
+
+    def read(self, kind, i):
+        """`tables['reads']`: one value Rust's key needs, read-only on the original object, or None if the read raised an
+        Exception (Rust refuses on that). Anything past Exception goes on up through Rust to whoever asked. The tokens'
+        strings are this read's own, since the table's are already with Rust."""
+        name = READS[kind]
+        self.counts['read:' + name] += 1
+        t = self.objects[i]
+        self.reading = True
+        self.strings, self.string_ids = [], {}
+        try:
+            v = getattr(self, '_read_' + name)(t)
+        except Exception:
+            self.counts['read_raised'] += 1
+            return None
+        out = []
+        try:
+            self.enc(v, out, name == 'key')
+        except _NotInTable:
+            self.counts['read_term_missing'] += 1
+            return [T_MISS], []
+        except RecursionError:
+            self.counts['read_raised'] += 1
+            return None
+        return out, self.strings
+
+    def _read_key(self, t):
+        return default_sort_key(t)
+
+    def _read_finite(self, t):
+        if not isinstance(t, Expr):
+            return None
+        return t.is_finite
+
+    def _read_complex(self, t):
+        """As exact bit patterns (R17, section 3). Raises, as a non-Expr would here, for a term with no complex value."""
+        if not isinstance(t, Expr):
+            raise TypeError(type(t).__name__)
+        z = complex(t)
+        return tuple(struct.unpack('<q', struct.pack('<d', x))[0] for x in (z.real, z.imag))
+
+    def _read_power(self, t):
+        """(base id or -1, exponent): the base is never walked, since that's a refusal when a key needs it."""
+        base, e = decompose_power(t)
+        b = self.ids.get(base, -1)
+        if b < 0:
+            self.counts['pow_base_not_input'] += 1
+        return b, e
+
+    def _read_commutative(self, t):
+        return t.is_commutative is True
 
 
 def _structural_class(cls):
@@ -398,7 +436,7 @@ def convert(proposition, assumptions, eng):
         w.enc((fp, fa), form)
         rows = []
         i = 0
-        while i < len(w.objects):       # grows if a key or a content holds a term `.args` doesn't reach
+        while i < len(w.objects):       # grows if a content or free_symbols holds a term `.args` doesn't reach
             w.term_row(w.objects[i], rows)
             i += 1
         powers = w.power_rows(len(w.objects))
@@ -409,14 +447,5 @@ def convert(proposition, assumptions, eng):
     sets = []
     w.enc(settings, sets)
     tables = dict(strings=w.strings, classes=w.class_rows, terms=rows, powers=powers, settings=sets, formula=form,
-                  n_classes=len(w.classes), n_terms=len(w.objects), n_powers=_count(powers), n_opaque=len(w.opaque))
+                  n_classes=len(w.classes), n_terms=len(w.objects), n_opaque=len(w.opaque), reads=w.read)
     return Converted(tables, w.ids, w.objects, w.counts, w.classes)
-
-
-def _count(powers):
-    n = 0
-    i = 0
-    while i < len(powers):      # (T_TUPLE, 3, T_INT, id, T_INT, base, <exponent: T_INT n or T_BIG s>)
-        n += 1
-        i += 8
-    return n

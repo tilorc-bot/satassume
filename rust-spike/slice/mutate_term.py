@@ -40,11 +40,13 @@ M = [
     ('boundary', 'custom-content-flipped', TAB, 'custom_content: f[7] == V::Bool(true)', 'custom_content: f[7] == V::Bool(false)'),
     ('boundary', 'class-flag-bit', TAB, 'flags: int(&f[3])? as u32', 'flags: (int(&f[3])? as u32) ^ 1'),
     ('boundary', 'term-id-off-by-one', TAB, 'V::Term(TermId(self.next()? as u32))', 'V::Term(TermId((self.next()? as u32).saturating_sub(1)))'),
-    ('boundary', 'closed-value-abs', TAB, 'f64::from_bits(int(v)? as u64)', 'f64::from_bits(int(v)? as u64).abs()'),
-    ('boundary', 'conv-key-dropped', CONV, 'k = default_sort_key(t)', 'k = default_sort_key(t)[:3]'),
+    ('boundary', 'closed-value-abs', TAB, 'Ok(f64::from_bits(int(v)? as u64))', 'Ok(f64::from_bits(int(v)? as u64).abs())'),
+    ('boundary', 'conv-key-dropped', CONV, 'return default_sort_key(t)', 'return default_sort_key(t)[:3]'),
     ('boundary', 'conv-free-unordered', CONV, 'fid = sorted(self.term(x) for x in free)', 'fid = sorted((self.term(x) for x in free), reverse=True)'),
     ('boundary', 'conv-number-bit', CONV, "number = getattr(t, 'is_number', False) is True", "number = getattr(t, 'is_number', False) is not True"),
     ('boundary', 'conv-power-base', CONV, 'b = self.ids.get(base, -1)', 'b = -1'),
+    ('boundary', 'read-memo-off', TAB, 'self.memo.lock().unwrap().insert((kind, t), v.clone());', 'if false { self.memo.lock().unwrap().insert((kind, t), v.clone()); }'),
+    ('boundary', 'read-text-swapped', TAB, '(V::Text(x), V::Text(y)) => x.as_ref().cmp(y.as_ref())', '(V::Text(x), V::Text(y)) => y.as_ref().cmp(x.as_ref())'),
     ('boundary', 'conv-maybe-nan', CONV, 'if _may_be_nan(t):', 'if not _may_be_nan(t):'),
 ]
 LOCK = threading.Lock()

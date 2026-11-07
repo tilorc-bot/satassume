@@ -7,7 +7,7 @@ use super::{ClassId, TermId};
 use num_bigint::BigInt;
 use std::cmp::Ordering;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 /// Why Rust won't go on with this query.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -20,6 +20,8 @@ pub enum V {
     Bool(bool),
     Int(BigInt),
     Str(u32),
+    /// Text from a lazy read: the table's strings are fixed by then, so it carries its own.
+    Text(Arc<str>),
     Tuple(Arc<[V]>),
     Term(TermId),
     Rat(Rat),
@@ -92,25 +94,39 @@ pub struct ClassRow {
     pub custom_content: bool,
 }
 
-pub struct Closed {
-    /// `is_finite`: None when SymPy doesn't know.
-    pub is_finite: Option<bool>,
-    /// `complex()` as exact f64s, when it converts.
-    pub complex: Option<(f64, f64)>,
+/// What Rust asks Python for when a key needs it. Read-only on the original input term, each at most once per table.
+/// `READS` in `convert.py`, same order.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[repr(u8)]
+pub enum Read {
+    Key,
+    Finite,
+    Complex,
+    Power,
+    Commutative,
 }
+
+/// The way back to Python. `Ok(None)`: the read raised an `Exception`, which each caller refuses on as it did when these
+/// were read up front. `Err`: the callback itself failed, so the query can't go on.
+pub trait Reads: Send + Sync {
+    fn read(&self, kind: Read, t: TermId) -> Result<Option<(Vec<i64>, Vec<String>)>, Refuse>;
+}
+
+/// `Refuse` when a read raised something other than an `Exception`: `py.rs` raises that instead of `TermRefuse`.
+pub const READ_RAISED: &str = "read: raised past Exception";
+/// Tokens of a read whose value holds a term the table doesn't: `T_MISS` in `convert.py`.
+const T_MISS: i64 = 10;
 
 pub struct TermRow {
     pub class: ClassId,
     pub args: Box<[TermId]>,
     /// `_hashable_content`.
     pub content: Arc<[V]>,
-    pub key: Option<V>,
     pub free: Box<[TermId]>,
     pub bits: u8,
     pub level: u8,
-    pub closed: Option<Closed>,
-    /// `decompose_power`: base (None if not an input term, which refuses when a key needs it) and exponent.
-    pub power: Option<(Option<TermId>, BigInt)>,
+    /// `decompose_power` can split this term, so a key asks for its base and exponent.
+    pub has_power: bool,
 }
 
 pub struct TermTable {
@@ -123,11 +139,17 @@ pub struct TermTable {
     /// Rows from conversion; the ones after these are derived.
     pub n_input: usize,
     index: HashMap<(ClassId, Arc<[V]>), TermId>,
+    reads: Box<dyn Reads>,
+    /// Lazy reads so far, `None` where the read raised. Dies with the table. The lock is never held while Python runs:
+    /// Python can drop the GIL during a read, and a thread holding the GIL while it waits for this lock would deadlock.
+    memo: Mutex<HashMap<(Read, TermId), Option<V>>>,
 }
 
 struct Reader<'a> {
     t: &'a [i64],
     i: usize,
+    /// A lazy read's strings are its own: text is carried, not indexed.
+    local: bool,
 }
 
 impl Reader<'_> {
@@ -146,6 +168,10 @@ impl Reader<'_> {
             4 => {
                 let s = strings.get(self.next()? as usize).ok_or("bad string index")?;
                 V::Int(s.parse().map_err(|_| "bad big int")?)
+            }
+            5 if self.local => {
+                let s = strings.get(self.next()? as usize).ok_or("bad string index")?;
+                V::Text(s.as_str().into())
             }
             5 => V::Str(self.next()? as u32),
             6 => {
@@ -201,6 +227,26 @@ fn bits_f64(v: &V) -> Result<f64, String> {
     Ok(f64::from_bits(int(v)? as u64))
 }
 
+fn decode_complex(v: &V) -> Result<(f64, f64), String> {
+    match v {
+        V::Tuple(x) if x.len() == 2 => Ok((bits_f64(&x[0])?, bits_f64(&x[1])?)),
+        _ => Err("complex: wanted two bit patterns".into()),
+    }
+}
+
+fn decode_power(v: &V) -> Option<(Option<TermId>, BigInt)> {
+    match v {
+        V::Tuple(x) if x.len() == 2 => match (&x[0], &x[1]) {
+            (V::Int(b), V::Int(e)) => {
+                let b = i64::try_from(b).ok()?;
+                Some(((b >= 0).then_some(TermId(b as u32)), e.clone()))
+            }
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 impl TermTable {
     pub fn from_tokens(
         strings: Vec<String>,
@@ -211,9 +257,9 @@ impl TermTable {
         formula: &[i64],
         n_classes: usize,
         n_terms: usize,
-        n_powers: usize,
+        reads: Box<dyn Reads>,
     ) -> Result<TermTable, String> {
-        let mut r = Reader { t: classes, i: 0 };
+        let mut r = Reader { t: classes, i: 0, local: false };
         let mut class_rows = Vec::with_capacity(n_classes);
         for _ in 0..n_classes {
             let f = r.tuple(&strings, 8)?;
@@ -239,11 +285,11 @@ impl TermTable {
                 return Err(format!("class row {i}: not the prefix"));
             }
         }
-        let mut r = Reader { t: terms, i: 0 };
+        let mut r = Reader { t: terms, i: 0, local: false };
         let mut rows = Vec::with_capacity(n_terms);
         let mut index = HashMap::with_capacity(n_terms);
         for i in 0..n_terms {
-            let f = r.tuple(&strings, 8)?;
+            let f = r.tuple(&strings, 6)?;
             let class = ClassId(int(&f[0])? as u32);
             let args = ids(&f[1])?;
             let content: Arc<[V]> = match &f[2] {
@@ -251,21 +297,7 @@ impl TermTable {
                 V::Tuple(c) => c.clone(),
                 _ => return Err("content".into()),
             };
-            let closed = match &f[7] {
-                V::None => None,
-                V::Tuple(c) if c.len() == 3 => Some(Closed {
-                    is_finite: match c[0] {
-                        V::Bool(b) => Some(b),
-                        _ => None,
-                    },
-                    complex: match (&c[1], &c[2]) {
-                        (V::None, _) | (_, V::None) => None,
-                        (a, b) => Some((bits_f64(a)?, bits_f64(b)?)),
-                    },
-                }),
-                _ => return Err("closed".into()),
-            };
-            let free = match &f[4] {
+            let free = match &f[3] {
                 V::None => Box::default(),
                 v => ids(v)?,
             };
@@ -277,29 +309,123 @@ impl TermTable {
                 class,
                 args,
                 content,
-                key: (f[3] != V::None).then(|| f[3].clone()),
                 free,
-                bits: int(&f[5])? as u8,
-                level: int(&f[6])? as u8,
-                closed,
-                power: None,
+                bits: int(&f[4])? as u8,
+                level: int(&f[5])? as u8,
+                has_power: false,
             });
         }
-        let mut r = Reader { t: powers, i: 0 };
-        for _ in 0..n_powers {
-            let f = r.tuple(&strings, 3)?;
-            let t = int(&f[0])? as usize;
-            let b = int(&f[1])?;
-            let e = match &f[2] {
-                V::Int(e) => e.clone(),
-                _ => return Err("power exponent".into()),
-            };
-            rows.get_mut(t).ok_or("power row: bad term")?.power =
-                Some(((b >= 0).then_some(TermId(b as u32)), e));
+        for t in powers {
+            rows.get_mut(*t as usize).ok_or("power row: bad term")?.has_power = true;
         }
-        let settings = Reader { t: settings, i: 0 }.value(&strings)?;
-        let formula = Reader { t: formula, i: 0 }.value(&strings)?;
-        Ok(TermTable { strings, classes: class_rows, terms: rows, settings, formula, n_input: n_terms, index })
+        let settings = Reader { t: settings, i: 0, local: false }.value(&strings)?;
+        let formula = Reader { t: formula, i: 0, local: false }.value(&strings)?;
+        Ok(TermTable {
+            strings,
+            classes: class_rows,
+            terms: rows,
+            settings,
+            formula,
+            n_input: n_terms,
+            index,
+            reads,
+            memo: Mutex::new(HashMap::new()),
+        })
+    }
+
+    /// A lazy read of an input term: Python's value, once per table.
+    fn read(&self, kind: Read, t: TermId) -> Result<Option<V>, Refuse> {
+        if let Some(v) = self.memo.lock().unwrap().get(&(kind, t)) {
+            return Ok(v.clone());
+        }
+        let v = match self.reads.read(kind, t)? {
+            None => None,
+            Some((tokens, _)) if tokens == [T_MISS] => return Err(Refuse("read: a value holds a term the table doesn't")),
+            Some((tokens, strings)) => Some(
+                Reader { t: &tokens, i: 0, local: true }
+                    .value(&strings)
+                    .map_err(|_| Refuse("read: tokens Rust can't read"))?,
+            ),
+        };
+        self.memo.lock().unwrap().insert((kind, t), v.clone());
+        Ok(v)
+    }
+
+    /// What's been read so far, forcing nothing: outer None if it hasn't been.
+    pub fn peek(&self, kind: Read, t: TermId) -> Option<Option<V>> {
+        self.memo.lock().unwrap().get(&(kind, t)).cloned()
+    }
+
+    /// (is_finite, complex) as read so far, forcing nothing: None if neither has been.
+    pub fn peek_closed(&self, t: TermId) -> Option<(Option<bool>, Option<(f64, f64)>)> {
+        let (f, z) = (self.peek(Read::Finite, t), self.peek(Read::Complex, t));
+        if f.is_none() && z.is_none() {
+            return None;
+        }
+        let finite = match f {
+            Some(Some(V::Bool(b))) => Some(b),
+            _ => None,
+        };
+        Some((finite, z.flatten().and_then(|v| decode_complex(&v).ok())))
+    }
+
+    /// The `decompose_power` split as read so far, forcing nothing.
+    pub fn peek_power(&self, t: TermId) -> Option<(Option<TermId>, BigInt)> {
+        self.peek(Read::Power, t).flatten().and_then(|v| decode_power(&v))
+    }
+
+    /// How many reads the memo holds.
+    pub fn reads_held(&self) -> usize {
+        self.memo.lock().unwrap().len()
+    }
+
+    /// An input term's key. A skeleton node has none, and a key that raised refuses.
+    pub(super) fn input_key(&self, t: TermId) -> Result<V, Refuse> {
+        if self.row(t).bits & fact::READ == 0 {
+            return Err(Refuse("key: not supplied"));
+        }
+        self.read(Read::Key, t)?.ok_or(Refuse("key: not supplied"))
+    }
+
+    /// `is_finite` of a closed input term: None when SymPy doesn't know, when the read raised, or for a term with no
+    /// read, which is a derived term or one that isn't a closed `Expr`.
+    pub fn finite_of(&self, t: TermId) -> Result<Option<bool>, Refuse> {
+        if t.index() >= self.n_input || self.row(t).bits & fact::NUMBER == 0 {
+            return Ok(None);
+        }
+        Ok(match self.read(Read::Finite, t)? {
+            Some(V::Bool(b)) => Some(b),
+            _ => None,
+        })
+    }
+
+    /// `complex()` of a closed input term as exact f64s: None when it raises, or for a term with no read, as `finite_of`.
+    pub fn complex_of(&self, t: TermId) -> Result<Option<(f64, f64)>, Refuse> {
+        if t.index() >= self.n_input || self.row(t).bits & fact::NUMBER == 0 {
+            return Ok(None);
+        }
+        match self.read(Read::Complex, t)? {
+            None => Ok(None),
+            Some(v) => decode_complex(&v).map(Some).map_err(|_| Refuse("read: tokens Rust can't read")),
+        }
+    }
+
+    /// `decompose_power`: base (None if not an input term, which refuses when a key needs it) and exponent. None if this
+    /// term has no split to read. An exponent that isn't an integer, or a split that raised, refuses.
+    pub fn power_of(&self, t: TermId) -> Result<Option<(Option<TermId>, BigInt)>, Refuse> {
+        if !self.row(t).has_power {
+            return Ok(None);
+        }
+        let v = self.read(Read::Power, t)?.ok_or(Refuse("key: decompose_power raised"))?;
+        decode_power(&v).map(Some).ok_or(Refuse("key: a power exponent that isn't an integer"))
+    }
+
+    /// `is_commutative is True`. Read for an input term; a derived term holds the bit. A read that raised is not True.
+    pub fn commutative_of(&self, t: TermId) -> Result<bool, Refuse> {
+        if t.index() >= self.n_input {
+            return Ok(self.row(t).bits & fact::COMMUTATIVE != 0);
+        }
+        Ok(matches!(self.read(Read::Commutative, t)?, Some(V::Bool(true))))
     }
 
     pub fn len(&self) -> usize {
@@ -399,6 +525,9 @@ impl TermTable {
             (V::Bool(x), V::Int(y)) => BigInt::from(*x as u8).cmp(y),
             (V::Int(x), V::Bool(y)) => x.cmp(&BigInt::from(*y as u8)),
             (V::Str(x), V::Str(y)) => self.strings[*x as usize].cmp(&self.strings[*y as usize]),
+            (V::Text(x), V::Text(y)) => x.as_ref().cmp(y.as_ref()),
+            (V::Str(x), V::Text(y)) => self.strings[*x as usize].as_str().cmp(y.as_ref()),
+            (V::Text(x), V::Str(y)) => x.as_ref().cmp(self.strings[*y as usize].as_str()),
             (V::Rat(x), V::Rat(y)) => x.cmp(y),
             (V::Tuple(x), V::Tuple(y)) => {
                 // A tuple's `<`: the first pair that isn't `==` decides, else the shorter is first.

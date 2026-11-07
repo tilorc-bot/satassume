@@ -65,11 +65,22 @@ real_ask = sympy_api._ask
 def digest(c):
     if isinstance(c, C.Kept):
         return 'kept ' + c.reason
-    h = hashlib.sha256(repr(sorted((k, v) for k, v in c.tables.items())).encode())
+    # `reads` is a live callback, and its repr holds an address.
+    h = hashlib.sha256(repr(sorted((k, v) for k, v in c.tables.items() if k != 'reads')).encode())
     table = sa_solver.TermTable(c.tables)
     n = table.n_input
     for i in range(n):
-        h.update(repr(table.row(i)[:5]).encode())
+        # Every lazy read is forced, since a row shows only what's been read so far.
+        try:
+            k = table.sort_key(i)
+        except sa_solver.TermRefuse as e:
+            k = str(e)
+        z = (table.finite(i), table.complex(i)) if table.row(i)[4] & C.F_NUMBER else None
+        try:
+            power = table.power(i)
+        except sa_solver.TermRefuse as e:
+            power = str(e)
+        h.update(repr((table.row(i)[:5], k, z, power, table.row(i)[4] & C.F_READ and table.commutative(i))).encode())
     for i in range(min(n, 20)):
         for j in range(min(n, 20)):
             try:

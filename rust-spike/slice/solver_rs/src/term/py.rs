@@ -1,7 +1,7 @@
 //! The Python face of the term module. Python holds ints; nothing here keeps state across queries.
 use super::offline;
 use super::rat::Rat;
-use super::table::{Kind, Refuse, TermTable, V};
+use super::table::{Kind, Read, Reads, Refuse, TermTable, READ_RAISED, V};
 use super::TermId;
 use num_bigint::BigInt;
 use pyo3::create_exception;
@@ -11,8 +11,40 @@ use pyo3::types::{PyDict, PyTuple};
 
 create_exception!(sa_solver, TermRefuse, PyException, "Rust refuses this query: it goes back to Python.");
 
+thread_local! {
+    /// What a read raised, between the callback and `refuse`: `Refuse` is a plain reason, so it can't carry it.
+    static RAISED: std::cell::RefCell<Option<PyErr>> = const { std::cell::RefCell::new(None) };
+}
+
 fn refuse(r: Refuse) -> PyErr {
+    if r.0 == READ_RAISED {
+        if let Some(e) = RAISED.with(|x| x.borrow_mut().take()) {
+            return e;
+        }
+    }
     TermRefuse::new_err(r.0)
+}
+
+/// `tables['reads']`: `convert.py`'s `_Walk.read`, `(kind, id) -> (tokens, strings) or None`. It catches `Exception`
+/// itself, so what reaches `Err` here is a `BaseException`, or a bug, and goes on up to the caller as it is.
+struct PyReads(Py<PyAny>);
+
+impl Reads for PyReads {
+    fn read(&self, kind: Read, t: TermId) -> Result<Option<(Vec<i64>, Vec<String>)>, Refuse> {
+        Python::attach(|py| {
+            let got = self.0.bind(py).call1((kind as u8, t.0)).and_then(|x| {
+                if x.is_none() {
+                    Ok(None)
+                } else {
+                    x.extract().map(Some).map_err(Into::into)
+                }
+            });
+            got.map_err(|e| {
+                RAISED.with(|x| *x.borrow_mut() = Some(e));
+                Refuse(READ_RAISED)
+            })
+        })
+    }
 }
 
 #[pyclass(name = "TermTable")]
@@ -32,6 +64,7 @@ fn value<'py>(py: Python<'py>, t: &TermTable, v: &V) -> PyResult<Bound<'py, PyAn
         V::Bool(b) => b.into_pyobject(py)?.to_owned().into_any(),
         V::Int(n) => n.into_pyobject(py)?.into_any(),
         V::Str(s) => t.strings[*s as usize].as_str().into_pyobject(py)?.into_any(),
+        V::Text(s) => s.as_ref().into_pyobject(py)?.into_any(),
         V::Tuple(xs) => {
             let items = xs.iter().map(|x| value(py, t, x)).collect::<PyResult<Vec<_>>>()?;
             PyTuple::new(py, items)?.into_any()
@@ -51,6 +84,7 @@ impl PyTermTable {
         let powers: Vec<i64> = req(tables, "powers")?;
         let settings: Vec<i64> = req(tables, "settings")?;
         let formula: Vec<i64> = req(tables, "formula")?;
+        let reads: Py<PyAny> = req(tables, "reads")?;
         TermTable::from_tokens(
             req(tables, "strings")?,
             &classes,
@@ -60,7 +94,7 @@ impl PyTermTable {
             &formula,
             req(tables, "n_classes")?,
             req(tables, "n_terms")?,
-            req(tables, "n_powers")?,
+            Box::new(PyReads(reads)),
         )
         .map(PyTermTable)
         .map_err(|e| PyValueError::new_err(format!("tables refused: {e}")))
@@ -91,13 +125,15 @@ impl PyTermTable {
             .map(|t| t.into_any())
     }
 
-    /// (args, content, key or None, free, bits, level, closed, power).
+    /// (args, content, key, free, bits, level, closed, power). Key, closed and power are what's been read so far, None
+    /// if nothing has: this forces no read. `sort_key`, `closed`, `power` and `commutative` read.
     fn row<'py>(&self, py: Python<'py>, i: u32) -> PyResult<Bound<'py, PyAny>> {
         let r = self.0.row(TermId(i));
         let content = r.content.iter().map(|x| value(py, &self.0, x)).collect::<PyResult<Vec<_>>>()?;
-        let key = r.key.as_ref().map(|k| value(py, &self.0, k)).transpose()?;
-        let closed = r.closed.as_ref().map(|c| (c.is_finite, c.complex));
-        let power = r.power.as_ref().map(|(b, e)| (b.map(|b| b.0), e.clone()));
+        let id = TermId(i);
+        let key = self.0.peek(Read::Key, id).flatten().map(|k| value(py, &self.0, &k)).transpose()?;
+        let closed = self.0.peek_closed(id);
+        let power = self.0.peek_power(id).map(|(b, e)| (b.map(|b| b.0), e));
         (
             r.args.iter().map(|a| a.0).collect::<Vec<_>>(),
             PyTuple::new(py, content)?,
@@ -110,6 +146,31 @@ impl PyTermTable {
         )
             .into_pyobject(py)
             .map(|t| t.into_any())
+    }
+
+    /// `is_finite` of a closed input term, reading it if it hasn't been. None if the term has no read. Raises TermRefuse.
+    fn finite(&self, i: u32) -> PyResult<Option<bool>> {
+        self.0.finite_of(TermId(i)).map_err(refuse)
+    }
+
+    /// `complex()` of a closed input term as (re, im), reading it if it hasn't been. None if it raised or has no read.
+    fn complex(&self, i: u32) -> PyResult<Option<(f64, f64)>> {
+        self.0.complex_of(TermId(i)).map_err(refuse)
+    }
+
+    /// (base id or None, exponent) from `decompose_power`, reading it if it hasn't been. None if the term has no split.
+    fn power(&self, i: u32) -> PyResult<Option<(Option<u32>, BigInt)>> {
+        Ok(self.0.power_of(TermId(i)).map_err(refuse)?.map(|(b, e)| (b.map(|b| b.0), e)))
+    }
+
+    /// `is_commutative is True`, reading it for an input term if it hasn't been.
+    fn commutative(&self, i: u32) -> PyResult<bool> {
+        self.0.commutative_of(TermId(i)).map_err(refuse)
+    }
+
+    /// How many lazy reads this table's memo holds. It dies with the table.
+    fn reads_held(&self) -> usize {
+        self.0.reads_held()
     }
 
     /// The id the hash-cons index holds for this term's own class and content.
