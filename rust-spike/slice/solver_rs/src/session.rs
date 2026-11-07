@@ -259,8 +259,10 @@ impl SessionCore {
     fn known(&self, x: &Bound<'_, PyAny>) -> PyResult<Option<u32>> {
         let Some(v) = self.nids.bind(x.py()).get_item(x)? else { return Ok(None) };
         let n: u32 = v.extract()?;
-        if !self.objs.borrow()[n as usize].bind(x.py()).get_type().is(x.get_type()) {
+        let first = self.objs.borrow()[n as usize].clone_ref(x.py());
+        if !first.bind(x.py()).get_type().is(x.get_type()) {
             tick(JOIN);
+            log_join(self as *const Self as usize, n, first.bind(x.py()), x)?;
         }
         Ok(Some(n))
     }
@@ -904,7 +906,26 @@ impl SessionCore {
     }
 }
 
+thread_local! {
+    /// Set only by `join_log.py`, a logging run for 5b's first item. It runs at a `join` and nowhere else.
+    static JOIN_HOOK: RefCell<Option<Py<PyAny>>> = const { RefCell::new(None) };
+}
+
+fn log_join(session: usize, nid: u32, first: &Bound<'_, PyAny>, second: &Bound<'_, PyAny>) -> PyResult<()> {
+    let hook = JOIN_HOOK.with(|h| h.borrow().as_ref().map(|f| f.clone_ref(first.py())));
+    if let Some(f) = hook {
+        f.bind(first.py()).call1((session, nid, first, second))?;
+    }
+    Ok(())
+}
+
+#[pyfunction]
+fn set_join_hook(hook: Option<Py<PyAny>>) {
+    JOIN_HOOK.with(|h| *h.borrow_mut() = hook);
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(set_join_hook, m)?)?;
     m.add_class::<SessionRules>()?;
     m.add_class::<SessionCore>()?;
     m.add_function(wrap_pyfunction!(session_counts, m)?)
