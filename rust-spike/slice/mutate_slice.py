@@ -223,4 +223,5 @@ def main():
     print(open(os.path.join(a.work, "table.md")).read())
 
 
-main()
+if __name__ == "__main__":
+    main()
