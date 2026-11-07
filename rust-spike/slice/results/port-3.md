@@ -2,11 +2,15 @@
 
 `theories/transfer.py`, `EqualitySharing` and `P` run in Rust in the real engine. **This adds 1 of the 32 runtime modules: `transfer.py`.** `EqualitySharing` and `P` run on Rust, but their modules aren't counted: `sat/formula.py` still holds `Formula` and its subclasses on Python, and `sat/theory.py` is mostly protocols. Python stays the default and the reference; the backend stays optional. No heuristics added.
 
-**`rust` mode now means Rust EUF, Rust LRA and Rust transfer together.** The rebases onto component 2 (e5dd23f) and 1a (69639da) both conflicted and both changed what runs. Results from earlier source don't count here, and no run below is from 69639da or earlier.
+**`rust` mode now means Rust EUF, Rust LRA and Rust transfer together.** The rebases onto component 2 (e5dd23f) and 1a (69639da) both conflicted and both changed what runs. Results from earlier source don't count here. Every run below is on f9eb6de.
 
 **Lazy reads (6827bf7): the rebase had no conflict.** Both sides touch only `quiet_fire.py`, the same file on both, and the inventory. This crate uses `term::TermId` and `term::offline`, not the `term/table.rs` and `term/algebra.rs` code lazy reads changed, and by that report nothing consumes conversion yet. That's by reading; the runs below are on the combined source. `SLICE_EUF=py` wasn't needed to separate the components, because nothing differed.
 
-Landing source: `port/3-landing-4` at 8313292, on `rust-slice` 6827bf7; only edits to this report come after it. Build on pareto1 (x86_64), sha256 starts f413ffa2fc0f, the same file on both hosts. Fresh and suite ran on pareto0, controls and history on pareto1. Output: `~/sp19/out38/` on each host; suite rows and `split.jsonl` in `~/sa-rust-ids-work/sa-port-38/s1/` on orion.
+**Atoms (dc3f15d): the crate did change, 415 lines in `term/knowledge.rs`, `mod.rs`, `py.rs` and `table.rs`, and the runs below include them.** One tool conflicted: both sides added `suite_split.py`. `rust-slice`'s stays unchanged, and this branch's is `suite_split_named.py`.
+
+**Not landed as of this report. Tested source: `port/3-landing-5` at f9eb6de, on `rust-slice` dc3f15d.** `rust-slice` then moved to dfa7b45 (atoms whole, `port-6b.md`), and the runs weren't repeated on it, pending the planner's answer. From f9eb6de's tree to the tree rebased on dfa7b45, 7 files differ: `HANDOFF-sa-port-45.md`, `knowledge_fresh.py`, `knowledge_live.py`, `knowledge_value_wl.py`, `mutate_knowledge.py`, `results/port-6b.md`, `test_knowledge_value_units.py`. There are 0 diff lines in `solver_rs`, `lra`, `satassume` and `tests`. On the rebased tree, `backend.install()` doesn't load `knowledge_live`, and `transfer:1:300` on orion is byte-identical for py, rust and shadow. `knowledge_live` isn't named in `backend.py`, `rust_plugin.py`, `live.py`, `transfer_fresh.py` or `state.py`. `convert.py` does name it, and that use wasn't traced.
+
+Build on pareto1 (x86_64), sha256 starts bf4cf6d6ce78, the same file on both hosts. Fresh and suite ran on pareto0, controls and history on pareto1. Output: `~/sp19/out38/` on each host; suite rows and `split.jsonl` in `~/sa-rust-ids-work/sa-port-38/s1/` on orion.
 
 ## The bar
 
@@ -25,11 +29,11 @@ S's standing: S's gate is met except for the 46 named stub failures, one cause. 
 
 ### Changed outcomes and open items
 
-- **`tests/test_constfield.py::test_powers_are_refused_quickly`** passed on this run, and on 3173eca's. It failed on 1e36724's run, at 0.641 s against a 0.5 s limit. Alone on orion at load 11 it passed 3 of 3 on each backend, on e7207af: the call took about 0.06 s on Rust and 0.33 s on Python. That doesn't show what caused the old failure; load stays a candidate. It isn't a changed outcome on this source.
+- **`tests/test_constfield.py::test_powers_are_refused_quickly`** passed on this run, and on 3173eca's and 8313292's. It failed on 1e36724's run, at 0.641 s against a 0.5 s limit. Alone on orion at load 11 it passed 3 of 3 on each backend, on e7207af: the call took about 0.06 s on Rust and 0.33 s on Python. That doesn't show what caused the old failure; load stays a candidate. It isn't a changed outcome on this source.
 - **`tests/test_solver.py::test_performance_smoke_300_vars`** on Python: failed in the base's rows, passed here. It asserts wall clock, and the base's rows are from orion, this run from pareto0. On Rust it's unchanged.
 - **Python's suite:** 6,084 passed, 0 failed, 23 skipped, 18 xfailed. Only that one id moved.
-- **Failure text of the 123:** 58 kinds here against the base's 59, normalised for numbers. One id's text moved, in the first 150 characters: `test_fuzz_entails_and_implied`. That compares the failures' start, not their full text.
-- **LRA sessions against 1a's run:** 45,517 sessions and 2,706 moved here, 45,358 and 2,697 there, in 239 tests on both. 14 ids differ: fuzz tests, plus `test_random_ask_matches_oracle`, `test_inconsistent_set_raises[p2-a2]`. Hypothesis's draws and shuffled order are candidates, not shown causes. These are session counts, not answers; no outcome moved.
+- **Failure text of the 123:** 59 kinds here and in the base, normalised for numbers. One id's text moved, in the first 150 characters: `test_fuzz_entails_and_implied`. That compares the failures' start, not their full text.
+- **LRA sessions against 1a's run:** 46,636 sessions and 2,705 moved here, 45,358 and 2,697 there, in 239 tests on both. 15 ids differ: fuzz tests, plus `test_random_ask_matches_oracle`, `test_non_real_and_infinite_arguments` and `test_inconsistent_set_raises[p2-a2]`. Hypothesis's draws and shuffled order are candidates, not shown causes. These are session counts, not answers; no outcome moved.
 
 ### Planted bugs through fresh
 
@@ -56,14 +60,14 @@ Against Python, on this source. `@` is the first query that differs; `q` is that
 
 - Answer digests across all 12 runs that keep the recorded query list: dev `31cd0945c07f02a6`, fuzz `173502b6ef285ad6`, the same as in `port-1a.md`. Runs that differ or didn't finish: 0.
 - Rust totals: 0 re-entry, 0 entry raises, 0 Python solvers made.
-- Answers move in no run. State against recorded moves the same on both backends: on dev 335 and 358 under shuffle, on fuzz 86 under the first shuffle.
-- `done.txt` holds 2 `rc=143` rows, `seed1-fuzz-rust` and `seed2-fuzz-rust` at 12:24:36. They are my own stop of the earlier history run on 69639da. Its stopped `xargs` respawned two processes, and they wrote those rows when I killed them. The real runs finished at 12:40 with rc=0 and empty stderr, and their files are the ones read.
+- Answers move in no run. State against recorded moves the same on both backends: under shuffle 335 and 358 on dev, 86 and 91 on fuzz; under fork 1,549 and 2,981.
+- `done.txt`: 28 rows, all rc=0.
 
 ### Counters, shown firing
 
 - **Fresh's quiet counter** reads empty on every `.tot` on all 10 pairs (0 catches). It fires on a planted raise on this source: p06, q=50 on dev and q=239 on `transfer:1:300`; p07, q=264.
 - **The suite's `handler_count`** fired at both sites on both backends on this source, one planted raise each (`suite_plant_handlers.py`).
-- **Rust really ran:** 215,721 Rust terms made and 0 Python ones in the suite's rows. `transfer_fresh.py` exits if `P` wasn't swapped.
+- **Rust really ran:** 217,640 Rust terms made and 0 Python ones in the suite's rows. `transfer_fresh.py` exits if `P` wasn't swapped.
 
 ### Quiet firings on Rust
 
