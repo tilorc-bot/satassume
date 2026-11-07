@@ -3,8 +3,8 @@
 `install()` makes two changes, from outside satassume, and returns a function that undoes them. Pure Python stays the
 default: nothing here runs unless a caller installs it.
 
-1. `sympy_api._ask`, which runs exactly on an answer-memo miss, converts the query first (`convert.py`) and holds the
-   table for the query's length. Nothing outlives the query: ids mean nothing outside it.
+1. `term_live`'s wrapper on `sympy_api._ask` holds the query's table, and this reads it. Nothing outlives the query: ids
+   mean nothing outside it.
 2. `symbol_units` and `constant_units` in the real registry read Rust's closed pattern for an input atom. The registry's
    dispatch, the engine and everything else stay Python and take the pattern as they take Python's.
 3. `value_units`, as `functions._value_units` and `special.py` call it, gets its pattern the same way. Those callers stay
@@ -21,25 +21,22 @@ section 10's row, and it goes when 4 and 5 stop building those nodes in Python.
 
 A fault from Rust raises `KnowledgeFault`, a BaseException, so `engine.py:1906` and `sympy_api.py:1107` can't turn it into
 a quiet "unknown". What `const_value` raises and `cnf_of`'s KeyError for an unknown predicate come through as themselves, as
-on Python. There is no discarded run in this family: conversion finishes before the engine starts, and a template
-never refuses mid-run.
+on Python. A read that raises is a refusal, not a fault: `sa_solver.TermRefuse` goes past the `except Exception` here to
+`term_live`, which discards the run and answers on Python.
 """
-import collections
 import importlib.util
 import os
 import sys
-import threading
 
 import sa_solver
 import sympy
 
 import satassume
-from satassume import sympy_api
 from satassume.knowledge import realroots
 from satassume.knowledge.templates import _common, atoms, registry
 from satassume.knowledge.templates._common import Compiled, Pattern, VOCAB, const_value
 
-import convert
+import term_live
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 #: Modules that take `atoms.value_units` by name at import. Both load lazily, so naming them here must not import them.
@@ -48,7 +45,7 @@ VALUE_UNITS_CALLERS = ('satassume.knowledge.templates.functions', 'satassume.kno
 REALROOTS = ('gcd', 'squarefree', 'real_root_counts', 'imaginary_root_count', 'root_facts')
 #: Takes `root_facts` by name at import, and loads lazily.
 ROOT_FACTS_CALLER = 'satassume.knowledge.templates.rootof'
-COUNTS = collections.Counter()
+COUNTS = term_live.COUNTS
 #: With `shadow=True`: (kind, repr of the term, field, Rust's, Python's), the first few of each run's differences.
 MISMATCHES = []
 MAX_MISMATCHES = 50
@@ -56,35 +53,11 @@ MAX_MISMATCHES = 50
 ORDER_DIFFS = []
 CONTRADICTION = 'template asserts a contradiction'
 #: (kind, id, exception type) of the first few reads that raised, across queries.
-RAISED = []
+RAISED = term_live.RAISED
 
 
 class KnowledgeFault(BaseException):
     """Rust failed where it has no reason to. Not an `Exception`, so no quiet handler reads it as "unknown"."""
-
-
-class _Query:
-    __slots__ = ('table', 'ids', 'objects', 'kept', 'counts', 'raised')
-
-    def __init__(self, c):
-        if isinstance(c, convert.Kept):
-            self.kept, self.table, self.ids, self.objects, self.counts, self.raised = c.reason, None, None, None, {}, ()
-        else:
-            self.kept = None
-            self.table = sa_solver.TermTable(c.tables)
-            self.ids, self.objects, self.counts = c.ids, c.objects, c.counts
-            self.raised = c.raised
-
-
-_local = threading.local()
-
-
-def _stack():
-    try:
-        return _local.stack
-    except AttributeError:
-        _local.stack = []
-        return _local.stack
 
 
 def _wrap(r):
@@ -169,8 +142,7 @@ def install(shadow=False, data=None):
 
     def rust_compiled(py, kind, is_symbol, value, obj):
         """`py()`'s `Compiled`, with Rust's pattern for the facts of `value`, as facts of `obj`."""
-        stack = _stack()
-        q = stack[-1] if stack else None
+        q = term_live.current()
         if q is None:
             COUNTS['py:no-query'] += 1
             return py()
@@ -211,8 +183,8 @@ def install(shadow=False, data=None):
     rust_value_units.__wrapped__ = py_value
 
     def kept():
-        stack = _stack()
-        if stack and stack[-1].kept is not None:
+        q = term_live.current()
+        if q is not None and q.kept is not None:
             COUNTS['common:kept'] += 1
             return True
         return False
@@ -290,8 +262,8 @@ def install(shadow=False, data=None):
         py_f, rs_f = getattr(py_roots, name), getattr(sa_solver, 'realroots_' + name)
 
         def f(*args):
-            stack = _stack()
-            if stack and stack[-1].kept is not None:
+            q = term_live.current()
+            if q is not None and q.kept is not None:
                 COUNTS['realroots:kept'] += 1
                 return py_f(*args)
             COUNTS['realroots:' + name] += 1
@@ -327,35 +299,10 @@ def install(shadow=False, data=None):
     registry._clauses_cache.clear()
     _bind_value_units(rust_value_units)
 
-    py_ask = sympy_api._ask
-
-    def _ask(proposition, assumptions, eng):
-        # This can sit inside a quiet handler when a query nests, so a failure here must not be an Exception.
-        try:
-            q = _Query(convert.convert(proposition, assumptions, eng))
-        except Exception as e:
-            COUNTS['fault'] += 1
-            raise KnowledgeFault(f'conversion: {e}') from e
-        if q.kept is not None:
-            COUNTS['kept:' + q.kept] += 1
-        else:
-            COUNTS['converted'] += 1
-        stack = _stack()
-        stack.append(q)
-        try:
-            return py_ask(proposition, assumptions, eng)
-        finally:
-            stack.pop()
-            # The reads this query really asked for, so `read_raised` here is never a forced read.
-            for name, n in q.counts.items():
-                if n and (name.startswith('read:') or name in ('read_raised', 'read_term_missing')):
-                    COUNTS[name] += n
-            RAISED[len(RAISED):] = list(q.raised)[:max(0, MAX_MISMATCHES - len(RAISED))]
-
-    sympy_api._ask = _ask
+    undo_term = term_live.install()
 
     def undo():
-        sympy_api._ask = py_ask
+        undo_term()
         _common.resolve, _common.Pattern = py_resolve, py_pattern
         for cls, ts in saved_lists.items():
             registry._by_class[cls][:] = ts

@@ -103,13 +103,14 @@ def test_a_root_is_converted_and_asked_with_no_complex_call(live, complex_calls)
     assert complex_calls == [r]
 
 
-def test_a_read_that_raises_is_a_fault_and_counts(live, monkeypatch):
+def test_a_read_that_raises_is_a_refusal_and_counts(live, monkeypatch):
+    """Section 9: the run is discarded and answered on Python. It was a `KnowledgeFault` until term_live gave it a route."""
     def boom(self, t):
         raise ValueError('planted')
     monkeypatch.setattr(C._Walk, '_read_constant', boom)
-    with pytest.raises(K.KnowledgeFault):
-        sympy_api.ask(Q.positive(pi))
+    assert sympy_api.ask(Q.positive(pi)) is True
     assert K.COUNTS['read_raised'] == 1
+    assert K.COUNTS['refused'] == 1
     assert K.RAISED and K.RAISED[0][0] == 'constant' and K.RAISED[0][2] == 'ValueError'
 
 

@@ -6,12 +6,14 @@ use super::table::{Kind, Read, Reads, Refuse, TermTable, READ_RAISED, V};
 use super::TermId;
 use num_bigint::BigInt;
 use pyo3::create_exception;
-use pyo3::exceptions::{PyException, PyKeyError, PyValueError};
+use pyo3::exceptions::{PyBaseException, PyException, PyKeyError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyFrozenSet, PyList, PyTuple};
 use pyo3::IntoPyObjectExt;
 
-create_exception!(sa_solver, TermRefuse, PyException, "Rust refuses this query: it goes back to Python.");
+// A BaseException, so that none of the `except Exception` handlers on the engine's path can turn a refusal into a quiet
+// answer: `term_live.py` lists them. Only the top of the run catches it.
+create_exception!(sa_solver, TermRefuse, PyBaseException, "Rust refuses this query: it goes back to Python.");
 
 thread_local! {
     /// What a read raised, between the callback and `refuse`: `Refuse` is a plain reason, so it can't carry it.
@@ -306,7 +308,7 @@ impl PyKnowledge {
     }
 
     /// `symbol_units` of input term `t`, reading it now: (rules, clauses, used, complete). An Exception from the read is a
-    /// TermRefuse and anything past Exception goes on up as itself; the caller treats a TermRefuse as a fault.
+    /// TermRefuse and anything past Exception goes on up as itself; both go past the caller to the top of the run.
     fn symbol_units<'py>(&self, py: Python<'py>, table: &PyTermTable, t: u32) -> PyResult<Bound<'py, PyAny>> {
         let k = &self.0;
         let items = table.0.symbol_facts(TermId(t)).map_err(refuse)?;

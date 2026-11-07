@@ -23,6 +23,10 @@ ap.add_argument("out")
 ap.add_argument("--counts")
 ap.add_argument("--so")
 ap.add_argument("--handlers", help="count the quiet Exception handlers here: handler_count.py")
+ap.add_argument("--term", choices=["py", "table", "keys"], default="py", help="conversion on the real path: term_live.py")
+ap.add_argument("--term-out", help="term_live's counts, as JSON")
+ap.add_argument("--discard", action="store_true", help="a planted refusal in each query's run: term_discard.py. Needs --term")
+ap.add_argument("--no-rollback", action="store_true", help="plant: with --discard, skip the rollback")
 a = ap.parse_args()
 if a.so:
     sys.path.insert(0, a.so)
@@ -96,6 +100,14 @@ else:
 if a.handlers:
     import handler_count
     handler_count.install(a.handlers)
+TD = None
+if a.term != "py":
+    import term_live
+    term_live.install(keys=a.term == "keys")
+    term_live.PLANT_NO_ROLLBACK[0] = a.no_rollback
+    if a.discard:
+        import term_discard as TD
+        TD.install()
 sessions = []
 _init = E.Session.__init__
 
@@ -116,6 +128,20 @@ with open(a.out, "w") as fh:
     for i, (p, q) in enumerate(pairs):
         if a.handlers:
             handler_count.where = i
+        if TD:      # counts the calls at each site, then puts back everything but SymPy's caches
+            n_const = len(TD.constfield._CONSTANTS), len(TD.constfield._BY_KEY)
+            reset_module_state(sympy_cache=False)
+            sympy_api.set_default_engine(E.Engine())
+            TD.count_pass()
+            try:
+                sympy_api.ask(p, q)
+            except Exception:
+                pass
+            del TD.constfield._CONSTANTS[n_const[0]:]
+            while len(TD.constfield._BY_KEY) > n_const[1]:
+                TD.constfield._BY_KEY.popitem()
+            TD.arm(i)
+            term_live.AFTER_ROLLBACK[0] = lambda: (TD.check(), sessions.clear())
         reset_module_state(sympy_cache=False)
         sympy_api.set_default_engine(E.Engine())
         sessions.clear()
@@ -124,5 +150,9 @@ with open(a.out, "w") as fh:
         except Exception as e:  # the type and text are the answer
             r = f"{type(e).__name__}: {e}"
         fh.write(f"{i}\t{r}\t{','.join(digest(s) for s in sessions)}\n")
+if a.term_out:
+    import term_live
+    with open(a.term_out, "w") as fh:
+        fh.write(TD.report() if TD else json.dumps(dict(term=term_live.counts(), refusals=term_live.REFUSALS), indent=0, sort_keys=True))
 if a.counts:
     json.dump(dict(counts, queries=len(pairs)), open(a.counts, "w"), indent=1, sort_keys=True)
