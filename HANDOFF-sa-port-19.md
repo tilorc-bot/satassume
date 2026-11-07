@@ -72,7 +72,7 @@ So a one-off Rust fault in the complete check doesn't show in answers, because t
 
 ## pareto1
 
-Setup was short, and it's 15 to 20 times faster than orion under load: fresh fuzz took under 3 minutes in shards. `~/sp19` holds a tree copy, venv, sympy, data and shim. `p1_job.sh` sets `HOME=~/sp19`, so the slice scripts find their own `env.sh`. Scripts are in `rust-spike/slice/p1/`, with copies in `~/sp19/`. **The tree there is an rsync, not a git clone:** run `rsync -a --exclude target --exclude '*.so' ~/dev/sa-port-19/ pareto1:sp19/dev/sa-port-19/`, then rebuild (`sh build_solver.sh` under `p1_job.sh`; it's already built at this source's crate). Orion is aarch64, pareto1 x86_64. Say which machine each number came from. The suite's base numbers (5,961 / 77 / 46) are from orion, so run Python on pareto1 beside Rust, and read any x86-only difference against that.
+Setup was short. From early row counts, each process ran about 4 to 7 times faster than on orion at load 50, an estimate rather than a timing, and with shards fresh fuzz took under 3 minutes for both backends. `~/sp19` holds a tree copy, venv, sympy, data and shim. `p1_job.sh` sets `HOME=~/sp19`, so the slice scripts find their own `env.sh`. Scripts are in `rust-spike/slice/p1/`, with copies in `~/sp19/`. **The tree there is an rsync, not a git clone:** run `rsync -a --exclude target --exclude '*.so' ~/dev/sa-port-19/ pareto1:sp19/dev/sa-port-19/`, then rebuild (`sh build_solver.sh` under `p1_job.sh`; it's already built at this source's crate). Orion is aarch64, pareto1 x86_64. Say which machine each number came from. The suite's base numbers (5,961 / 77 / 46) are from orion, so run Python on pareto1 beside Rust, and read any x86-only difference against that.
 
 ## Order from here
 
