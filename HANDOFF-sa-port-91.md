@@ -49,4 +49,4 @@ Wait on the marker from a background shell, not by polling. Nothing has been rea
 Same as sa-port-90's expectation, still to restate after step 3: none newly counts whole.
 
 ## Map at 2caa559, under `rust-spike/slice/`
-`test_relations_core.py`: `_queries` :28, `_run` :88, `_direct` :165, `_rel_state`, `_direct_c2c` right after `_direct`, `_kinds` near the end. `relations_core.rs`: as sa-port-90's map, `register` at the end. `session_live.py`: as sa-port-90's map.
+`test_relations_core.py`: `_queries` :28, `_run` :89, `_direct` :160, `_rel_state` :278, `_direct_c2c` :290, `_kinds` :899. `relations_core.rs`: as sa-port-90's map, `register` at the end. `session_live.py`: as sa-port-90's map.
