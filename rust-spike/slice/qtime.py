@@ -1,9 +1,17 @@
 """qtime.py WL MODE: one cold pass. MODE time: per-query seconds only. MODE sample: 0.5 ms sampler tagging each sample with the
-query and the innermost satassume frame (part as in REPORT-rust-spike.md) and whether a SymPy frame is on the stack. Prints one JSON line."""
-import collections, gc, hashlib, json, signal, sys, time
+query and the innermost satassume frame (part as in REPORT-rust-spike.md) and whether a SymPy frame is on the stack. Prints one JSON line.
+SLICE_BACKEND=rust: `backend.install()` before the pass, with `sa_solver` taken from PYTHONPATH (step 5: full API or abi3). Unset: pure Python.
+time also prints each answer, for the None and definite split."""
+import collections, gc, hashlib, json, os, signal, sys, time
 wl, mode = sys.argv[1:3]
 from evalbench.common import workload
 from satassume import sympy_api
+so = None
+if os.environ.get("SLICE_BACKEND") == "rust":
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import backend, sa_solver
+    backend.install()
+    so = hashlib.sha256(open(sa_solver.__file__, "rb").read()).hexdigest()[:8]
 if wl == "fuzz":
     from evalbench.fuzz import queries
     pairs = queries(424242)
@@ -48,5 +56,5 @@ total = pc() - t0
 if mode == "sample":
     signal.setitimer(signal.ITIMER_REAL, 0)
 d = hashlib.sha256(json.dumps(ans).encode()).hexdigest()[:16]
-print(json.dumps(dict(wl=wl, mode=mode, digest=d, s=total, per=per if mode == "time" else None,
+print(json.dumps(dict(wl=wl, mode=mode, digest=d, s=total, so=so, per=per if mode == "time" else None, ans=ans if mode == "time" else None,
                       samples=[[*k, v] for k, v in samples.items()] if mode == "sample" else None)))
