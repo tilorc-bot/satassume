@@ -49,6 +49,23 @@ const FRESH_NOT_INERT: u8 = 11;
 const FRESH_SKEW: u8 = 12;
 /// All of `_trichotomy` off, as a test patching Python's method does. `DROP_TRICHOTOMY` keeps its `ensure`s, vars and roles.
 const SKIP_TRICHOTOMY: u8 = 13;
+/// From here, C2c's: one effect dropped in each moved method.
+const DROP_ADD_ROLE: u8 = 14;
+const DROP_APPLY_ROLE: u8 = 15;
+const DROP_CANDIDACY: u8 = 16;
+const DROP_TSOURCE: u8 = 17;
+const DROP_TVAR: u8 = 18;
+const DROP_TVAR_MC: u8 = 19;
+const DROP_ENGAGE: u8 = 20;
+const DROP_TERMS: u8 = 21;
+const DROP_TERMS_SIDE: u8 = 22;
+const DROP_FIXED: u8 = 23;
+const DROP_SYNC: u8 = 24;
+const DROP_SYNC_POLAR: u8 = 25;
+const DROP_XSWITCH: u8 = 26;
+const DROP_CONGRUENCE: u8 = 27;
+const CONGRUENT_NEVER: u8 = 28;
+const SHARE_GUARD_ONE: u8 = 29;
 
 #[pyfunction]
 fn rel_install(term_live: Py<PyAny>, relations: Py<PyAny>, euf_adapter: Py<PyAny>, fault: Py<PyAny>) {
@@ -72,6 +89,22 @@ fn rel_plant(name: Option<&str>) -> PyResult<()> {
         Some("fresh-not-inert") => FRESH_NOT_INERT,
         Some("fresh-skew") => FRESH_SKEW,
         Some("skip-trichotomy") => SKIP_TRICHOTOMY,
+        Some("drop-add-role") => DROP_ADD_ROLE,
+        Some("drop-apply-role") => DROP_APPLY_ROLE,
+        Some("drop-candidacy") => DROP_CANDIDACY,
+        Some("drop-tsource") => DROP_TSOURCE,
+        Some("drop-tvar") => DROP_TVAR,
+        Some("drop-tvar-mc") => DROP_TVAR_MC,
+        Some("drop-engage") => DROP_ENGAGE,
+        Some("drop-terms") => DROP_TERMS,
+        Some("drop-terms-side") => DROP_TERMS_SIDE,
+        Some("drop-fixed") => DROP_FIXED,
+        Some("drop-sync") => DROP_SYNC,
+        Some("drop-sync-polar") => DROP_SYNC_POLAR,
+        Some("drop-xswitch") => DROP_XSWITCH,
+        Some("drop-congruence") => DROP_CONGRUENCE,
+        Some("congruent-never") => CONGRUENT_NEVER,
+        Some("share-guard-one") => SHARE_GUARD_ONE,
         Some(x) => return Err(PyValueError::new_err(format!("no plant {x}"))),
     };
     PLANT.store(v, Relaxed);
@@ -396,7 +429,7 @@ fn rel_trichotomy<'py>(rel: &Bound<'py, PyAny>, var: i32, atom: &Bound<'py, PyAn
     let sel_r: i32 = rel.call_method1(intern!(p, "_atom_selector"), (&rev,))?.extract()?;
     let both = [-sel_a, -sel_r];
     // A list of its own: `_add_role` keeps it.
-    rel.call_method1(intern!(p, "_add_role"), (&eqa, PyList::new(p, both)?, intern!(p, "tri")))?;
+    Cx { rel, s: &s, c: &c, h: &h }.add_role(&eqa, PyList::new(p, both)?.as_any(), intern!(p, "tri").as_any())?;
     let mut clause = vec![both[0], both[1], var, rvar, eq];
     for e in r.getattr(intern!(p, "_ext_atoms"))?.call1((&a, &b))?.try_iter()? {
         let x = e?.getattr(intern!(p, "expr"))?;
@@ -430,8 +463,7 @@ fn rel_mention_number<'py>(rel: &Bound<'py, PyAny>, e: &Bound<'py, PyAny>) -> Py
     }
     let sel = fresh(&s, &c, true)?;
     num_sel.set_item(e, sel)?;
-    let ie = h.relations.bind(p).getattr(intern!(p, "_IE"))?;
-    rel.call_method1(intern!(p, "_tsource"), (e, ie, PyList::new(p, [-sel])?))?;
+    Cx { rel, s: &s, c: &c, h: &h }.tsource(e, IE, PyList::new(p, [-sel])?.as_any())?;
     rel.getattr(intern!(p, "_xextra"))?.call_method1(intern!(p, "append"), (e,))?;
     Ok(())
 }
@@ -598,7 +630,7 @@ fn rel_eq_infinity<'py>(rel: &Bound<'py, PyAny>, var: i32, atom: &Bound<'py, PyA
     eq_infinity(rel, &s, &c.borrow(), &h, var, atom)
 }
 
-/// `_interpret`. The adapters, `sympy_atom`, `_note_sides`, `_apply_role` and `_adapter` stay Python and are called back.
+/// `_interpret`. The adapters, `sympy_atom`, `_note_sides` and `_adapter` stay Python and are called back.
 #[pyfunction]
 fn rel_interpret<'py>(rel: &Bound<'py, PyAny>, atom: &Bound<'py, PyAny>) -> PyResult<bool> {
     let p = rel.py();
@@ -684,9 +716,10 @@ fn rel_interpret<'py>(rel: &Bound<'py, PyAny>, atom: &Bound<'py, PyAny>) -> PyRe
     }
     let info = PyTuple::new(p, [twins.into_any(), lterms.into_any(), eterms.into_any()])?;
     rel.getattr(intern!(p, "_info"))?.set_item(atom, &info)?;
+    let cx = Cx { rel, s: &s, c: &c, h: &h };
     for role in rel.getattr(intern!(p, "_roles"))?.call_method1(intern!(p, "get"), (atom, PyTuple::empty(p)))?.try_iter()? {
         let (kind, g) = two(&role?)?;
-        rel.call_method1(intern!(p, "_apply_role"), (atom, &info, kind, g))?;
+        cx.apply_role(atom, info.as_any(), &kind, &g)?;
     }
     Ok(ok)
 }
@@ -725,9 +758,10 @@ fn rel_link<'py>(rel: &Bound<'py, PyAny>, e: &Bound<'py, PyAny>) -> PyResult<()>
     // One guard object: `_tsource` drops repeats of it.
     let gl = PyList::new(p, [g])?;
     let link_of = rel.getattr(intern!(p, "_link_of"))?;
+    let cx = Cx { rel, s: &s, c: &c, h: &h };
     for f in [&gta, &lta, &eqa] {
         link_of.set_item(f, e)?;
-        rel.call_method1(intern!(p, "_add_role"), (f, &gl, intern!(p, "link")))?;
+        cx.add_role(f, gl.as_any(), intern!(p, "link").as_any())?;
     }
     c.emit_direct(p, &[-pos, gt, g])?;
     c.emit_direct(p, &[-gt, pos, g])?;
@@ -796,6 +830,633 @@ fn rel_selectors_of<'py>(rel: &Bound<'py, PyAny>, atoms: &Bound<'py, PyAny>) -> 
     Ok(out.into_iter().collect())
 }
 
+// C2c: roles, the per-term variables, and predicate transfer. Their maps stay Python's dicts, lists and sets on `rel`, as `_guard`'s
+// memo does: they aren't term tables, they die with the session, and `==` joins as it does there. Of those, the sets (`_xcand`,
+// `_xpart`, `_xpairs`, `_xcounted`) are only added to and asked `in`, and what is walked is a list, a tuple or a dict's insertion order.
+const SD: usize = 0;
+const EN: usize = 1;
+const MC: usize = 2;
+const IE: usize = 3;
+const IL: usize = 4;
+
+fn planted(x: u8) -> bool {
+    let on = PLANT.load(Relaxed) == x;
+    if on {
+        tick(session::REL_PLANT);
+    }
+    on
+}
+
+/// `g + tail`, read when it's emitted, as Python's `+` is: `_guard`'s list can still be filling.
+fn with_tail(g: &Bound<'_, PyAny>, tail: &[i32]) -> PyResult<Vec<i32>> {
+    let mut v: Vec<i32> = g.extract()?;
+    v.extend_from_slice(tail);
+    Ok(v)
+}
+
+/// `(e.func, len(e.args))`, the key of `_xheads`.
+fn head<'py>(e: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyTuple>> {
+    let p = e.py();
+    (e.getattr(intern!(p, "func"))?, e.getattr(intern!(p, "args"))?.len()?).into_pyobject(p)
+}
+
+/// `x in cand or x in xside`.
+fn mergeable(cand: &Bound<'_, PyAny>, xside: &Bound<'_, PyAny>, x: &Bound<'_, PyAny>) -> PyResult<bool> {
+    Ok(cand.contains(x)? || xside.contains(x)?)
+}
+
+fn rational_flag(x: &Bound<'_, PyAny>) -> PyResult<bool> {
+    x.getattr(intern!(x.py(), "is_Rational"))?.is_truthy()
+}
+
+/// What C2c's methods share.
+struct Cx<'a, 'py> {
+    rel: &'a Bound<'py, PyAny>,
+    s: &'a Bound<'py, PyAny>,
+    c: &'a SessionCore,
+    h: &'a Hooks,
+}
+
+impl<'py> Cx<'_, 'py> {
+    fn dict(&self, name: &Bound<'py, pyo3::types::PyString>) -> PyResult<Bound<'py, PyDict>> {
+        self.rel.getattr(name)?.cast_into::<PyDict>().map_err(Into::into)
+    }
+
+    fn solver(&self) -> PyResult<Bound<'py, PyAny>> {
+        self.s.getattr(intern!(self.s.py(), "solver"))
+    }
+
+    /// `structural(e)`: the term's row if it has one. No row is an ordinary answer, and that read goes to Python's own function.
+    fn structural(&self, e: &Bound<'py, PyAny>) -> PyResult<bool> {
+        let p = e.py();
+        match term_of(self.c, self.h, e)? {
+            Some(l) => read(p, self.h, &l, |t, i| t.read_structural(i)),
+            None => self.h.euf_adapter.bind(p).getattr(intern!(p, "structural"))?.call1((e,))?.is_truthy(),
+        }
+    }
+
+    /// `_add_role`.
+    fn add_role(&self, atom: &Bound<'py, PyAny>, g: &Bound<'py, PyAny>, kind: &Bound<'py, PyAny>) -> PyResult<()> {
+        let p = atom.py();
+        tick(session::REL_ADD_ROLE);
+        let map = self.dict(intern!(p, "_roles"))?;
+        match map.get_item(atom)? {
+            None => map.set_item(atom, PyList::new(p, [(kind, g)])?)?,
+            Some(roles) => {
+                for r in roles.try_iter()? {
+                    let (k, h) = two(&r?)?;
+                    if k.eq(kind)? && h.eq(g)? {
+                        return Ok(());
+                    }
+                }
+                roles.call_method1(intern!(p, "append"), ((kind, g),))?;
+            }
+        }
+        if planted(DROP_ADD_ROLE) {
+            return Ok(());
+        }
+        if let Some(info) = self.dict(intern!(p, "_info"))?.get_item(atom)? {
+            self.apply_role(atom, &info, kind, g)?;
+        }
+        Ok(())
+    }
+
+    /// `_apply_role`.
+    fn apply_role(&self, atom: &Bound<'py, PyAny>, info: &Bound<'py, PyAny>, kind: &Bound<'py, PyAny>, g: &Bound<'py, PyAny>) -> PyResult<()> {
+        let p = atom.py();
+        tick(session::REL_APPLY_ROLE);
+        let (twins, lterms, eterms) = (info.get_item(0)?, info.get_item(1)?, info.get_item(2)?);
+        if twins.is_truthy()? {
+            let Some(var) = self.c.custom_direct(atom)? else { return Err(PyKeyError::new_err(atom.clone().unbind())) };
+            for tw in twins.try_iter()? {
+                let (t, guard) = two(&tw?)?;
+                let t: i32 = t.extract()?;
+                let mut c1: Vec<i32> = guard.extract()?;
+                c1.extend(with_tail(g, &[-var, t])?);
+                self.c.emit_direct(p, &c1)?;
+                if planted(DROP_APPLY_ROLE) {
+                    continue;
+                }
+                let mut c2: Vec<i32> = guard.extract()?;
+                c2.extend(with_tail(g, &[var, -t])?);
+                self.c.emit_direct(p, &c2)?;
+            }
+        }
+        let link = kind.eq(intern!(p, "link"))?;
+        if link {
+            for u in lterms.try_iter()? {
+                self.tsource(&u?, IL, g)?;
+            }
+            for u in eterms.try_iter()? {
+                self.tsource(&u?, IE, g)?;
+            }
+        }
+        if atom.getattr(intern!(p, "pred"))?.ne(intern!(p, "eq"))? || !eterms.is_truthy()? || kind.eq(intern!(p, "iface"))? {
+            return Ok(());
+        }
+        let expr = atom.getattr(intern!(p, "expr"))?;
+        if link {
+            self.tsource(&self.rel.getattr(intern!(p, "_link_of"))?.get_item(atom)?, SD, g)?;
+            let first = expr.get_item(0)?;
+            let side = if is_number(self.c, self.h, &first)? { first } else { expr.get_item(1)? };
+            self.tsource(&side, SD, g)
+        } else {
+            for e in expr.try_iter()? {
+                let e = e?;
+                let rational = match e.getattr_opt(intern!(p, "is_Rational"))? {
+                    Some(x) => x.is_truthy()?,
+                    None => false,
+                };
+                if !rational && !planted(DROP_CANDIDACY) {
+                    self.tsource(&e, EN, g)?;
+                }
+                self.tsource(&e, SD, g)?;
+            }
+            Ok(())
+        }
+    }
+
+    /// `_tsource`.
+    fn tsource(&self, u: &Bound<'py, PyAny>, k: usize, g: &Bound<'py, PyAny>) -> PyResult<()> {
+        let p = u.py();
+        tick(session::REL_TSOURCE);
+        let map = self.dict(intern!(p, "_tsrc"))?;
+        let key = (u, k).into_pyobject(p)?;
+        match map.get_item(&key)? {
+            None => map.set_item(&key, PyList::new(p, [g])?)?,
+            Some(lst) => {
+                if lst.get_item(-1)?.is(g) {
+                    return Ok(());
+                }
+                lst.call_method1(intern!(p, "append"), (g,))?;
+            }
+        }
+        if let Some(tv) = self.dict(intern!(p, "_tv"))?.get_item(u)? {
+            let v: i32 = tv.get_item(k)?.extract()?;
+            if v != 0 {
+                if planted(DROP_TSOURCE) {
+                    return Ok(());
+                }
+                self.c.emit_direct(p, &with_tail(g, &[v])?)?;
+            } else if k < MC && tv.get_item(MC)?.extract::<i32>()? != 0 {
+                self.tvar(u, k)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// `_tvar`.
+    fn tvar(&self, u: &Bound<'py, PyAny>, k: usize) -> PyResult<i32> {
+        let p = u.py();
+        tick(session::REL_TVAR);
+        let map = self.dict(intern!(p, "_tv"))?;
+        let tv = match map.get_item(u)? {
+            Some(t) => t,
+            None => {
+                let t = PyList::new(p, [0, 0, 0, 0, 0])?.into_any();
+                map.set_item(u, &t)?;
+                t
+            }
+        };
+        let v: i32 = tv.get_item(k)?.extract()?;
+        if v != 0 {
+            return Ok(v);
+        }
+        let v = fresh(self.s, self.c, true)?;
+        tv.set_item(k, v)?;
+        let tsrc = self.dict(intern!(p, "_tsrc"))?;
+        if k == MC {
+            for j in [SD, EN] {
+                let w: i32 = tv.get_item(j)?.extract()?;
+                if w != 0 {
+                    if !planted(DROP_TVAR_MC) {
+                        self.c.emit_direct(p, &[-w, v])?;
+                    }
+                } else if tsrc.contains((u, j))? {
+                    self.tvar(u, j)?;
+                }
+            }
+            return Ok(v);
+        }
+        if let Some(lst) = tsrc.get_item((u, k))? {
+            for g in lst.try_iter()? {
+                if planted(DROP_TVAR) {
+                    continue;
+                }
+                self.c.emit_direct(p, &with_tail(&g?, &[v])?)?;
+            }
+        }
+        if k == SD || k == EN {
+            let m: i32 = tv.get_item(MC)?.extract()?;
+            if m != 0 && !planted(DROP_TVAR_MC) {
+                self.c.emit_direct(p, &[-v, m])?;
+            }
+        }
+        Ok(v)
+    }
+
+    /// `_share_guard`.
+    fn share_guard(&self, u: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyList>> {
+        tick(session::REL_SHARE_GUARD);
+        let il = self.tvar(u, IL)?;
+        let ie = self.tvar(u, IE)?;
+        if planted(SHARE_GUARD_ONE) {
+            return PyList::new(u.py(), [-il]);
+        }
+        PyList::new(u.py(), [-il, -ie])
+    }
+
+    /// `_congruent`.
+    fn congruent(&self, node: &Bound<'py, PyAny>) -> PyResult<bool> {
+        let p = node.py();
+        tick(session::REL_CONGRUENT);
+        let Some(others) = self.dict(intern!(p, "_xheads"))?.get_item(head(node)?)? else { return Ok(false) };
+        if others.len()? < 2 {
+            return Ok(false);
+        }
+        if self.rel.getattr(intern!(p, "_xadapter"))?.call_method1(intern!(p, "term_of"), (node,))?.is_none()
+            && !self.rel.getattr(intern!(p, "num_sel"))?.contains(node)?
+        {
+            return Ok(false);
+        }
+        let (cand, xside) = (self.rel.getattr(intern!(p, "_xcand"))?, self.rel.getattr(intern!(p, "_xside"))?);
+        let args = node.getattr(intern!(p, "args"))?;
+        for o in others.try_iter()? {
+            let o = o?;
+            if o.is(node) || o.eq(node)? {
+                continue;
+            }
+            let mut differ = false;
+            let mut broke = false;
+            for pair in args.try_iter()?.zip(o.getattr(intern!(p, "args"))?.try_iter()?) {
+                let (a, b) = (pair.0?, pair.1?);
+                if a.eq(&b)? {
+                    continue;
+                }
+                if !(mergeable(&cand, &xside, &a)? && mergeable(&cand, &xside, &b)?) || (rational_flag(&a)? && rational_flag(&b)?) {
+                    broke = true;
+                    break;
+                }
+                differ = true;
+            }
+            if !broke && differ {
+                return Ok(!planted(CONGRUENT_NEVER));
+            }
+        }
+        Ok(false)
+    }
+
+    /// `_engage_transfer`. The theory's class is read at each call, as Python's `from ... import` is: `backend` and tests replace it.
+    fn engage_transfer(&self) -> PyResult<()> {
+        let p = self.rel.py();
+        tick(session::REL_ENGAGE);
+        if !self.s.getattr(intern!(p, "engine"))?.getattr(intern!(p, "transfer"))?.is_truthy()? {
+            return Ok(());
+        }
+        let mut ad = None;
+        for spec in self.rel.getattr(intern!(p, "specs"))?.try_iter()? {
+            let spec = spec?;
+            if !spec.getattr(intern!(p, "guarded"))?.is_truthy()? {
+                let a = self.rel.call_method1(intern!(p, "_adapter"), (&spec,))?;
+                if a.getattr_opt(intern!(p, "node_term"))?.is_some() {
+                    ad = Some(a);
+                    break;
+                }
+            }
+        }
+        let Some(ad) = ad else { return Ok(()) };
+        let class = p.import(intern!(p, "satassume.theories.transfer"))?.getattr(intern!(p, "TransferTheory"))?;
+        let solver = self.solver()?;
+        ad.call_method1(intern!(p, "attach"), (&solver,))?;
+        let th = class.call1((ad.getattr(intern!(p, "theory"))?,))?;
+        solver.call_method1(intern!(p, "attach_theory"), (&th,))?;
+        let sel = fresh(self.s, self.c, true)?;
+        th.call_method1(intern!(p, "guard"), (sel,))?;
+        if !planted(DROP_ENGAGE) {
+            solver.call_method1(intern!(p, "register_atom"), (&th, sel, (intern!(p, "enable"),)))?;
+        }
+        self.rel.setattr(intern!(p, "xfer_sel"), sel)?;
+        self.rel.setattr(intern!(p, "_xadapter"), &ad)?;
+        self.rel.setattr(intern!(p, "xfer"), &th)?;
+        self.s.setattr(intern!(p, "xfer"), self.rel)
+    }
+
+    /// `_transfer_terms`.
+    fn transfer_terms(&self) -> PyResult<bool> {
+        let p = self.rel.py();
+        tick(session::REL_TRANSFER_TERMS);
+        let sy = p.import(intern!(p, "sympy"))?;
+        let (basic, expr, rational) = (sy.getattr(intern!(p, "Basic"))?, sy.getattr(intern!(p, "Expr"))?, sy.getattr(intern!(p, "Rational"))?);
+        let rel = self.rel;
+        let (ad, th) = (rel.getattr(intern!(p, "_xadapter"))?, rel.getattr(intern!(p, "xfer"))?);
+        let mut visited = false;
+        let sides = rel.getattr(intern!(p, "_xside"))?;
+        let n = sides.len()?;
+        let from: usize = rel.getattr(intern!(p, "_xterm"))?.extract()?;
+        if from < n {
+            let new = sides.try_iter()?.skip(from).take(n - from).collect::<PyResult<Vec<_>>>()?;
+            rel.setattr(intern!(p, "_xterm"), n)?;
+            for e in &new {
+                if e.is_instance(&rational)? {
+                    let t = ad.call_method1(intern!(p, "term_of"), (e,))?;
+                    if !t.is_none() && !planted(DROP_FIXED) {
+                        let facts = self.h.relations.bind(p).getattr(intern!(p, "_number_facts"))?.call1((self.s.getattr(intern!(p, "engine"))?, e))?;
+                        th.call_method1(intern!(p, "set_fixed"), (t, facts))?;
+                    }
+                    continue;
+                }
+                if e.is_instance(&expr)? && !self.c.base_contains_direct(e)? {
+                    if planted(DROP_TERMS_SIDE) {
+                        continue;
+                    }
+                    self.s.call_method1(intern!(p, "ensure"), (e,))?;
+                    visited = true;
+                }
+            }
+        }
+        let new = ad.call_method1(intern!(p, "terms_since"), (rel.getattr(intern!(p, "_xtcur"))?,))?;
+        let extra = rel.getattr(intern!(p, "_xextra"))?;
+        if new.is_truthy()? || extra.is_truthy()? {
+            let cur: usize = rel.getattr(intern!(p, "_xtcur"))?.extract()?;
+            rel.setattr(intern!(p, "_xtcur"), cur + new.len()?)?;
+            if extra.is_truthy()? {
+                new.call_method1(intern!(p, "extend"), (&extra,))?;
+                extra.call_method0(intern!(p, "clear"))?;
+            }
+            let heads = self.dict(intern!(p, "_xheads"))?;
+            let counted = rel.getattr(intern!(p, "_xcounted"))?;
+            // A dict, as Python's: distinct by `==`, in insertion order.
+            let grown = PyDict::new(p);
+            for e in new.try_iter()? {
+                let e = e?;
+                if !counted.contains(&e)? && e.is_instance(&basic)? && self.structural(&e)? {
+                    counted.call_method1(intern!(p, "add"), (&e,))?;
+                    let k = head(&e)?;
+                    match heads.get_item(&k)? {
+                        None => heads.set_item(&k, PyList::new(p, [&e])?)?,
+                        Some(h) => {
+                            h.call_method1(intern!(p, "append"), (&e,))?;
+                            grown.set_item(&k, p.None())?;
+                        }
+                    }
+                }
+            }
+            if !grown.is_empty() {
+                let hn: i64 = rel.getattr(intern!(p, "_xhn"))?.extract()?;
+                rel.setattr(intern!(p, "_xhn"), hn + 1)?;
+                for k in grown.as_any().try_iter()? {
+                    for e in heads.as_any().get_item(k?)?.try_iter()? {
+                        let e = e?;
+                        if e.is_instance(&expr)? && !self.c.base_contains_direct(&e)? {
+                            if planted(DROP_TERMS) {
+                                continue;
+                            }
+                            self.s.call_method1(intern!(p, "ensure"), (&e,))?;
+                            visited = true;
+                        }
+                    }
+                }
+            }
+        }
+        Ok(visited)
+    }
+
+    /// `_xswitch`. Moved with `sync_transfer`, its only caller.
+    fn xswitch(&self, node: &Bound<'py, PyAny>, t: &Bound<'py, PyAny>) -> PyResult<()> {
+        let p = node.py();
+        tick(session::REL_XSWITCH);
+        let solver = self.solver()?;
+        let th = self.rel.getattr(intern!(p, "xfer"))?;
+        let en = self.tvar(node, EN)?;
+        let sd = self.tvar(node, SD)?;
+        for v in th.call_method1(intern!(p, "switch"), (t, en, sd))?.try_iter()? {
+            let v = v?;
+            if planted(DROP_XSWITCH) {
+                continue;
+            }
+            solver.call_method1(intern!(p, "register_atom"), (&th, v, (intern!(p, "on"),)))?;
+        }
+        Ok(())
+    }
+
+    /// `sync_transfer`. `slots` is read past its view: a custom atom's slot is built only for Python to see it isn't a tuple.
+    fn sync_transfer(&self) -> PyResult<()> {
+        let p = self.rel.py();
+        let rel = self.rel;
+        tick(session::REL_SYNC_TRANSFER);
+        let mut i: usize = rel.getattr(intern!(p, "_xslot"))?.extract()?;
+        let n = self.c.n_slots_direct();
+        let nside = rel.getattr(intern!(p, "_xsides_n"))?;
+        if i >= n && nside.eq(rel.getattr(intern!(p, "_xnsides"))?)? && rel.getattr(intern!(p, "_xhn"))?.eq(rel.getattr(intern!(p, "_xhseen"))?)? {
+            return Ok(());
+        }
+        let r = self.h.relations.bind(p);
+        let npred: usize = r.getattr(intern!(p, "NPRED"))?.extract()?;
+        let sy = p.import(intern!(p, "sympy"))?;
+        let (basic, rational, nan) = (sy.getattr(intern!(p, "Basic"))?, sy.getattr(intern!(p, "Rational"))?, sy.getattr(intern!(p, "nan"))?);
+        let pend = rel.getattr(intern!(p, "_xpend"))?;
+        while i < n {
+            if let Some(node) = self.c.block_direct(p, i) {
+                if node.is_instance(&basic)? && !node.call_method1(intern!(p, "has"), (&nan,))?.is_truthy()? {
+                    pend.call_method1(intern!(p, "append"), ((&node, i),))?;
+                }
+                i += npred;
+            } else {
+                i += 1;
+            }
+        }
+        rel.setattr(intern!(p, "_xslot"), n)?;
+        rel.setattr(intern!(p, "_xnsides"), &nside)?;
+        rel.setattr(intern!(p, "_xhseen"), rel.getattr(intern!(p, "_xhn"))?)?;
+        let cand = rel.getattr(intern!(p, "_xcand"))?;
+        let part = rel.getattr(intern!(p, "_xpart"))?;
+        let xside = self.dict(intern!(p, "_xside"))?;
+        let ad = rel.getattr(intern!(p, "_xadapter"))?;
+        let solver = self.solver()?;
+        let th = rel.getattr(intern!(p, "xfer"))?;
+        let polar: i32 = r.getattr(intern!(p, "BASIS_INDEX"))?.get_item(intern!(p, "polar"))?.extract()?;
+        let mut changed = true;
+        while changed && pend.is_truthy()? {
+            changed = false;
+            let keep = PyList::empty(p);
+            for entry in pend.try_iter()? {
+                let entry = entry?;
+                let (node, b) = two(&entry)?;
+                let b: i32 = b.extract()?;
+                let lv: i64 = match xside.get_item(&node)? {
+                    Some(x) => x.extract()?,
+                    None => 0,
+                };
+                if lv == 2 || (self.structural(&node)? && self.congruent(&node)?) {
+                    cand.call_method1(intern!(p, "add"), (&node,))?;
+                    changed = true;
+                    let t = ad.call_method1(intern!(p, "node_term"), (&node,))?;
+                    self.c.ensure_vars_direct(p, b + npred as i32 - 1)?;
+                    let is_rational = node.is_instance(&rational)?;
+                    // `_number_basis` is a sorted tuple.
+                    let preds: Vec<i32> = if is_rational {
+                        r.getattr(intern!(p, "_number_basis"))?.call1((self.s.getattr(intern!(p, "engine"))?, &node))?.extract()?
+                    } else {
+                        (0..npred as i32).collect()
+                    };
+                    let full = !is_rational || preds.len() == npred;
+                    for k in preds {
+                        if k != polar || !part.contains(&node)? {
+                            if k == 0 && planted(DROP_SYNC) {
+                                continue;
+                            }
+                            let tag = if full { (&t, k).into_pyobject(p)?.into_any() } else { (&t, k, true).into_pyobject(p)?.into_any() };
+                            solver.call_method1(intern!(p, "register_atom"), (&th, b + k, tag, false))?;
+                        }
+                    }
+                    if !is_rational {
+                        self.xswitch(&node, &t)?;
+                    }
+                    continue;
+                }
+                if lv == 1 && !part.contains(&node)? {
+                    part.call_method1(intern!(p, "add"), (&node,))?;
+                    let t = ad.call_method1(intern!(p, "node_term"), (&node,))?;
+                    if !planted(DROP_SYNC_POLAR) {
+                        solver.call_method1(intern!(p, "register_atom"), (&th, b + polar, (&t, polar, true), false))?;
+                    }
+                    self.xswitch(&node, &t)?;
+                }
+                keep.append(&entry)?;
+            }
+            pend.set_item(pyo3::types::PySlice::full(p), &keep)?;
+        }
+        self.congruence_pairs()
+    }
+
+    /// `_congruence_pairs`. Groups are walked in `_xheads`' insertion order and pairs by position.
+    fn congruence_pairs(&self) -> PyResult<()> {
+        let p = self.rel.py();
+        let rel = self.rel;
+        tick(session::REL_CONGRUENCE_PAIRS);
+        let (xside, cand, done) = (rel.getattr(intern!(p, "_xside"))?, rel.getattr(intern!(p, "_xcand"))?, rel.getattr(intern!(p, "_xpairs"))?);
+        for group in rel.getattr(intern!(p, "_xheads"))?.call_method0(intern!(p, "values"))?.try_iter()? {
+            let group = group?.cast_into::<PyList>()?;
+            let n = group.len();
+            if n < 2 {
+                continue;
+            }
+            for j in 1..n {
+                let g2 = group.get_item(j)?;
+                let g2_args = g2.getattr(intern!(p, "args"))?;
+                for f in group.get_slice(0, j).iter() {
+                    let key = (&f, &g2).into_pyobject(p)?;
+                    if done.contains(&key)? {
+                        continue;
+                    }
+                    let mut diff = Vec::new();
+                    // Python's `ok`: Some(true), Some(false), or None for two distinct rationals.
+                    let mut ok = Some(true);
+                    for pair in f.getattr(intern!(p, "args"))?.try_iter()?.zip(g2_args.try_iter()?) {
+                        let (x, y) = (pair.0?, pair.1?);
+                        if x.eq(&y)? {
+                            continue;
+                        }
+                        if rational_flag(&x)? && rational_flag(&y)? {
+                            ok = None;
+                            break;
+                        }
+                        if !(mergeable(&cand, &xside, &x)? && mergeable(&cand, &xside, &y)?) {
+                            ok = Some(false);
+                            break;
+                        }
+                        diff.push((x, y));
+                    }
+                    if ok.is_none() || (ok == Some(true) && !diff.is_empty()) {
+                        done.call_method1(intern!(p, "add"), (&key,))?;
+                    }
+                    if ok != Some(true) || diff.is_empty() {
+                        continue;
+                    }
+                    let mut body = vec![-self.tvar(&f, IE)?, -self.tvar(&g2, IE)?];
+                    for (x, y) in &diff {
+                        body.push(-self.tvar(x, MC)?);
+                        body.push(-self.tvar(y, MC)?);
+                    }
+                    let mut c1 = body.clone();
+                    c1.push(self.tvar(&f, EN)?);
+                    self.c.emit_direct(p, &c1)?;
+                    if planted(DROP_CONGRUENCE) {
+                        continue;
+                    }
+                    let mut c2 = body;
+                    c2.push(self.tvar(&g2, EN)?);
+                    self.c.emit_direct(p, &c2)?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Runs `f` with `rel`'s session. A callback can come back in; the core is frozen, so holding this borrow across one is safe.
+fn with_cx<'py, T>(rel: &Bound<'py, PyAny>, f: impl FnOnce(&Cx<'_, 'py>) -> PyResult<T>) -> PyResult<T> {
+    let h = hooks()?;
+    let (s, c) = session_of(rel.py(), &h, rel)?;
+    let c = c.borrow();
+    f(&Cx { rel, s: &s, c: &c, h: &h })
+}
+
+#[pyfunction]
+fn rel_add_role<'py>(rel: &Bound<'py, PyAny>, atom: &Bound<'py, PyAny>, g: &Bound<'py, PyAny>, kind: &Bound<'py, PyAny>) -> PyResult<()> {
+    with_cx(rel, |x| x.add_role(atom, g, kind))
+}
+
+#[pyfunction]
+fn rel_apply_role<'py>(rel: &Bound<'py, PyAny>, atom: &Bound<'py, PyAny>, info: &Bound<'py, PyAny>, kind: &Bound<'py, PyAny>, g: &Bound<'py, PyAny>) -> PyResult<()> {
+    with_cx(rel, |x| x.apply_role(atom, info, kind, g))
+}
+
+#[pyfunction]
+fn rel_tsource<'py>(rel: &Bound<'py, PyAny>, u: &Bound<'py, PyAny>, k: usize, g: &Bound<'py, PyAny>) -> PyResult<()> {
+    with_cx(rel, |x| x.tsource(u, k, g))
+}
+
+#[pyfunction]
+fn rel_tvar<'py>(rel: &Bound<'py, PyAny>, u: &Bound<'py, PyAny>, k: usize) -> PyResult<i32> {
+    with_cx(rel, |x| x.tvar(u, k))
+}
+
+#[pyfunction]
+fn rel_share_guard<'py>(rel: &Bound<'py, PyAny>, u: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyList>> {
+    with_cx(rel, |x| x.share_guard(u))
+}
+
+#[pyfunction]
+fn rel_congruent<'py>(rel: &Bound<'py, PyAny>, node: &Bound<'py, PyAny>) -> PyResult<bool> {
+    with_cx(rel, |x| x.congruent(node))
+}
+
+#[pyfunction]
+fn rel_engage_transfer(rel: &Bound<'_, PyAny>) -> PyResult<()> {
+    with_cx(rel, |x| x.engage_transfer())
+}
+
+#[pyfunction]
+fn rel_transfer_terms(rel: &Bound<'_, PyAny>) -> PyResult<bool> {
+    with_cx(rel, |x| x.transfer_terms())
+}
+
+#[pyfunction]
+fn rel_sync_transfer(rel: &Bound<'_, PyAny>) -> PyResult<()> {
+    with_cx(rel, |x| x.sync_transfer())
+}
+
+#[pyfunction]
+fn rel_xswitch<'py>(rel: &Bound<'py, PyAny>, node: &Bound<'py, PyAny>, t: &Bound<'py, PyAny>) -> PyResult<()> {
+    with_cx(rel, |x| x.xswitch(node, t))
+}
+
+#[pyfunction]
+fn rel_congruence_pairs(rel: &Bound<'_, PyAny>) -> PyResult<()> {
+    with_cx(rel, |x| x.congruence_pairs())
+}
+
 /// The link alone, for its tests.
 #[pyfunction]
 fn rel_link_probe(core: &Bound<'_, SessionCore>, x: &Bound<'_, PyAny>) -> PyResult<Option<u32>> {
@@ -819,5 +1480,16 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(rel_eq_infinity, m)?)?;
     m.add_function(wrap_pyfunction!(rel_interpret, m)?)?;
     m.add_function(wrap_pyfunction!(rel_link, m)?)?;
-    m.add_function(wrap_pyfunction!(rel_selectors_of, m)?)
+    m.add_function(wrap_pyfunction!(rel_selectors_of, m)?)?;
+    m.add_function(wrap_pyfunction!(rel_add_role, m)?)?;
+    m.add_function(wrap_pyfunction!(rel_apply_role, m)?)?;
+    m.add_function(wrap_pyfunction!(rel_tsource, m)?)?;
+    m.add_function(wrap_pyfunction!(rel_tvar, m)?)?;
+    m.add_function(wrap_pyfunction!(rel_share_guard, m)?)?;
+    m.add_function(wrap_pyfunction!(rel_congruent, m)?)?;
+    m.add_function(wrap_pyfunction!(rel_engage_transfer, m)?)?;
+    m.add_function(wrap_pyfunction!(rel_transfer_terms, m)?)?;
+    m.add_function(wrap_pyfunction!(rel_sync_transfer, m)?)?;
+    m.add_function(wrap_pyfunction!(rel_xswitch, m)?)?;
+    m.add_function(wrap_pyfunction!(rel_congruence_pairs, m)?)
 }

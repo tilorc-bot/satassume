@@ -333,10 +333,76 @@ def _rel_eq_infinity(self, var, atom):
     return sa_solver.rel_eq_infinity(self, var, atom)
 
 
+def _rel_add_role(self, atom, g, kind):
+    if not isinstance(self.session.table, TableView):
+        return PY_REL['_add_role'](self, atom, g, kind)
+    return sa_solver.rel_add_role(self, atom, g, kind)
+
+
+def _rel_apply_role(self, atom, info, kind, g):
+    if not isinstance(self.session.table, TableView):
+        return PY_REL['_apply_role'](self, atom, info, kind, g)
+    return sa_solver.rel_apply_role(self, atom, info, kind, g)
+
+
+def _rel_tsource(self, u, k, g):
+    if not isinstance(self.session.table, TableView):
+        return PY_REL['_tsource'](self, u, k, g)
+    return sa_solver.rel_tsource(self, u, k, g)
+
+
+def _rel_tvar(self, u, k):
+    if not isinstance(self.session.table, TableView):
+        return PY_REL['_tvar'](self, u, k)
+    return sa_solver.rel_tvar(self, u, k)
+
+
+def _rel_share_guard(self, u):
+    if not isinstance(self.session.table, TableView):
+        return PY_REL['_share_guard'](self, u)
+    return sa_solver.rel_share_guard(self, u)
+
+
+def _rel_congruent(self, node):
+    if not isinstance(self.session.table, TableView):
+        return PY_REL['_congruent'](self, node)
+    return sa_solver.rel_congruent(self, node)
+
+
+def _rel_engage_transfer(self):
+    if not isinstance(self.session.table, TableView):
+        return PY_REL['_engage_transfer'](self)
+    return sa_solver.rel_engage_transfer(self)
+
+
+def _rel_transfer_terms(self):
+    if not isinstance(self.session.table, TableView):
+        return PY_REL['_transfer_terms'](self)
+    return sa_solver.rel_transfer_terms(self)
+
+
+def _rel_sync_transfer(self):
+    if not isinstance(self.session.table, TableView):
+        return PY_REL['sync_transfer'](self)
+    return sa_solver.rel_sync_transfer(self)
+
+
+def _rel_xswitch(self, node, t):
+    if not isinstance(self.session.table, TableView):
+        return PY_REL['_xswitch'](self, node, t)
+    return sa_solver.rel_xswitch(self, node, t)
+
+
+def _rel_congruence_pairs(self):
+    if not isinstance(self.session.table, TableView):
+        return PY_REL['_congruence_pairs'](self)
+    return sa_solver.rel_congruence_pairs(self)
+
+
 #: Python's own methods, for a session with no core: `satassume/ref.py`, the reference, keeps Python's `VarTable` under `Relations`,
 #: as `_rust_call` already allows for the compiler.
 PY_REL = {}
-#: Step 5b's C2a and C2b: these `Relations` methods run in `relations_core.rs`. SLICE_REL=py keeps them here over the same core.
+#: Step 5b's C2a, C2b and C2c: these `Relations` methods run in `relations_core.rs`. SLICE_REL=py keeps them here over the same core.
 #: Among themselves they call each other directly in Rust; these are for what's still Python. `_guard`, `_bound` and `_eq_infinity` have
 #: no Python caller left under Rust, and stay here so nothing can reach Python's copy by accident.
 _REL_METHODS = {
@@ -345,10 +411,24 @@ _REL_METHODS = {
     '_mention_number': _rel_mention_number, '_link_integer': _rel_link_integer,
     '_fresh': _rel_fresh, '_interpret': _rel_interpret, '_guard': _rel_guard, '_bound': _rel_bound, '_link': _rel_link,
     'selectors_of': _rel_selectors_of, '_eq_infinity': _rel_eq_infinity,
+    '_add_role': _rel_add_role,
+    '_apply_role': _rel_apply_role,
+    '_tsource': _rel_tsource,
+    '_tvar': _rel_tvar,
+    '_share_guard': _rel_share_guard,
+    '_congruent': _rel_congruent,
+    '_engage_transfer': _rel_engage_transfer,
+    '_transfer_terms': _rel_transfer_terms,
+    'sync_transfer': _rel_sync_transfer,
+    '_xswitch': _rel_xswitch,
+    '_congruence_pairs': _rel_congruence_pairs,
 }
 #: Plants that live in `relations_core.rs`.
 _REL_PLANTS = ('link-none', 'drop-order-sides', 'drop-order-infinite', 'drop-trichotomy', 'drop-interpret', 'drop-guard',
-               'drop-bound', 'drop-link', 'drop-selector', 'drop-eq-infinity', 'fresh-not-inert', 'fresh-skew', 'skip-trichotomy')
+               'drop-bound', 'drop-link', 'drop-selector', 'drop-eq-infinity', 'fresh-not-inert', 'fresh-skew', 'skip-trichotomy',
+               'drop-add-role', 'drop-apply-role', 'drop-candidacy', 'drop-tsource', 'drop-tvar', 'drop-tvar-mc', 'drop-engage', 'drop-terms',
+               'drop-terms-side', 'drop-fixed', 'drop-sync', 'drop-sync-polar', 'drop-xswitch', 'drop-congruence', 'congruent-never',
+               'share-guard-one')
 
 
 def _install_relations():

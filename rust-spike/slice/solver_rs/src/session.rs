@@ -14,7 +14,7 @@ use pyo3::types::{PyBool, PyDict, PyList, PySet, PyTuple};
 use crate::compile::{self, block_lits, Cx, Def, Kind, Need, F, R};
 use crate::formula_py::PyP;
 
-const NAMES: [&str; 43] = [
+const NAMES: [&str; 54] = [
     "py:var", "py:dvar", "py:node", "py:compile", "py:literal", "py:table", "rs:visit", "rs:add_clause", "rs:ensure_vars",
     "rs:def_implications", "rs:neg_shared", "join", "rs:emit_callback", "refuse:depth", "refuse:convert", "refuse:object", "second:visit", "custom:own",
     "link:hit", "link:resolved", "link:none", "link:no_table", "link:second", "link:no_node",
@@ -22,6 +22,8 @@ const NAMES: [&str; 43] = [
     "rel:var", "rel:plant_fired",
     "rel:fresh", "rel:interpret", "rel:guard", "rel:bound", "rel:link", "rel:selectors_of", "rel:eq_infinity",
     "link:calls", "link:cross_current", "link:cross_hash", "link:cross_term_id",
+    "rel:add_role", "rel:apply_role", "rel:tsource", "rel:tvar", "rel:share_guard", "rel:congruent", "rel:engage_transfer",
+    "rel:transfer_terms", "rel:sync_transfer", "rel:xswitch", "rel:congruence_pairs",
 ];
 const VAR: usize = 0;
 const DVAR: usize = 1;
@@ -66,6 +68,17 @@ pub(crate) const LINK_CALLS: usize = 39;
 pub(crate) const LINK_CROSS_CURRENT: usize = 40;
 pub(crate) const LINK_CROSS_HASH: usize = 41;
 pub(crate) const LINK_CROSS_TERM_ID: usize = 42;
+pub(crate) const REL_ADD_ROLE: usize = 43;
+pub(crate) const REL_APPLY_ROLE: usize = 44;
+pub(crate) const REL_TSOURCE: usize = 45;
+pub(crate) const REL_TVAR: usize = 46;
+pub(crate) const REL_SHARE_GUARD: usize = 47;
+pub(crate) const REL_CONGRUENT: usize = 48;
+pub(crate) const REL_ENGAGE: usize = 49;
+pub(crate) const REL_TRANSFER_TERMS: usize = 50;
+pub(crate) const REL_SYNC_TRANSFER: usize = 51;
+pub(crate) const REL_XSWITCH: usize = 52;
+pub(crate) const REL_CONGRUENCE_PAIRS: usize = 53;
 
 /// Deeper formulas compile on Python, over this same table. Python's own limit depends on the caller's stack, so it isn't
 /// reproduced: its deepest shape is `Implies`, 3 frames a level (first failure at depth 330 from a bare stack, limit 1000), so
@@ -73,7 +86,7 @@ pub(crate) const LINK_CROSS_TERM_ID: usize = 42;
 const FORMULA_DEPTH: u32 = 64;
 
 thread_local! {
-    static COUNTS: [Cell<u64>; 43] = const { [const { Cell::new(0) }; 43] };
+    static COUNTS: [Cell<u64>; 54] = const { [const { Cell::new(0) }; 54] };
     /// Each session's serial, for the link's memo: a pointer could alias a dead session's.
     static SERIAL: Cell<u64> = const { Cell::new(0) };
 }
@@ -322,6 +335,24 @@ impl SessionCore {
         let (i, e) = self.atom_fields(a)?;
         let Some(n) = self.known(&e)? else { return Ok(None) };
         Ok(self.st.borrow().custom.get(&(i, n)).copied())
+    }
+
+    /// `node in s.base`, for a method that moved here.
+    pub(crate) fn base_contains_direct(&self, node: &Bound<'_, PyAny>) -> PyResult<bool> {
+        Ok(self.known(node)?.is_some_and(|n| self.st.borrow().visited(n) != 0))
+    }
+
+    /// `len(table.slots)`.
+    pub(crate) fn n_slots_direct(&self) -> usize {
+        self.st.borrow().slots.len()
+    }
+
+    /// `slots[v][0]` when `v` is a block's first variable, and None for anything else.
+    pub(crate) fn block_direct<'py>(&self, p: Python<'py>, v: usize) -> Option<Bound<'py, PyAny>> {
+        match self.st.borrow().slots[v] {
+            Slot::Block(n, b) if b as usize == v => Some(self.objs.borrow()[n as usize].clone_ref(p).into_bound(p)),
+            _ => None,
+        }
     }
 
     /// `Session.emit`.
