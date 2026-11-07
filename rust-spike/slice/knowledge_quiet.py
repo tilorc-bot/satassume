@@ -1,7 +1,7 @@
 """knowledge_quiet.py {fire|rust WL [--limit N]} under the atoms family: can a raise reach the two quiet handlers unseen?
 
 fire: sa-port-25's quiet_fire.py, unchanged, with `knowledge_live.install()` and handler_count installed in this process.
-rust: finds, in workload WL, the first query where Rust's `atom_units`, `units` or conversion runs inside either `try`
+rust: finds, in workload WL, the first query where Rust's `symbol_units` or `constant_units` ("atom_units"), `units` or conversion runs inside either `try`
   (engine.py:1906's, sympy_api.py:1107's), then plants a ValueError at that call on that query. Each must escape as
   KnowledgeFault with the counter at 0: that's the claim that a Rust failure can't turn into a quiet answer. A combination no
   query reached prints "not reached", which is not a pass. Then the same three raises from a forced nest: the check itself
@@ -78,9 +78,13 @@ def rust(wl, limit):
         def const_basis(self):
             return self.k.const_basis()
 
-        def atom_units(self, table, i):
+        def symbol_units(self, table, i):
             hook[0]("atom_units")
-            return self.k.atom_units(table, i)
+            return self.k.symbol_units(table, i)
+
+        def constant_units(self, table, i):
+            hook[0]("atom_units")
+            return self.k.constant_units(table, i)
 
         def units(self, facts):
             hook[0]("units")

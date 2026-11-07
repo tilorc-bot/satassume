@@ -36,6 +36,8 @@ COUNTS = collections.Counter()
 #: With `shadow=True`: (kind, repr of the term, field, Rust's, Python's), the first few of each run's differences.
 MISMATCHES = []
 MAX_MISMATCHES = 50
+#: (kind, id, exception type) of the first few reads that raised, across queries.
+RAISED = []
 
 
 class KnowledgeFault(BaseException):
@@ -43,15 +45,16 @@ class KnowledgeFault(BaseException):
 
 
 class _Query:
-    __slots__ = ('table', 'ids', 'objects', 'kept')
+    __slots__ = ('table', 'ids', 'objects', 'kept', 'counts', 'raised')
 
     def __init__(self, c):
         if isinstance(c, convert.Kept):
-            self.kept, self.table, self.ids, self.objects = c.reason, None, None, None
+            self.kept, self.table, self.ids, self.objects, self.counts, self.raised = c.reason, None, None, None, {}, ()
         else:
             self.kept = None
             self.table = sa_solver.TermTable(c.tables)
-            self.ids, self.objects = c.ids, c.objects
+            self.ids, self.objects, self.counts = c.ids, c.objects, c.counts
+            self.raised = c.raised
 
 
 _local = threading.local()
@@ -171,6 +174,11 @@ def install(shadow=False, data=None):
             return py_ask(proposition, assumptions, eng)
         finally:
             stack.pop()
+            # The reads this query really asked for, so `read_raised` here is never a forced read.
+            for name, n in q.counts.items():
+                if n and (name.startswith('read:') or name in ('read_raised', 'read_term_missing')):
+                    COUNTS[name] += n
+            RAISED[len(RAISED):] = list(q.raised)[:max(0, MAX_MISMATCHES - len(RAISED))]
 
     sympy_api._ask = _ask
 

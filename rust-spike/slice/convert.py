@@ -89,14 +89,15 @@ class Kept:
 
 class Converted:
     """`tables`: for sa_solver.TermTable. `ids`: {term: id} by SymPy's hash and ==. `objects`: term by id."""
-    __slots__ = ('__dict__', 'tables', 'ids', 'objects', 'counts', 'classes')
+    __slots__ = ('__dict__', 'tables', 'ids', 'objects', 'counts', 'classes', 'raised')
 
-    def __init__(self, tables, ids, objects, counts, classes):
+    def __init__(self, tables, ids, objects, counts, classes, raised):
         self.tables = tables
         self.ids = ids
         self.objects = objects
         self.counts = counts
         self.classes = classes
+        self.raised = raised
 
 
 class _NotInTable(Exception):
@@ -463,4 +464,4 @@ def convert(proposition, assumptions, eng):
     w.enc(settings, sets)
     tables = dict(strings=w.strings, classes=w.class_rows, terms=rows, powers=powers, settings=sets, formula=form,
                   n_classes=len(w.classes), n_terms=len(w.objects), n_opaque=len(w.opaque), reads=w.read)
-    return Converted(tables, w.ids, w.objects, w.counts, w.classes)
+    return Converted(tables, w.ids, w.objects, w.counts, w.classes, w.raised)
