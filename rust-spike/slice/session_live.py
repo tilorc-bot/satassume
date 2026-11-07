@@ -248,6 +248,64 @@ def _dvar_raw(self, d, node, need, link=False):
     return self.table.core.dvar_raw_py(d, node, need, link)
 
 
+def _fault(site, text):
+    """`relations_core.rs`'s own failure: counted, and past every `except Exception` on the engine's path."""
+    import term_live
+    term_live.COUNTS['fault'] += 1
+    return term_live.TermFault(f'{site}: {text}')
+
+
+def _rel_closed_extended_real(self, e):
+    return sa_solver.rel_closed_extended_real(self, e)
+
+
+def _rel_order_sides(self, var, atom):
+    return sa_solver.rel_order_sides(self, var, atom)
+
+
+def _rel_order_infinite(self, var, sides):
+    return sa_solver.rel_order_infinite(self, var, sides)
+
+
+def _rel_trichotomy(self, var, atom):
+    return sa_solver.rel_trichotomy(self, var, atom)
+
+
+def _rel_mention_number(self, e):
+    return sa_solver.rel_mention_number(self, e)
+
+
+def _rel_link_integer(self, ad, e, g):
+    return sa_solver.rel_link_integer(self, ad, e, g)
+
+
+#: Step 5b's C2a: these `Relations` methods run in `relations_core.rs`. SLICE_REL=py keeps them here over the same core.
+_REL_METHODS = {
+    '_closed_extended_real': _rel_closed_extended_real, '_order_sides': _rel_order_sides,
+    '_order_infinite': _rel_order_infinite, '_trichotomy': _rel_trichotomy,
+    '_mention_number': _rel_mention_number, '_link_integer': _rel_link_integer,
+}
+#: Plants that live in `relations_core.rs`.
+_REL_PLANTS = ('link-none', 'drop-order-sides', 'drop-order-infinite', 'drop-trichotomy')
+
+
+def _install_relations():
+    """Returns the undo."""
+    import term_live
+    from satassume import relations
+    from satassume.theories.euf import euf_adapter
+    R = relations.Relations
+    saved = {n: R.__dict__[n] for n in _REL_METHODS}
+    sa_solver.rel_install(term_live, relations, euf_adapter, _fault)
+    for n, f in _REL_METHODS.items():
+        setattr(R, n, f)
+
+    def undo():
+        for n, f in saved.items():
+            setattr(R, n, f)
+    return undo
+
+
 def _rust_call(table, emit, dv):
     """Whether Rust can make this call, and the `emit` it has to call back: `None` means `Session.emit` itself, which Rust does
     directly. `assume_formula` passes its own `emit`, which adds the selector; Rust calls that one, so it never has to know."""
@@ -286,8 +344,11 @@ def install():
     S.base = property(_base_get, _base_set)
     S.node, S.var, S.dvar, S._dvar, S._core_visit = _node, _var, _dvar_public, _dvar_raw, _core_visit
     engine.VarTable, engine.compile_formula, engine.formula_literal = TableView, _compile_formula, _formula_literal
+    undo_rel = _install_relations() if os.environ.get('SLICE_REL', 'rust') == 'rust' else None
 
     def undo():
+        if undo_rel is not None:
+            undo_rel()
         for n, v in saved.items():
             if v is None:
                 delattr(S, n)
@@ -311,6 +372,8 @@ def from_env():
             atexit.register(_write_report, os.environ['SESSION_REPORT'])
         if os.environ.get('SLICE_SESSION_PLANT'):
             PLANT[0] = os.environ['SLICE_SESSION_PLANT']
+            if PLANT[0] in _REL_PLANTS:
+                sa_solver.rel_plant(PLANT[0])
         return install()
     return None
 

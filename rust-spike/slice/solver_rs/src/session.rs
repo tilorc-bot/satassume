@@ -14,9 +14,12 @@ use pyo3::types::{PyBool, PyDict, PyList, PySet, PyTuple};
 use crate::compile::{self, block_lits, Cx, Def, Kind, Need, F, R};
 use crate::formula_py::PyP;
 
-const NAMES: [&str; 18] = [
+const NAMES: [&str; 32] = [
     "py:var", "py:dvar", "py:node", "py:compile", "py:literal", "py:table", "rs:visit", "rs:add_clause", "rs:ensure_vars",
     "rs:def_implications", "rs:neg_shared", "join", "rs:emit_callback", "refuse:depth", "refuse:convert", "refuse:object", "second:visit", "custom:own",
+    "link:hit", "link:resolved", "link:none", "link:no_table", "link:second", "link:no_node",
+    "rel:closed_extended_real", "rel:order_sides", "rel:order_infinite", "rel:trichotomy", "rel:mention_number", "rel:link_integer",
+    "rel:var", "rel:plant_fired",
 ];
 const VAR: usize = 0;
 const DVAR: usize = 1;
@@ -36,6 +39,20 @@ const REFUSE_CONVERT: usize = 14;
 const REFUSE_OBJECT: usize = 15;
 const SECOND_VISIT: usize = 16;
 const CUSTOM_OWN: usize = 17;
+pub(crate) const LINK_HIT: usize = 18;
+pub(crate) const LINK_RESOLVED: usize = 19;
+pub(crate) const LINK_NONE: usize = 20;
+pub(crate) const LINK_NO_TABLE: usize = 21;
+pub(crate) const LINK_SECOND: usize = 22;
+pub(crate) const LINK_NO_NODE: usize = 23;
+pub(crate) const REL_CLOSED: usize = 24;
+pub(crate) const REL_ORDER_SIDES: usize = 25;
+pub(crate) const REL_ORDER_INFINITE: usize = 26;
+pub(crate) const REL_TRICHOTOMY: usize = 27;
+pub(crate) const REL_MENTION: usize = 28;
+pub(crate) const REL_LINK_INTEGER: usize = 29;
+const REL_VAR: usize = 30;
+pub(crate) const REL_PLANT: usize = 31;
 
 /// Deeper formulas compile on Python, over this same table. Python's own limit depends on the caller's stack, so it isn't
 /// reproduced: its deepest shape is `Implies`, 3 frames a level (first failure at depth 330 from a bare stack, limit 1000), so
@@ -43,10 +60,12 @@ const CUSTOM_OWN: usize = 17;
 const FORMULA_DEPTH: u32 = 64;
 
 thread_local! {
-    static COUNTS: [Cell<u64>; 18] = const { [const { Cell::new(0) }; 18] };
+    static COUNTS: [Cell<u64>; 32] = const { [const { Cell::new(0) }; 32] };
+    /// Each session's serial, for the link's memo: a pointer could alias a dead session's.
+    static SERIAL: Cell<u64> = const { Cell::new(0) };
 }
 
-fn tick(i: usize) {
+pub(crate) fn tick(i: usize) {
     COUNTS.with(|c| c[i].set(c[i].get() + 1));
 }
 
@@ -162,6 +181,8 @@ pub struct SessionCore {
     /// A weak reference to the shell: the shell reaches this object and the solver reaches the shell through its theories,
     /// and a strong one here is an edge the collector can't see.
     shell: Py<PyAny>,
+    /// Keys the link's memo on the per-query table, which outlives no query but can see several sessions.
+    pub(crate) serial: u64,
     nids: Py<PyDict>,
     /// The object per node id, as Python's slots keep it: the one passed to `node_base`, so it can still change until then.
     objs: RefCell<Vec<Py<PyAny>>>,
@@ -265,6 +286,34 @@ impl SessionCore {
             log_join(self as *const Self as usize, n, first.bind(x.py()), x)?;
         }
         Ok(Some(n))
+    }
+
+    /// `x`'s node, for the link: no new node, no `join` tick, and nothing chosen about which object a slot holds.
+    pub(crate) fn node_quiet(&self, x: &Bound<'_, PyAny>) -> PyResult<Option<u32>> {
+        match self.nids.bind(x.py()).get_item(x)? {
+            Some(v) => Ok(Some(v.extract()?)),
+            None => Ok(None),
+        }
+    }
+
+    /// `Session.var` for a method that moved here: what `var` does, past the view Python's `Session` calls.
+    pub(crate) fn var_direct(&self, pred: &Bound<'_, PyAny>, node: &Bound<'_, PyAny>) -> PyResult<i32> {
+        tick(REL_VAR);
+        let p = pred.py();
+        let (i, n) = (self.pred_id(p, pred)?, self.nid_of(node)?);
+        self.var_id(p, i, n, node, || PyKeyError::new_err(pred.clone().unbind()))
+    }
+
+    /// `table.custom.get`, for a method that moved here.
+    pub(crate) fn custom_direct(&self, a: &Bound<'_, PyAny>) -> PyResult<Option<i32>> {
+        let (i, e) = self.atom_fields(a)?;
+        let Some(n) = self.known(&e)? else { return Ok(None) };
+        Ok(self.st.borrow().custom.get(&(i, n)).copied())
+    }
+
+    /// `Session.emit`.
+    pub(crate) fn emit_direct(&self, p: Python<'_>, clause: &[i32]) -> PyResult<()> {
+        self.emit(p, clause)
     }
 
     fn pred_id(&self, p: Python<'_>, pred: &Bound<'_, PyAny>) -> PyResult<u32> {
@@ -703,6 +752,10 @@ impl SessionCore {
         Ok(SessionCore {
             rules: rules.data.clone(),
             shell,
+            serial: SERIAL.with(|c| {
+                c.set(c.get() + 1);
+                c.get()
+            }),
             nids: PyDict::new(p).unbind(),
             objs: RefCell::new(vec![]),
             refused_object: Cell::new(false),

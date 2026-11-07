@@ -19,6 +19,7 @@ mod map;
 #[path = "../../../lra/port/src/rat.rs"]
 mod rat;
 mod realroots;
+mod relations_core;
 mod rows;
 mod session;
 mod solver;
@@ -568,5 +569,6 @@ fn sa_solver(m: &Bound<'_, PyModule>) -> PyResult<()> {
     realroots::register(m)?;
     rows::register(m)?;
     session::register(m)?;
+    relations_core::register(m)?;
     transfer_py::register(m)
 }

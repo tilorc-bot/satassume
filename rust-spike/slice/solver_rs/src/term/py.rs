@@ -89,7 +89,39 @@ fn lra_counts<'py>(py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
 }
 
 #[pyclass(name = "TermTable")]
-pub struct PyTermTable(TermTable, HashMap<(u8, u32, u32, bool), Py<PyAny>>);
+pub struct PyTermTable(TermTable, HashMap<(u8, u32, u32, bool), Py<PyAny>>, HashMap<(u64, u32), (Py<PyAny>, u32)>);
+
+/// The link's memo and the row reads made after it (`relations_core.rs`). The memo sits here so it dies with the query.
+impl PyTermTable {
+    /// The id for `(session, node)` if the memo holds `x` itself; `Err(())` if it holds another object for that node.
+    pub(crate) fn link_get(&self, session: u64, nid: u32, x: &Bound<'_, PyAny>) -> Result<Option<u32>, ()> {
+        match self.2.get(&(session, nid)) {
+            Some((o, t)) if o.bind(x.py()).is(x) => Ok(Some(*t)),
+            Some(_) => Err(()),
+            None => Ok(None),
+        }
+    }
+
+    pub(crate) fn link_put(&mut self, session: u64, nid: u32, x: &Bound<'_, PyAny>, t: u32) {
+        self.2.insert((session, nid), (x.clone().unbind(), t));
+    }
+
+    pub(crate) fn read_is_rational(&self, t: u32) -> bool {
+        self.0.class_of(TermId(t)).flags & super::table::flag::IS_RATIONAL != 0
+    }
+
+    pub(crate) fn read_is_number(&self, t: u32) -> bool {
+        self.0.is_number_term(TermId(t))
+    }
+
+    pub(crate) fn read_is_nan(&self, t: u32) -> bool {
+        self.0.class_of(TermId(t)).kind == Kind::NaN
+    }
+
+    pub(crate) fn read_structural(&self, t: u32) -> bool {
+        self.0.structural(TermId(t))
+    }
+}
 
 fn req<'py, T: FromPyObjectOwned<'py>>(d: &Bound<'py, PyDict>, k: &str) -> PyResult<T> {
     d.get_item(k)?
@@ -184,7 +216,7 @@ impl PyTermTable {
             req(tables, "n_terms")?,
             Box::new(PyReads(reads)),
         )
-        .map(|t| PyTermTable(t, HashMap::new()))
+        .map(|t| PyTermTable(t, HashMap::new(), HashMap::new()))
         .map_err(|e| PyValueError::new_err(format!("tables refused: {e}")))
     }
 
