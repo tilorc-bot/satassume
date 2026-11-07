@@ -41,6 +41,7 @@ CUR = [None]                # (Converted, TermTable) of the running top-level qu
 DEPTH = [0]
 CHECK_ON = [True]
 SITES = Counter()           # (op, caller file:line, outcome): which sites reach the algebra
+KEY_REFUSED = []            # every key pair Python orders and Rust refuses, both keys kept
 EXAMPLES = {}               # refusal reason: first few (op, operands)
 SAMPLE_DERIVED = 9          # a new derived term is compared against this many of the query's first terms
 
@@ -184,6 +185,7 @@ def check_order(c, table):
             if table.row(i)[2] is None or table.row(j)[2] is None:
                 COUNTS['key-compare-no-key'] += 1
                 continue
+            ka = kb = None
             try:
                 ka, kb = default_sort_key(a), default_sort_key(b)
                 real = -1 if ka < kb else 1 if kb < ka else 0
@@ -194,6 +196,9 @@ def check_order(c, table):
                 got = table.key_cmp(i, j)
             except sa_solver.TermRefuse as e:
                 REFUSED[f'key: {e} / python: {real}'] += 1
+                if len(KEY_REFUSED) < 200:
+                    KEY_REFUSED.append((str(a), str(b), type(a).__name__, type(b).__name__, str(e), real,
+                                        repr(table.row(i)[2]), repr(table.row(j)[2]), str(ka), str(kb)))
             else:
                 if got != real:
                     bad('key-compare', a, b, got, real)
@@ -239,6 +244,20 @@ def operand_id(x, c, table):
     if i is None and isinstance(x, Rational):
         i = table.number(x.p, x.q)
         settle('number', x, i, c, table)
+    return i
+
+
+def known_id(x, c, table, site):
+    """Rust's id of a term a read reached, by the same rule as an operand. An unknown is counted by site and class, every
+    one of them, since first examples alone can't show what the rest are."""
+    try:
+        i = operand_id(x, c, table)
+    except sa_solver.TermRefuse as e:
+        COUNTS[f'unknown:{site}:refused:{e}'] += 1
+        return None
+    if i is None:
+        COUNTS[f'unknown:{site}:{type(x).__name__}'] += 1
+        _example(f'unknown at {site}: {type(x).__name__}', site, x)
     return i
 
 
@@ -448,12 +467,11 @@ def install_algebra():
             c, table = cur
             if isinstance(n, Basic):
                 COUNTS['node:new'] += 1
-                i = c.ids.get(n)
+                i = known_id(n, c, table, 'node')
                 if i is None:
                     COUNTS['node:unknown'] += 1
                     fr = sys._getframe(1)
                     SITES[f'node {_here(fr)} unknown'] += 1
-                    _example('node unknown', 'node', n, type(n).__name__)
                 elif i >= table.n_input:
                     COUNTS['node:derived'] += 1
         return real_node(self, n, demanded)
@@ -462,27 +480,30 @@ def install_algebra():
     real_struct = E.Engine._struct
     real_cone = E.Engine._cone_info
 
-    def cone_id(o, c):
+    def cone_id(o, c, table, site):
         if isinstance(o, Basic):
-            i = c.ids.get(o)
+            i = known_id(o, c, table, site)
             return None if i is None else ('T', i)
-        pred, arg = getattr(o, 'pred', None), getattr(o, 'arg', None)
-        parts = arg if isinstance(arg, Args) else (arg,)
+        if not isinstance(o, F.P):
+            COUNTS[f'unknown:{site}:not-term-or-atom:{type(o).__name__}'] += 1
+            _example(f'unknown at {site}: {type(o).__name__}', site, o)
+            return None
+        parts = o.expr if isinstance(o.expr, Args) else (o.expr,)
         ids = []
         for a in parts:
-            i = c.ids.get(a) if isinstance(a, Basic) else None
+            i = known_id(a, c, table, site + ':P-arg')
             if i is None:
                 return None
             ids.append(i)
-        return ('P', str(pred), tuple(ids))
+        return ('P', str(o.pred), tuple(ids))
 
     def struct_(self, o):
         r = real_struct(self, o)
         cur = CUR[0]
         if cur is not None and CHECK_ON[0]:
-            c, _ = cur
+            c, table = cur
             COUNTS['struct:calls'] += 1
-            ci = cone_id(o, c)
+            ci = cone_id(o, c, table, 'struct')
             if ci is None:
                 COUNTS['struct:unknown-object'] += 1
                 _example('struct unknown object', 'struct', o, type(o).__name__)
@@ -497,13 +518,13 @@ def install_algebra():
         r = real_cone(self, d)
         cur = CUR[0]
         if cur is not None and CHECK_ON[0]:
-            c, _ = cur
+            c, table = cur
             cn, w, _rel = r
             COUNTS['cone:calls'] += 1
             if cn is None:
                 COUNTS['cone:over-budget'] += 1
             else:
-                cids = [cone_id(o, c) for o in cn]
+                cids = [cone_id(o, c, table, 'cone') for o in cn]
                 unknown = sum(x is None for x in cids)
                 COUNTS['cone:objects'] += len(cids)
                 COUNTS['cone:unknown-objects'] += unknown
@@ -592,10 +613,9 @@ def install():
                 COUNTS['keys-used'] += 1
                 COUNTS['keys-used:' + site] += 1
                 c, table = cur
-                i = c.ids.get(e)
+                i = known_id(e, c, table, 'key')
                 if i is None:
                     COUNTS['keys-used-unknown'] += 1
-                    _example('key of an unknown term', site, e)
                 else:
                     if i >= table.n_input:
                         COUNTS['keys-used-derived'] += 1
@@ -617,4 +637,4 @@ def install():
 
 def report(path):
     with open(path, 'w') as f:
-        json.dump(dict(counts=COUNTS, kept=KEPT, refused=REFUSED, bad=BAD, sites=SITES, examples=EXAMPLES), f, indent=0, sort_keys=True)
+        json.dump(dict(counts=COUNTS, kept=KEPT, refused=REFUSED, bad=BAD, sites=SITES, examples=EXAMPLES, key_refused=KEY_REFUSED), f, indent=0, sort_keys=True)
