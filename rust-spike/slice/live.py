@@ -275,6 +275,19 @@ def main():
     import catch_count
     import state
     catch_count.install()
+    # The whole of both `try`s, by code object. SLICE_PLANT_HANDLER=NAME plants a raise so a run can show this install fires.
+    import handler_count
+    handler_count.install(args.out + ".handlers")
+    plant = {"assumption_lits": (engine.Session, "assumption_lits"), "complete_check": (engine.Engine, "_complete_check"),
+             "formula": (sympy_api, "_formula"), "verdict": (engine.Engine, "verdict")}.get(os.environ.get("SLICE_PLANT_HANDLER"))
+    if plant:
+        real = getattr(*plant)
+
+        def _planted(*a, **k):      # `ask` calls `_formula` before `_consistent` does: raising there never reaches the handler
+            if plant[1] == "_formula" and sys._getframe(1).f_code.co_name != "_consistent":
+                return real(*a, **k)
+            raise ValueError("planted")
+        setattr(*plant, _planted)
     lra_groups = {}
     T.digest = state.digest
     pairs = load(args.wl)
@@ -364,6 +377,7 @@ def main():
                         print(f"child of query {key} died, wait status {status}", file=sys.stderr, flush=True)
                     continue
             T.solvers = []
+            handler_count.where = key
             if i == q_detail:
                 T.detail = open(f_detail, "w")
             msg = ""
