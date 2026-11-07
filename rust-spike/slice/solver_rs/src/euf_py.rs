@@ -10,22 +10,49 @@
 use crate::euf::{Asserted, Euf, Handle, Key, Label, Op, PopError, Term};
 use pyo3::exceptions::{PyIndexError, PyKeyError, PyOverflowError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyInt, PyList, PySlice};
+use pyo3::types::{PyDict, PyInt, PyList, PySlice, PyTuple};
 use pyo3::{PyTraverseError, PyVisit};
 use std::cell::RefCell;
 
-/// Object to handle, first seen first. Component 0's term table replaces this.
+/// Python's `_keys` key to handle, first seen first. The key is the same tuple `_keys` uses, so what is one head is
+/// decided per namespace and arity, as there: `1` as a constant and `1.0` as a value are two keys, each keeping its own
+/// object. Component 0's term table replaces this.
 struct Handles(Py<PyDict>);
 
 impl Handles {
-    fn of(&self, p: Python<'_>, o: &Bound<'_, PyAny>) -> PyResult<Handle> {
+    fn get(&self, p: Python<'_>, key: Bound<'_, PyTuple>) -> PyResult<Handle> {
         let d = self.0.bind(p);
-        if let Some(h) = d.get_item(o)? {
+        if let Some(h) = d.get_item(&key)? {
             return Ok(Handle(h.extract()?));
         }
         let h = d.len() as u32;
-        d.set_item(o, h)?;
+        d.set_item(key, h)?;
         Ok(Handle(h))
+    }
+
+    fn constant(&self, p: Python<'_>, o: &Bound<'_, PyAny>) -> PyResult<Handle> {
+        self.get(p, PyTuple::new(p, [pyo3::intern!(p, "c").as_any(), o])?)
+    }
+
+    fn value(&self, p: Python<'_>, o: &Bound<'_, PyAny>) -> PyResult<Handle> {
+        self.get(p, PyTuple::new(p, [pyo3::intern!(p, "v").as_any(), o])?)
+    }
+
+    fn head(&self, p: Python<'_>, o: &Bound<'_, PyAny>, n: usize) -> PyResult<Handle> {
+        self.get(p, PyTuple::new(p, [pyo3::intern!(p, "h").as_any(), o, n.into_pyobject(p)?.as_any()])?)
+    }
+}
+
+/// `term`'s `args`: left out, or whatever was passed. `None` is passed, not left out, and raises as `tuple(None)` does.
+enum Args<'py> {
+    Absent,
+    Given(Bound<'py, PyAny>),
+}
+
+impl<'a, 'py> FromPyObject<'a, 'py> for Args<'py> {
+    type Error = PyErr;
+    fn extract(o: pyo3::Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        Ok(Args::Given(o.to_owned()))
     }
 }
 
@@ -146,14 +173,14 @@ impl PyEuf {
         MembersView { th: slf }
     }
 
-    #[pyo3(signature = (head, args=None))]
-    fn term(&self, p: Python<'_>, head: &Bound<'_, PyAny>, args: Option<&Bound<'_, PyAny>>) -> PyResult<Term> {
+    #[pyo3(signature = (head, args=Args::Absent))]
+    fn term<'py>(&self, p: Python<'py>, head: &Bound<'py, PyAny>, args: Args<'py>) -> PyResult<Term> {
         let args: Vec<Bound<'_, PyAny>> = match args {
-            None => Vec::new(),
-            Some(a) => a.try_iter()?.collect::<PyResult<_>>()?,
+            Args::Absent => Vec::new(),
+            Args::Given(a) => a.try_iter()?.collect::<PyResult<_>>()?,
         };
         if args.is_empty() {
-            let h = self.handles.of(p, head)?;
+            let h = self.handles.constant(p, head)?;
             return Ok(self.core.borrow_mut().constant(h));
         }
         let mut ids = Vec::with_capacity(args.len());
@@ -163,7 +190,7 @@ impl PyEuf {
                 None => return Err(PyValueError::new_err(format!("not a term id: {}", a.repr()?))),
             }
         }
-        let h = self.handles.of(p, head)?;
+        let h = self.handles.head(p, head, ids.len())?;
         let mut t = self.core.borrow_mut().head(h, ids.len() as u32);
         for a in ids {
             let (nt, new) = self.core.borrow_mut().apply(t, a);
@@ -176,7 +203,7 @@ impl PyEuf {
     }
 
     fn value(&self, p: Python<'_>, key: &Bound<'_, PyAny>) -> PyResult<Term> {
-        let h = self.handles.of(p, key)?;
+        let h = self.handles.value(p, key)?;
         Ok(self.core.borrow_mut().value(h))
     }
 
@@ -280,7 +307,8 @@ impl PyEuf {
     /// head into text, so the two sides can't differ in how they print one. Reads only.
     fn dump<'py>(&self, p: Python<'py>, show: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyDict>> {
         // Python first, with no borrow held: `show` can be anything
-        let shown: Vec<String> = self.handles.0.bind(p).keys().iter().map(|o| show.call1((o,))?.extract()).collect::<PyResult<_>>()?;
+        let shown: Vec<String> =
+            self.handles.0.bind(p).keys().iter().map(|k| show.call1((k.get_item(1)?,))?.extract()).collect::<PyResult<_>>()?;
         let c = self.core.borrow();
         let mut keys: Vec<(Term, Key)> = c.keys.iter().map(|(k, t)| (*t, *k)).collect();
         keys.sort_unstable_by_key(|x| x.0);
