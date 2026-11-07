@@ -25,6 +25,7 @@ ap.add_argument("--so")
 ap.add_argument("--handlers", help="count the quiet Exception handlers here: handler_count.py")
 ap.add_argument("--term", choices=["py", "table", "keys", "terms"], default="py", help="conversion on the real path: term_live.py")
 ap.add_argument("--term-plant", help="term_live.PLANT, one of its test plants")
+ap.add_argument("--lra", action="store_true", help="lra_adapter's term work from Rust: lra_live.py. Needs --term")
 ap.add_argument("--term-out", help="term_live's counts, as JSON")
 ap.add_argument("--discard", action="store_true", help="a planted refusal in each query's run: term_discard.py. Needs --term")
 ap.add_argument("--no-rollback", action="store_true", help="plant: with --discard, skip the rollback")
@@ -107,6 +108,9 @@ if a.term != "py":
     term_live.install(keys=a.term == "keys", terms=a.term == "terms")
     term_live.PLANT[0] = a.term_plant
     term_live.PLANT_NO_ROLLBACK[0] = a.no_rollback
+    if a.lra:
+        import lra_live
+        lra_live.install()
     if a.discard:
         import term_discard as TD
         TD.install()
@@ -155,6 +159,9 @@ with open(a.out, "w") as fh:
 if a.term_out:
     import term_live
     with open(a.term_out, "w") as fh:
-        fh.write(TD.report() if TD else json.dumps(dict(term=term_live.counts(), refusals=term_live.REFUSALS), indent=0, sort_keys=True))
+        out = dict(term=term_live.counts(), refusals=term_live.REFUSALS)
+        if a.lra:
+            out.update(lra=lra_live.counts(), check_bad=lra_live.CHECK_BAD[:50], scaffold_bad=lra_live.SCAFFOLD_BAD[:20])
+        fh.write(TD.report() if TD else json.dumps(out, indent=0, sort_keys=True, default=repr))
 if a.counts:
     json.dump(dict(counts, queries=len(pairs)), open(a.counts, "w"), indent=1, sort_keys=True)

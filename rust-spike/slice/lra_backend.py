@@ -18,13 +18,15 @@ sys.path.insert(0, os.environ.get("SLICE_SO") or os.path.dirname(os.path.abspath
 import sa_solver  # noqa: E402
 
 from satassume.theories.lra import lra as _lra  # noqa: E402
-from satassume.theories.lra.constfield import Undecided, num  # noqa: E402
+from satassume.theories.lra.constfield import Undecided  # noqa: E402
 from satassume.theories.lra.lra import Integral, LRATheory as PyLRA, Negated, _ONE, _ZERO  # noqa: E402
 
 #: What the state dump supplies to a private read; anything else missing is a plain AttributeError.
 _STATE = frozenset(("_key", "_var_of", "_slack_of", "_forms", "_lo", "_up", "_lo_r", "_up_r", "_vq", "_vd", "_rows",
                     "_cols", "_atoms", "_ground", "_atoms_on", "_assigned", "_diseqs", "_ints", "_ints_on", "_int_lits",
                     "_trail", "_lims", "_dirty", "_pending_ground", "_fields", "_int_memo"))
+
+num = sa_solver.cf_num
 
 counts = {"sessions": 0, "views": 0}
 

@@ -2102,6 +2102,28 @@ fn py_bool<'py>(py: Python<'py>, b: bool) -> Bound<'py, PyAny> {
     pyo3::types::PyBool::new(py, b).to_owned().into_any()
 }
 
+/// `num`, constfield.py:827. The Fraction and Element fast paths and an exact int stay here. Everything else is what
+/// `Fraction(x)` accepts, a list only Python's constructor holds, so it asks that constructor, counted.
+pub static NUM_PY: AtomicU64 = AtomicU64::new(0);
+
+#[pyfunction]
+pub fn cf_num<'py>(x: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    let py = x.py();
+    let (fr, _) = fraction_types(py)?;
+    let t = x.get_type();
+    if t.is(fr.bind(py)) || t.is(&module(py)?.getattr("Element")?) {
+        return Ok(x.clone());
+    }
+    if x.is_instance_of::<pyo3::types::PyFloat>() {
+        return Err(PyTypeError::new_err(format!("not an exact number: {}", x.repr()?)));
+    }
+    if x.is_exact_instance_of::<pyo3::types::PyInt>() {
+        return rat_to_py(py, &Rat::norm_big(x.extract()?, BigInt::one()));
+    }
+    NUM_PY.fetch_add(1, Ordering::Relaxed);
+    fr.bind(py).call1((x,))
+}
+
 /// One operation of `Num`, on Python numbers. `b` is a number, or an int for `pow` and `enclosure`.
 #[pyfunction]
 #[pyo3(signature = (name, a, b=None))]
@@ -2216,6 +2238,7 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(pyo3::wrap_pyfunction!(cf_gcd_guard_count, m)?)?;
     m.add_function(pyo3::wrap_pyfunction!(cf_refresh_limits, m)?)?;
     m.add_function(pyo3::wrap_pyfunction!(cf_op, m)?)?;
+    m.add_function(pyo3::wrap_pyfunction!(cf_num, m)?)?;
     m.add_function(pyo3::wrap_pyfunction!(cf_poly_op, m)?)?;
     m.add_function(pyo3::wrap_pyfunction!(cf_native_enclose, m)?)?;
     Ok(())

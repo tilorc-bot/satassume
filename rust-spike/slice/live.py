@@ -336,6 +336,8 @@ def main():
     if backend:     # Component 4 slice A: rust mode only, so Python's column stays the control. SLICE_TERM=py keeps it off.
         import term_live
         term_live.from_env()
+        import lra_live     # Slice D. SLICE_LRA_TERM=py keeps it off.
+        lra_live.from_env()
     if args.check == "plain":
         if backend:
             backend.install()

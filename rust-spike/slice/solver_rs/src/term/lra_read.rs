@@ -297,7 +297,8 @@ impl<'py> Lra<'_, 'py> {
         }
         // c, rest = e.as_coeff_Mul(); a Float head has c.is_Rational False, a head of 1 has c == 1, and neither splits.
         if flags & IS_MUL != 0 {
-            if flags & flag::PLAIN_OPS == 0 {
+            // `Mul` itself overrides `as_coeff_Mul`, which is what this reads, so PLAIN_OPS can't speak for it: a subclass can.
+            if self.kind(e) != Kind::Mul {
                 return Err(E::Refuse(Refuse("lra: a Mul class with its own coefficient split")));
             }
             let head = args.first().copied();
@@ -345,7 +346,7 @@ impl<'py> Lra<'_, 'py> {
             Ok(v) => Ok(Some(v)),
             Err(E::Unread) => Ok(None),
             Err(E::Cf(x)) if x.is_undecided() || x.is_zero_div() => Ok(None),
-            Err(E::Py(x)) => {
+            Err(E::Cf(CfErr::Py(x))) | Err(E::Py(x)) => {
                 let py = self.py;
                 let m = module(py)?;
                 if x.is_instance(py, &m.getattr("Undecided")?)

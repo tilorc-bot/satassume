@@ -81,6 +81,7 @@ fn lra_counts<'py>(py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
     d.set_item("closed_mul_scaffold", c.closed_mul_scaffold.load(Relaxed))?;
     d.set_item("product_terms", c.product_terms.load(Relaxed))?;
     d.set_item("keys", c.keys.load(Relaxed))?;
+    d.set_item("num_python", crate::constfield::NUM_PY.load(Relaxed))?;
     Ok(d)
 }
 

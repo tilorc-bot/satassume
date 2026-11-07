@@ -181,6 +181,9 @@ def _flag():
 
 
 def _install():
+    # `num` has no table to read: it's the same function on every path, so a kept query reads it too.
+    py_num = constfield.num, lra.num
+    constfield.num = lra.num = sa_solver.cf_num
     py_interpret = lra_adapter.interpret
     py_order_sides = lra_adapter.order_sides
     py_integer_form = lra_adapter.integer_form
@@ -273,6 +276,7 @@ def _install():
     def undo():
         (lra_adapter.interpret, lra_adapter.order_sides, lra_adapter.integer_form, lra_adapter.closed_sign,
          lra_adapter._memoized) = saved
+        constfield.num, lra.num = py_num
     return undo
 
 
@@ -303,12 +307,13 @@ def install(check=None, plant=None):
 
 
 def from_env():
-    """SLICE_LRA: `rust` (the default) or `py` (not installed)."""
-    mode = os.environ.get('SLICE_LRA', 'rust')
-    if mode == 'py':
+    """SLICE_LRA_TERM: `rust` (the default) or `py` (not installed). It needs the table, so SLICE_TERM=py keeps it off too.
+    SLICE_LRA is another switch, for the LRA backend."""
+    mode = os.environ.get('SLICE_LRA_TERM', 'rust')
+    if mode == 'py' or os.environ.get('SLICE_TERM') == 'py':
         return None
     if mode != 'rust':
-        print(f'SLICE_LRA={mode}: not a mode', file=sys.stderr)
+        print(f'SLICE_LRA_TERM={mode}: not a mode', file=sys.stderr)
         raise SystemExit(2)
     return install()
 
