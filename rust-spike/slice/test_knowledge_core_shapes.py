@@ -29,6 +29,7 @@ def a(*t):
 CASES = [
     ('core:bound_split', 'core-bound-zero-kept', lambda: Q.positive(a(S(1), m(S.Zero, x))), lambda: Q.real(x)),
     ('core:recip_templates', 'core-recip-any-exp', lambda: Q.positive(a(S(1), Pow(x, 2, evaluate=False))), lambda: Q.real(x)),
+    ('core:imag_templates', 'core-imag-rules-strict', lambda: Q.imaginary(a(m(I, x), m(I, y))), lambda: Q.positive(x) & Q.positive(y)),
     ('core:imag_split', 'core-imag-two-rest', lambda: Q.imaginary(a(m(I, x, y), m(S(2), I))), lambda: Q.positive(x) & Q.positive(y)),
     ('core:_pi_split', 'core-pi-split-second-i', lambda: Q.real(exp(m(I, I, pi, x), evaluate=False)), lambda: Q.integer(x)),
     ('core:_mul_factor_sets', 'core-mul-sets-ipi-any', lambda: Q.real(m(I, pi, x)), lambda: Q.integer(x)),
