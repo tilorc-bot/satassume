@@ -32,6 +32,9 @@ elif args.wl == 'rootof':
 elif args.wl == 'core':
     import knowledge_core_wl
     pairs = knowledge_core_wl.queries()
+elif args.wl == 'f6':
+    import knowledge_f6_wl
+    pairs = knowledge_f6_wl.queries()
 elif args.wl == 'rows':
     import knowledge_rows_wl
     pairs = knowledge_rows_wl.queries()
