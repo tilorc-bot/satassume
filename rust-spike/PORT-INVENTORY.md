@@ -380,7 +380,7 @@ Answer as true, false, none or a status (inconsistent, uninterpreted, budget-lim
 | 0 | Conversion, term table, term algebra | `sympy_api.py`'s conversion part; `domain.py` reads; `registry.py` class walk; `Add`, `Mul`, negation, key from section 3 | Section 9 | D, 1a, 2, 3 | None. Unhandled shapes refuse and stay on Python |
 | 1a | LRA rational: connect the port | `lra.py`, `lra_cert.py` | Solver | D, 0, 2, 3 | Adapter stays Python, calling Rust |
 | 1b | LRA constants | `constfield.py`, with a Rust gcd for `_sympy_inner_gcd` | 1a. Term rows from 0 for `_from_sympy` | 2, 3, 6 | R9 `enclose`: **permanent** |
-| 2 | EUF core | `euf.py` | Solver; terms as handles until 0 lands | D, 0, 1, 3 | `euf_adapter` stays Python |
+| 2 | EUF core | `euf.py` | Solver; terms as handles until 0 lands | D, 0, 1, 3 | `euf_adapter` stays Python. On `rust-slice`: `slice/results/port-2.md` |
 | 3 | Transfer core | `transfer.py`, `EqualitySharing`, `P` | Solver; `BASIS_INDEX` from D; EUF classes, through the Python adapter until 2 | D, 0, 1, 2 | Same |
 | 4 | Relations and adapters | `relations.py`, `lra_adapter.py` and `euf_adapter.py` term work, `scope.py` | 0, 1, 2, 3 | 6, by family. Not 1, 2 or 3 while their interfaces move, since it touches every adapter | Templates and `is_` into Python, until 5 and 6. Takes ids and returns clauses over ids |
 | 5 | Engine, session, relevance | `engine.py`, `knowledge/compile.py`, `state/`, `_keys_rel`, `_Split`, `_relevant`, `_consistent` | 0, 4 | 6, by family | Templates into Python, until 6 |

@@ -26,6 +26,10 @@ ap.add_argument("--handlers", help="count the quiet Exception handlers here: han
 a = ap.parse_args()
 if a.so:
     sys.path.insert(0, a.so)
+    import sa_solver  # before backend, whose own path entry holds the unmutated build; a mutant not loaded is a void control
+    if os.path.dirname(os.path.abspath(sa_solver.__file__)) != os.path.abspath(a.so):
+        sys.exit(f"--so {a.so}: loaded {sa_solver.__file__} instead")
+    print("so", hashlib.sha256(open(sa_solver.__file__, "rb").read()).hexdigest(), file=sys.stderr)
 
 from evalbench.common import workload  # noqa: E402
 from harness.state import reset_module_state  # noqa: E402
