@@ -25,7 +25,7 @@ The fifth failure is the one that didn't move: `test_performance_smoke_300_vars`
 |---|---|---|
 | Suite, Rust solver and Rust EUF | sa-port-7's run on cf1345e's source, read here (`$O/suite-rust-read`, `suite-rust-report.md`); `SLICE_SUITE_SHUFFLE=1`, `-n 4` | **5,959 / 77 / 46 plus 2 failures**, base 5,961 / 77 / 46. By id: 6,125 on both, none added or gone, same 77, same 46, 2 moved |
 | Fresh engine, memos cleared | sa-port-11's `fresh/`, `cmp` here; repeated with the counter in `$O/handlers/` | dev 1,985 and fuzz 3,000 byte-identical, py against rust, each across hash seeds 0 and 1. A sample of orders |
-| `run_live.sh`, final build | `$O/live/`, this clone | **Dev: all 4 MATCH. Fuzz: not finished** (2,149 of 3,000 on `fuzz-py` at 09:46 UTC). It may die with this session. Check for `summary.txt`; if missing, `sh rust-spike/slice/run_live.sh $O/live` |
+| `run_live.sh`, final build | `$O/live/`, this clone | **All 8 comparisons MATCH, final build:** dev 1,985 queries, 918 sessions; fuzz 3,000 queries, 3,133 sessions. Finished 09:51 UTC, `summary.txt` |
 | API fuzz, 35-61 | `$O/mut-api/summary.txt` | 27 of 27 caught, base 0 differences. API fuzzer only |
 | Mutants on the real engine, dev | `$O/mut/table.md` | Below. Fuzz columns not run |
 
@@ -43,7 +43,7 @@ Scored on 42 builds, `$O/mut/m*` (2, 5, 6, 7, 9, the 10 no-catch, 35-61). All bu
 
 ## What's left, in order
 
-1. **Fuzz columns.** Once `$O/live/fuzz-py.jsonl` is complete (3,001 lines, the last a total): `cd rust-spike/slice; . ~/sa-rust-ids-work/env.sh; export PYTHONPATH=$HOME/dev/sa-port-15:$W/sympy:$W/shim; nice -n 10 $PY mutate_live.py $O/mut $O/live --only 2,5,6,7,9,11,17,18,26,27,29,31,32,33,34,35,...,61 --checks fuzz-ans,fuzz-state --jobs 4 --resume`. Score `fuzz-ans` first and `fuzz-state` only on what's left; `fuzz-state` took about 20 minutes a build at this load. `--resume` keeps the dev cells in `results.jsonl`.
+1. **Fuzz columns.** The reference `$O/live/fuzz-py.jsonl` is complete. `cd rust-spike/slice; . ~/sa-rust-ids-work/env.sh; export PYTHONPATH=$HOME/dev/sa-port-15:$W/sympy:$W/shim; nice -n 10 $PY mutate_live.py $O/mut $O/live --only 2,5,6,7,9,11,17,18,26,27,29,31,32,33,34,35,...,61 --checks fuzz-ans,fuzz-state --jobs 4 --resume`. Score `fuzz-ans` first and `fuzz-state` only on what's left; `fuzz-state` took about 20 minutes a build at this load. `--resume` keeps the dev cells in `results.jsonl`.
 2. **Boundary suite column:** `mutate_boundary.py $O/mut $O/boundary --only ... --suite tests/test_euf.py tests/test_euf_adapter.py tests/test_euf_fuzz.py tests/test_transfer*.py` (`$O/mut` holds `base` and `mK`). State the column, and how many of the 10 now get a catch.
 3. **The `_lims` decision** above, then rerun the mixed suite.
 4. **Full suite from this clone with the counter:** `SLICE_SUITE_SHUFFLE=1 PYTEST_N="-n 4" bash rust-spike/slice/run_suite.sh $O/suite-rust rust -p handler_count`. Compare: `$PY $O/suite_diff.py $O/suite-rust ~/sa-rust-ids-work/port-census/pr328-check/suite-rust`.
