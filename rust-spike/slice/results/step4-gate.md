@@ -1,6 +1,6 @@
 # Step 4 gate: settled items (issue 323)
 
-**The gate is not decided.** Live mutant columns, 7 fuzz history runs and the harness compare were still running at 04:32 UTC, 7 Nov. See `HANDOFF-sa-rust-18.md`.
+**The gate is not decided.** Live mutant columns, 6 fuzz history runs and the harness compare were still running at 04:32 UTC, 7 Nov. See `HANDOFF-sa-rust-18.md`.
 
 ## The planner's three numbers
 Run 5: real crate (`sa_solver.so` sha 44577e02), shuffled order, 3 workers, orion. An unshuffled run on the probe build gave the same counts.
@@ -18,18 +18,18 @@ Python on the same run: 6,083 passed, 0 failed. Python solvers made in the Rust 
 - By-name lists: `step4-lists.md`. Full report: `step4-suite-run5.md`.
 
 ## The 11 failing on both: environment, fixed
-The tests set `PYTHONPATH` to the repo root, or run `python -I`, so their subprocesses lost sympy, which was on `PYTHONPATH` only. Added `~/sa-rust-ids-work/venv/lib/python3.12/site-packages/sa_rust_sympy.pth`, outside the clone. Their 5 files: 137 of 137 pass on both backends. **These 11 count in number 1 but aren't evidence about Rust:** they do their work in subprocesses, which don't get the patch.
+The tests set `PYTHONPATH` to the repo root, or run `python -I`, so their subprocesses lost sympy, which was on `PYTHONPATH` only. Added `~/sa-rust-ids-work/venv/lib/python3.12/site-packages/sa_rust_sympy.pth`, outside the clone. Their 5 files: 137 of 137 pass on both backends. **These 11 count in number 1 but aren't evidence about Rust:** they made 0 Rust solvers, and their subprocesses don't get the patch.
 
 ## Re-entry: only a test stub
 Every borrow RuntimeError found raises at `tests/theory_harness.py:242`, in `Recorder.check`, which audits the solver from inside a hook. This covers the 5 that showed only a Hypothesis frame: read from their sub-exceptions, and the text of all 5 in run 5 names line 242.
 - **Adapters:** `LRATheory`, `EUFTheory` and `TransferTheory`, the objects that get hooks, hold no solver reference (rg for `self._solver` and the like hits only `lra_adapter.py` and `euf_adapter.py`, whose objects aren't attached as theories). Read, and consistent with the runs below; not a proof over every path.
 - **Audit off (`SLICE_AUDIT_OFF=1`, 10 theory files, Rust):** 0 borrow errors in 928 tests.
-- **Control:** the same patch on pure Python. Every Rust failure that isn't a missing attribute fails on Python with the same message (hiding the solver breaks the harness's level checks). No test fails on Python and passes on Rust except where Python's failure comes after the attribute Rust lacks.
+- **Control:** the same patch on pure Python. Every Rust failure that isn't a missing attribute fails on Python with the same message (hiding the solver breaks the harness's level checks). No test passes on Rust and fails on Python; the only tests passing on Python and failing on Rust are missing-attribute failures.
 - **`SLICE_AUDIT_OFF=2`** also drops `check_protocol`: of the 18 such tests, 17 pass on both backends, so their answer comparisons ran on Rust. The other, `test_protocol_on_fuzz`, needs the counts that patch removes, and fails the same on both.
 - Of the 46, 44 pass on Rust with the audit off. The other 2: `test_protocol_on_fuzz`, and `test_real_theories_match_fresh_solvers[both]`, which then reads `_trail_lim`.
 - **They stay failures in number 3.** Audit-off is reported apart and isn't part of the numbers. Hook-audit limit: an exception swallowed by `except` inside a hook wouldn't show here.
 
-**One open oddity:** `test_lra_fuzz.py::test_fuzz_entails_and_implied` hit its 120 s guard during data generation in 2 of 5 audit-on Rust runs, after the audit had already failed it. Python passes it, and it passes on Rust in the audit-off-2 run with no timeout. That reads as Hypothesis shrinking a failure under load, but the cause isn't shown.
+**One open oddity:** `test_lra_fuzz.py::test_fuzz_entails_and_implied` has the 120 s guard's TimeoutError in its failure text in 3 of 5 audit-on Rust runs (the two full runs of sa-rust-17 and my run of these 5 alone), and not in the last two. Python passes it, and it passes on Rust in the audit-off-2 run with no timeout. It may be Hypothesis shrinking a failure under load, but the cause isn't shown.
 
 ## "Needs internals": resolved test by test
 All 77 raise in `tests/`, none in `satassume/` or `harness/`, and all pass on Python.
@@ -71,7 +71,7 @@ The audit-off-2 run on the theory files added nothing for 5, 6, 7, 9. **Those 4 
 None occurred: no panic in the run 5 or probe logs, and none in any failure's text. Unfixed.
 
 ## History so far
-`step4-history-interim.md`: all 14 dev runs and the 3 finished fuzz pairs match: 0 answers, 0 end states, 0 streams differ. Query 873's state moves with order on both backends, as the plan requires. **Interim: 5 fuzz rows aren't finished.** `test_history.py` in shuffled order: 135 passed, 15 skipped, 1 xfailed on both; 4,253 Rust solvers.
+`step4-history-interim.md`: all 7 dev pairs and the 2 finished fuzz pairs match: 0 answers, 0 end states, 0 streams differ. Query 873's state moves with order on both backends, as the plan requires. **Interim: 5 fuzz rows aren't finished.** `test_history.py` in shuffled order: 135 passed, 15 skipped, 1 xfailed on both; 4,253 Rust solvers.
 
 ## Run 6
-No `static` or `thread_local` in the crate. The 3 `'static` are lifetimes: `solver.rs:2318` (`dump`'s names), `lib.rs:24` (`py()`), `lib.rs:89` (`PyProps`). Dropped against created: finished rows read 0/0; not yet final for fuzz.
+No `static` or `thread_local` in the crate. The 3 `'static` are lifetimes: `solver.rs:2318` (`dump`'s names), `lib.rs:24` (`py()`), `lib.rs:89` (`PyProps`). Dropped against created: **not measured in step 4.** The `0/0` in `historycmp.py`'s column isn't a count: `backend_created` and `backend_dropped` exist only under `--check raw`. Step 3's raw runs on this same crate read 918 of 918 and 3,133 of 3,133. `boundary.py` also finds 0 solvers or theories alive after drop on the unmutated build.

@@ -5,11 +5,11 @@ Handed off at 04:33 UTC, 7 Nov, at the architect's request. **The gate is not de
 ## Jobs, detached (setsid nohup), surviving this session
 | Job | Finished marker | Progress at handoff | Resumes? |
 |---|---|---|---|
-| History 1 to 4 | `~/sa-rust-ids-work/slice/step4/hist/finished.txt` | 21 of **28** runs (not 56: sa-rust-17's count was wrong). Left: 6 or 7 fuzz runs, about an hour | Yes: `run_history.sh` skips a run whose `.jsonl` has a `"total"` line |
+| History 1 to 4 | `~/sa-rust-ids-work/slice/step4/hist/finished.txt` | 22 of **28** runs (not 56: sa-rust-17's count was wrong). Left: 6 fuzz runs, about an hour by my estimate | Yes: `run_history.sh` skips a run whose `.jsonl` has a `"total"` line |
 | Live mutant columns | `~/sa-rust-ids-work/slice/step4/mut-live/finished.txt` | 44 of 104 cells, base row "no". About 1 to 2 hours | Yes: new `--resume` |
 | Harness presets, run 5 | `~/sa-rust-ids-work/slice/step4/run5-harness-finished.txt` | Rust first, then Python. Duration unknown; each capped at 2 hours | No: rerun the script |
 
-The history job waits on pid 3484873 (`shuffle1-fuzz-rust`), which is in my session. If that dies with me, the wrapper starts anyway and reruns it. Live's timeout per cell is now 2,400 s (was 1,500), for load: a "hang" cell means rerun it, not "caught".
+Live's timeout per cell is now 2,400 s (was 1,500), for load: a "hang" cell means rerun it, not "caught".
 
 If a job has died and its marker is missing, restart it from ~/dev/sa-rust, with `S4=~/sa-rust-ids-work/slice/step4`:
 ```
@@ -21,7 +21,7 @@ Note `env.sh` reassigns `W`, so don't name your own path `W`.
 
 ## What's left, once the markers appear
 From ~/dev/sa-rust: `. ~/sa-rust-ids-work/env.sh; export PYTHONPATH SA_EVAL_DATA PYTHONHASHSEED; S4=~/sa-rust-ids-work/slice/step4`.
-1. **History:** `$PY rust-spike/slice/historycmp.py $S4/hist > rust-spike/slice/results/step4-history.md`, then delete `step4-history-interim.md`. Every row must be finished with 0 differing; read the "against itself" table for query 873. Run 6's dropped against created comes from the same table.
+1. **History:** `$PY rust-spike/slice/historycmp.py $S4/hist > rust-spike/slice/results/step4-history.md`, then delete `step4-history-interim.md`. Every row must be finished with 0 differing; read the "against itself" table for query 873. **Run 6 doesn't come from that table:** its `0/0` column isn't a count, since the counters exist only under `--check raw`. Either run `live.py dev rust OUT --check raw` and the same for fuzz and read `backend_dropped` and `backend_created` in the total, or cite step 3's 918 of 918 and 3,133 of 3,133 on the same crate and say so.
 2. **Live:** `cp $S4/mut-live/table.md rust-spike/slice/results/step4-mutants-live.md`. Base row must read "no". Score 27, 29, 30, 31 in these columns; they're already caught in nested.
 3. **Harness:** `tail -1` each `$S4/run5-harness-{rust,python}.txt` must show solvers made on its own backend (`rust_made`, `py_made`), and rc. There's no compare tool: compare with timings removed: `diff <(sed -E 's/\([0-9.]+s\)//' $S4/run5-harness-rust.txt | head -n -1) <(sed -E 's/\([0-9.]+s\)//' $S4/run5-harness-python.txt | head -n -1)`, and read any mismatch group or differing line one by one. Don't use `--confirm` or `hashseed`: their subprocesses don't get the patch.
 4. **Update `step4-gate.md`:** remove "not decided", fill history, live and harness. Restate the three numbers. Pass rule: every mutant caught, argued equivalent in writing, or stated as not caught. 5, 6, 7, 9 lean on the API fuzzer alone.
