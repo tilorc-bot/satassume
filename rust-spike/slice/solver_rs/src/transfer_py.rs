@@ -7,13 +7,13 @@
 use crate::handle::TermId;
 use crate::pyset::PySetOrder;
 use crate::transfer::{Classes, Pred, SharingCore, TransferCore};
-use pyo3::exceptions::{PyRuntimeError, PyValueError};
+use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::intern;
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::types::{PyDict, PySet, PyTuple};
 use pyo3::{PyTraverseError, PyVisit};
 use std::cell::Cell;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 #[derive(Default)]
 struct Crossings {
@@ -295,30 +295,43 @@ fn transfer_wanted(p: Python<'_>, atoms: &Bound<'_, PyAny>) -> PyResult<bool> {
             return Ok(true);
         }
     }
-    let ids = PyDict::new(p);
-    let mut lts: HashSet<(u32, u32)> = HashSet::new();
-    let mut order = Vec::new();
+    // A real `set`, of the atoms' own `expr`, as Python builds. Which atom is met first is visible when one isn't a pair
+    // (sa-port-25: `lt(1,2), lt(2,1), lt(1,2,3)` is True or ValueError by hash order), and a pair's reverse is found by
+    // `tuple` hash and `==` against whatever `expr` is, so `"ab"` isn't `("a", "b")`.
+    let lts = PySet::empty(p)?;
     for a in &atoms {
         if a.getattr(pred)?.eq(intern!(p, "lt"))? {
-            let sides: Vec<Bound<'_, PyAny>> = a.getattr(intern!(p, "expr"))?.try_iter()?.collect::<PyResult<_>>()?;
-            let [x, y] = <[_; 2]>::try_from(sides).map_err(|s: Vec<_>| {
-                PyValueError::new_err(format!("transfer_wanted: an lt atom with {} sides", s.len()))
-            })?;
-            let mut id = |t: &Bound<'_, PyAny>| -> PyResult<u32> {
-                if let Some(n) = ids.get_item(t)? {
-                    return n.extract();
-                }
-                let n = ids.len() as u32;
-                ids.set_item(t, n)?;
-                Ok(n)
-            };
-            let e = (id(&x)?, id(&y)?);
-            if lts.insert(e) {
-                order.push(e);
-            }
+            lts.add(a.getattr(intern!(p, "expr"))?)?;
         }
     }
-    Ok(order.iter().any(|&(x, y)| lts.contains(&(y, x))))
+    for e in lts.iter() {
+        let (x, y) = unpack2(&e)?;
+        if lts.contains(PyTuple::new(p, [y, x])?)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// `x, y = v`: CPython 3.12's `UNPACK_SEQUENCE`, with its text.
+fn unpack2<'py>(v: &Bound<'py, PyAny>) -> PyResult<(Bound<'py, PyAny>, Bound<'py, PyAny>)> {
+    let p = v.py();
+    let mut it = v.try_iter().map_err(|e| {
+        let plain = e.is_instance_of::<PyTypeError>(p)
+            && !v.get_type().hasattr(intern!(p, "__iter__")).unwrap_or(true)
+            && !v.get_type().hasattr(intern!(p, "__getitem__")).unwrap_or(true);
+        match (plain, v.get_type().name()) {
+            (true, Ok(n)) => PyTypeError::new_err(format!("cannot unpack non-iterable {n} object")),
+            _ => e,
+        }
+    })?;
+    let short = |n: usize| PyValueError::new_err(format!("not enough values to unpack (expected 2, got {n})"));
+    let x = it.next().ok_or_else(|| short(0))??;
+    let y = it.next().ok_or_else(|| short(1))??;
+    if it.next().transpose()?.is_some() {
+        return Err(PyValueError::new_err("too many values to unpack (expected 2)"));
+    }
+    Ok((x, y))
 }
 
 /// For `transfer_fuzz.py`: builds each group by `add`, folds them with `|`, and returns the result's iteration order.

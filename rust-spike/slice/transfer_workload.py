@@ -91,3 +91,45 @@ def queries(seed, n):
         p, ante = _shape(r, base, ts)
         out.append((p, And(*ante)))
     return out
+
+
+# `transfer2:SEED:N`: aimed at what `transfer:`, dev and fuzz leave unrun in Python's transfer.py (sa-port-25): a contradicted
+# fixed fact (`_spread`'s conflict), a repeated `set_fixed`, `check`'s conflict, and more search. Separate, so that
+# `transfer:`'s queries stay what its earlier runs ran.
+TRUE_OF = {"positive": [1, 2, 3, Rational(1, 2)], "negative": [-1, -2, Rational(-1, 3)], "zero": [0], "even": [0, 2, -2],
+           "odd": [1, 3, -1], "integer": [0, 1, 2, -1], "prime": [2, 3], "nonzero": [1, -1, 2],
+           "nonnegative": [0, 1], "nonpositive": [0, -1], "rational": [Rational(1, 2), 1]}
+
+
+def _shape2(r, base, ts):
+    k = r.randrange(6)
+    p = r.choice(sorted(TRUE_OF))
+    n = r.choice(TRUE_OF[p])
+    a, b, c = r.sample(ts, 3)
+    fact = getattr(Q, p)
+    if k == 0:    # the fact's false for the number: fact first, then the equality; and the other way
+        ante = [Not(fact(a)), Q.eq(a, n)]
+        return _unary(r, [a]), ante if r.random() < .5 else ante[::-1]
+    if k == 1:    # the same across a chain, under a split, so it isn't settled at the root
+        return _unary(r, [a, b]), [Or(Q.eq(a, b), Q.eq(a, c)), Q.eq(b, n), Q.eq(c, n), Not(fact(a))]
+    if k == 2:    # two numbers in one class under a split, and one number twice
+        m = r.choice(NUMS)
+        return fact(a), [Or(Q.eq(a, n), Q.eq(b, n)), Or(Q.eq(a, m), Q.eq(b, m)), Q.eq(a, b), Or(fact(b), Not(fact(c)))]
+    if k == 3:    # the equality is only known by congruence or by a reversed order pair, late in the search
+        fn = r.choice([F, H, Abs])
+        x, y = r.sample(base, 2)
+        return fact(fn(y)), [Or(Q.eq(x, y), Q.lt(x, y)), Or(Q.eq(x, y), Q.gt(x, y)), Q.eq(fn(x), n), Not(fact(fn(y)))]
+    if k == 4:    # the proposition carries the contradiction: the fact's atom appears only in the query
+        return Not(fact(a)), [Q.eq(a, b), Or(Q.eq(b, n), Q.eq(b, c)), _unary(r, [c])]
+    # many overlapping splits, for restarts and deep levels
+    cl = []
+    for _ in range(r.randint(3, 6)):
+        u, v = r.sample(ts, 2)
+        cl.append(Or(Q.eq(u, v), _unary(r, [u, v]), Not(_unary(r, [u, v]))))
+    return _unary(r, ts), cl + [Q.eq(a, n)]
+
+
+def queries2(seed, n):
+    r = random.Random(seed)
+    base, ts = _terms()
+    return [(p, And(*ante)) for p, ante in (_shape2(r, base, ts) for _ in range(n))]
