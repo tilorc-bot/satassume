@@ -6,6 +6,7 @@
 //! `on_merge` fires from EUF's own hooks, not from these. If one ever did, pyo3 raises instead of aliasing.
 use crate::handle::TermId;
 use crate::pyset::PySetOrder;
+use crate::term::offline::OfflineData;
 use crate::transfer::{Classes, Pred, SharingCore, TransferCore};
 use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::intern;
@@ -14,6 +15,7 @@ use pyo3::types::{PyDict, PySet, PyTuple};
 use pyo3::{PyTraverseError, PyVisit};
 use std::cell::Cell;
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 #[derive(Default)]
 struct Crossings {
@@ -81,16 +83,39 @@ fn bound<'a, 'py>(p: Python<'py>, euf: &'a Option<Py<PyAny>>) -> PyResult<&'a Bo
     euf.as_ref().map(|e| e.bind(p)).ok_or_else(|| PyRuntimeError::new_err("TransferTheory: EUF was cleared"))
 }
 
+/// `BASIS_INDEX["polar"]`: section 9's offline data, read once at load. It never changes after that and holds no term.
+static POLAR: OnceLock<Pred> = OnceLock::new();
+
+/// Reads component D's file, which refuses on any hash mismatch. Only the first successful call in a process reads it.
+#[pyfunction]
+fn read_offline(path: &str, sources_root: &str, sympy: &str) -> PyResult<()> {
+    if POLAR.get().is_some() {
+        return Ok(());
+    }
+    let data = OfflineData::load(path, sources_root, sympy)
+        .map_err(|e| PyValueError::new_err(format!("offline data refused: {e}")))?;
+    let basis = data.basis().ok_or_else(|| PyValueError::new_err("offline data has no basis"))?;
+    let at = basis
+        .iter()
+        .position(|b| *b == "polar")
+        .ok_or_else(|| PyValueError::new_err("offline data's basis has no polar"))?;
+    let _ = POLAR.set(at as Pred);
+    Ok(())
+}
+
+/// For the check against Python's `BASIS_INDEX`. `None` until `read_offline` has run.
+#[pyfunction]
+fn _polar_index() -> Option<Pred> {
+    POLAR.get().copied()
+}
+
 #[pymethods]
 impl PyTransfer {
     #[new]
     fn new(p: Python<'_>, euf: Py<PyAny>) -> PyResult<Self> {
-        // BASIS_INDEX as Python reads it, until D lands.
-        let polar: Pred = p
-            .import(intern!(p, "satassume.knowledge.rules"))?
-            .getattr(intern!(p, "BASIS_INDEX"))?
-            .get_item(intern!(p, "polar"))?
-            .extract()?;
+        let polar = *POLAR.get().ok_or_else(|| {
+            PyRuntimeError::new_err("TransferTheory: offline data not read; call sa_solver.read_offline first")
+        })?;
         let counts = Crossings::default();
         let core = {
             let view = PyClasses { euf: euf.bind(p), counts: &counts };
@@ -356,5 +381,7 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PySharing>()?;
     m.add_function(wrap_pyfunction!(transfer_wanted, m)?)?;
     m.add_function(wrap_pyfunction!(_pyset_replay, m)?)?;
+    m.add_function(wrap_pyfunction!(read_offline, m)?)?;
+    m.add_function(wrap_pyfunction!(_polar_index, m)?)?;
     Ok(())
 }

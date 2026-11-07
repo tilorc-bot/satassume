@@ -19,7 +19,7 @@ ap = argparse.ArgumentParser()
 ap.add_argument("--seed", type=int, default=1)
 ap.add_argument("--rounds", type=int, default=2000)
 ap.add_argument("--so")
-ap.add_argument("--only", default="pyset,sharing,wanted,wanted_edge,p,theory")
+ap.add_argument("--only", default="basis,pyset,sharing,wanted,wanted_edge,p,theory")
 a = ap.parse_args()
 if a.so:
     sys.path.insert(0, a.so)
@@ -31,6 +31,18 @@ from satassume.sat.theory import EqualitySharing as PySharing  # noqa: E402
 from satassume.theories.euf.euf import EqAtom, EUFTheory  # noqa: E402
 from satassume.theories.transfer import TransferTheory as PyT, transfer_wanted as py_wanted  # noqa: E402
 import transfer_shadow as X  # noqa: E402
+
+# Before any read: a theory built without the offline data must refuse, not guess polar's index.
+try:
+    sa_solver.TransferTheory(EUFTheory())
+    UNREAD = "built"
+except RuntimeError:
+    UNREAD = "refused"
+import sympy  # noqa: E402
+import satassume  # noqa: E402
+
+sa_solver.read_offline(os.path.join(HERE, "offline_data.json"),
+                       os.path.dirname(os.path.dirname(os.path.abspath(satassume.__file__))), sympy.__version__)
 
 if a.so and os.path.dirname(os.path.abspath(sa_solver.__file__)) != os.path.abspath(a.so):
     sys.exit(f"--so {a.so}: loaded {sa_solver.__file__}")
@@ -52,6 +64,14 @@ def py_order(groups):
             s.add(k)
         acc = s if acc is None else acc | s
     return [] if acc is None else list(acc)
+
+
+def part_basis():
+    """Polar's index as read from component D's file, against Python's `BASIS_INDEX`."""
+    got = sa_solver._polar_index()
+    print(f"basis: polar {got}, Python {BASIS_INDEX['polar']}, unread theory {UNREAD}")
+    if got != BASIS_INDEX["polar"] or UNREAD != "refused":
+        raise SystemExit("basis: differs")
 
 
 def part_pyset():
