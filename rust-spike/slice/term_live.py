@@ -397,7 +397,8 @@ def _relation_atom(py):
 
 
 def _termwise(py):
-    """`_termwise` on ids. `d` was built by Python here (`glue_objects`, until slice C), and has to be what Rust builds."""
+    """`_termwise` on ids, for any caller left with a `d` Python built, which has to be what Rust builds. The glue, its only
+    caller on the engine's path, now asks Rust directly: `_glue_objects`."""
     def run(a, b, d):
         q = current()
         ids = _ids(q, '_termwise', a, b, d)
@@ -407,10 +408,6 @@ def _termwise(py):
         if q.table.sub(i, j) != k:
             COUNTS['term:sub-differs'] += 1
             _refuse("termwise: Python's difference isn't Rust's")
-        if PLANT[0] == 'termwise-true':
-            return True
-        if PLANT[0] == 'termwise-false':
-            return False
         got = q.table.termwise(i, j, k)
         if CHECK[0]:
             want = py(a, b, d)
@@ -423,6 +420,61 @@ def _termwise(py):
         return py(a, b, d) if got is None else got
     termwise.__wrapped__ = py
     return termwise
+
+
+def _glue_objects(py):
+    """`glue_objects`' eq branch on ids (slice C): Rust's difference and `_termwise`, and `d` joins the cone's objects only as
+    a rebuilt object, since `_struct` reads SymPy terms until component 5. Which nodes join is what the budget weighs, so a
+    wrong answer here moves weights and can move a verdict near the budget. What the adapters read stays theirs."""
+    term = _guarded('glue_objects', lambda q, a, b: _ids(q, 'glue_objects', a, b))
+
+    def diff(q, u, v, p, m):
+        t = q.table
+        d = t.sub(u, v)
+        if t.is_number_term(d):
+            return None
+        COUNTS['glue:termwise'] += 1
+        wise = True if PLANT[0] == 'termwise-true' else False if PLANT[0] == 'termwise-false' else t.termwise(u, v, d)
+        o = scaffold(q, d, 'glue_objects') if wise else None
+        if CHECK[0]:
+            real = p - m
+            want = None if relations._is_number(real) or not relations._termwise.__wrapped__(p, m, real) else real
+            _check('glue_objects', want == o and type(want) is type(o), p, m, want, o)
+        return o
+    diff = _guarded('glue_objects', diff)
+    numbers = _guarded('glue_objects', lambda q, i, j: q.table.is_number_term(i) or q.table.is_number_term(j))
+
+    def glue_objects(atom, specs, memo):
+        sides = tuple(atom.expr)
+        if atom.pred != 'eq' or len(sides) != 2:
+            return py(atom, specs, memo)
+        q = current()
+        ids = term(q, *sides)
+        if ids is None:
+            return py(atom, specs, memo)
+        i, j = ids
+        a, b = sides
+        k = set()
+        for e in sides:
+            k.add(e)
+            if not relations._is_number(e):
+                k.update(relations.link_objects(e, specs, memo))
+        if not numbers(q, i, j):
+            for u, v, p, m in ((i, j, a, b), (j, i, b, a)):
+                d = diff(q, u, v, p, m)
+                if d is not None:
+                    k.add(d)
+        if specs:
+            try:
+                sat = relations.sympy_atom(atom)
+                for ad in relations._guarded_adapters(specs, memo):
+                    k.update(relations._terms_of(ad, sat, False))
+            except Exception:   # noqa: BLE001 (sides the adapters cannot read): as `glue_objects`
+                pass
+        k.discard(atom)
+        return k
+    glue_objects.__wrapped__ = py
+    return glue_objects
 
 
 def _eq_links(py):
@@ -609,12 +661,14 @@ def _install(keys, terms):
         relations._key = _key_consumer('relations._key', py_key)
         lra_adapter.default_sort_key = _key_consumer('lra_adapter', py_sort)
     py_atom, py_wise, py_links = relations.relation_atom, relations._termwise, relations.Relations._eq_links
+    py_glue = relations.glue_objects
     if terms:
         relations._key = _key_match('relations._key', py_key)
         lra_adapter.default_sort_key = _key_match('lra_adapter', py_sort)
         relations.relation_atom = sympy_api.relation_atom = _relation_atom(py_atom)
         relations._termwise = _termwise(py_wise)
         relations.Relations._eq_links = _eq_links(py_links)
+        relations.glue_objects = engine.glue_objects = _glue_objects(py_glue)
 
     def undo():
         sympy_api._ask = py_ask
@@ -623,6 +677,7 @@ def _install(keys, terms):
         relations.relation_atom = sympy_api.relation_atom = py_atom
         relations._termwise = py_wise
         relations.Relations._eq_links = py_links
+        relations.glue_objects = engine.glue_objects = py_glue
     return undo
 
 

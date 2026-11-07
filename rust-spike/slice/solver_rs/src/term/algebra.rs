@@ -261,6 +261,7 @@ impl TermTable {
         let mut bases: Vec<TermId> = Vec::new();
         let mut unit = false;
         let mut numeric_power = false;
+        let mut own_base: Option<TermId> = None;
         while i < seq.len() {
             let o = seq[i];
             i += 1;
@@ -306,7 +307,7 @@ impl TermTable {
                 }
                 _ => {
                     if c.flags & flag::PLAIN_BASE == 0 {
-                        return Err(Refuse("mul: class has its own as_base_exp"));
+                        own_base = Some(o);
                     }
                     if bases.contains(&o) {
                         return Err(Refuse("mul: factors share a base"));
@@ -318,6 +319,16 @@ impl TermTable {
         }
         if numeric_power && !coeff.is_one() {
             return Err(Refuse("mul: a coefficient beside a numeric-base power"));
+        }
+        // A rational coefficient on one such factor, which has nothing to merge with: `-exp(x)` from `Add.flatten`'s
+        // `Mul(c, s)`. Beside any other factor it can merge, `E` beside `exp(x)` being the case this reason exists for.
+        if let Some(o) = own_base {
+            if factors.len() != 1 {
+                return Err(Refuse("mul: class has its own as_base_exp"));
+            }
+            if !self.own_base_kept(o)? {
+                return Err(Refuse("mul: own as_base_exp, and Mul changes the factor"));
+            }
         }
         if factors.is_empty() {
             return Ok(self.number(&coeff));

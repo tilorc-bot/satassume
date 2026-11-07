@@ -46,7 +46,7 @@ REASONS = (
 T_NONE, T_FALSE, T_TRUE, T_INT, T_BIG, T_STR, T_TUPLE, T_TERM, T_RAT, T_OPAQUE, T_MISS = range(11)
 # What Rust reads lazily: Rust's `Read`, same order. Each can evaluate (surveyed in lazy_probe.py), so nothing here runs in
 # conversion: Rust asks, on the original object, when a key needs it, and memoizes in the table, which dies with the query.
-READS = ('key', 'finite', 'complex', 'power', 'commutative', 'symbol', 'constant')
+READS = ('key', 'finite', 'complex', 'power', 'commutative', 'symbol', 'constant', 'own_base')
 _I64 = 1 << 63
 
 # Kind enum: Rust's `Kind`, same order. Exact class only: a subclass is Other, or Function for a function.
@@ -339,6 +339,12 @@ class _Walk:
             self.raised.append((name, i, type(e).__name__))
             return None
         return out, self.strings
+
+    def _read_own_base(self, t):
+        """Whether `Mul.flatten` keeps this factor, for a class with its own `as_base_exp`. It rebuilds it by `Pow(b, e)`, and
+        drops it if `e.is_zero`. The same construction Python's own run makes for this term, on the input layer's count."""
+        m = Mul(2, t)
+        return type(m) is Mul and len(m.args) == 2 and m.args[1] == t and type(m.args[1]) is type(t)
 
     def _read_key(self, t):
         return default_sort_key(t)

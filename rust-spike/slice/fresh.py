@@ -28,6 +28,7 @@ ap.add_argument("--term-plant", help="term_live.PLANT, one of its test plants")
 ap.add_argument("--lra", action="store_true", help="lra_adapter's term work from Rust: lra_live.py. Needs --term")
 ap.add_argument("--term-out", help="term_live's counts, as JSON")
 ap.add_argument("--discard", action="store_true", help="a planted refusal in each query's run: term_discard.py. Needs --term")
+ap.add_argument("--budget", type=int, help="the engine's discovery budget for every query, as the matrix's low budgets")
 ap.add_argument("--no-rollback", action="store_true", help="plant: with --discard, skip the rollback")
 a = ap.parse_args()
 if a.so:
@@ -150,7 +151,7 @@ with open(a.out, "w") as fh:
         if TD:      # counts the calls at each site, then puts back everything but SymPy's caches
             n_const = len(TD.constfield._CONSTANTS), len(TD.constfield._BY_KEY)
             reset_module_state(sympy_cache=False)
-            sympy_api.set_default_engine(E.Engine())
+            sympy_api.set_default_engine(E.Engine() if a.budget is None else E.Engine(discovery_budget=a.budget))
             TD.count_pass()
             try:
                 sympy_api.ask(p, q)
@@ -165,7 +166,7 @@ with open(a.out, "w") as fh:
         if a.term != "py" and not TD:
             term_live.AFTER_ROLLBACK[0] = _drop_discarded
         reset_module_state(sympy_cache=False)
-        sympy_api.set_default_engine(E.Engine())
+        sympy_api.set_default_engine(E.Engine() if a.budget is None else E.Engine(discovery_budget=a.budget))
         sessions.clear()
         try:
             r = repr(sympy_api.ask(p, q))

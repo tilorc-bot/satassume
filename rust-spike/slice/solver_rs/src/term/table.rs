@@ -113,6 +113,7 @@ pub enum Read {
     Commutative,
     Symbol,
     Constant,
+    OwnBase,
 }
 
 /// The way back to Python. `Ok(None)`: the read raised an `Exception`, which each caller refuses on as it did when these
@@ -472,6 +473,16 @@ impl TermTable {
     }
 
     /// `is_commutative is True`. Read for an input term; a derived term holds the bit. A read that raised is not True.
+    /// Whether `Mul.flatten` gives back an input term whose class has its own `as_base_exp`. It rebuilds the factor as
+    /// `Pow(b, e)`, which evaluates, so `exp(log(x), evaluate=False)` wouldn't come back. Only Python can say. A read that
+    /// raised, like a False, refuses.
+    pub fn own_base_kept(&self, t: TermId) -> Result<bool, Refuse> {
+        if t.index() >= self.n_input {
+            return Err(Refuse("mul: a derived term with its own as_base_exp"));
+        }
+        Ok(matches!(self.read(Read::OwnBase, t)?, Some(V::Bool(true))))
+    }
+
     pub fn commutative_of(&self, t: TermId) -> Result<bool, Refuse> {
         if t.index() >= self.n_input {
             return Ok(self.row(t).bits & fact::COMMUTATIVE != 0);
