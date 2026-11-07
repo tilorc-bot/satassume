@@ -84,5 +84,5 @@ if H:
 if args.mode == 'discard':
     print(dict(done))
 if K:
-    json.dump(dict(counts=K.COUNTS, mismatches=K.MISMATCHES), open(args.out + '.counts.json', 'w'), indent=1)
+    json.dump(dict(counts=K.COUNTS, mismatches=K.MISMATCHES, order_diffs=K.ORDER_DIFFS), open(args.out + '.counts.json', 'w'), indent=1)
     print(dict(K.COUNTS)); print(K.MISMATCHES[:3])
