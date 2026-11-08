@@ -224,6 +224,23 @@ pub(crate) const MEMO_SET_RELSPECS: u8 = 175;
 pub(crate) const MEMO_SET_EXT: u8 = 176;
 /// `SPEC_ROWS` is never emptied at its bound.
 pub(crate) const MEMO_SPEC_UNBOUNDED: u8 = 177;
+// Step 5c9b (procmemo.rs): 180-187.
+/// `_SPLIT` isn't emptied at 100,000 (the inventory's planted bug, first half).
+pub(crate) const PM_SPLIT_NO_FULL_CLEAR: u8 = 180;
+/// `_SPLIT`'s view doesn't empty the map on `clear()` (the registry's clear; second half).
+pub(crate) const PM_SPLIT_CLEAR_SKIP: u8 = 181;
+/// `_WANT` answers from any entry of the same size.
+pub(crate) const PM_WANT_KEY_LEN: u8 = 182;
+/// `neighbourhood` leaves the predicate itself out.
+pub(crate) const PM_NEIGH_NO_SELF: u8 = 183;
+/// `_NEIGH` answers every index with its first entry.
+pub(crate) const PM_NEIGH_MEMO_FIRST: u8 = 184;
+/// A `_CLOSED` hit answers None.
+pub(crate) const PM_CLOSED_HIT_NONE: u8 = 185;
+/// `_SYMPY_ATOMS` answers a miss from an entry with the same `expr` and any `pred`.
+pub(crate) const PM_ATOMS_KEY_EXPR: u8 = 186;
+/// `_SPLIT`'s view isn't put in the registry (a moved table left out of the registry view).
+pub(crate) const PM_VIEW_DROP: u8 = 187;
 
 #[pyfunction]
 fn rel_install(term_live: Py<PyAny>, relations: Py<PyAny>, euf_adapter: Py<PyAny>, fault: Py<PyAny>) {
@@ -381,6 +398,14 @@ fn rel_plant(name: Option<&str>) -> PyResult<()> {
         Some("memo-set-relspecs") => MEMO_SET_RELSPECS,
         Some("memo-set-ext") => MEMO_SET_EXT,
         Some("memo-spec-unbounded") => MEMO_SPEC_UNBOUNDED,
+        Some("pm-split-no-full-clear") => PM_SPLIT_NO_FULL_CLEAR,
+        Some("pm-split-clear-skip") => PM_SPLIT_CLEAR_SKIP,
+        Some("pm-want-key-len") => PM_WANT_KEY_LEN,
+        Some("pm-neigh-no-self") => PM_NEIGH_NO_SELF,
+        Some("pm-neigh-memo-first") => PM_NEIGH_MEMO_FIRST,
+        Some("pm-closed-hit-none") => PM_CLOSED_HIT_NONE,
+        Some("pm-atoms-key-expr") => PM_ATOMS_KEY_EXPR,
+        Some("pm-view-drop") => PM_VIEW_DROP,
         Some(x) => return Err(PyValueError::new_err(format!("no plant {x}"))),
     };
     PLANT.store(v, Relaxed);
@@ -2551,13 +2576,13 @@ fn rel_number_facts<'py>(engine: &Bound<'py, PyAny>, c: &Bound<'py, PyAny>) -> P
 }
 
 /// `sympy_atom`: `Q.eq(a, b)` / `Q.lt(a, b)` for a normalised relation atom, memoized in Python's `_SYMPY_ATOMS`.
-fn sympy_atom<'py>(h: &Hooks, atom: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+fn sympy_atom<'py>(_h: &Hooks, atom: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
     let p = atom.py();
     tick(session::REL_SYMPY_ATOM);
-    let memo = h.relations.bind(p).getattr(intern!(p, "_SYMPY_ATOMS"))?;
-    let r = memo.call_method1(intern!(p, "get"), (atom,))?;
-    if !r.is_none() {
-        return Ok(r);
+    if let Some(r) = crate::procmemo::atoms_get(atom)? {
+        if !r.is_none() {
+            return Ok(r);
+        }
     }
     let q = p.import(intern!(p, "sympy.assumptions"))?.getattr(intern!(p, "Q"))?;
     let pred = atom.getattr(intern!(p, "pred"))?;
@@ -2573,10 +2598,7 @@ fn sympy_atom<'py>(h: &Hooks, atom: &Bound<'py, PyAny>) -> PyResult<Bound<'py, P
     }
     tick(session::REL_CB_SYMPY_Q);
     let r = f.call1(PyTuple::new(p, args)?)?;
-    if memo.len()? >= memo.getattr(intern!(p, "size"))?.extract::<usize>()? {
-        memo.call_method0(intern!(p, "clear"))?;
-    }
-    memo.set_item(atom, &r)?;
+    crate::procmemo::atoms_put(atom, &r)?;
     Ok(r)
 }
 
@@ -2816,10 +2838,10 @@ fn closed_units<'py>(node: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
     let p = node.py();
     let h = hooks()?;
     tick(session::REL_CLOSED_UNITS);
-    let memo = h.relations.bind(p).getattr(intern!(p, "_CLOSED"))?;
-    match memo.get_item(node) {
-        Ok(r) => return Ok(r),
-        Err(x) if x.is_instance_of::<PyKeyError>(p) => {}
+    let _ = &h;
+    match crate::procmemo::closed_get(node) {
+        Ok(Some(r)) => return Ok(r),
+        Ok(None) => {}
         Err(x) if x.is_instance_of::<pyo3::exceptions::PyTypeError>(p) => return Ok(p.None().into_bound(p)),
         Err(x) => return Err(x),
     }
@@ -2852,10 +2874,7 @@ fn closed_units<'py>(node: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
             }
         }
     }
-    if memo.len()? >= 4096 {
-        memo.call_method0(intern!(p, "clear"))?;
-    }
-    memo.set_item(node, &r)?;
+    crate::procmemo::closed_put(node, &r)?;
     Ok(r)
 }
 

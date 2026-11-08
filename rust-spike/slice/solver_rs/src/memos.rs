@@ -34,17 +34,17 @@ use crate::session::{tick, MEMO_NATIVE_CLEAR, MEMO_NATIVE_ITEMS, MEMO_RESTAMP, M
 struct Native {
     name: &'static str,
     key: &'static str,
-    size: usize,
+    size: Option<usize>,
     len: fn() -> usize,
     clear: fn(),
     items: fn(Python<'_>) -> PyResult<Vec<(Py<PyAny>, Py<PyAny>)>>,
 }
 
-const TABLES: [Native; 2] = [
+const TABLES: [Native; 7] = [
     Native {
         name: "sa_solver.relations_core.SPEC_ROWS",
         key: "pure",
-        size: crate::relations_core::SPEC_ROWS_SIZE,
+        size: Some(crate::relations_core::SPEC_ROWS_SIZE),
         len: crate::relations_core::spec_rows_len,
         clear: crate::relations_core::spec_rows_clear,
         items: crate::relations_core::spec_rows_items,
@@ -52,12 +52,20 @@ const TABLES: [Native; 2] = [
     Native {
         name: "sa_solver.constfield.ENCLOSURES",
         key: "pure",
-        size: crate::constfield::ENCLOSURES_SIZE,
+        size: Some(crate::constfield::ENCLOSURES_SIZE),
         len: crate::constfield::enclosures_len,
         clear: crate::constfield::enclosures_clear,
         items: crate::constfield::enclosures_items,
     },
+    // Step 5c9b (procmemo.rs): Python's own process memos, moved; their views take Python's names and places in the registry.
+    Native { name: "satassume.engine._WANT", key: "pure", size: None, len: crate::procmemo::want_len, clear: crate::procmemo::want_clear, items: crate::procmemo::want_items },
+    Native { name: "satassume.engine._SPLIT", key: "pure", size: Some(crate::procmemo::SPLIT_SIZE), len: crate::procmemo::split_len, clear: crate::procmemo::split_clear, items: crate::procmemo::split_items },
+    Native { name: "satassume.engine._NEIGH", key: "pure", size: None, len: crate::procmemo::neigh_len, clear: crate::procmemo::neigh_clear, items: crate::procmemo::neigh_items },
+    Native { name: "satassume.relations._CLOSED", key: "pure", size: Some(crate::procmemo::CLOSED_SIZE), len: crate::procmemo::closed_len, clear: crate::procmemo::closed_clear, items: crate::procmemo::closed_items },
+    Native { name: "satassume.relations._SYMPY_ATOMS", key: "pure", size: Some(crate::procmemo::ATOMS_SIZE), len: crate::procmemo::atoms_len, clear: crate::procmemo::atoms_clear, items: crate::procmemo::atoms_items },
 ];
+/// The native tables `memo_install` attaches; the rest (5c9b's) replace Python's containers in place (`procmemo_views`).
+const ATTACHED: usize = 2;
 
 /// The read-only Python view of one native table: no `__setitem__`; `clear()`/`reset()` empty the Rust map (a native table
 /// keeps no stamp, so `stamp` is None and `reset` is `clear`).
@@ -76,8 +84,13 @@ impl NativeTable {
     fn key(&self) -> &'static str {
         TABLES[self.i].key
     }
+    /// A 5c9b table: it replaces a container Python's registry had, so the switch digest counts it (memo_check.py).
     #[getter]
-    fn size(&self) -> usize {
+    fn moved(&self) -> bool {
+        self.i >= ATTACHED
+    }
+    #[getter]
+    fn size(&self) -> Option<usize> {
         TABLES[self.i].size
     }
     #[getter]
@@ -91,6 +104,13 @@ impl NativeTable {
     }
     fn __len__(&self) -> usize {
         (TABLES[self.i].len)()
+    }
+    fn __contains__(&self, p: Python<'_>, k: &Bound<'_, PyAny>) -> PyResult<bool> {
+        Ok(self.__getitem__(p, k).is_ok())
+    }
+    #[pyo3(signature = (k, default=None))]
+    fn get(&self, p: Python<'_>, k: &Bound<'_, PyAny>, default: Option<Py<PyAny>>) -> Py<PyAny> {
+        self.__getitem__(p, k).unwrap_or_else(|_| default.unwrap_or_else(|| p.None()))
     }
     fn __bool__(&self) -> bool {
         (TABLES[self.i].len)() > 0
@@ -129,7 +149,7 @@ impl NativeTable {
     }
     fn __repr__(&self) -> String {
         let t = &TABLES[self.i];
-        format!("<NativeTable {} key={} {}/{}>", t.name, t.key, (t.len)(), t.size)
+        format!("<NativeTable {} key={} {}/{}>", t.name, t.key, (t.len)(), t.size.map_or("-".to_string(), |n| n.to_string()))
     }
 }
 
@@ -138,7 +158,7 @@ impl NativeTable {
 #[pyfunction]
 fn memo_install(p: Python<'_>, process: &Bound<'_, PyAny>) -> PyResult<Vec<&'static str>> {
     let mut out = Vec::new();
-    for (i, t) in TABLES.iter().enumerate() {
+    for (i, t) in TABLES.iter().enumerate().take(ATTACHED) {
         if i == 0 && planted(MEMO_VIEW_DROP) {
             continue;
         }
@@ -150,15 +170,29 @@ fn memo_install(p: Python<'_>, process: &Bound<'_, PyAny>) -> PyResult<Vec<&'sta
 
 #[pyfunction]
 fn memo_uninstall(p: Python<'_>, process: &Bound<'_, PyAny>) -> PyResult<()> {
-    for t in TABLES.iter() {
+    for t in TABLES.iter().take(ATTACHED) {
         process.call_method1(intern!(p, "detach"), (t.name,))?;
     }
     Ok(())
 }
 
+/// Step 5c9b: `{name: view}` of the moved process memos, for `session_live._install_procmemos` to put where Python's
+/// containers sit in `memos.PROCESS`. The view plant leaves `_SPLIT` out.
+#[pyfunction]
+fn procmemo_views<'py>(p: Python<'py>) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+    let d = pyo3::types::PyDict::new(p);
+    for (i, t) in TABLES.iter().enumerate().skip(ATTACHED) {
+        if t.name == "satassume.engine._SPLIT" && planted(crate::relations_core::PM_VIEW_DROP) {
+            continue;
+        }
+        d.set_item(t.name, Bound::new(p, NativeTable { i })?)?;
+    }
+    Ok(d)
+}
+
 /// Test-only: `[(name, key, size, len)]` of every native table, read from the maps, not the views.
 #[pyfunction]
-fn memo_snapshot() -> Vec<(&'static str, &'static str, usize, usize)> {
+fn memo_snapshot() -> Vec<(&'static str, &'static str, Option<usize>, usize)> {
     TABLES.iter().map(|t| (t.name, t.key, t.size, (t.len)())).collect()
 }
 
@@ -209,5 +243,6 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<NativeTable>()?;
     m.add_function(wrap_pyfunction!(memo_install, m)?)?;
     m.add_function(wrap_pyfunction!(memo_uninstall, m)?)?;
+    m.add_function(wrap_pyfunction!(procmemo_views, m)?)?;
     m.add_function(wrap_pyfunction!(memo_snapshot, m)?)
 }

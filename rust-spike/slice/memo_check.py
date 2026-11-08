@@ -28,7 +28,7 @@ def registry_rows(engine):
     rows = []
     for owner, m in (("process", memos.PROCESS), ("engine", engine.memos)):
         for name, key, c in m.items():
-            if getattr(c, "native", False):
+            if getattr(c, "native", False) and not getattr(c, "moved", False):     # 5c9b's moved memos count
                 continue
             stamp = getattr(c, "stamp", None)
             rows.append((owner, name, key, len(c), repr(stamp)))

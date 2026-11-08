@@ -787,7 +787,10 @@ def _install_relevance():
 
 #: Step 5c9a's plants (memos.rs, relations_core.rs 170-177).
 _MEMO_PLANTS = ('memo-view-drop', 'memo-clear-skip', 'memo-restamp-no-stamp', 'memo-set-transfer', 'memo-set-uninterp',
-                'memo-set-relspecs', 'memo-set-ext', 'memo-spec-unbounded')
+                'memo-set-relspecs', 'memo-set-ext', 'memo-spec-unbounded',
+                # Step 5c9b (procmemo.rs, 180-187).
+                'pm-split-no-full-clear', 'pm-split-clear-skip', 'pm-want-key-len', 'pm-neigh-no-self', 'pm-neigh-memo-first',
+                'pm-closed-hit-none', 'pm-atoms-key-expr', 'pm-view-drop')
 
 
 def _install_memos():
@@ -795,8 +798,36 @@ def _install_memos():
     from satassume.state import memos
     sa_solver.memo_install(memos.PROCESS)
 
+    undo_pm = _install_procmemos()
+
     def undo():
+        undo_pm()
         sa_solver.memo_uninstall(memos.PROCESS)
+    return undo
+
+
+def _install_procmemos():
+    """Step 5c9b: puts the views of the Rust-native `_WANT`, `_SPLIT`, `_NEIGH`, `_CLOSED`, `_SYMPY_ATOMS` (procmemo.rs) where
+    Python's containers sit in `memos.PROCESS` (relations' in `_tables`, engine's in `_adopted`), and switches
+    `engine.neighbourhood` to Rust's. The modules' own attributes stay Python's containers, for Python's functions. Returns the undo."""
+    from satassume.state import memos
+    P = memos.PROCESS
+    saved_t, saved_a = {}, {}
+    for name, v in sa_solver.procmemo_views().items():
+        if name in P._tables:
+            saved_t[name] = P._tables[name]
+            P._tables[name] = v
+        elif name in P._adopted:
+            saved_a[name] = P._adopted[name]
+            P._adopted[name] = (saved_a[name][0], lambda v=v: v)
+    saved_n = engine.neighbourhood
+    PY_LOOP['neighbourhood'] = saved_n
+    engine.neighbourhood = sa_solver.pm_neighbourhood
+
+    def undo():
+        engine.neighbourhood = saved_n
+        P._tables.update(saved_t)
+        P._adopted.update(saved_a)
     return undo
 
 

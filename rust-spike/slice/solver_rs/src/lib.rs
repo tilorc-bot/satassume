@@ -28,6 +28,7 @@ mod realroots;
 mod adapters;
 mod payloads;
 mod memos;
+mod procmemo;
 mod relations_core;
 mod rows;
 mod scope_core;
@@ -592,5 +593,6 @@ fn sa_solver(m: &Bound<'_, PyModule>) -> PyResult<()> {
     budget::register(m)?;
     relevance::register(m)?;
     memos::register(m)?;
+    procmemo::register(m)?;
     transfer_py::register(m)
 }

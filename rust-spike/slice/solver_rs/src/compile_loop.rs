@@ -36,25 +36,15 @@ pub(crate) fn want_of<'py>(demanded: &Bound<'py, PyAny>) -> PyResult<Bound<'py, 
     if planted(WANT_EMPTY) {
         return Ok(PyFrozenSet::empty(p)?.into_any());
     }
-    let memo = engine_mod(p)?.getattr(intern!(p, "_WANT"))?;
-    let w = memo.call_method1(intern!(p, "get"), (&key,))?;
-    if !w.is_none() {
-        return Ok(w);
-    }
-    memo.set_item(&key, &key)?;
-    Ok(key)
+    crate::procmemo::want_get_or_put(key)
 }
 
 /// Module `_split`: `(clauses, now, later, ment)`, memoized in `_SPLIT` per `(id(clauses), want)`.
 pub(crate) fn split<'py>(clauses: &Bound<'py, PyAny>, want: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyTuple>> {
     tick(SES_SPLIT);
     let p = clauses.py();
-    let memo = engine_mod(p)?.getattr(intern!(p, "_SPLIT"))?.cast_into::<PyDict>()?;
-    let key = PyTuple::new(p, [(clauses.as_ptr() as usize).into_pyobject(p)?.into_any(), want.clone()])?;
-    if let Some(r) = memo.get_item(&key)? {
-        if !r.is_none() && r.get_item(0)?.is(clauses) {
-            return Ok(r.cast_into::<PyTuple>()?);
-        }
+    if let Some(r) = crate::procmemo::split_get(clauses, want)? {
+        return Ok(r);
     }
     let none = p.None().into_bound(p);
     let (now, later) = if want.is_none() {
@@ -96,10 +86,7 @@ pub(crate) fn split<'py>(clauses: &Bound<'py, PyAny>, want: &Bound<'py, PyAny>) 
     }
     let ment = PyTuple::new(p, acc.items().iter())?;
     let r = PyTuple::new(p, [clauses.clone(), now, later, ment.into_any()])?;
-    if memo.len() >= 100_000 {
-        memo.clear();
-    }
-    memo.set_item(&key, &r)?;
+    crate::procmemo::split_put(clauses, want, &r)?;
     Ok(r)
 }
 
