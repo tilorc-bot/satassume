@@ -237,6 +237,18 @@ impl PyEuf {
         if v <= 0 || self.core.borrow().atoms.contains_key(&v) {
             return Err(PyValueError::new_err(format!("bad or repeated atom variable {v}")));
         }
+        if let Ok(e) = payload.cast::<crate::payloads::EqAtom>() {
+            // Adapters step, part C: the Rust adapter's payload, read with no Python call.
+            let (s, t, pos) = e.get().parts(payload.py())?;
+            let pos = pos.is_truthy()?;
+            return match (self.a_term(&s), self.a_term(&t)) {
+                (Some(s), Some(t)) => {
+                    self.core.borrow_mut().register_atom(v, s, t, pos);
+                    Ok(())
+                }
+                _ => Err(PyValueError::new_err(format!("EUF atom over unknown terms: {}", payload.repr()?))),
+            };
+        }
         let parts: Vec<Bound<'_, PyAny>> = payload.try_iter()?.collect::<PyResult<_>>()?;
         let (s, t, pos) = if payload.is_instance(self.eq_atom.bind(payload.py()))? {
             (&parts[0], &parts[1], parts[2].is_truthy()?)

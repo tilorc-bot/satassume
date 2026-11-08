@@ -24,6 +24,7 @@ mod map;
 mod rat;
 mod realroots;
 mod adapters;
+mod payloads;
 mod relations_core;
 mod rows;
 mod scope_core;
@@ -574,6 +575,7 @@ fn sa_solver(m: &Bound<'_, PyModule>) -> PyResult<()> {
     lra_cert::register(m)?;
     euf_py::add_to(m)?;
     adapters::register(m)?;
+    payloads::register(m)?;
     formula_py::register(m)?;
     realroots::register(m)?;
     rows::register(m)?;

@@ -65,6 +65,9 @@ pub(crate) struct LraAdapter {
     #[pyo3(get)]
     _shared: Py<PyDict>,
     module: Py<PyModule>,
+    /// Part C: the theory reads Rust payloads (lra_backend.py's `LRATheory`, class attribute `_rust_payloads`). Python's
+    /// `LRATheory` gets Python's `Negated`, counted `ad:cb_py_payload`. `theory` can't be reassigned, so it's read once here.
+    rust_payloads: bool,
 }
 
 impl LraAdapter {
@@ -78,7 +81,11 @@ impl LraAdapter {
                 module.getattr(intern!(p, "LRATheory"))?.call0()?
             }
         };
-        Ok(LraAdapter { theory: theory.unbind(), _solver: None, _shared: PyDict::new(p).unbind(), module: module.unbind() })
+        let rust_payloads = match theory.getattr(intern!(p, "_rust_payloads")) {
+            Ok(v) => v.is_truthy()?,
+            Err(_) => false,
+        };
+        Ok(LraAdapter { theory: theory.unbind(), _solver: None, _shared: PyDict::new(p).unbind(), module: module.unbind(), rust_payloads })
     }
 
     fn memoized<'py>(&self, p: Python<'py>, key: Bound<'py, PyAny>, read: &Bound<'py, PyString>, arg: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
@@ -111,7 +118,12 @@ impl LraAdapter {
         } else {
             let payload = r.get_item(0)?;
             if !r.get_item(1)?.is_truthy()? {
-                self.module.bind(p).getattr(intern!(p, "Negated"))?.call1((payload,))?
+                if self.rust_payloads {
+                    Bound::new(p, crate::payloads::Negated::new(p, &payload)?)?.into_any()
+                } else {
+                    tick(session::AD_CB_PY_PAYLOAD);
+                    self.module.bind(p).getattr(intern!(p, "Negated"))?.call1((payload,))?
+                }
             } else {
                 payload
             }
@@ -150,7 +162,16 @@ impl LraAdapter {
 
     fn register_integer(&mut self, p: Python<'_>, solver: &Bound<'_, PyAny>, var: &Bound<'_, PyAny>, form: &Bound<'_, PyAny>) -> PyResult<()> {
         attach_to(p, &mut self._solver, &self.theory, solver, "LRAAdapter")?;
-        solver.call_method1(intern!(p, "register_atom"), (self.theory.bind(p), var, form.get_item(0)?))?;
+        let mut payload = form.get_item(0)?;
+        if !self.rust_payloads {
+            // Part C: integer_form's Rust route builds a Rust `Integral` (lra_live.py); Python's LRATheory reads only its own.
+            if let Ok(i) = payload.cast::<crate::payloads::Integral>() {
+                tick(session::AD_CB_PY_PAYLOAD);
+                let (t, o) = i.get().pair(p)?;
+                payload = module(p, "theories.lra.lra")?.getattr(intern!(p, "Integral"))?.call1((t, o))?;
+            }
+        }
+        solver.call_method1(intern!(p, "register_atom"), (self.theory.bind(p), var, payload))?;
         Ok(())
     }
 
@@ -210,6 +231,9 @@ pub(crate) struct EufAdapter {
     _solver: Option<Py<PyAny>>,
     module: Py<PyModule>,
     rational: Py<PyAny>,
+    /// Part C: the theory is euf_py.rs' `EUFTheory` (or a subclass), which reads a Rust `EqAtom`; any other gets Python's,
+    /// counted `ad:cb_py_payload`.
+    rust_payloads: bool,
 }
 
 impl EufAdapter {
@@ -224,7 +248,9 @@ impl EufAdapter {
             }
         };
         let rational = p.import(intern!(p, "sympy"))?.getattr(intern!(p, "Rational"))?.unbind();
+        let rust_payloads = theory.is_instance_of::<crate::euf_py::PyEuf>();
         Ok(EufAdapter {
+            rust_payloads,
             theory: theory.unbind(),
             _terms: PyDict::new(p).unbind(),
             _node_terms: PyDict::new(p).unbind(),
@@ -316,7 +342,12 @@ impl EufAdapter {
         attach_to(p, &mut self._solver, &self.theory, solver, "EUFAdapter")?;
         let l = self.term(p, &parsed.get_item(0)?)?;
         let r = self.term(p, &parsed.get_item(1)?)?;
-        let payload = self.module.bind(p).getattr(intern!(p, "EqAtom"))?.call1((l, r, parsed.get_item(2)?))?;
+        let payload = if self.rust_payloads {
+            Bound::new(p, crate::payloads::EqAtom::new(p, &l, &r, Some(&parsed.get_item(2)?))?)?.into_any()
+        } else {
+            tick(session::AD_CB_PY_PAYLOAD);
+            self.module.bind(p).getattr(intern!(p, "EqAtom"))?.call1((l, r, parsed.get_item(2)?))?
+        };
         solver.call_method1(intern!(p, "register_atom"), (self.theory.bind(p), var, payload))?;
         Ok(true)
     }

@@ -160,6 +160,12 @@ pub(crate) const AD_EUF_NODE: u8 = 105;
 const AD_KIND_SWAP: u8 = 106;
 /// Adapters step, part B: the Rust EUFAdapter's `shared_terms` leaves out the last term interned.
 pub(crate) const AD_EUF_SHARED: u8 = 107;
+/// Adapters step, part C (payloads.rs): Rust `Negated` wraps its payload in a second `Negated`, so the negation cancels.
+pub(crate) const PAY_NEG_TWICE: u8 = 108;
+/// Adapters step, part C: Rust `Integral`'s offset is half a unit off.
+pub(crate) const PAY_INT_OFFSET: u8 = 109;
+/// Adapters step, part C: Rust `EqAtom` stores the opposite polarity.
+pub(crate) const PAY_EQ_FLIP: u8 = 110;
 
 #[pyfunction]
 fn rel_install(term_live: Py<PyAny>, relations: Py<PyAny>, euf_adapter: Py<PyAny>, fault: Py<PyAny>) {
@@ -277,6 +283,9 @@ fn rel_plant(name: Option<&str>) -> PyResult<()> {
         Some("ad-euf-node") => AD_EUF_NODE,
         Some("ad-kind-swap") => AD_KIND_SWAP,
         Some("ad-euf-shared") => AD_EUF_SHARED,
+        Some("pay-neg-twice") => PAY_NEG_TWICE,
+        Some("pay-int-offset") => PAY_INT_OFFSET,
+        Some("pay-eq-flip") => PAY_EQ_FLIP,
         Some(x) => return Err(PyValueError::new_err(format!("no plant {x}"))),
     };
     PLANT.store(v, Relaxed);

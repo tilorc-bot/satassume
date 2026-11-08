@@ -273,6 +273,9 @@ def load(wl):
     if wl == "zero":    # zero_wl.py: zero twins under an application, for `_glue_of`'s twin branch (before 5c7)
         import zero_wl
         return zero_wl.queries()
+    if wl == "pay":     # pay_wl.py: `ne` relations, for the Negated payload (adapters step, part C)
+        import pay_wl
+        return pay_wl.queries()
     if wl in ("f6", "value", "rootof", "core", "opaque"):    # hidden-gap workloads (6, 6e, 6f, 6g(a)), whole engine
         import importlib
         return importlib.import_module(f"knowledge_{wl}_wl").queries()

@@ -165,7 +165,7 @@ def _install():
             out = None
         else:
             items, c, keys = r
-            out = lra.Integral(_pairs(q, items, 'integer_form'), c), _objs(q, keys, 'integer_form')
+            out = sa_solver.Integral(_pairs(q, items, 'integer_form'), c), _objs(q, keys, 'integer_form')
         if CHECK[0]:
             _check('integer_form', out, lambda: py_integer_form(e), e)
         return out
@@ -193,10 +193,25 @@ def _install():
     lra_adapter.closed_sign = closed_sign
     lra_adapter._memoized = memoized
 
+    # Adapters step, part C: integer_form's Rust route builds a Rust `Integral` (payloads.rs). lra_backend.py's theory reads it;
+    # Python's own LRATheory, which Python's LRAAdapter can still pair with (a user factory, the Python-methods comparison),
+    # reads only its own class, so it gets one, counted. lra_backend.py overrides `register_atom`, so it never comes here.
+    # Python's class itself, whether or not lra_backend.py has already swapped the module attribute for its subclass.
+    py_lra = next(c for c in lra.LRATheory.__mro__ if c.__module__ == lra.__name__ and '_register_atom' in c.__dict__)
+    py_register_atom = py_lra._register_atom
+
+    def _register_atom(self, literal, payload):
+        if type(payload) is sa_solver.Integral:
+            COUNTS['ad:integral_to_py'] += 1
+            payload = lra.Integral(*payload)
+        return py_register_atom(self, literal, payload)
+    py_lra._register_atom = _register_atom
+
     def undo():
         (lra_adapter.interpret, lra_adapter.order_sides, lra_adapter.integer_form, lra_adapter.closed_sign,
          lra_adapter._memoized) = saved
         constfield.num, lra.num = py_num
+        py_lra._register_atom = py_register_atom
     return undo
 
 

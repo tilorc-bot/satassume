@@ -19,7 +19,10 @@ import sa_solver  # noqa: E402
 
 from satassume.theories.lra import lra as _lra  # noqa: E402
 from satassume.theories.lra.constfield import Undecided  # noqa: E402
-from satassume.theories.lra.lra import Integral, LRATheory as PyLRA, Negated, _ONE, _ZERO  # noqa: E402
+from satassume.theories.lra.lra import Integral as _PyIntegral, LRATheory as PyLRA, Negated as _PyNegated, _ONE, _ZERO  # noqa: E402
+# Adapters step, part C: the Rust adapter's payloads (payloads.rs) and Python's, which tests and the pure-Python paths build.
+Integral = (sa_solver.Integral, _PyIntegral)
+Negated = (sa_solver.Negated, _PyNegated)
 
 #: What the state dump supplies to a private read; anything else missing is a plain AttributeError.
 _STATE = frozenset(("_key", "_var_of", "_slack_of", "_forms", "_lo", "_up", "_lo_r", "_up_r", "_vq", "_vd", "_rows",
@@ -43,6 +46,8 @@ class _View:
 
 class LRATheory(PyLRA):
     __doc__ = PyLRA.__doc__
+    #: Adapters step, part C: `_register` reads the Rust adapter's payloads (payloads.rs), so it is given them.
+    _rust_payloads = True
 
     def __init__(self, eager: bool = True) -> None:
         d = self.__dict__
