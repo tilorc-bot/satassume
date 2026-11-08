@@ -11,6 +11,7 @@ mod compile_loop;
 mod query;
 mod session_glue;
 mod budget;
+mod relevance;
 mod discovery;
 mod euf;
 mod euf_py;
@@ -588,5 +589,6 @@ fn sa_solver(m: &Bound<'_, PyModule>) -> PyResult<()> {
     query::register(m)?;
     session_glue::register(m)?;
     budget::register(m)?;
+    relevance::register(m)?;
     transfer_py::register(m)
 }

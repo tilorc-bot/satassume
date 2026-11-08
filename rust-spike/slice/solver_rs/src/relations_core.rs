@@ -189,6 +189,24 @@ pub(crate) const ELEM_REPR_BRACKET: u8 = 121;
 pub(crate) const ELEM_FROM_NEG: u8 = 122;
 /// Element._new step, part 2b (`_order_infinite`): a Rust Element coefficient's sign is read negated (a wrong value).
 pub(crate) const REL_ELEM_SIGN_FLIP: u8 = 123;
+// Step 5c8 (relevance.rs): one per moved method; `consistent-fault`
+// raises a TermFault inside `_consistent`'s body, which must come out loud.
+pub(crate) const CONST_BASE_NO_POW: u8 = 124;
+pub(crate) const CONST_FREE_NO_MUL: u8 = 125;
+pub(crate) const CLOSED_KEYS_NO_UNDEF: u8 = 126;
+pub(crate) const EXPR_KEYS_CLOSED_SKIP: u8 = 127;
+pub(crate) const ARG_KEYS_NO_CLOSED: u8 = 128;
+pub(crate) const KEYS_EMPTY: u8 = 129;
+pub(crate) const KEYS_REL_NO_FLAG: u8 = 130;
+pub(crate) const BOOL_KEYS_OPAQUE_IN: u8 = 131;
+pub(crate) const SIDES_KEYS_FIRST_ONLY: u8 = 132;
+pub(crate) const SPLIT_NO_MERGE: u8 = 133;
+pub(crate) const SPLIT_PART_FIRST: u8 = 134;
+pub(crate) const RELEVANT_ASSUME_CONSISTENT: u8 = 135;
+pub(crate) const VOCAB_NO_DERIVED: u8 = 136;
+pub(crate) const PART_CONSISTENT_TRUE: u8 = 137;
+pub(crate) const CONSISTENT_FAULT: u8 = 138;
+pub(crate) const CONSISTENT_IGNORE_VERDICT: u8 = 139;
 
 #[pyfunction]
 fn rel_install(term_live: Py<PyAny>, relations: Py<PyAny>, euf_adapter: Py<PyAny>, fault: Py<PyAny>) {
@@ -322,6 +340,22 @@ fn rel_plant(name: Option<&str>) -> PyResult<()> {
         Some("elem-repr-bracket") => ELEM_REPR_BRACKET,
         Some("elem-from-neg") => ELEM_FROM_NEG,
         Some("rel-elem-sign-flip") => REL_ELEM_SIGN_FLIP,
+        Some("const-base-no-pow") => CONST_BASE_NO_POW,
+        Some("const-free-no-mul") => CONST_FREE_NO_MUL,
+        Some("closed-keys-no-undef") => CLOSED_KEYS_NO_UNDEF,
+        Some("expr-keys-closed-skip") => EXPR_KEYS_CLOSED_SKIP,
+        Some("arg-keys-no-closed") => ARG_KEYS_NO_CLOSED,
+        Some("keys-empty") => KEYS_EMPTY,
+        Some("keys-rel-no-flag") => KEYS_REL_NO_FLAG,
+        Some("bool-keys-opaque-in") => BOOL_KEYS_OPAQUE_IN,
+        Some("sides-keys-first-only") => SIDES_KEYS_FIRST_ONLY,
+        Some("split-no-merge") => SPLIT_NO_MERGE,
+        Some("split-part-first") => SPLIT_PART_FIRST,
+        Some("relevant-assume-consistent") => RELEVANT_ASSUME_CONSISTENT,
+        Some("vocab-no-derived") => VOCAB_NO_DERIVED,
+        Some("part-consistent-true") => PART_CONSISTENT_TRUE,
+        Some("consistent-fault") => CONSISTENT_FAULT,
+        Some("consistent-ignore-verdict") => CONSISTENT_IGNORE_VERDICT,
         Some(x) => return Err(PyValueError::new_err(format!("no plant {x}"))),
     };
     PLANT.store(v, Relaxed);

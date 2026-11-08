@@ -37,10 +37,24 @@ def install(path):
     _out = open(path, "a")
     mon = sys.monitoring
     mon.use_tool_id(TOOL, "handler_count")
-    _sites.update(f.__code__ for f in (engine.Engine._build_context, sympy_api._consistent))
+    # 5c8: `_consistent` may already be relevance.rs's (no code object); Python's own copy is in session_live.PY_RELEVANCE
+    cons = sympy_api._consistent
+    if not hasattr(cons, "__code__"):
+        cons = sys.modules["session_live"].PY_RELEVANCE["_consistent"]
+    _sites.update(f.__code__ for f in (engine.Engine._build_context, cons))
     mon.register_callback(TOOL, mon.events.EXCEPTION_HANDLED, _fired)
     mon.set_events(TOOL, mon.events.EXCEPTION_HANDLED)  # 3.12 has it only as a global event, hence the filter above
 
 
 def pytest_configure(config):
     install(os.path.join(os.environ["SLICE_SUITE_OUT"], f"handlers.{os.getpid()}.jsonl"))
+
+
+def rust_handled(site, exc):
+    """relevance.rs's `_consistent` caught `exc` (an Exception, as Python's handler): the same row, under Python's site name."""
+    from satassume.engine import Uninterpreted
+    if _out is None or isinstance(exc, Uninterpreted):     # as `_fired`
+        return
+    here = where if where is not None else os.environ.get("PYTEST_CURRENT_TEST", "?").split(" ")[0]
+    _out.write(json.dumps(dict(site=site, type=type(exc).__name__, text=str(exc)[:200], where=here)) + "\n")
+    _out.flush()

@@ -8,6 +8,14 @@ exception. `Uninterpreted` is kept apart by its type name: it's re-raised at 190
 import sys
 
 sink = []
+#: relevance.rs (5c8) names the caller it stands in for (`_consistent`); read and cleared on entry, so nested calls don't see it.
+NEXT_CALLER = None
+
+
+def _take_hint():
+    global NEXT_CALLER
+    h, NEXT_CALLER = NEXT_CALLER, None
+    return h
 
 
 def install():
@@ -22,10 +30,11 @@ def install():
             raise
 
     def counted_verdict(self, assumptions):
+        hint = _take_hint()
         try:
             return verdict(self, assumptions)
         except Exception as e:
-            caller = sys._getframe(1).f_code.co_name
+            caller = hint or sys._getframe(1).f_code.co_name
             sink.append((f"verdict<{caller}", type(e).__name__, str(e)[:200]))
             raise
     Engine._complete_check = staticmethod(complete_check)
@@ -35,10 +44,11 @@ def install():
     formula = sympy_api._formula
 
     def counted_formula(*a, **k):
+        hint = _take_hint()
         try:
             return formula(*a, **k)
         except Exception as e:
-            if sys._getframe(1).f_code.co_name == "_consistent":
+            if (hint or sys._getframe(1).f_code.co_name) == "_consistent":
                 sink.append(("formula<_consistent", type(e).__name__, str(e)[:200]))
             raise
     sympy_api._formula = counted_formula

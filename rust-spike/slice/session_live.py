@@ -756,6 +756,35 @@ def _install_budget():
             setattr(E, n, f)
     return undo
 
+
+#: Step 5c8: sympy_api's relevance rows run in `relevance.rs`. Installed over the module's names that Python calls (`_ask_general`,
+#: tests); Python's `_const_base`, `_closed_keys`, `_expr_keys`, `_arg_keys`, `_bool_keys`, `_sides_keys` stay as module names only
+#: for Python's `_keys_rel`, which keys a Boolean deeper than relevance.rs's DEPTH (`rv:py_deep`). SLICE_RELEVANCE=py puts
+#: Python's back. `Engine.splits`, `stats`, `_KEYS` and `_CONST` stay Python's (5c8 report, state section).
+PY_RELEVANCE = {}
+_RELEVANCE_NAMES = {'_relevant': 'rv_relevant', '_keys': 'rv_keys', '_keys_rel': 'rv_keys_rel', '_const_free': 'rv_const_free',
+                    '_vocab_blocks': 'rv_vocab_blocks', '_part_consistent': 'rv_part_consistent', '_consistent': 'rv_consistent',
+                    '_Split': 'Split'}
+_RELEVANCE_PLANTS = ('const-base-no-pow', 'const-free-no-mul', 'closed-keys-no-undef', 'expr-keys-closed-skip', 'arg-keys-no-closed',
+                     'keys-empty', 'keys-rel-no-flag', 'bool-keys-opaque-in', 'sides-keys-first-only', 'split-no-merge',
+                     'split-part-first', 'relevant-assume-consistent', 'vocab-no-derived', 'part-consistent-true', 'consistent-fault',
+                     'consistent-ignore-verdict')
+
+
+def _install_relevance():
+    """Returns the undo."""
+    from satassume import sympy_api as A
+    saved = {n: getattr(A, n) for n in _RELEVANCE_NAMES}
+    PY_RELEVANCE.update(saved)
+    for n, rn in _RELEVANCE_NAMES.items():
+        setattr(A, n, getattr(sa_solver, rn))
+
+    def undo():
+        for n, f in saved.items():
+            setattr(A, n, f)
+    return undo
+
+
 def _install_relations():
     """Returns the undo."""
     import term_live
@@ -871,8 +900,11 @@ def install():
     undo_query = _install_queries() if os.environ.get('SLICE_QUERY', 'rust') == 'rust' else None
     undo_glue = _install_glue() if os.environ.get('SLICE_GLUE', 'rust') == 'rust' else None
     undo_budget = _install_budget() if os.environ.get('SLICE_BUDGET', 'rust') == 'rust' else None
+    undo_relevance = _install_relevance() if os.environ.get('SLICE_RELEVANCE', 'rust') == 'rust' else None
 
     def undo():
+        if undo_relevance is not None:
+            undo_relevance()
         if undo_budget is not None:
             undo_budget()
         if undo_glue is not None:
@@ -911,7 +943,8 @@ def from_env():
         if os.environ.get('SLICE_SESSION_PLANT'):
             PLANT[0] = os.environ['SLICE_SESSION_PLANT']
             if PLANT[0] in _REL_PLANTS or PLANT[0] in _DISC_PLANTS or PLANT[0] in _LOOP_PLANTS or PLANT[0] in _QUERY_PLANTS \
-                    or PLANT[0] in _SCOPE_PLANTS or PLANT[0] in _GLUE_PLANTS or PLANT[0] in _BUDGET_PLANTS:
+                    or PLANT[0] in _SCOPE_PLANTS or PLANT[0] in _GLUE_PLANTS or PLANT[0] in _BUDGET_PLANTS \
+                    or PLANT[0] in _RELEVANCE_PLANTS:
                 sa_solver.rel_plant(PLANT[0])
         return install()
     return None

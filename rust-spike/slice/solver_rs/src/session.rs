@@ -14,7 +14,7 @@ use pyo3::types::{PyBool, PyDict, PyList, PySet, PyTuple};
 use crate::compile::{self, block_lits, Cx, Def, Kind, Need, F, R};
 use crate::formula_py::PyP;
 
-const NAMES: [&str; 179] = [
+const NAMES: [&str; 200] = [
     "py:var", "py:dvar", "py:node", "py:compile", "py:literal", "py:table", "rs:visit", "rs:add_clause", "rs:ensure_vars",
     "rs:def_implications", "rs:neg_shared", "join", "rs:emit_callback", "refuse:depth", "refuse:convert", "refuse:object", "second:visit", "custom:own",
     "link:hit", "link:resolved", "link:none", "link:no_table", "link:second", "link:no_node",
@@ -47,6 +47,9 @@ const NAMES: [&str; 179] = [
     "bud:union_cone_none", "bud:union_over", "bud:union_partial", "bud:within_partial", "bud:within_false",
     "cf:elem_new", "cf:elem_py_read", "cf:elem_eq", "cf:elem_hash", "cf:elem_repr", "lra:memo_hit", "lra:memo_miss",
     "cf:elem_sign", "rel:elem_sign",
+    "rv:relevant", "rv:split_new", "rv:keys_rel", "rv:keys_miss", "rv:const_free_miss", "rv:vocab_blocks", "rv:part_consistent", "rv:consistent",
+    "rv:consistent_caught", "rv:cb_formula", "rv:cb_verdict", "rv:cb_theory_scope", "rv:cb_category", "rv:cb_ext", "rv:cb_memo",
+    "rv:py_deep", "rv:br_verdict", "rv:br_glue", "rv:br_parts", "rv:br_unsupported", "rv:sympy_and",
 ];
 const VAR: usize = 0;
 const DVAR: usize = 1;
@@ -246,6 +249,27 @@ pub(crate) const LRA_MEMO_MISS: usize = 176;
 pub(crate) const CF_ELEM_SIGN: usize = 177;
 /// `_order_infinite`'s sign of a Rust Element coefficient, read on Rust (relations_core.rs; it was Python's `relations.sign`).
 pub(crate) const REL_ELEM_SIGN: usize = 178;
+pub(crate) const RV_RELEVANT: usize = 179;
+pub(crate) const RV_SPLIT_NEW: usize = 180;
+pub(crate) const RV_KEYS_REL: usize = 181;
+pub(crate) const RV_KEYS_MISS: usize = 182;
+pub(crate) const RV_CONST_FREE_MISS: usize = 183;
+pub(crate) const RV_VOCAB_BLOCKS: usize = 184;
+pub(crate) const RV_PART_CONSISTENT: usize = 185;
+pub(crate) const RV_CONSISTENT: usize = 186;
+pub(crate) const RV_CONSISTENT_CAUGHT: usize = 187;
+pub(crate) const RV_CB_FORMULA: usize = 188;
+pub(crate) const RV_CB_VERDICT: usize = 189;
+pub(crate) const RV_CB_THEORY_SCOPE: usize = 190;
+pub(crate) const RV_CB_CATEGORY: usize = 191;
+pub(crate) const RV_CB_EXT: usize = 192;
+pub(crate) const RV_CB_MEMO: usize = 193;
+pub(crate) const RV_PY_DEEP: usize = 194;
+pub(crate) const RV_BR_VERDICT: usize = 195;
+pub(crate) const RV_BR_GLUE: usize = 196;
+pub(crate) const RV_BR_PARTS: usize = 197;
+pub(crate) const RV_BR_UNSUPPORTED: usize = 198;
+pub(crate) const RV_SYMPY_AND: usize = 199;
 
 /// Deeper formulas compile on Python, over this same table. Python's own limit depends on the caller's stack, so it isn't
 /// reproduced: its deepest shape is `Implies`, 3 frames a level (first failure at depth 330 from a bare stack, limit 1000), so
@@ -253,7 +277,7 @@ pub(crate) const REL_ELEM_SIGN: usize = 178;
 const FORMULA_DEPTH: u32 = 64;
 
 thread_local! {
-    static COUNTS: [Cell<u64>; 179] = const { [const { Cell::new(0) }; 179] };
+    static COUNTS: [Cell<u64>; 200] = const { [const { Cell::new(0) }; 200] };
     /// Each session's serial, for the link's memo: a pointer could alias a dead session's.
     static SERIAL: Cell<u64> = const { Cell::new(0) };
 }
