@@ -1,5 +1,7 @@
 # Port ownership: inventory "port" items against the step that owns them (issue 323)
 
+**Updated by sa-port-125 (adapters, part A), 8 Nov:** no row moves. Step 0 found that Rust read `AdapterSpec`'s fields per query (port-adapters.md). Part A converts each spec once (`spec_row`), but `spec.factory()` is still called once per spec for each Relations object. So relations.py (rows :70-79) doesn't count whole until part B ports the adapters (planner ruling (1)). The TSV is unchanged.
+
 **Updated by sa-port-99 (port-wire), 7 Nov, doc only:** the planner's ownership ruling (forward-chain-3b, 7 Nov 22:12) applied. 70 items reclassed out of port (TSV owner "not port (...)", and `PORT-INVENTORY.md` Appendix A): 812 port items become 742 over 34 modules. Owners as ruled or proposed and accepted: scope, 5c9 for `state/`, 5c2 for `_Lit`, 5c8 for sympy_api's five key helpers, "adapters (after 5c4)" for the adapters and payload classes, 6d-6g by family, 5c10 and 5c5 for engine.py's and relations.py's two. Only `rules._basis_models` and `templates._applied_to_nan` have no owner. 5c1's five landed at 653d932 (Rust). The 31 component 6 rows that were "Rust opt-in only" now run on the default Rust backend, because port-wire installs `knowledge_live` there (`rust_plugin.py`, `live.py`). The "Questionable" rows below are unchanged.
 
 The original: By sa-port-95, 7 Nov, by reading only (rg, git show); no runs. Base `rust-slice` de8bd3a. 5c split: `origin/port/5c` 7fc958d, `HANDOFF-sa-port-93.md`, read with `git show`.
