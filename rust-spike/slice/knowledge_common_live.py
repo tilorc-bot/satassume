@@ -35,6 +35,7 @@ PLANTS += ('rows-half-parity', 'rows-bound-coeff-one', 'rows-imag-drop-last')
 PLANTS += ('rows-mul-ipi-drop', 'rows-quot-swap')
 PLANTS += ('rows-exp-arg-none', 'rows-unit-angle-neg', 'rows-ipi-split-neg', 'rows-irrational-false',
            'rows-unit-power-drop-last', 'rows-pow-bound-drop-last', 'rows-ipi-rules-drop-last')
+PLANTS += ('rows-constant-value-neg',)
 COMMON = [None]
 
 

@@ -67,6 +67,7 @@ pub const PLANTS: &[&str] = &[
     "rows-unit-power-drop-last",// 6g(c3) direct `_unit_power_units`: the last fact dropped
     "rows-pow-bound-drop-last",// 6g(c3) direct `_pow_bound_templates`: the last bound premise dropped (none left: no split)
     "rows-ipi-rules-drop-last",// 6g(c3) direct `ipi_rules`: the last rule dropped
+    "rows-constant-value-neg", // 6g(c4) direct `constant_value`: the term of the constant negated
 ];
 
 /// 6g(c3): the shells whose args `split` passes as a tuple (the others take one argument).
@@ -327,6 +328,29 @@ impl RowsTpl {
         }
     }
 
+    /// 6g(c4): `constant_value(text, c)` straight in Rust for a Rational `c` and one of the compiled rows' texts (exact
+    /// rational arithmetic, as SymPy's on Rationals); a Float (SymPy's precision semantics, kept on Python by ruling), an
+    /// infinity or nan, `1/number` at 0, or another text goes to Python's (`rows:python:constant_value`).
+    fn constant_value<'py>(&self, py: Python<'py>, c: &Common, text: &Bound<'py, PyAny>, cv: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+        if let Some(mut r) = direct_constant_value(text, cv)? {
+            c.bump("rows:rust:constant_value");
+            if c.plant == "rows-constant-value-neg" {
+                c.fired();
+                r = super::rat::Rat::new(-r.n.clone(), r.d.clone());
+            }
+            let (p, d) = super::py::core_pq(&r);
+            let v = py.import("sympy")?.getattr("Rational")?.call1((p, d))?;
+            if let Some(f) = c.shadow_split(py)? {
+                f.call1(("constant_value", (text, cv), &v))?;
+            }
+            return Ok(v);
+        }
+        if !cv.getattr("is_Rational")?.is_truthy()? {
+            c.bump(if cv.getattr("is_Float")?.is_truthy()? { "rows:kept:constant_value:Float" } else { "rows:kept:constant_value:other" });
+        }
+        self.wiring_fn(py, c, "constant_value")?.call1((text, cv))
+    }
+
     fn wiring_fn<'py>(&self, py: Python<'py>, c: &Common, name: &str) -> PyResult<Bound<'py, PyAny>> {
         c.bump(&format!("rows:python:{name}"));
         self.wiring.bind(py).getattr(name)
@@ -465,7 +489,7 @@ impl RowsTpl {
                 for (k, (i, t)) in ts.iter().enumerate() {
                     if let Some(cv) = consts.get_item(*i)? {
                         if cv.getattr("is_Number")?.is_truthy()? {
-                            let v = self.wiring_fn(py, c, "constant_value")?.call1((t.bind(py), &cv))?;
+                            let v = self.constant_value(py, c, t.bind(py), &cv)?;
                             consts.set_item(n + 1 + k, v)?;
                         }
                     }
@@ -816,7 +840,7 @@ impl RowsTpl {
                         c.fired();
                         continue;
                     }
-                    let v = self.wiring_fn(py, c, "constant_value")?.call1((t.bind(py), &cv))?;
+                    let v = self.constant_value(py, c, t.bind(py), &cv)?;
                     consts.set_item(*k, v)?;
                 }
             }
@@ -1530,6 +1554,28 @@ fn direct_add<'py>(
         }
         _ => Ok(None),
     }
+}
+
+/// `constant_value(text, c)` for a Rational `c` and the compiled rows' texts of the constant, else None.
+fn direct_constant_value(text: &Bound<'_, PyAny>, cv: &Bound<'_, PyAny>) -> PyResult<Option<super::rat::Rat>> {
+    use super::rat::Rat;
+    if !cv.getattr("is_Rational")?.is_truthy()? {
+        return Ok(None);
+    }
+    let Ok(text) = text.extract::<String>() else { return Ok(None) };
+    let x = rat_of(cv)?;
+    let (n, d) = (x.n.clone(), x.d.clone());
+    let int = |k: i64| num_bigint::BigInt::from(k);
+    let abs = |v: &num_bigint::BigInt| if v < &int(0) { -v.clone() } else { v.clone() };
+    Ok(Some(match text.as_str() {
+        "number/2" => Rat::new(n, d * int(2)),
+        "2*number" | "2*coefficient" => Rat::new(n * int(2), d),
+        "number - 2" => Rat::new(n - d.clone() * int(2), d),
+        "1/number" if n != int(0) => Rat::new(d, n),
+        "Abs(number) - 1" => Rat::new(abs(&n) - d.clone(), d),
+        "Abs(number) - 2" => Rat::new(abs(&n) - d.clone() * int(2), d),
+        _ => return Ok(None),
+    }))
 }
 
 /// A SymPy Rational's `(p, q)` as a Rat.
