@@ -846,9 +846,13 @@ def formally_zero(x) -> bool:
 
 def sign(x) -> int:
     """-1, 0 or 1 for a Fraction, int or Element (may raise Undecided)."""
-    if type(x) is Element:
+    t = type(x)
+    if t is Element:
         return x.sign()
-    return (x > 0) - (x < 0)
+    if t is Fraction or t is int:
+        return (x > 0) - (x < 0)
+    s = getattr(x, "sign", None)     # the Rust backend's Element (sa_solver.Element): its own sign, as Element's
+    return s() if s is not None else (x > 0) - (x < 0)
 
 
 def _make(n, d):

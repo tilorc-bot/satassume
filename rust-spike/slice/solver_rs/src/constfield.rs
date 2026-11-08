@@ -2462,6 +2462,12 @@ impl PyElem {
         Ok(Num::E(self.e.clone()).nonzero()?)
     }
 
+    /// Python Element's `sign()` (:1443 in Rust), for `constfield.sign`: -1, 0 or 1, or Undecided as Python raises it.
+    fn sign(&self) -> PyResult<i32> {
+        crate::session::tick(crate::session::CF_ELEM_SIGN);
+        Ok(Num::E(self.e.clone()).sign()?)
+    }
+
     /// An immutable value: a copy is itself, as for Python's Element (which has no `__copy__` but copies to an equal one).
     fn __copy__(slf: Bound<'_, Self>) -> Bound<'_, Self> {
         slf

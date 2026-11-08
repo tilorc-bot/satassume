@@ -71,7 +71,8 @@ def test_counters_and_fallback():
     # Reads only Python answers: arithmetic, order, attributes. Same values as Python's, each counted.
     assert r + 1 == x + 1 and 1 - r == 1 - x and r * PI == x * PI and (r < 3) == (x < 3) and -r == -x
     assert r._n == x._n and r.sign() == x.sign() and r.to_sympy() == x.to_sympy()
-    assert S.session_counts()['cf:elem_py_read'] >= c1['cf:elem_py_read'] + 8
+    assert S.session_counts()['cf:elem_py_read'] >= c1['cf:elem_py_read'] + 7     # sign() is on Rust
+    assert S.session_counts()['cf:elem_sign'] == c1['cf:elem_sign'] + 1
     assert copy.deepcopy(r) is r and copy.copy(r) is r
     assert S.cf_num(r) is r
 
@@ -101,3 +102,24 @@ def test_plants_caught(plant):
         assert S.session_counts()['rel:plant_fired'] > before
     for x in cases()[:20]:
         check(x)
+
+
+def test_constfield_sign_on_rust():
+    """constfield.sign of the pyclass is Elem::sign (no fallback), with Python Element.sign's values and Undecided."""
+    n = 0
+    for x in cases():
+        r = rust(x)
+        c0 = S.session_counts()
+        try:
+            want = ('v', x.sign())
+        except cf.Undecided as e:
+            want = ('u', type(e))
+        try:
+            got = ('v', cf.sign(r))
+        except cf.Undecided as e:
+            got = ('u', type(e))
+        c1 = S.session_counts()
+        assert got == want, x
+        assert c1['cf:elem_sign'] == c0['cf:elem_sign'] + 1 and c1['cf:elem_py_read'] == c0['cf:elem_py_read']
+        n += 1
+    assert n > 100
