@@ -40,7 +40,9 @@ Base suite rows: the stack's landing bar (`sa-port-187/bar-6g-c3c5r3/suite`); ke
 **Incoming diff before the bar** (4215655..eac4537, the 6g stack): knowledge_common_live.py, knowledge_core_live.py,
 term/rows_tpl.rs, test_knowledge_core_shapes.py, results/port-6g.md; no file this step touches. Rebased without conflict,
 rebuilt on orion, test_cones_core.py 10 passed.
-**Landed:** XX
+**Landed:** the commit carrying this file, on rust-slice, rebased on eac4537 (unchanged since the bar started). **Incoming
+diff at landing: none** (eac4537..eac4537). Between 088b86b and the landed commit there is only this report and
+port-ownership.md/.tsv (results/); the landing guard saw no source difference. Week reading before the push: 85%.
 
 ## The bar (sa-port-189/bar-5c10c on 088b86b)
 1. **Suite by id against the stack's rows:** 5,991 passed, 127 failed, 23 skipped, 18 xfailed, 6,159 ids. New 0, gone 0,
