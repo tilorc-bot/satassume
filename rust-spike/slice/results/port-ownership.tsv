@@ -214,20 +214,20 @@ knowledge/templates/core.py	_exp_arg	524		port	6	landed 6e 714630d	Rust	Python's
 knowledge/templates/core.py	_pow_bound_templates	533		port	6	landed 6e 714630d	Rust	Python's copy on kept queries, no query on the stack and SLICE_KNOWLEDGE=py (knowledge_core_live.py)	Rust: dev 8, fuzz 0, suite 377	
 knowledge/templates/core.py	_table	575	~u	offline	6	not port (offline, ownership ruling)	Python			
 knowledge/templates/core.py	__getattr__	584		offline	6	not port (offline, ownership ruling)	Python			
-knowledge/templates/functions.py	_unary	41		port	6	6f	Python			
-knowledge/templates/functions.py	shifted	84		port	6	6f	Python			
-knowledge/templates/functions.py	_exp_ipi	100		port	6	6f	Python			
-knowledge/templates/functions.py	_parts_of_round_rules	143	~u	port	6	6f	Python			
-knowledge/templates/functions.py	parts_of_round_templates	150		port	6	6f	Python			
-knowledge/templates/functions.py	_pi_trig_rules	177	~u	port	6	6f	Python			
-knowledge/templates/functions.py	_pi_trig	214		port	6	6f	Python			
-knowledge/templates/functions.py	_in_unit_interval_units	247	~u	port	6	6f	Python			
-knowledge/templates/functions.py	_cosh_shift_rules	280	~u	port	6	6f	Python			
-knowledge/templates/functions.py	_cosh_shift_split	302		port	6	6f	Python			
-knowledge/templates/functions.py	_cosh_shift	322		port	6	6f	Python			
-knowledge/templates/functions.py	nary	354		port	6	6f	Python			
+knowledge/templates/functions.py	_unary	41		port	6	landed 6f f76af99 (partial)	Python	Python shell: arity check, 6d's facts/_common, 6g's rows generation; inner work on Rust (via the swapped rules)	via its callees	6d/6g
+knowledge/templates/functions.py	shifted	84		port	6	landed 6f f76af99	Rust	swapped (tf6.rs, knowledge_f6_live.py)	Rust: dev 2, fuzz 0, suite 58; f6 wl 45, value wl 224	
+knowledge/templates/functions.py	_exp_ipi	100		port	6	landed 6f f76af99 (partial)	Python	Python shell: arity check, 6d's facts/_common, 6g's rows generation; inner work on Rust (core's ipi_rules)	via its callees	6d/6g
+knowledge/templates/functions.py	_parts_of_round_rules	143	~u	port	6	landed 6f f76af99	Rust	swapped (tf6.rs, knowledge_f6_live.py)	Rust: dev 0, fuzz 0, suite 7; f6 wl 3	
+knowledge/templates/functions.py	parts_of_round_templates	150		port	6	landed 6f f76af99 (partial)	Python	Python shell: arity check, 6d's facts/_common, 6g's rows generation; inner work on Rust (_parts_of_round_rules)	via its callees	6d/6g
+knowledge/templates/functions.py	_pi_trig_rules	177	~u	port	6	landed 6f f76af99	Rust	swapped (tf6.rs, knowledge_f6_live.py)	Rust: dev 0, fuzz 0, suite 283; f6 wl 38, core wl 21	
+knowledge/templates/functions.py	_pi_trig	214		port	6	landed 6f f76af99 (partial)	Python	Python shell: arity check, 6d's facts/_common, 6g's rows generation; inner work on Rust (_pi_trig_rules)	via its callees	6d/6g
+knowledge/templates/functions.py	_in_unit_interval_units	247	~u	port	6	landed 6f f76af99 (partial)	Rust	Python wrapper over the swapped _unit_interval_units (Rust); named SymPy-semantics callback for a Float argument, f6:unit_interval:float dev 0, fuzz 0, suite 2, f6 wl 0	Rust: dev 0, fuzz 0, suite 40; f6 wl 18	after 5c
+knowledge/templates/functions.py	_cosh_shift_rules	280	~u	port	6	landed 6f f76af99	Rust	swapped (tf6.rs, knowledge_f6_live.py)	Rust: dev 0, fuzz 0, suite 19; f6 wl 7	
+knowledge/templates/functions.py	_cosh_shift_split	302		port	6	landed 6f f76af99	Rust	swapped (tf6.rs, knowledge_f6_live.py)	Rust: dev 1, fuzz 0, suite 2; f6 wl 130, core wl 1	
+knowledge/templates/functions.py	_cosh_shift	322		port	6	landed 6f f76af99 (partial)	Python	Python shell: arity check, 6d's facts/_common, 6g's rows generation; inner work on Rust (_cosh_shift_split/_cosh_shift_rules)	via its callees	6d/6g
+knowledge/templates/functions.py	nary	354		port	6	landed 6f f76af99 (partial)	Python	Python shell: arity check, 6d's facts/_common, 6g's rows generation; inner work on Rust (via the swapped rules)	via its callees	6d/6g
 knowledge/templates/functions.py	_value_units	398	~u	offline	6	not port (offline, ownership ruling)	Python			
-knowledge/templates/functions.py	_genocchi_half	412	~u	port	6	6f	Python			
+knowledge/templates/functions.py	_genocchi_half	412	~u	port	6	landed 6f f76af99 (partial)	Rust	Python wrapper over the swapped _genocchi_half_rules (Rust)	Rust: dev 0, fuzz 0, suite 11; value wl 50	
 knowledge/templates/limits.py	_inner	75	~u	python	6	not port (python, ownership ruling)	Python			
 knowledge/templates/limits.py	_scalar	102	~u	python	6	not port (python, ownership ruling)	Python			
 knowledge/templates/limits.py	_plain	110	~u	python	6	not port (python, ownership ruling)	Python			
@@ -236,10 +236,10 @@ knowledge/templates/limits.py	_sum_or_product	127	~u	python	6	not port (python, 
 knowledge/templates/limits.py	sum_templates	176	~u	python	6	not port (python, ownership ruling)	Python			
 knowledge/templates/limits.py	product_templates	181	~u	python	6	not port (python, ownership ruling)	Python			
 knowledge/templates/limits.py	integral_templates	186	~u	python	6	not port (python, ownership ruling)	Python			
-knowledge/templates/nodes.py	_accum	22	~u	port	6	6f	Python			
-knowledge/templates/nodes.py	accumbounds_templates	30	~u	port	6	6f	Python			
-knowledge/templates/nodes.py	idx_units	37	~u	port	6	6f	Python			
-knowledge/templates/physics.py	quantity_units	22	~u	port	6	6f	Python			
+knowledge/templates/nodes.py	_accum	22	~u	port	6	landed 6f f76af99	Rust	swapped (tf6.rs, knowledge_f6_live.py)	Rust: dev 0, fuzz 0, suite 22; f6 wl 5	
+knowledge/templates/nodes.py	accumbounds_templates	30	~u	port	6	landed 6f f76af99 (partial)	Python	Python shell: arity check, 6d's facts/_common, 6g's rows generation; inner work on Rust (_accum)	via its callees	6d/6g
+knowledge/templates/nodes.py	idx_units	37	~u	port	6	landed 6f f76af99 (partial)	Rust	Python wrapper over the swapped _idx_facts (Rust)	Rust: dev 0, fuzz 0, suite 4; f6 wl 1	
+knowledge/templates/physics.py	quantity_units	22	~u	port	6	landed 6f f76af99 (partial)	Rust	Python wrapper over the swapped _quantity_facts (Rust)	Rust: dev 0, fuzz 0, suite 5; f6 wl 1	
 knowledge/templates/registry.py	own_facts	54		offline	6	not port (offline, ownership ruling)	Python			
 knowledge/templates/registry.py	_redefines	62		conversion	6	not port (conversion, ownership ruling)	Python			
 knowledge/templates/registry.py	TemplateRegistry.__init__	75		port	6	6g	Python			
@@ -256,14 +256,14 @@ knowledge/templates/registry.py	TemplateRegistry._imported	136	~u	offline	6	not 
 knowledge/templates/registry.py	TemplateRegistry.facts_for	216	~u	port?	6	6g	Python			
 knowledge/templates/registry.py	TemplateRegistry.classes	245	~u	conversion	6	not port (conversion, ownership ruling)	Python			
 knowledge/templates/registry.py	_collect	250	~u	conversion	6	not port (conversion, ownership ruling)	Python			
-knowledge/templates/rootof.py	_coefficients	22	~u	port	6	6f	Python			
-knowledge/templates/rootof.py	_facts	31	~u	port	6	6f	Python			
-knowledge/templates/rootof.py	crootof_units	45	~u	port	6	6f	Python			
-knowledge/templates/special.py	_register	38	~u	port	6	6f	Python			
-knowledge/templates/special.py	_doubled	56	~u	port	6	6f	Python			
-knowledge/templates/special.py	_multigamma_rules	66	~u	port	6	6f	Python			
-knowledge/templates/special.py	multigamma_templates	88	~u	port	6	6f	Python			
-knowledge/templates/stats.py	randomsymbol_units	22	~u	port	6	6f	Python			
+knowledge/templates/rootof.py	_coefficients	22	~u	conversion	6	not port (conversion, 6f reclass ruling)	Python	conversion supplies the integer coefficients, or None for a non-ZZ domain		
+knowledge/templates/rootof.py	_facts	31	~u	port	6	landed 6f f76af99	Rust	swapped (tf6.rs, knowledge_f6_live.py); reaches realroots' Rust side (root_facts)	Rust: dev 0, fuzz 0, suite 128; rootof wl 368	
+knowledge/templates/rootof.py	crootof_units	45	~u	port	6	landed 6f f76af99 (partial)	Python	Python shell: arity check, 6d's facts/_common, 6g's rows generation; inner work on Rust (_facts)	via its callees	6d/6g
+knowledge/templates/special.py	_register	38	~u	none	6	not port (none, 6f reclass ruling)	Python	dead code: no caller; removal candidate beside _bound in a separate held Python PR		
+knowledge/templates/special.py	_doubled	56	~u	port	6	landed 6f f76af99	Rust	swapped (tf6.rs, knowledge_f6_live.py)	Rust: dev 0, fuzz 0, suite 0; value wl 21	
+knowledge/templates/special.py	_multigamma_rules	66	~u	port	6	landed 6f f76af99	Rust	swapped (tf6.rs, knowledge_f6_live.py)	Rust: dev 0, fuzz 0, suite 11; value wl 15	
+knowledge/templates/special.py	multigamma_templates	88	~u	port	6	landed 6f f76af99 (partial)	Python	Python shell: arity check, 6d's facts/_common, 6g's rows generation; inner work on Rust (_multigamma_rules); named SymPy-semantics callback for multigamma's value (SymPy evaluation), f6:multigamma_value:python dev 0, fuzz 0, suite 9, value wl 21; candidate permanent like enclose	via its callees	6d/6g
+knowledge/templates/stats.py	randomsymbol_units	22	~u	port	6	landed 6f f76af99 (partial)	Rust	conversion supplies its reads of declared facts (reclass ruling, as symbol_units); the template work, _random_units, is swapped (Rust)	Rust: dev 0, fuzz 0, suite 12; f6 wl 4	
 knowledge/templates/table.py	Row	44		port	6	6d	Python			
 knowledge/templates/table.py	Row.__init__	49	~u	port	6	6d	Python			
 knowledge/templates/table.py	Row._compile	64	~u	port	6	6d	Python			
