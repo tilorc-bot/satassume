@@ -22,7 +22,7 @@ use pyo3::types::{PyBool, PyDict, PyList, PySet, PyString, PyTuple};
 use crate::session::{self, tick, SessionCore};
 use crate::term::py::PyTermTable;
 
-struct Hooks {
+pub(crate) struct Hooks {
     term_live: Py<PyAny>,
     relations: Py<PyAny>,
     euf_adapter: Py<PyAny>,
@@ -137,6 +137,13 @@ const SPECS_NO_EUF: u8 = 88;
 const RELNAME_SWAP: u8 = 89;
 /// Adapters step, part A: `spec_row` hands back a converted spec with `guarded` flipped on each memo hit.
 const SPEC_ROW_FLIP: u8 = 90;
+/// From here, step scope's (`scope_core.rs`): one effect dropped in each moved item of scope.py.
+pub(crate) const SCOPE_LINKED_EMPTY: u8 = 91;
+pub(crate) const LINKED_NO_REL: u8 = 92;
+pub(crate) const SCOPE_NO_AFFINE: u8 = 93;
+pub(crate) const THEORY_NO_ASSUME: u8 = 94;
+pub(crate) const CUSTOM_NEVER: u8 = 95;
+pub(crate) const EXT_SHALLOW: u8 = 96;
 
 #[pyfunction]
 fn rel_install(term_live: Py<PyAny>, relations: Py<PyAny>, euf_adapter: Py<PyAny>, fault: Py<PyAny>) {
@@ -237,13 +244,19 @@ fn rel_plant(name: Option<&str>) -> PyResult<()> {
         Some("specs-no-euf") => SPECS_NO_EUF,
         Some("relname-swap") => RELNAME_SWAP,
         Some("spec-row-flip") => SPEC_ROW_FLIP,
+        Some("scope-linked-empty") => SCOPE_LINKED_EMPTY,
+        Some("linked-no-rel") => LINKED_NO_REL,
+        Some("scope-no-affine") => SCOPE_NO_AFFINE,
+        Some("theory-no-assume") => THEORY_NO_ASSUME,
+        Some("custom-never") => CUSTOM_NEVER,
+        Some("ext-shallow") => EXT_SHALLOW,
         Some(x) => return Err(PyValueError::new_err(format!("no plant {x}"))),
     };
     PLANT.store(v, Relaxed);
     Ok(())
 }
 
-fn hooks() -> PyResult<Arc<Hooks>> {
+pub(crate) fn hooks() -> PyResult<Arc<Hooks>> {
     HOOKS.read().unwrap().clone().ok_or_else(|| PyException::new_err("relations_core: rel_install hasn't run"))
 }
 
@@ -2070,7 +2083,7 @@ fn term_free<'py>(h: &Hooks, x: &Bound<'py, PyAny>) -> PyResult<Option<Linked<'p
 }
 
 /// `_is_number` with no session: the row, else Python's.
-fn free_is_number(h: &Hooks, e: &Bound<'_, PyAny>) -> PyResult<bool> {
+pub(crate) fn free_is_number(h: &Hooks, e: &Bound<'_, PyAny>) -> PyResult<bool> {
     let p = e.py();
     if let Some(l) = term_free(h, e)? {
         return read(p, h, &l, |t, i| t.read_is_number(i));
@@ -2442,7 +2455,7 @@ fn rel_zero_twins<'py>(atoms: &Bound<'py, PyAny>, context: Option<&Bound<'py, Py
 /// `glue_atoms`: `atoms`, then the twins it lacks; `atoms` itself if there is none.
 #[pyfunction]
 #[pyo3(signature = (atoms, context=None, cinfo=None))]
-fn rel_glue_atoms<'py>(atoms: &Bound<'py, PyAny>, context: Option<&Bound<'py, PyAny>>, cinfo: Option<&Bound<'py, PyAny>>) -> PyResult<Bound<'py, PyAny>> {
+pub(crate) fn rel_glue_atoms<'py>(atoms: &Bound<'py, PyAny>, context: Option<&Bound<'py, PyAny>>, cinfo: Option<&Bound<'py, PyAny>>) -> PyResult<Bound<'py, PyAny>> {
     let p = atoms.py();
     let h = hooks()?;
     tick(session::REL_GLUE_ATOMS);

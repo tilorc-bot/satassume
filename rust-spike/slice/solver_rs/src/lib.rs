@@ -24,6 +24,7 @@ mod rat;
 mod realroots;
 mod relations_core;
 mod rows;
+mod scope_core;
 mod session;
 mod solver;
 mod term;
@@ -574,6 +575,7 @@ fn sa_solver(m: &Bound<'_, PyModule>) -> PyResult<()> {
     rows::register(m)?;
     session::register(m)?;
     relations_core::register(m)?;
+    scope_core::register(m)?;
     discovery::register(m)?;
     compile_loop::register(m)?;
     query::register(m)?;

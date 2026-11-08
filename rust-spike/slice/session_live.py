@@ -689,6 +689,49 @@ def _install_relations():
     return undo
 
 
+#: Step scope: scope.py's six port rows that run in `scope_core.rs`, by module attribute -> sa_solver name (`affine_pair` is C1's,
+#: term_live's wrapper over `PyTermTable.affine_pair`, and Rust calls it back). `EMPTY` is the Rust `Scope` that `scope_install` makes.
+_SCOPE_FUNCS = {
+    'Scope': 'Scope', 'linked_terms': 'scope_linked_terms', 'scope_of_atoms': 'scope_scope_of_atoms',
+    'theory_scope': 'scope_theory_scope', '_custom_pred': 'scope_custom_pred', 'extension_atoms': 'scope_extension_atoms',
+}
+#: Modules that import some of them by name, as (module, ((its name, scope's name), ...)). ref.py (the reference engine) is left
+#: Python's on purpose, as for `_REL_FUNCS`.
+_SCOPE_IMPORTERS = (('satassume.engine', (('Scope', 'Scope'), ('_EMPTY_SCOPE', 'EMPTY'), ('scope_of_atoms', 'scope_of_atoms'),
+                                          ('theory_scope', 'theory_scope'))),
+                    ('satassume.sympy_api', (('_theory_scope', 'theory_scope'),)))
+_SCOPE_PLANTS = ('scope-linked-empty', 'linked-no-rel', 'scope-no-affine', 'theory-no-assume', 'custom-never', 'ext-shallow')
+#: Python's, saved at install (with 'EMPTY').
+PY_SCOPE_FUNCS = {}
+
+
+def _install_scope():
+    """Returns the undo. Needs `_install_relations` (relations_core's hooks)."""
+    import importlib
+    from satassume import scope
+    empty = sa_solver.scope_install(scope)
+    rs = {n: getattr(sa_solver, v) for n, v in _SCOPE_FUNCS.items()}
+    rs['EMPTY'] = empty
+    PY_SCOPE_FUNCS.update({n: getattr(scope, n) for n in rs})
+    py_empty = PY_SCOPE_FUNCS['EMPTY']
+    sets = [(scope, n, n) for n in rs] + [(importlib.import_module(m), mine, theirs) for m, ns in _SCOPE_IMPORTERS for mine, theirs in ns]
+    saved = [(m, mine, getattr(m, mine)) for m, mine, _ in sets]
+    for m, mine, theirs in sets:
+        setattr(m, mine, rs[theirs])
+    # Default arguments bound at def time: `Session.__init__(engine, scope=EMPTY)` and `Engine._fresh_session(scope=EMPTY)`.
+    fns = [f for f in (engine.Session.__init__, engine.Engine._fresh_session) if py_empty in (f.__defaults__ or ())]
+    saved_d = [(f, f.__defaults__) for f in fns]
+    for f in fns:
+        f.__defaults__ = tuple(empty if d is py_empty else d for d in f.__defaults__)
+
+    def undo():
+        for m, n, v in saved:
+            setattr(m, n, v)
+        for f, d in saved_d:
+            f.__defaults__ = d
+    return undo
+
+
 def _rust_call(table, emit, dv):
     """Whether Rust can make this call, and the `emit` it has to call back: `None` means `Session.emit` itself, which Rust does
     directly. `assume_formula` passes its own `emit`, which adds the selector; Rust calls that one, so it never has to know."""
@@ -728,6 +771,7 @@ def install():
     S.node, S.var, S.dvar, S._dvar = _node, _var, _dvar_public, _dvar_raw
     engine.VarTable, engine.compile_formula, engine.formula_literal = TableView, _compile_formula, _formula_literal
     undo_rel = _install_relations() if os.environ.get('SLICE_REL', 'rust') == 'rust' else None
+    undo_scope = _install_scope() if undo_rel is not None and os.environ.get('SLICE_SCOPE', 'rust') == 'rust' else None
     undo_disc = _install_discovery() if os.environ.get('SLICE_DISC', 'rust') == 'rust' else None
     undo_loop = _install_compile_loop() if os.environ.get('SLICE_LOOP', 'rust') == 'rust' else None
     undo_query = _install_queries() if os.environ.get('SLICE_QUERY', 'rust') == 'rust' else None
@@ -739,6 +783,8 @@ def install():
             undo_loop()
         if undo_disc is not None:
             undo_disc()
+        if undo_scope is not None:
+            undo_scope()
         if undo_rel is not None:
             undo_rel()
         for n, v in saved.items():
@@ -764,7 +810,8 @@ def from_env():
             atexit.register(_write_report, os.environ['SESSION_REPORT'])
         if os.environ.get('SLICE_SESSION_PLANT'):
             PLANT[0] = os.environ['SLICE_SESSION_PLANT']
-            if PLANT[0] in _REL_PLANTS or PLANT[0] in _DISC_PLANTS or PLANT[0] in _LOOP_PLANTS or PLANT[0] in _QUERY_PLANTS:
+            if PLANT[0] in _REL_PLANTS or PLANT[0] in _DISC_PLANTS or PLANT[0] in _LOOP_PLANTS or PLANT[0] in _QUERY_PLANTS \
+                    or PLANT[0] in _SCOPE_PLANTS:
                 sa_solver.rel_plant(PLANT[0])
         return install()
     return None

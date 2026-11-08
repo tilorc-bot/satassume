@@ -361,6 +361,8 @@ def _guarded(site, f):
 def _ids(q, site, *terms):
     if q is None or q.kept is not None:
         COUNTS['term:no-table:' + site] += 1
+        if q is None:   # Step scope: outside any query, as against inside a kept one.
+            COUNTS['term:no-query:' + site] += 1
         return None
     ids = [term_id(q, e, site) for e in terms]
     if None in ids:
