@@ -119,6 +119,22 @@ const SELECTOR_NO_MEMO: u8 = 71;
 const ATOM_VAR_SKEW: u8 = 72;
 const DROP_NOTE_SIDES: u8 = 73;
 const DROP_EQ_LINKS_ZERO: u8 = 74;
+/// From here, 5c5's second part: one effect dropped or skewed in each of relations.py's module functions.
+const OWN_TERM_FALSE: u8 = 75;
+const CONSTANT_TERM_NEVER: u8 = 76;
+const BASIS_ALL: u8 = 77;
+const SYMPY_ATOM_SWAP: u8 = 78;
+const ZERO_ARGS_EMPTY: u8 = 79;
+const UNDER_OF_EMPTY: u8 = 80;
+const ZERO_TWINS_FIRST: u8 = 81;
+const GLUE_NO_TWINS: u8 = 82;
+const GUARDED_NONE: u8 = 83;
+const TERMS_OF_NO_ORDER: u8 = 84;
+const LINK_OBJECTS_BARE: u8 = 85;
+const CLOSED_UNITS_NONE: u8 = 86;
+const WITH_CLOSED_SKIP: u8 = 87;
+const SPECS_NO_EUF: u8 = 88;
+const RELNAME_SWAP: u8 = 89;
 
 #[pyfunction]
 fn rel_install(term_live: Py<PyAny>, relations: Py<PyAny>, euf_adapter: Py<PyAny>, fault: Py<PyAny>) {
@@ -203,6 +219,21 @@ fn rel_plant(name: Option<&str>) -> PyResult<()> {
         Some("atom-var-skew") => ATOM_VAR_SKEW,
         Some("drop-note-sides") => DROP_NOTE_SIDES,
         Some("drop-eq-links-zero") => DROP_EQ_LINKS_ZERO,
+        Some("own-term-false") => OWN_TERM_FALSE,
+        Some("constant-term-never") => CONSTANT_TERM_NEVER,
+        Some("basis-all") => BASIS_ALL,
+        Some("sympy-atom-swap") => SYMPY_ATOM_SWAP,
+        Some("zero-args-empty") => ZERO_ARGS_EMPTY,
+        Some("under-of-empty") => UNDER_OF_EMPTY,
+        Some("zero-twins-first") => ZERO_TWINS_FIRST,
+        Some("glue-no-twins") => GLUE_NO_TWINS,
+        Some("guarded-none") => GUARDED_NONE,
+        Some("terms-of-no-order") => TERMS_OF_NO_ORDER,
+        Some("link-objects-bare") => LINK_OBJECTS_BARE,
+        Some("closed-units-none") => CLOSED_UNITS_NONE,
+        Some("with-closed-skip") => WITH_CLOSED_SKIP,
+        Some("specs-no-euf") => SPECS_NO_EUF,
+        Some("relname-swap") => RELNAME_SWAP,
         Some(x) => return Err(PyValueError::new_err(format!("no plant {x}"))),
     };
     PLANT.store(v, Relaxed);
@@ -754,7 +785,7 @@ fn rel_interpret<'py>(rel: &Bound<'py, PyAny>, atom: &Bound<'py, PyAny>) -> PyRe
     if eq {
         eq_infinity(rel, &s, &c, &h, var, atom)?;
     }
-    let sat = r.getattr(intern!(p, "sympy_atom"))?.call1((atom,))?;
+    let sat = sympy_atom(&h, atom)?;
     let mut ok = false;
     let (twins, lterms, eterms) = (PyList::empty(p), PyList::empty(p), PyList::empty(p));
     for spec in rel.getattr(intern!(p, "specs"))?.try_iter()? {
@@ -777,7 +808,7 @@ fn rel_interpret<'py>(rel: &Bound<'py, PyAny>, atom: &Bound<'py, PyAny>) -> PyRe
         if order && ad.getattr_opt(intern!(p, "order_sides"))?.is_some() {
             let sides = ad.call_method1(intern!(p, "order_sides"), (&sat,))?;
             if !sides.is_none() {
-                if !link.is_none() && r.getattr(intern!(p, "_own_term"))?.call1((&sides, &link))?.is_truthy()? {
+                if !link.is_none() && own_term(&sides, &link)? {
                     s.call_method1(intern!(p, "ensure"), (&link, r.getattr(intern!(p, "_INF_PREDS"))?))?;
                 } else {
                     rel_order_infinite(rel, var, &sides)?;
@@ -1258,7 +1289,7 @@ impl<'py> Cx<'_, 'py> {
                 if e.is_instance(&rational)? {
                     let t = ad.call_method1(intern!(p, "term_of"), (e,))?;
                     if !t.is_none() && !planted(DROP_FIXED) {
-                        let facts = self.h.relations.bind(p).getattr(intern!(p, "_number_facts"))?.call1((self.s.getattr(intern!(p, "engine"))?, e))?;
+                        let facts = number_basis(&self.s.getattr(intern!(p, "engine"))?, e, true)?;
                         th.call_method1(intern!(p, "set_fixed"), (t, facts))?;
                     }
                     continue;
@@ -1393,7 +1424,7 @@ impl<'py> Cx<'_, 'py> {
                     let is_rational = node.is_instance(&rational)?;
                     // `_number_basis` is a sorted tuple.
                     let preds: Vec<i32> = if is_rational {
-                        r.getattr(intern!(p, "_number_basis"))?.call1((self.s.getattr(intern!(p, "engine"))?, &node))?.extract()?
+                        number_basis(&self.s.getattr(intern!(p, "engine"))?, &node, false)?.extract()?
                     } else {
                         (0..npred as i32).collect()
                     };
@@ -1734,13 +1765,7 @@ fn rel_share(rel: &Bound<'_, PyAny>) -> PyResult<bool> {
         if number(rel, &h, &a)? && number(rel, &h, &b)? {
             continue;
         }
-        let ct = r.getattr(intern!(p, "_constant_term"))?;
-        tick(session::REL_CB_CONSTANT_TERM);
-        if ct.call1((&a,))?.is_truthy()? {
-            continue;
-        }
-        tick(session::REL_CB_CONSTANT_TERM);
-        if ct.call1((&b,))?.is_truthy()? {
+        if constant_term(rel, &h, &a)? || constant_term(rel, &h, &b)? {
             continue;
         }
         if zero_drop {
@@ -2007,6 +2032,636 @@ fn rel_eq_links<'py>(rel: &Bound<'py, PyAny>, var: i32, atom: &Bound<'py, PyAny>
     Ok(())
 }
 
+// -- step 5c5, second part: relations.py's module functions ------------------------------------------------------------------------
+// Each follows its Python function line for line. They take no session, so a term resolves through `term_live.term_id` with no node
+// cache (`term_free`). Memos stay the Python objects they were (`_SYMPY_ATOMS`, `_CLOSED`, `engine._xbasis`, the adapter memo), so
+// everything Python can read later is the same. What stays Python is a named, counted callback: the engine's `is_many`, SymPy's
+// `Q.eq`/`Q.lt`, the adapters' reads, `closed_sign`, the templates' `units`, and `_under_apps`, `zero_twin`, `relation_atom` and
+// `_structural_subterms`, which `term_live` answers on ids. `AdapterSpec` and `Uninterpreted` are types, with nothing to run.
+
+/// The current query's id for `x`, with no session: Python's one rule, `term_live.term_id`. None for a non-SymPy object, as
+/// `term_live`'s wrappers give it to Python without asking.
+fn term_free<'py>(h: &Hooks, x: &Bound<'py, PyAny>) -> PyResult<Option<Linked<'py>>> {
+    let p = x.py();
+    if PLANT.load(Relaxed) == LINK_NONE {
+        tick(session::LINK_NONE);
+        tick(session::REL_PLANT);
+        return Ok(None);
+    }
+    let tl = h.term_live.bind(p);
+    if !x.is_instance(&faulted(p, h, "link", tl.getattr(intern!(p, "Basic")))?)? {
+        return Ok(None);
+    }
+    let q = faulted(p, h, "link", tl.call_method0(intern!(p, "current")))?;
+    if q.is_none() || !faulted(p, h, "link", q.getattr(intern!(p, "kept")))?.is_none() {
+        return Ok(None);
+    }
+    let table = faulted(p, h, "link", q.getattr(intern!(p, "table")).and_then(|t| t.cast_into::<PyTermTable>().map_err(Into::into)))?;
+    let got = faulted(p, h, "link", tl.call_method1(intern!(p, "term_id"), (&q, x, intern!(p, "link"))))?;
+    if got.is_none() {
+        return Ok(None);
+    }
+    let id: u32 = faulted(p, h, "link", got.extract().map_err(Into::into))?;
+    Ok(Some(Linked { table, id }))
+}
+
+/// `_is_number` with no session: the row, else Python's.
+fn free_is_number(h: &Hooks, e: &Bound<'_, PyAny>) -> PyResult<bool> {
+    let p = e.py();
+    if let Some(l) = term_free(h, e)? {
+        return read(p, h, &l, |t, i| t.read_is_number(i));
+    }
+    tick(session::REL_PY_IS_NUMBER);
+    h.relations.bind(p).getattr(intern!(p, "_is_number"))?.call1((e,))?.is_truthy()
+}
+
+/// `_own_term`: the order sides of `0 < e` or `e < 0` are `0` and `e` alone, coefficient 1, no `oo`.
+fn own_term(sides: &Bound<'_, PyAny>, e: &Bound<'_, PyAny>) -> PyResult<bool> {
+    tick(session::REL_OWN_TERM);
+    let (a, b) = two(sides)?;
+    let ((mut fa, ia), (mut fb, ib)) = (two(&a)?, two(&b)?);
+    if ia.is_truthy()? || ib.is_truthy()? {
+        return Ok(false);
+    }
+    if fa.is_truthy()? {
+        std::mem::swap(&mut fa, &mut fb);
+    }
+    let r = !fa.is_truthy()? && fb.len()? == 1 && fb.call_method1(intern!(e.py(), "get"), (e,))?.eq(1)?;
+    if r && planted(OWN_TERM_FALSE) {
+        return Ok(false);
+    }
+    Ok(r)
+}
+
+#[pyfunction]
+fn rel_own_term(sides: &Bound<'_, PyAny>, e: &Bound<'_, PyAny>) -> PyResult<bool> {
+    own_term(sides, e)
+}
+
+/// `_constant_term`: a closed constant that isn't a rational number. In a session, so the session's link answers.
+fn constant_term(rel: &Bound<'_, PyAny>, h: &Hooks, e: &Bound<'_, PyAny>) -> PyResult<bool> {
+    let p = rel.py();
+    tick(session::REL_CONSTANT_TERM);
+    let (_, c) = session_of(p, h, rel)?;
+    let l = term_of(&c.borrow(), h, e)?;
+    let r = match l {
+        Some(l) => read(p, h, &l, |t, i| t.read_is_number(i) && !t.read_is_rational(i))?,
+        None => {
+            tick(session::REL_PY_IS_NUMBER);
+            h.relations.bind(p).getattr(intern!(p, "_is_number"))?.call1((e,))?.is_truthy()? && !e.getattr(intern!(p, "is_Rational"))?.is_truthy()?
+        }
+    };
+    if r && planted(CONSTANT_TERM_NEVER) {
+        return Ok(false);
+    }
+    Ok(r)
+}
+
+/// `RULE_INSTANTIATED` as clause masks, kept with the object they came from, as `rules._masks` keys by identity.
+static RULE_MASKS: RwLock<Option<(Py<PyAny>, Arc<Vec<u64>>)>> = RwLock::new(None);
+
+fn lit_bit(l: i64) -> PyResult<u32> {
+    let b = if l > 0 { 2 * (l - 1) } else { 2 * (-l - 1) + 1 };
+    if !(0..64).contains(&b) {
+        return Err(PyValueError::new_err(format!("_number_basis: literal {l} outside 64 bits")));
+    }
+    Ok(b as u32)
+}
+
+fn rule_masks(clauses: &Bound<'_, PyAny>) -> PyResult<Arc<Vec<u64>>> {
+    if let Some((o, m)) = RULE_MASKS.read().unwrap().as_ref() {
+        if o.bind(clauses.py()).is(clauses) {
+            return Ok(m.clone());
+        }
+    }
+    let mut masks = Vec::new();
+    for c in clauses.try_iter()? {
+        let mut m = 0u64;
+        for l in c?.try_iter()? {
+            m |= 1u64 << lit_bit(l?.extract()?)?;
+        }
+        masks.push(m);
+    }
+    let m = Arc::new(masks);
+    *RULE_MASKS.write().unwrap() = Some((clauses.clone().unbind(), m.clone()));
+    Ok(m)
+}
+
+/// `closure_mask`: the unit-propagation fixpoint of `a`, or None on a conflict. All 32 variables' bits are in `even`, which is
+/// Python's answer too, since `a` and the clauses set no bit past the variables they reach.
+fn closure_mask(masks: &[u64], mut a: u64) -> Option<u64> {
+    const EVEN: u64 = 0x5555_5555_5555_5555;
+    let mut sw = ((a & EVEN) << 1) | ((a >> 1) & EVEN);
+    if a & sw != 0 {
+        return None;
+    }
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for &m in masks {
+            if a & m != 0 {
+                continue;
+            }
+            let free = m & !sw;
+            if free == 0 {
+                return None;
+            }
+            if free & (free - 1) == 0 {
+                a |= free;
+                sw |= if free & EVEN != 0 { free << 1 } else { free >> 1 };
+                changed = true;
+            }
+        }
+    }
+    Some(a)
+}
+
+fn lits_mask(ls: &[i64]) -> PyResult<u64> {
+    ls.iter().try_fold(0u64, |m, &l| Ok(m | 1u64 << lit_bit(l)?))
+}
+
+/// `_number_basis(engine, c, facts)`, memoized in `engine._xbasis` as Python's is. The facts are the engine's (`is_many`, a callback).
+fn number_basis<'py>(engine: &Bound<'py, PyAny>, c: &Bound<'py, PyAny>, facts: bool) -> PyResult<Bound<'py, PyAny>> {
+    let p = engine.py();
+    tick(session::REL_NUMBER_BASIS);
+    let pick = |r: &Bound<'py, PyAny>| r.get_item(if facts { 1 } else { 0 });
+    let memo = engine.getattr(intern!(p, "_xbasis"))?;
+    let r = memo.call_method1(intern!(p, "get"), (c,))?;
+    if !r.is_none() {
+        return pick(&r);
+    }
+    let rules = p.import(intern!(p, "satassume.knowledge.rules"))?;
+    let basis_names = rules.getattr(intern!(p, "BASIS"))?;
+    let masks = rule_masks(&rules.getattr(intern!(p, "RULE_INSTANTIATED"))?)?;
+    tick(session::REL_CB_IS_MANY);
+    let (mut decided, mut open) = (Vec::<i64>::new(), Vec::<i64>::new());
+    for (k, v) in engine.call_method1(intern!(p, "is_many"), (c, &basis_names))?.try_iter()?.enumerate() {
+        let v = v?;
+        let k = k as i64;
+        if v.is_none() {
+            open.push(k);
+        } else if v.is_truthy()? {
+            decided.push(k + 1);
+        } else {
+            decided.push(-(k + 1));
+        }
+    }
+    let want = lits_mask(&decided)?;
+    let closes = |lits: &[i64]| -> PyResult<bool> {
+        let m = lits_mask(lits)?;
+        Ok(match closure_mask(&masks, m) {
+            Some(d) => want & !(d | m) == 0,
+            None => false,
+        })
+    };
+    let mut basis: Vec<i64>;
+    if planted(BASIS_ALL) {
+        basis = decided.clone();
+    } else {
+        basis = Vec::new();
+        let mut closed: Option<u64> = Some(0);
+        for &l in &decided {
+            let bit = 1u64 << lit_bit(l)?;
+            if let Some(cm) = closed {
+                if cm & bit != 0 {
+                    continue;
+                }
+            }
+            basis.push(l);
+            if let Some(cm) = closed {
+                closed = closure_mask(&masks, cm | bit);
+            }
+        }
+        for l in basis.clone() {
+            let rest: Vec<i64> = basis.iter().copied().filter(|&m| m != l).collect();
+            if closes(&rest)? {
+                basis = rest;
+            }
+        }
+        if !closes(&basis)? {
+            basis = decided.clone();
+        }
+    }
+    let mut preds: Vec<i64> = basis.iter().map(|l| l.abs() - 1).chain(open.iter().copied()).collect();
+    preds.sort_unstable();
+    preds.dedup();
+    let fl: Vec<Bound<'py, PyTuple>> =
+        basis.iter().map(|&l| PyTuple::new(p, [(l.abs() - 1).into_pyobject(p)?.into_any(), PyBool::new(p, l > 0).to_owned().into_any()])).collect::<PyResult<_>>()?;
+    let r = PyTuple::new(p, [PyTuple::new(p, preds)?.into_any(), PyTuple::new(p, fl)?.into_any()])?.into_any();
+    memo.set_item(c, &r)?;
+    pick(&r)
+}
+
+#[pyfunction]
+#[pyo3(signature = (engine, c, facts=false))]
+fn rel_number_basis<'py>(engine: &Bound<'py, PyAny>, c: &Bound<'py, PyAny>, facts: bool) -> PyResult<Bound<'py, PyAny>> {
+    number_basis(engine, c, facts)
+}
+
+#[pyfunction]
+fn rel_number_facts<'py>(engine: &Bound<'py, PyAny>, c: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    number_basis(engine, c, true)
+}
+
+/// `sympy_atom`: `Q.eq(a, b)` / `Q.lt(a, b)` for a normalised relation atom, memoized in Python's `_SYMPY_ATOMS`.
+fn sympy_atom<'py>(h: &Hooks, atom: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    let p = atom.py();
+    tick(session::REL_SYMPY_ATOM);
+    let memo = h.relations.bind(p).getattr(intern!(p, "_SYMPY_ATOMS"))?;
+    let r = memo.call_method1(intern!(p, "get"), (atom,))?;
+    if !r.is_none() {
+        return Ok(r);
+    }
+    let q = p.import(intern!(p, "sympy.assumptions"))?.getattr(intern!(p, "Q"))?;
+    let pred = atom.getattr(intern!(p, "pred"))?;
+    let ps: String = pred.extract()?;
+    let f = match ps.as_str() {
+        "eq" => q.getattr(intern!(p, "eq"))?,
+        "lt" => q.getattr(intern!(p, "lt"))?,
+        _ => return Err(PyKeyError::new_err(pred.unbind())),
+    };
+    let mut args: Vec<Bound<'py, PyAny>> = atom.getattr(intern!(p, "expr"))?.try_iter()?.collect::<PyResult<_>>()?;
+    if ps == "lt" && args.len() == 2 && planted(SYMPY_ATOM_SWAP) {
+        args.swap(0, 1);
+    }
+    tick(session::REL_CB_SYMPY_Q);
+    let r = f.call1(PyTuple::new(p, args)?)?;
+    if memo.len()? >= memo.getattr(intern!(p, "size"))?.extract::<usize>()? {
+        memo.call_method0(intern!(p, "clear"))?;
+    }
+    memo.set_item(atom, &r)?;
+    Ok(r)
+}
+
+#[pyfunction]
+fn rel_sympy_atom<'py>(atom: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    sympy_atom(&*hooks()?, atom)
+}
+
+/// `zero_args`: the arguments (no number) of the `zero` atoms, in first-seen order.
+fn zero_args<'py>(h: &Hooks, atoms: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyTuple>> {
+    let p = atoms.py();
+    tick(session::REL_ZERO_ARGS);
+    let zs = PyList::empty(p);
+    for a in atoms.try_iter()? {
+        let a = a?;
+        if a.getattr(intern!(p, "pred"))?.eq(intern!(p, "zero"))? {
+            let e = a.getattr(intern!(p, "expr"))?;
+            if !zs.contains(&e)? && !free_is_number(h, &e)? {
+                if planted(ZERO_ARGS_EMPTY) {
+                    continue;
+                }
+                zs.append(e)?;
+            }
+        }
+    }
+    PyTuple::new(p, zs)
+}
+
+#[pyfunction]
+fn rel_zero_args<'py>(atoms: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyTuple>> {
+    zero_args(&*hooks()?, atoms)
+}
+
+/// `under_of`: the union of `_under_apps` of each atom's argument, built as Python's `|` builds it.
+fn under_of<'py>(h: &Hooks, atoms: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    let p = atoms.py();
+    tick(session::REL_UNDER_OF);
+    let ua = h.relations.bind(p).getattr(intern!(p, "_under_apps"))?;
+    let mut out = pyo3::types::PyFrozenSet::empty(p)?.into_any();
+    for a in atoms.try_iter()? {
+        tick(session::REL_CB_UNDER_APPS);
+        let u = ua.call1((a?.getattr(intern!(p, "expr"))?,))?;
+        if u.is_truthy()? {
+            if planted(UNDER_OF_EMPTY) {
+                continue;
+            }
+            out = out.bitor(&u)?;
+        }
+    }
+    Ok(out)
+}
+
+#[pyfunction]
+fn rel_under_of<'py>(atoms: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    under_of(&*hooks()?, atoms)
+}
+
+/// `zero_twins(atoms, context, cinfo)`.
+fn zero_twins<'py>(h: &Hooks, atoms: &Bound<'py, PyAny>, context: &Bound<'py, PyAny>, cinfo: Option<&Bound<'py, PyAny>>) -> PyResult<Bound<'py, PyList>> {
+    let p = atoms.py();
+    tick(session::REL_ZERO_TWINS);
+    let (czs, mut cunder) = match cinfo {
+        None => (zero_args(h, context)?.into_any(), None),
+        Some(ci) => {
+            let (a, b) = two(ci)?;
+            (a, if b.is_none() { None } else { Some(b) })
+        }
+    };
+    let zs = zero_args(h, atoms)?;
+    let out = PyList::empty(p);
+    if !zs.is_truthy()? && !czs.is_truthy()? {
+        return Ok(out);
+    }
+    let cunder = match cunder.take() {
+        Some(u) => u,
+        None => under_of(h, context)?,
+    };
+    let under = under_of(h, atoms)?;
+    if !under.is_truthy()? && !cunder.is_truthy()? {
+        return Ok(out);
+    }
+    let zt = h.relations.bind(p).getattr(intern!(p, "zero_twin"))?;
+    for e in zs.into_any().add(&czs)?.try_iter()? {
+        let e = e?;
+        if under.contains(&e)? || cunder.contains(&e)? {
+            tick(session::REL_CB_ZERO_TWIN);
+            let tw = zt.call1((&e,))?;
+            if !out.contains(&tw)? {
+                if !out.is_empty() && planted(ZERO_TWINS_FIRST) {
+                    continue;
+                }
+                out.append(tw)?;
+            }
+        }
+    }
+    Ok(out)
+}
+
+#[pyfunction]
+#[pyo3(signature = (atoms, context=None, cinfo=None))]
+fn rel_zero_twins<'py>(atoms: &Bound<'py, PyAny>, context: Option<&Bound<'py, PyAny>>, cinfo: Option<&Bound<'py, PyAny>>) -> PyResult<Bound<'py, PyList>> {
+    let p = atoms.py();
+    let empty = PyTuple::empty(p).into_any();
+    zero_twins(&*hooks()?, atoms, context.unwrap_or(&empty), cinfo.filter(|c| !c.is_none()))
+}
+
+/// `glue_atoms`: `atoms`, then the twins it lacks; `atoms` itself if there is none.
+#[pyfunction]
+#[pyo3(signature = (atoms, context=None, cinfo=None))]
+fn rel_glue_atoms<'py>(atoms: &Bound<'py, PyAny>, context: Option<&Bound<'py, PyAny>>, cinfo: Option<&Bound<'py, PyAny>>) -> PyResult<Bound<'py, PyAny>> {
+    let p = atoms.py();
+    let h = hooks()?;
+    tick(session::REL_GLUE_ATOMS);
+    let empty = PyTuple::empty(p).into_any();
+    let twins = zero_twins(&h, atoms, context.unwrap_or(&empty), cinfo.filter(|c| !c.is_none()))?;
+    if twins.is_empty() || planted(GLUE_NO_TWINS) {
+        return Ok(atoms.clone());
+    }
+    let have = PySet::new(p, atoms.try_iter()?.collect::<PyResult<Vec<_>>>()?)?;
+    let mut v: Vec<Bound<'py, PyAny>> = atoms.try_iter()?.collect::<PyResult<_>>()?;
+    for tw in twins.iter() {
+        if !have.contains(&tw)? {
+            v.push(tw);
+        }
+    }
+    Ok(PyTuple::new(p, v)?.into_any())
+}
+
+/// `_guarded_adapters`: one adapter per guarded spec, kept in `memo` by name.
+fn guarded_adapters<'py>(specs: &Bound<'py, PyAny>, memo: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyList>> {
+    let p = specs.py();
+    tick(session::REL_GUARDED_ADAPTERS);
+    let out = PyList::empty(p);
+    for spec in specs.try_iter()? {
+        let spec = spec?;
+        if spec.getattr(intern!(p, "guarded"))?.is_truthy()? {
+            if planted(GUARDED_NONE) {
+                continue;
+            }
+            let name = spec.getattr(intern!(p, "name"))?;
+            let mut ad = memo.call_method1(intern!(p, "get"), (&name,))?;
+            if ad.is_none() {
+                tick(session::REL_CB_ADAPTER_READ);
+                ad = spec.getattr(intern!(p, "factory"))?.call0()?;
+                memo.set_item(&name, &ad)?;
+            }
+            out.append(ad)?;
+        }
+    }
+    Ok(out)
+}
+
+#[pyfunction]
+fn rel_guarded_adapters<'py>(specs: &Bound<'py, PyAny>, memo: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyList>> {
+    guarded_adapters(specs, memo)
+}
+
+/// `_terms_of`: the opaque terms an adapter reads in `sat`, the order sides' too when `order`.
+fn terms_of<'py>(ad: &Bound<'py, PyAny>, sat: &Bound<'py, PyAny>, order: bool) -> PyResult<Bound<'py, PySet>> {
+    let p = ad.py();
+    tick(session::REL_TERMS_OF);
+    let k = PySet::empty(p)?;
+    if order && ad.hasattr(intern!(p, "order_sides"))? {
+        tick(session::REL_CB_ADAPTER_READ);
+        let sides = ad.call_method1(intern!(p, "order_sides"), (sat,))?;
+        if !sides.is_none() && !planted(TERMS_OF_NO_ORDER) {
+            for s in sides.try_iter()? {
+                let (form, _inf) = two(&s?)?;
+                k.call_method1(intern!(p, "update"), (form,))?;
+            }
+        }
+    }
+    tick(session::REL_CB_ADAPTER_READ);
+    let terms = ad.call_method1(intern!(p, "terms"), (sat,))?;
+    if terms.is_truthy()? {
+        k.call_method1(intern!(p, "update"), (terms,))?;
+    }
+    Ok(k)
+}
+
+#[pyfunction]
+fn rel_terms_of<'py>(ad: &Bound<'py, PyAny>, sat: &Bound<'py, PyAny>, order: bool) -> PyResult<Bound<'py, PySet>> {
+    terms_of(ad, sat, order)
+}
+
+/// `link_objects`: the nodes `Relations._link(e)` can visit. Its `except Exception` is Python's: an ordinary exception from a side
+/// the adapters can't read ends the reading, and a `BaseException` (`TermFault`) goes on up.
+#[pyfunction]
+fn rel_link_objects<'py>(e: &Bound<'py, PyAny>, specs: &Bound<'py, PyAny>, memo: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PySet>> {
+    let p = e.py();
+    let h = hooks()?;
+    tick(session::REL_LINK_OBJECTS);
+    let k = PySet::new(p, [e])?;
+    if free_is_number(&h, e)? {
+        return Ok(k);
+    }
+    if planted(LINK_OBJECTS_BARE) {
+        return Ok(k);
+    }
+    let r = h.relations.bind(p);
+    tick(session::REL_CB_STRUCTURAL_SUBTERMS);
+    k.call_method1(intern!(p, "update"), (r.getattr(intern!(p, "_structural_subterms"))?.call1((e,))?,))?;
+    let body = || -> PyResult<()> {
+        let zero = p.import(intern!(p, "sympy"))?.getattr(intern!(p, "S"))?.getattr(intern!(p, "Zero"))?;
+        let ra = r.getattr(intern!(p, "relation_atom"))?;
+        for ad in guarded_adapters(specs, memo)?.iter() {
+            if r.getattr(intern!(p, "INTEGERS"))?.is_truthy()? && ad.hasattr(intern!(p, "integer_form"))? {
+                tick(session::REL_CB_ADAPTER_READ);
+                let form = ad.call_method1(intern!(p, "integer_form"), (e,))?;
+                if !form.is_none() {
+                    k.call_method1(intern!(p, "update"), (form.get_item(1)?,))?;
+                }
+            }
+            let mut atoms = Vec::with_capacity(3);
+            for (pr, a, b) in [("lt", &zero, e), ("lt", e, &zero), ("eq", e, &zero)] {
+                tick(session::REL_CB_RELATION_ATOM);
+                atoms.push(ra.call1((pr, a, b))?);
+            }
+            for atom in &atoms {
+                let lt = atom.getattr(intern!(p, "pred"))?.eq(intern!(p, "lt"))?;
+                k.call_method1(intern!(p, "update"), (terms_of(&ad, &sympy_atom(&h, atom)?, lt)?,))?;
+            }
+        }
+        Ok(())
+    };
+    match body() {
+        Ok(()) => {}
+        Err(x) if x.is_instance_of::<PyException>(p) => {}
+        Err(x) => return Err(x),
+    }
+    Ok(k)
+}
+
+/// `closed_units`: the sign facts of a closed compound term as a unit pattern, memoized in Python's `_CLOSED`.
+fn closed_units<'py>(node: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    let p = node.py();
+    let h = hooks()?;
+    tick(session::REL_CLOSED_UNITS);
+    let memo = h.relations.bind(p).getattr(intern!(p, "_CLOSED"))?;
+    match memo.get_item(node) {
+        Ok(r) => return Ok(r),
+        Err(x) if x.is_instance_of::<PyKeyError>(p) => {}
+        Err(x) if x.is_instance_of::<pyo3::exceptions::PyTypeError>(p) => return Ok(p.None().into_bound(p)),
+        Err(x) => return Err(x),
+    }
+    let mut r = p.None().into_bound(p);
+    let num = match node.getattr_opt(intern!(p, "is_number"))? {
+        Some(v) => v.is_truthy()?,
+        None => false,
+    };
+    if num && !node.getattr(intern!(p, "is_Atom"))?.is_truthy()? {
+        let closed_sign = p.import(intern!(p, "satassume.theories.lra.lra_adapter"))?.getattr(intern!(p, "closed_sign"))?;
+        let units = p.import(intern!(p, "satassume.knowledge.templates._common"))?.getattr(intern!(p, "units"))?;
+        tick(session::REL_CB_CLOSED_SIGN);
+        let (s, real) = two(&closed_sign.call1((node,))?)?;
+        if !s.is_none() || real.is_truthy()? {
+            let sv: Option<i64> = s.extract()?;
+            let pred = match sv {
+                Some(1) => "positive",
+                Some(-1) => "negative",
+                Some(0) => "zero",
+                None => "real",
+                Some(_) => return Err(PyKeyError::new_err(s.unbind())),
+            };
+            let facts: Py<PyAny> = PyList::new(p, [(pred, true)])?.into_any().unbind();
+            let thunk = pyo3::types::PyCFunction::new_closure(p, None, None, move |a, _| Ok::<_, PyErr>(facts.clone_ref(a.py())))?;
+            if planted(CLOSED_UNITS_NONE) {
+                // the pattern is left out, as if nothing were decided
+            } else {
+                tick(session::REL_CB_UNITS);
+                r = units.call1((("closed_sign", &s), thunk, node))?;
+            }
+        }
+    }
+    if memo.len()? >= 4096 {
+        memo.call_method0(intern!(p, "clear"))?;
+    }
+    memo.set_item(node, &r)?;
+    Ok(r)
+}
+
+#[pyfunction]
+fn rel_closed_units<'py>(node: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    closed_units(node)
+}
+
+/// `with_closed_units(clause_templates)`'s closure.
+#[pyclass(name = "ClosedUnits", module = "sa_solver", frozen)]
+struct ClosedUnits {
+    inner: Py<PyAny>,
+}
+
+#[pymethods]
+impl ClosedUnits {
+    fn __call__<'py>(&self, node: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyTuple>> {
+        let p = node.py();
+        tick(session::REL_WITH_CLOSED_UNITS);
+        tick(session::REL_CB_CLAUSE_TEMPLATES);
+        let (compiled, formulas) = two(&self.inner.bind(p).call1((node,))?)?;
+        let c = closed_units(node)?;
+        if c.is_none() || planted(WITH_CLOSED_SKIP) {
+            return PyTuple::new(p, [compiled, formulas]);
+        }
+        let l = PyList::new(p, compiled.try_iter()?.collect::<PyResult<Vec<_>>>()?)?;
+        l.append(c)?;
+        PyTuple::new(p, [l.into_any(), formulas])
+    }
+}
+
+#[pyfunction]
+fn rel_with_closed_units(clause_templates: Py<PyAny>) -> ClosedUnits {
+    ClosedUnits { inner: clause_templates }
+}
+
+/// `_missing`: whether `e` says `module` (relative to the package) doesn't exist, not that a module it imports is missing.
+fn missing(p: Python<'_>, e: &PyErr, package: &str, module: &str) -> PyResult<bool> {
+    Ok(e.value(p).getattr(intern!(p, "name"))?.eq(format!("{package}.{module}"))?)
+}
+
+#[pyfunction]
+fn rel_missing(p: Python<'_>, e: &Bound<'_, PyAny>, module: &str) -> PyResult<bool> {
+    let h = hooks()?;
+    let package: String = h.relations.bind(p).getattr(intern!(p, "__package__"))?.extract()?;
+    missing(p, &PyErr::from_value(e.clone()), &package, module)
+}
+
+/// `default_specs`: the real adapters; one whose module doesn't exist is left out, one that fails to import raises.
+#[pyfunction]
+fn rel_default_specs(p: Python<'_>) -> PyResult<Bound<'_, PyList>> {
+    let h = hooks()?;
+    tick(session::REL_DEFAULT_SPECS);
+    let r = h.relations.bind(p);
+    let package: String = r.getattr(intern!(p, "__package__"))?.extract()?;
+    let spec = r.getattr(intern!(p, "AdapterSpec"))?;
+    let specs = PyList::empty(p);
+    for (module, cls, name, guarded) in [("theories.lra.lra_adapter", "LRAAdapter", "lra", true), ("theories.euf.euf_adapter", "EUFAdapter", "euf", false)] {
+        match p.import(format!("{package}.{module}").as_str()) {
+            Ok(m) => {
+                if name == "euf" && planted(SPECS_NO_EUF) {
+                    continue;
+                }
+                specs.append(spec.call1((name, m.getattr(cls)?, guarded))?)?;
+            }
+            Err(e) if e.is_instance_of::<pyo3::exceptions::PyModuleNotFoundError>(p) => {
+                if !missing(p, &e, &package, module)? {
+                    return Err(e);
+                }
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(specs)
+}
+
+/// `relational_name`: `eq ne lt le gt ge` for a SymPy `Relational`.
+#[pyfunction]
+fn rel_relational_name<'py>(rel: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyString>> {
+    let p = rel.py();
+    tick(session::REL_RELATIONAL_NAME);
+    let op = rel.getattr(intern!(p, "rel_op"))?;
+    let name = match op.extract::<String>().ok().as_deref() {
+        Some("==") => "eq",
+        Some("!=") => "ne",
+        Some("<") => if planted(RELNAME_SWAP) { "gt" } else { "lt" },
+        Some("<=") => "le",
+        Some(">") => "gt",
+        Some(">=") => "ge",
+        _ => return Err(PyKeyError::new_err(op.unbind())),
+    };
+    Ok(PyString::new(p, name))
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("REL_KINDS", (SD, EN, MC, IE, IL))?;
     m.add_function(wrap_pyfunction!(rel_link_probe, m)?)?;
@@ -2047,5 +2702,23 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(rel_atom_selector, m)?)?;
     m.add_function(wrap_pyfunction!(rel_atom_var, m)?)?;
     m.add_function(wrap_pyfunction!(rel_note_sides, m)?)?;
-    m.add_function(wrap_pyfunction!(rel_eq_links, m)?)
+    m.add_function(wrap_pyfunction!(rel_eq_links, m)?)?;
+    m.add_class::<ClosedUnits>()?;
+    m.add_function(wrap_pyfunction!(rel_own_term, m)?)?;
+    m.add_function(wrap_pyfunction!(rel_number_basis, m)?)?;
+    m.add_function(wrap_pyfunction!(rel_number_facts, m)?)?;
+    m.add_function(wrap_pyfunction!(rel_sympy_atom, m)?)?;
+    m.add_function(wrap_pyfunction!(rel_zero_args, m)?)?;
+    m.add_function(wrap_pyfunction!(rel_under_of, m)?)?;
+    m.add_function(wrap_pyfunction!(rel_zero_twins, m)?)?;
+    m.add_function(wrap_pyfunction!(rel_glue_atoms, m)?)?;
+    m.add_function(wrap_pyfunction!(rel_guarded_adapters, m)?)?;
+    m.add_function(wrap_pyfunction!(rel_terms_of, m)?)?;
+    m.add_function(wrap_pyfunction!(rel_link_objects, m)?)?;
+    m.add_function(wrap_pyfunction!(rel_closed_units, m)?)?;
+    m.add_function(wrap_pyfunction!(rel_with_closed_units, m)?)?;
+    m.add_function(wrap_pyfunction!(rel_missing, m)?)?;
+    m.add_function(wrap_pyfunction!(rel_default_specs, m)?)?;
+    m.add_function(wrap_pyfunction!(rel_relational_name, m)?)?;
+    Ok(())
 }

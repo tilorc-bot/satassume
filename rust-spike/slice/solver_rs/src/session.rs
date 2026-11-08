@@ -14,7 +14,7 @@ use pyo3::types::{PyBool, PyDict, PyList, PySet, PyTuple};
 use crate::compile::{self, block_lits, Cx, Def, Kind, Need, F, R};
 use crate::formula_py::PyP;
 
-const NAMES: [&str; 96] = [
+const NAMES: [&str; 122] = [
     "py:var", "py:dvar", "py:node", "py:compile", "py:literal", "py:table", "rs:visit", "rs:add_clause", "rs:ensure_vars",
     "rs:def_implications", "rs:neg_shared", "join", "rs:emit_callback", "refuse:depth", "refuse:convert", "refuse:object", "second:visit", "custom:own",
     "link:hit", "link:resolved", "link:none", "link:no_table", "link:second", "link:no_node",
@@ -31,6 +31,11 @@ const NAMES: [&str; 96] = [
     "rel:init", "rel:enqueue", "rel:note_formula", "rel:process", "rel:link_later", "rel:wants_transfer", "rel:share",
     "rel:cb_note_sides", "rel:cb_eq_links", "rel:cb_atom_selector", "rel:cb_atom_var", "rel:cb_constant_term",
     "rel:adapter", "rel:atom_selector", "rel:atom_var", "rel:note_sides", "rel:eq_links", "rel:cb_termwise",
+    "rel:own_term", "rel:constant_term", "rel:number_basis", "rel:sympy_atom", "rel:zero_args", "rel:under_of",
+    "rel:zero_twins", "rel:glue_atoms", "rel:guarded_adapters", "rel:terms_of", "rel:link_objects", "rel:closed_units",
+    "rel:with_closed_units", "rel:default_specs", "rel:relational_name", "rel:cb_is_many", "rel:cb_sympy_q", "rel:cb_under_apps",
+    "rel:cb_zero_twin", "rel:cb_structural_subterms", "rel:cb_relation_atom", "rel:cb_adapter_read", "rel:cb_closed_sign", "rel:cb_units",
+    "rel:cb_clause_templates", "rel:py_is_number",
 ];
 const VAR: usize = 0;
 const DVAR: usize = 1;
@@ -130,6 +135,33 @@ pub(crate) const REL_ATOM_VAR: usize = 92;
 pub(crate) const REL_NOTE_SIDES: usize = 93;
 pub(crate) const REL_EQ_LINKS: usize = 94;
 pub(crate) const REL_CB_TERMWISE: usize = 95;
+/// Step 5c5, second part: relations.py's module functions, and their callbacks to what stays Python.
+pub(crate) const REL_OWN_TERM: usize = 96;
+pub(crate) const REL_CONSTANT_TERM: usize = 97;
+pub(crate) const REL_NUMBER_BASIS: usize = 98;
+pub(crate) const REL_SYMPY_ATOM: usize = 99;
+pub(crate) const REL_ZERO_ARGS: usize = 100;
+pub(crate) const REL_UNDER_OF: usize = 101;
+pub(crate) const REL_ZERO_TWINS: usize = 102;
+pub(crate) const REL_GLUE_ATOMS: usize = 103;
+pub(crate) const REL_GUARDED_ADAPTERS: usize = 104;
+pub(crate) const REL_TERMS_OF: usize = 105;
+pub(crate) const REL_LINK_OBJECTS: usize = 106;
+pub(crate) const REL_CLOSED_UNITS: usize = 107;
+pub(crate) const REL_WITH_CLOSED_UNITS: usize = 108;
+pub(crate) const REL_DEFAULT_SPECS: usize = 109;
+pub(crate) const REL_RELATIONAL_NAME: usize = 110;
+pub(crate) const REL_CB_IS_MANY: usize = 111;
+pub(crate) const REL_CB_SYMPY_Q: usize = 112;
+pub(crate) const REL_CB_UNDER_APPS: usize = 113;
+pub(crate) const REL_CB_ZERO_TWIN: usize = 114;
+pub(crate) const REL_CB_STRUCTURAL_SUBTERMS: usize = 115;
+pub(crate) const REL_CB_RELATION_ATOM: usize = 116;
+pub(crate) const REL_CB_ADAPTER_READ: usize = 117;
+pub(crate) const REL_CB_CLOSED_SIGN: usize = 118;
+pub(crate) const REL_CB_UNITS: usize = 119;
+pub(crate) const REL_CB_CLAUSE_TEMPLATES: usize = 120;
+pub(crate) const REL_PY_IS_NUMBER: usize = 121;
 
 /// Deeper formulas compile on Python, over this same table. Python's own limit depends on the caller's stack, so it isn't
 /// reproduced: its deepest shape is `Implies`, 3 frames a level (first failure at depth 330 from a bare stack, limit 1000), so
@@ -137,7 +169,7 @@ pub(crate) const REL_CB_TERMWISE: usize = 95;
 const FORMULA_DEPTH: u32 = 64;
 
 thread_local! {
-    static COUNTS: [Cell<u64>; 96] = const { [const { Cell::new(0) }; 96] };
+    static COUNTS: [Cell<u64>; 122] = const { [const { Cell::new(0) }; 122] };
     /// Each session's serial, for the link's memo: a pointer could alias a dead session's.
     static SERIAL: Cell<u64> = const { Cell::new(0) };
 }
