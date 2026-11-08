@@ -11,6 +11,9 @@ difference, so a plant (SLICE_SESSION_PLANT's dispatch-* names, passed as PLANT)
 import os
 import sys
 
+# harness.state lives in the repo's tests/ (run from rust-spike/slice)
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'tests'))
+
 if len(sys.argv) > 1:
     os.environ['SLICE_SESSION_PLANT'] = sys.argv[1]
 os.environ.pop('SESSION_REPORT', None)
