@@ -284,6 +284,30 @@ pub(crate) const FC_VIEW_DROP_LAST: u8 = 208;
 pub(crate) const FC_ROLLBACK_SKIP: u8 = 209;
 /// `clear` keeps the store.
 pub(crate) const FC_CLEAR_SKIP: u8 = 210;
+/// `_verdict` kept across a settings change: its view's `clear` does nothing (the inventory's planted bug).
+pub(crate) const CTX_VERDICT_CLEAR_SKIP: u8 = 211;
+/// `_failed` kept across a clear.
+pub(crate) const CTX_FAILED_CLEAR_SKIP: u8 = 212;
+/// `_build_context_memoized` records no `Uninterpreted`.
+pub(crate) const CTX_FAILED_NO_MEMO: u8 = 213;
+/// `_verdict` never emptied at 20,000.
+pub(crate) const CTX_VERDICT_NO_BOUND: u8 = 214;
+/// `_context_session` returns an inconsistent set's session instead of raising.
+pub(crate) const CTX_SESSION_INCONSISTENT_PASS: u8 = 215;
+/// `_build_context` keeps the checked session when a theory gave up.
+pub(crate) const CTX_BUILD_NO_FALLBACK: u8 = 216;
+/// `_build_context` skips `link_set`.
+pub(crate) const CTX_BUILD_NO_LINK: u8 = 217;
+/// `verdict` builds a session for a set over the discovery budget.
+pub(crate) const CTX_VERDICT_SKIP_BUDGET: u8 = 218;
+/// `_complete_check` doesn't escalate an incomplete session.
+pub(crate) const CTX_CHECK_NO_ESCALATE: u8 = 219;
+/// `_complete_check` says consistent when a theory gave up, ran out, or the session is incomplete or truncated.
+pub(crate) const CTX_CHECK_NO_TRUNCATED: u8 = 220;
+/// `_complete_check` raises a ValueError (engine.py:1906's handler count moves).
+pub(crate) const CTX_CHECK_RAISE: u8 = 221;
+/// `_context_session` keeps the session in `_context_sessions`.
+pub(crate) const CTX_SESSIONS_STORE: u8 = 222;
 
 #[pyfunction]
 fn rel_install(term_live: Py<PyAny>, relations: Py<PyAny>, euf_adapter: Py<PyAny>, fault: Py<PyAny>) {
@@ -469,6 +493,18 @@ fn rel_plant(name: Option<&str>) -> PyResult<()> {
         Some("fc-view-drop-last") => FC_VIEW_DROP_LAST,
         Some("fc-rollback-skip") => FC_ROLLBACK_SKIP,
         Some("fc-clear-skip") => FC_CLEAR_SKIP,
+        Some("ctx-verdict-clear-skip") => CTX_VERDICT_CLEAR_SKIP,
+        Some("ctx-failed-clear-skip") => CTX_FAILED_CLEAR_SKIP,
+        Some("ctx-failed-no-memo") => CTX_FAILED_NO_MEMO,
+        Some("ctx-verdict-no-bound") => CTX_VERDICT_NO_BOUND,
+        Some("ctx-session-inconsistent-pass") => CTX_SESSION_INCONSISTENT_PASS,
+        Some("ctx-build-no-fallback") => CTX_BUILD_NO_FALLBACK,
+        Some("ctx-build-no-link") => CTX_BUILD_NO_LINK,
+        Some("ctx-verdict-skip-budget") => CTX_VERDICT_SKIP_BUDGET,
+        Some("ctx-check-no-escalate") => CTX_CHECK_NO_ESCALATE,
+        Some("ctx-check-no-truncated") => CTX_CHECK_NO_TRUNCATED,
+        Some("ctx-check-raise") => CTX_CHECK_RAISE,
+        Some("ctx-sessions-store") => CTX_SESSIONS_STORE,
         Some(x) => return Err(PyValueError::new_err(format!("no plant {x}"))),
     };
     PLANT.store(v, Relaxed);

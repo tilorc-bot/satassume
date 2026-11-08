@@ -32,15 +32,18 @@ use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PyString, PyTuple};
 
-use crate::relations_core::{planted, EM_KIDS_SET_DROP, EM_QCONES_CLEAR_SKIP, EM_SLOT_NO_MAXSIZE, EM_SPLITS_NO_BOUND};
-use crate::session::{tick, EM_FOREIGN, EM_FULL, EM_KEY_EQ, EM_PY_GLUE, EM_PY_KIDS, EM_PY_QCONES, EM_PY_SPLITS, EM_PY_XBASIS, EM_SLOT_SET};
+use crate::relations_core::{planted, CTX_FAILED_CLEAR_SKIP, CTX_VERDICT_CLEAR_SKIP, EM_KIDS_SET_DROP, EM_QCONES_CLEAR_SKIP, EM_SLOT_NO_MAXSIZE, EM_SPLITS_NO_BOUND};
+use crate::session::{tick, EM_FOREIGN, EM_FULL, EM_KEY_EQ, EM_PY_GLUE, EM_PY_KIDS, EM_PY_QCONES, EM_PY_SPLITS, EM_PY_XBASIS, EM_SLOT_SET, EM_PY_FAILED, EM_PY_VERDICT, EM_PY_CTXS};
 
 /// The containers, by slot: Python's attribute names.
-pub(crate) const SLOTS: [&str; 5] = ["_kids", "_qcones", "_glue_adapters", "_xbasis", "splits"];
+pub(crate) const SLOTS: [&str; 8] = ["_kids", "_qcones", "_glue_adapters", "_xbasis", "splits", "_failed", "_verdict", "_context_sessions"];
 pub(crate) const KIDS: u8 = 0;
 pub(crate) const QCONES: u8 = 1;
 pub(crate) const SPLITS: u8 = 4;
-const PY_TICK: [usize; 5] = [EM_PY_KIDS, EM_PY_QCONES, EM_PY_GLUE, EM_PY_XBASIS, EM_PY_SPLITS];
+/// Step 5c10b (context.rs).
+pub(crate) const FAILED: u8 = 5;
+pub(crate) const VERDICT: u8 = 6;
+const PY_TICK: [usize; 8] = [EM_PY_KIDS, EM_PY_QCONES, EM_PY_GLUE, EM_PY_XBASIS, EM_PY_SPLITS, EM_PY_FAILED, EM_PY_VERDICT, EM_PY_CTXS];
 
 /// A Python dict over Python keys, held in Rust, in insertion order.
 #[derive(Default)]
@@ -198,6 +201,10 @@ impl EngineMemo {
     fn clear(&self) {
         self.py();
         if self.slot == QCONES && planted(EM_QCONES_CLEAR_SKIP) {
+            return;
+        }
+        // 5c10b: the planted bug the inventory names, `_verdict` kept across a settings change (`_drop_set_memos`).
+        if (self.slot == VERDICT && planted(CTX_VERDICT_CLEAR_SKIP)) || (self.slot == FAILED && planted(CTX_FAILED_CLEAR_SKIP)) {
             return;
         }
         self.wipe();

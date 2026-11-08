@@ -802,6 +802,59 @@ _MEMO_PLANTS = ('memo-view-drop', 'memo-clear-skip', 'memo-restamp-no-stamp', 'm
 
 #: Step 5c9c: the engine memos Rust works on, by `MemoSlot` index (engmemo.rs `SLOTS`).
 ENGMEMO_SLOTS = ('_kids', '_qcones', '_glue_adapters', '_xbasis', 'splits')
+#: Step 5c10b: `_failed`, `_verdict`, `_context_sessions` are slots 5-7 when the context rows are Rust's (`context_native`).
+CTX_SLOTS = ('_failed', '_verdict', '_context_sessions')
+
+
+def context_native():
+    """Step 5c10b: whether the context rows and their containers are Rust's (SLICE_CONTEXT, default rust)."""
+    return all(os.environ.get(k, 'rust') == 'rust' for k in ('SLICE_SESSION', 'SLICE_MEMOS', 'SLICE_ENGMEMOS', 'SLICE_CONTEXT'))
+
+
+#: Step 5c10b: `Engine._context_session`, `_build_context_memoized`, `_build_context`, `verdict`, `_complete_check` run in
+#: context.rs. `CTX_RUST` holds what was installed: context.rs calls a row directly only while the class still has it (a
+#: patch is called by name, `ctx:cb_patched`). `PY_CONTEXT` keeps Python's, for handler_count's code object.
+PY_CONTEXT = {}
+CTX_RUST = {}
+_CTX_PLANTS = ('ctx-verdict-clear-skip', 'ctx-failed-clear-skip', 'ctx-failed-no-memo', 'ctx-verdict-no-bound',
+               'ctx-session-inconsistent-pass', 'ctx-build-no-fallback', 'ctx-build-no-link', 'ctx-verdict-skip-budget',
+               'ctx-check-no-escalate', 'ctx-check-no-truncated', 'ctx-check-raise', 'ctx-sessions-store')
+
+
+def _install_context():
+    """Returns the undo."""
+    E = engine.Engine
+    names = ('_context_session', '_build_context_memoized', '_build_context', 'verdict', '_complete_check')
+    saved = {n: E.__dict__[n] for n in names}
+    PY_CONTEXT.update({n: (f.__func__ if isinstance(f, staticmethod) else f) for n, f in saved.items()})
+    cs, bm, bc, vd, cc = (sa_solver.ctx_context_session, sa_solver.ctx_build_context_memoized, sa_solver.ctx_build_context,
+                          sa_solver.ctx_verdict, sa_solver.ctx_complete_check)
+
+    def _context_session(self, assumptions, proposition=None):
+        return cs(self, assumptions, proposition)
+
+    def _build_context_memoized(self, assumptions, proposition=None):
+        return bm(self, assumptions, proposition)
+
+    def _build_context(self, assumptions, proposition=None):
+        return bc(self, assumptions, proposition)
+
+    def verdict(self, assumptions):
+        return vd(self, assumptions)
+
+    def _complete_check(s, lits):
+        return cc(s, lits)
+    for f in (_context_session, _build_context_memoized, _build_context, verdict, _complete_check):
+        f.__doc__ = saved[f.__name__].__doc__
+        f.__qualname__ = 'Engine.' + f.__name__
+        CTX_RUST[f.__name__] = f
+        setattr(E, f.__name__, staticmethod(f) if f.__name__ == '_complete_check' else f)
+
+    def undo():
+        for n, f in saved.items():
+            setattr(E, n, f)
+        CTX_RUST.clear()
+    return undo
 
 
 def _install_memos():
@@ -860,11 +913,13 @@ def _install_engmemos():
     harness's `eng.splits = AnswerMemo(n)`) make Rust-native maps (engmemo.rs). Returns the undo."""
     E = engine.Engine
     saved = {n: E.__dict__[n] for n in ENGMEMO_SLOTS if n in E.__dict__}
-    for i, n in enumerate(ENGMEMO_SLOTS):
+    slots = ENGMEMO_SLOTS + (CTX_SLOTS if context_native() else ())
+    saved.update({n: E.__dict__[n] for n in slots if n in E.__dict__})
+    for i, n in enumerate(slots):
         setattr(E, n, sa_solver.MemoSlot(i))
 
     def undo():
-        for n in ENGMEMO_SLOTS:
+        for n in slots:
             delattr(E, n)
         for n, v in saved.items():
             setattr(E, n, v)
@@ -1013,8 +1068,11 @@ def install():
     undo_budget = _install_budget() if os.environ.get('SLICE_BUDGET', 'rust') == 'rust' else None
     undo_relevance = _install_relevance() if os.environ.get('SLICE_RELEVANCE', 'rust') == 'rust' else None
     undo_memos = _install_memos() if os.environ.get('SLICE_MEMOS', 'rust') == 'rust' else None
+    undo_ctx = _install_context() if context_native() else None
 
     def undo():
+        if undo_ctx is not None:
+            undo_ctx()
         if undo_memos is not None:
             undo_memos()
         if undo_relevance is not None:
@@ -1058,7 +1116,7 @@ def from_env():
             PLANT[0] = os.environ['SLICE_SESSION_PLANT']
             if PLANT[0] in _REL_PLANTS or PLANT[0] in _DISC_PLANTS or PLANT[0] in _LOOP_PLANTS or PLANT[0] in _QUERY_PLANTS \
                     or PLANT[0] in _SCOPE_PLANTS or PLANT[0] in _GLUE_PLANTS or PLANT[0] in _BUDGET_PLANTS \
-                    or PLANT[0] in _RELEVANCE_PLANTS or PLANT[0] in _MEMO_PLANTS:
+                    or PLANT[0] in _RELEVANCE_PLANTS or PLANT[0] in _MEMO_PLANTS or PLANT[0] in _CTX_PLANTS:
                 sa_solver.rel_plant(PLANT[0])
         return install()
     return None

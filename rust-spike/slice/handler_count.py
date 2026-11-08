@@ -41,7 +41,12 @@ def install(path):
     cons = sympy_api._consistent
     if not hasattr(cons, "__code__"):
         cons = sys.modules["session_live"].PY_RELEVANCE["_consistent"]
-    _sites.update(f.__code__ for f in (engine.Engine._build_context, cons))
+    # 5c10b: `_build_context` may be context.rs's (its wrapper's code has no handler); Python's own copy is in PY_CONTEXT
+    bc = engine.Engine._build_context
+    sl = sys.modules.get("session_live")
+    if sl is not None and getattr(sl, "CTX_RUST", {}).get("_build_context") is bc:
+        bc = sl.PY_CONTEXT["_build_context"]
+    _sites.update(f.__code__ for f in (bc, cons))
     mon.register_callback(TOOL, mon.events.EXCEPTION_HANDLED, _fired)
     mon.set_events(TOOL, mon.events.EXCEPTION_HANDLED)  # 3.12 has it only as a global event, hence the filter above
 
@@ -51,7 +56,7 @@ def pytest_configure(config):
 
 
 def rust_handled(site, exc):
-    """relevance.rs's `_consistent` caught `exc` (an Exception, as Python's handler): the same row, under Python's site name."""
+    """relevance.rs's `_consistent` (or context.rs's `_build_context`, 5c10b) caught `exc` (an Exception, as Python's handler): the same row, under Python's site name."""
     from satassume.engine import Uninterpreted
     if _out is None or isinstance(exc, Uninterpreted):     # as `_fired`
         return

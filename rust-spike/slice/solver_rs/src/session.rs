@@ -14,7 +14,7 @@ use pyo3::types::{PyBool, PyDict, PyList, PySet, PyTuple};
 use crate::compile::{self, block_lits, Cx, Def, Kind, Need, F, R};
 use crate::formula_py::PyP;
 
-const NAMES: [&str; 271] = [
+const NAMES: [&str; 288] = [
     "py:var", "py:dvar", "py:node", "py:compile", "py:literal", "py:table", "rs:visit", "rs:add_clause", "rs:ensure_vars",
     "rs:def_implications", "rs:neg_shared", "join", "rs:emit_callback", "refuse:depth", "refuse:convert", "refuse:object", "second:visit", "custom:own",
     "link:hit", "link:resolved", "link:none", "link:no_table", "link:second", "link:no_node",
@@ -60,6 +60,9 @@ const NAMES: [&str; 271] = [
     "em:key_eq", "bud:query_cone",
     "fc:py_facts", "fc:py_get", "fc:py_put", "fc:py_sync", "fc:view", "fc:clear", "fc:full", "fc:key_eq", "fc:rollback",
     "fc:new", "fc:py_key",
+    "em:py_failed", "em:py_verdict", "em:py_ctxs", "ctx:context_session", "ctx:build_memoized", "ctx:build_context",
+    "ctx:verdict", "ctx:complete_check", "ctx:cb_check_version", "ctx:cb_fresh_session", "ctx:cb_helpers", "ctx:py_stats",
+    "ctx:caught", "ctx:cb_patched", "ctx:failed_hit", "ctx:verdict_hit", "ctx:fallback",
 ];
 const VAR: usize = 0;
 const DVAR: usize = 1;
@@ -342,6 +345,31 @@ pub(crate) const FC_NEW: usize = 269;
 /// Python's read or write of a cache's memo key, `_settings` or `_epoch` (`Engine.is_`/`_is_custom` compare `_settings` every
 /// query, 5c10c; tests).
 pub(crate) const FC_PY_KEY: usize = 270;
+/// Step 5c10b (context.rs, engmemo.rs slots 5-7). Python's calls into the `_failed`, `_verdict`, `_context_sessions` views
+/// (`_drop_set_memos`, 5c10d; the registry; tests).
+pub(crate) const EM_PY_FAILED: usize = 271;
+pub(crate) const EM_PY_VERDICT: usize = 272;
+pub(crate) const EM_PY_CTXS: usize = 273;
+/// The five rows, once per run.
+pub(crate) const CTX_CONTEXT_SESSION: usize = 274;
+pub(crate) const CTX_BUILD_MEMOIZED: usize = 275;
+pub(crate) const CTX_BUILD_CONTEXT: usize = 276;
+pub(crate) const CTX_VERDICT: usize = 277;
+pub(crate) const CTX_COMPLETE_CHECK: usize = 278;
+/// Callbacks into Python, each removed by 5c10d: `_check_version`, `_fresh_session`, the module helpers (`_gave_up`,
+/// `_exhausted`, `_noncommutative_atoms`), the `stats["set_checks"]` write.
+pub(crate) const CTX_CB_CHECK_VERSION: usize = 279;
+pub(crate) const CTX_CB_FRESH_SESSION: usize = 280;
+pub(crate) const CTX_CB_HELPERS: usize = 281;
+pub(crate) const CTX_PY_STATS: usize = 282;
+/// engine.py:1906's handler, now in `build_context`: an Exception from the complete check made into a plain session.
+pub(crate) const CTX_CAUGHT: usize = 283;
+/// One of the five called by name because a patch replaced session_live's (tests, catch_count).
+pub(crate) const CTX_CB_PATCHED: usize = 284;
+/// Memo hits and the plain-session fallback (for reach).
+pub(crate) const CTX_FAILED_HIT: usize = 285;
+pub(crate) const CTX_VERDICT_HIT: usize = 286;
+pub(crate) const CTX_FALLBACK: usize = 287;
 
 /// Deeper formulas compile on Python, over this same table. Python's own limit depends on the caller's stack, so it isn't
 /// reproduced: its deepest shape is `Implies`, 3 frames a level (first failure at depth 330 from a bare stack, limit 1000), so
@@ -349,7 +377,7 @@ pub(crate) const FC_PY_KEY: usize = 270;
 const FORMULA_DEPTH: u32 = 64;
 
 thread_local! {
-    static COUNTS: [Cell<u64>; 271] = const { [const { Cell::new(0) }; 271] };
+    static COUNTS: [Cell<u64>; 288] = const { [const { Cell::new(0) }; 288] };
     /// Each session's serial, for the link's memo: a pointer could alias a dead session's.
     static SERIAL: Cell<u64> = const { Cell::new(0) };
 }

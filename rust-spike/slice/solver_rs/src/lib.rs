@@ -7,6 +7,7 @@
 mod block;
 mod compile;
 mod constfield;
+mod context;
 mod compile_loop;
 mod query;
 mod session_glue;
@@ -593,6 +594,7 @@ fn sa_solver(m: &Bound<'_, PyModule>) -> PyResult<()> {
     query::register(m)?;
     session_glue::register(m)?;
     budget::register(m)?;
+    context::register(m)?;
     relevance::register(m)?;
     memos::register(m)?;
     engmemo::register(m)?;
