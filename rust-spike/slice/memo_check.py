@@ -29,7 +29,9 @@ def _h(x):
 
 #: Step 5c9c: the engine memos moved to Rust (engmemo.rs); their contents go in `em_content` (sorted, hash-seed free) and
 #: `em_order` (insertion order: compare under one PYTHONHASHSEED).
-ENGMEMOS = ("_kids", "_qcones", "_glue_adapters", "_xbasis", "splits")
+#: Step 5c10b: `_failed`, `_verdict`, `_context_sessions` (context.rs; engmemo slots 5-7) join them.
+CTXMEMOS = ("_failed", "_verdict", "_context_sessions")
+ENGMEMOS = ("_kids", "_qcones", "_glue_adapters", "_xbasis", "splits") + CTXMEMOS
 
 
 def _canon(x):
@@ -92,6 +94,8 @@ def engmemo_view_ok(engine):
     bad = []
     for n in ENGMEMOS:
         c = getattr(engine, n)
+        if n in CTXMEMOS and not __import__("session_live").context_native():
+            continue
         if type(c).__name__ != "EngineMemo":
             bad.append(f"{n}: {type(c).__name__}")
             continue

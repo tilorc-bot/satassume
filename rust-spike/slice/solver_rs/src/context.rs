@@ -143,7 +143,7 @@ fn build_memoized<'py>(eng: &Bound<'py, PyAny>, assumptions: &Bound<'py, PyAny>,
         }
     };
     let verdicts = eng.getattr(intern!(p, "_verdict"))?;
-    if engmemo::len(&verdicts)? >= 20_000 && !planted(CTX_VERDICT_NO_BOUND) {
+    if !planted(CTX_VERDICT_NO_BOUND) && engmemo::len(&verdicts)? >= 20_000 {
         engmemo::clear(&verdicts)?;
     }
     engmemo::set(&verdicts, assumptions, &s.getattr(intern!(p, "verdict"))?)?;
@@ -203,7 +203,7 @@ fn build_context<'py>(eng: &Bound<'py, PyAny>, assumptions: &Bound<'py, PyAny>, 
         }
     }
     let v = match v {
-        Some(v) if planted(CTX_BUILD_NO_FALLBACK) || !helper(p, "_gave_up", &s)? => v,
+        Some(v) if !helper(p, "_gave_up", &s)? || planted(CTX_BUILD_NO_FALLBACK) => v,
         _ => {
             tick(CTX_FALLBACK);
             (s, lits) = fresh(eng, &scope, assumptions)?;
