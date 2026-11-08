@@ -38,7 +38,10 @@ I handed off at about 141k context.
 - Dev on Rust (~/sa-rust-ids-work/sa-port-148/smoke1/): answers_sha 31cd0945c07f02a6, the same as base. Counts per dev pass:
   within_budget 840, note_budget 776, union 615 (all from Python `_query_cone`), over_budget 0, py_fallback 0,
   cb_query_cone 3232, cb_cone_info 881, cb_struct 153, cb_global 836.
-- The fuzz and zero smoke runs (same directory; done.txt marks the end) hadn't finished when I handed off. Read them first.
+- The fuzz and zero smoke runs finished after the handoff report. Fuzz on Rust: answers_sha 173502b6ef285ad6 (3,000 q), the
+  same as base. Counts: within_budget 3127, note_budget 2605, union 8621, over_budget 0, py_fallback 0, cb_query_cone 11798,
+  cb_cone_info 24130, cb_struct 16176. Zero: Rust d9ed3534a2093027 = Python d9ed3534a2093027 (854 q).
+  **over_budget is 0 on both dev and fuzz**, so the budget workload is owed.
 
 ## Still to do
 1. Read the smoke1 fuzz and zero counts. `over_budget` is `~u` (0 on dev), and so is probably `_union`'s overflow branch. A
