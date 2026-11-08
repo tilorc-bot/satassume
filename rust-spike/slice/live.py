@@ -273,6 +273,9 @@ def load(wl):
     if wl == "zero":    # zero_wl.py: zero twins under an application, for `_glue_of`'s twin branch (before 5c7)
         import zero_wl
         return zero_wl.queries()
+    if wl == "cert":    # cert_wl.py: pi bounds near the certificate's Y, for lra_cert's pi_laurent (adapters C2)
+        import cert_wl
+        return cert_wl.queries()
     if wl in ("f6", "value", "rootof", "core", "opaque", "wiring"):    # hidden-gap workloads (6, 6e, 6f, 6g(a), 6g(b)), whole engine
         import importlib
         return importlib.import_module(f"knowledge_{wl}_wl").queries()
