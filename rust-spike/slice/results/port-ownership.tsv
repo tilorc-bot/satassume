@@ -16,8 +16,8 @@ engine.py	DictCache.put	269		port	5	5c9	Python
 engine.py	AnswerMemo	278		port	5	5c9	Python			
 engine.py	AnswerMemo.__init__	283		port	5	5c9	Python			
 engine.py	AnswerMemo.put	287		port	5	5c9	Python			
-engine.py	Session	304		port	5	5c6	Python			
-engine.py	Session.__init__	305		port	5	5c6	Python			
+engine.py	Session	304		port	5	landed 5c6 (port-5c6.md)	Rust			
+engine.py	Session.__init__	305		port	5	landed 5c6 (port-5c6.md)	Rust			
 engine.py	Session.var	385		port	5	landed 5a 8bab767	Rust			
 engine.py	Session.dvar	414		port	5	landed 5a 8bab767	Rust			
 engine.py	Session._dvar	449		port	5	landed 5a 8bab767	Rust			
@@ -40,14 +40,14 @@ engine.py	Session.incomplete	809		port	5	landed 5c1 653d932	Rust
 engine.py	Session.escalate	813		port	5	landed 5c1 653d932	Rust			
 engine.py	Session.query_literal	852		port	5	5c3	Python			
 engine.py	Session._query_all	906		port	5	5c3	Python			
-engine.py	Session.assume_formula	936		port	5	5c6	Python			
-engine.py	Session.link_set	972		port	5	5c6	Python			
-engine.py	Session.assumption_lits	982		port	5	5c6	Python			
-engine.py	Session._set_glue	1072		port	5	5c6	Python			
-engine.py	Session._group_sel	1119		port	5	5c6	Python			
+engine.py	Session.assume_formula	936		port	5	landed 5c6 (port-5c6.md)	Rust			
+engine.py	Session.link_set	972		port	5	landed 5c6 (port-5c6.md)	Rust			
+engine.py	Session.assumption_lits	982		port	5	landed 5c6 (port-5c6.md)	Rust			
+engine.py	Session._set_glue	1072		port	5	landed 5c6 (port-5c6.md)	Rust			
+engine.py	Session._group_sel	1119		port	5	landed 5c6 (port-5c6.md)	Rust			
 engine.py	Session.literal_of	1155		port	5	5c3	Python			
 engine.py	Session._relations	1168		port	5	5c3	Python			
-engine.py	Session._glue_of	1182		port	5	5c6	Python			
+engine.py	Session._glue_of	1182		port	5	landed 5c6 (port-5c6.md)	Rust			
 engine.py	Session._ensure_atoms	1198		port	5	5c3	Python			
 engine.py	Session._ensure_twins	1210		port	5	5c3	Python			
 engine.py	_check_writeback	1230		port	5	5c10	Python			
