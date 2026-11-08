@@ -32,9 +32,9 @@
 - dev rust: answers 31cd0945c07f02a6 = py; ad:eqatom_new 526 (= EUFTheory.register_atom hooks 526), ad:integral_new 554,
   **ad:negated_new 0**, ad:cb_py_payload 0, ad:cb_factory 0. fuzz rust answers 173502b6ef285ad6 = py; eqatom_new 12,733,
   integral_new 18,547, negated_new 0, cb_py_payload 0.
+- livecmp: dev.cmp and fuzz.cmp both 0 answer/msg/session diffs (full MATCH, 1,985 and 3,000 queries).
 - Plants on dev: pay-eq-flip answer_diff 57 (caught); pay-int-offset answer_diff 60 (caught); **pay-neg-twice 0 diff: void**
-  (Negated never built). Fuzz plant rows were still running detached at handoff (`run.sh`, end marker `done.txt`; read
-  `plant-fuzz-*.cmp`, `dev.cmp`, `fuzz.cmp` there).
+  (Negated never built). On fuzz: pay-eq-flip answer_diff 832, pay-int-offset 170 (both caught), pay-neg-twice 0 (void).
 - `live.py pay` (pay_wl.py, 332 queries): MATCH bea4a01e9c2db5b5, but **negated_new 0** there too: `Q.ne` atoms don't reach
   the adapter as `ne`. Negated is built only when `interpret` returns positive=False, i.e. relation name "ne"
   (lra_adapter.py:318-334; names at :133 `Q.ne` and :135 `Unequality`). Next: find where the engine turns `Q.ne`/`Ne` into
