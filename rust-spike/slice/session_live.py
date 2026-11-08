@@ -907,7 +907,7 @@ def from_env():
         if os.environ.get('SLICE_SESSION_PLANT'):
             PLANT[0] = os.environ['SLICE_SESSION_PLANT']
             if PLANT[0] in _REL_PLANTS or PLANT[0] in _DISC_PLANTS or PLANT[0] in _LOOP_PLANTS or PLANT[0] in _QUERY_PLANTS \
-                    or PLANT[0] in _SCOPE_PLANTS or PLANT[0] in _GLUE_PLANTS:
+                    or PLANT[0] in _SCOPE_PLANTS or PLANT[0] in _GLUE_PLANTS or PLANT[0] in _BUDGET_PLANTS:
                 sa_solver.rel_plant(PLANT[0])
         return install()
     return None

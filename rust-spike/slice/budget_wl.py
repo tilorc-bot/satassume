@@ -11,7 +11,8 @@ cone counted. Plain symbols, no per-symbol facts (those made sessions slow: sa-p
 
 The answers the budget decides: under a set of k overlapping sums (`s`, `s + b_i`), the set weighs about |s| + 2k exactly,
 but counting each overlapping cone whole (the `union-skip-overlap` plant) gives about k * |s|, past the budget, and the
-query is answered None instead of True or False. `python budget_wl.py` answers each query on a fresh engine and prints
+query is answered None instead of True or False. The overlap and `wp + wa` queries use predicates whose sessions need
+no LRA rows, so each session stays small under live.py's per-entry state digest. `python budget_wl.py` answers each query on a fresh engine and prints
 the time, the answer and `last_budget_limited`.
 """
 from sympy import Add, And, Q, symbols
@@ -44,24 +45,29 @@ def _over():
 
 
 def _overlap():
-    """Overlapping sums: `s`, then `s + b_i`. Each later cone partly overlaps the union so far."""
+    """Overlapping sums: `s`, then `s + b_i`. Each later cone partly overlaps the union so far. The exact weight is about
+    |s| + 2k; counting each overlapping cone whole (the `union-skip-overlap` plant) gives about k * (|s| + 2) > 400, so True
+    and False become None. Predicates with no LRA rows (integer, real, finite): under live.py's `--check entry`, which digests
+    the whole state after every outermost solver call, a sign query over 8 sums of 50 terms made 15,022 entries in one
+    session and took about 14 min (sa-port-154: 2.2 s under `--check raw`, 5.0 s under `end`)."""
     out = []
-    for k, n in ((8, 50), (5, 80), (3, 130)):
+    for k, n, pr in ((16, 25, Q.integer), (12, 33, Q.real), (16, 25, Q.finite)):
         s = S(0, n)
         sums = [s] + [s + B[n + i] for i in range(k - 1)]
-        pos = And(*[Q.positive(t) for t in sums])
-        out += [(Q.positive(s), pos), (Q.negative(s), pos)]
-        if n < 100:
-            out += [(Q.positive(sums[-1]), And(*[Q.positive(t) for t in sums[:-1]])), (pos, None), (pos, pos),
-                    (Q.positive(s) & Q.positive(sums[1]), Q.positive(B[n]) & Q.positive(s))]
+        every = And(*[pr(t) for t in sums])
+        out += [(pr(s), every), (~pr(s), every)]
+        if pr is Q.integer:
+            out += [(pr(sums[-1]), And(*[pr(t) for t in sums[:-1]])), (every, None), (every, every),
+                    (pr(s) & pr(sums[1]), pr(B[n]) & pr(s))]
     return out
 
 
 def _sum_over():
     """`_within_budget`'s last test: the proposition's and the set's cones fit alone, `wp + wa` doesn't, and only the set's
-    objects outside the proposition's cone count."""
-    p = Q.positive(S(0, 200))
-    return [(p, Q.positive(S(0, 200)) & Q.positive(B[0])), (~p, Q.positive(S(0, 200)) & Q.positive(B[0]))]
+    objects outside the proposition's cone count: none, about 100 (fits), and 200 (doesn't: None, budget-limited)."""
+    p = Q.integer(S(0, 200))
+    return [(p, Q.integer(S(0, 200)) & Q.integer(B[0])), (~p, Q.integer(S(0, 200)) & Q.integer(B[0])),
+            (p, Q.integer(S(100, 300))), (p, Q.integer(S(100, 399)))]
 
 
 def queries():
