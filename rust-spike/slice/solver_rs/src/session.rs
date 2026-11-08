@@ -14,7 +14,7 @@ use pyo3::types::{PyBool, PyDict, PyList, PySet, PyTuple};
 use crate::compile::{self, block_lits, Cx, Def, Kind, Need, F, R};
 use crate::formula_py::PyP;
 
-const NAMES: [&str; 245] = [
+const NAMES: [&str; 260] = [
     "py:var", "py:dvar", "py:node", "py:compile", "py:literal", "py:table", "rs:visit", "rs:add_clause", "rs:ensure_vars",
     "rs:def_implications", "rs:neg_shared", "join", "rs:emit_callback", "refuse:depth", "refuse:convert", "refuse:object", "second:visit", "custom:own",
     "link:hit", "link:resolved", "link:none", "link:no_table", "link:second", "link:no_node",
@@ -55,6 +55,9 @@ const NAMES: [&str; 245] = [
     "memo:native_clear", "memo:native_items", "memo:restamp", "memo:setting", "memo:setting_prop", "memo:spec_full",
     "reserved:236", "reserved:237", "reserved:238", "reserved:239",
     "pm:neigh", "pm:cb_rules", "pm:full", "pm:key_eq", "pm:key_hash",
+    "reserved:245", "reserved:246", "reserved:247", "reserved:248", "reserved:249",
+    "em:py_kids", "em:py_qcones", "em:py_glue", "em:py_xbasis", "em:py_splits", "em:slot_set", "em:foreign", "em:full",
+    "em:key_eq", "bud:query_cone",
 ];
 const VAR: usize = 0;
 const DVAR: usize = 1;
@@ -227,6 +230,8 @@ pub(crate) const BUD_UNION: usize = 156;
 pub(crate) const BUD_WITHIN_BUDGET: usize = 157;
 pub(crate) const BUD_OVER_BUDGET: usize = 158;
 pub(crate) const BUD_NOTE_BUDGET: usize = 159;
+/// Retired by 5c9c (`_query_cone` runs in Rust, `bud:query_cone`); the name stays so counts keep their rows.
+#[allow(dead_code)]
 pub(crate) const BUD_CB_QUERY_CONE: usize = 160;
 pub(crate) const BUD_CB_CONE_INFO: usize = 161;
 pub(crate) const BUD_CB_STRUCT: usize = 162;
@@ -297,6 +302,23 @@ pub(crate) const PM_FULL: usize = 242;
 pub(crate) const PM_KEY_EQ: usize = 243;
 /// A `_CLOSED`/`_SYMPY_ATOMS` lookup hashing its Python key (SymPy's or `P`'s `__hash__`).
 pub(crate) const PM_KEY_HASH: usize = 244;
+/// Step 5c9c (engmemo.rs): a Python call into an engine memo's methods, per container (a crossing: `_struct`, `_drop_cones`,
+/// `_drop_set_memos`, the registry, the tests).
+pub(crate) const EM_PY_KIDS: usize = 250;
+pub(crate) const EM_PY_QCONES: usize = 251;
+pub(crate) const EM_PY_GLUE: usize = 252;
+pub(crate) const EM_PY_XBASIS: usize = 253;
+pub(crate) const EM_PY_SPLITS: usize = 254;
+/// An assignment to one of the five names (`Engine.__init__`, the harness) converted into an `EngineMemo`.
+pub(crate) const EM_SLOT_SET: usize = 255;
+/// A Rust reader given a container that isn't an `EngineMemo` (ref.py's engine, a test's dict), read through its methods.
+pub(crate) const EM_FOREIGN: usize = 256;
+/// An engine memo emptied at its bound (`splits` at `maxsize`, `_qcones` at 50,000).
+pub(crate) const EM_FULL: usize = 257;
+/// A key's `==` run by an engine memo's lookup (not settled by identity).
+pub(crate) const EM_KEY_EQ: usize = 258;
+/// `_query_cone` run in Rust.
+pub(crate) const BUD_QUERY_CONE: usize = 259;
 
 /// Deeper formulas compile on Python, over this same table. Python's own limit depends on the caller's stack, so it isn't
 /// reproduced: its deepest shape is `Implies`, 3 frames a level (first failure at depth 330 from a bare stack, limit 1000), so
@@ -304,7 +326,7 @@ pub(crate) const PM_KEY_HASH: usize = 244;
 const FORMULA_DEPTH: u32 = 64;
 
 thread_local! {
-    static COUNTS: [Cell<u64>; 245] = const { [const { Cell::new(0) }; 245] };
+    static COUNTS: [Cell<u64>; 260] = const { [const { Cell::new(0) }; 260] };
     /// Each session's serial, for the link's memo: a pointer could alias a dead session's.
     static SERIAL: Cell<u64> = const { Cell::new(0) };
 }

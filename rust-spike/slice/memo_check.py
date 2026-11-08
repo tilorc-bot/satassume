@@ -9,6 +9,8 @@ Runs WL once (MODE py: Python's backend; MODE rust: installed as `live.py WL rus
   the Rust maps (`sa_solver.memo_snapshot`, test-only); `view_ok` is whether the two agree;
 - `cleared`: after one `PROCESS.clear()` and `Engine.memos.clear()`, the memos still non-empty (views and maps), which
   must be none; then the first 200 queries run again and `rerun_same` says whether their answers equal the first pass's.
+- step 5c9c: `em_sizes`, `em_content` and `em_order` of the five engine memos moved to Rust (`ENGMEMOS`), and on Rust
+  `em_view_bad`, the maps whose view differs from `sa_solver.em_snapshot` (test-only).
 `memo_check.py --cmp PY.json RUST.json` prints MATCH or each difference, and exits 1 on any.
 """
 import hashlib
@@ -21,6 +23,52 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 def _h(x):
     return hashlib.sha256(repr(x).encode()).hexdigest()[:16]
+
+
+#: Step 5c9c: the engine memos moved to Rust (engmemo.rs); their contents go in `em_content` (sorted, hash-seed free) and
+#: `em_order` (insertion order: compare under one PYTHONHASHSEED).
+ENGMEMOS = ("_kids", "_qcones", "_glue_adapters", "_xbasis", "splits")
+
+
+def _canon(x):
+    """A repr that doesn't depend on set order or object identity: sets sorted, `Split`s by their getters."""
+    if isinstance(x, (set, frozenset)):
+        return "{" + ", ".join(sorted(_canon(y) for y in x)) + "}"
+    if isinstance(x, tuple):
+        return "(" + ", ".join(_canon(y) for y in x) + ")"
+    if isinstance(x, list):
+        return "[" + ", ".join(_canon(y) for y in x) + "]"
+    if type(x).__name__ in ("Split", "_Split"):
+        return "Split" + _canon((x.whole, tuple(x.conjuncts), x.opaque, x.relational, x.keyless,
+                                 [(frozenset(k), tuple(i)) for k, i in x.comps], x.consistent, x.vocab))
+    return repr(x)
+
+
+def engmemo_rows(engine):
+    """Per moved memo: (name, rows in insertion order); an adapter value by its type's name."""
+    out = []
+    for n in ENGMEMOS:
+        c = getattr(engine, n)
+        glue = n == "_glue_adapters"
+        out.append((n, [(_canon(k), type(v).__name__ if glue else _canon(v)) for k, v in list(c.items())]))
+    return out
+
+
+def engmemo_view_ok(engine):
+    """Rust only: each map's view (`items()`) holds the same objects, in the same order, as `em_snapshot` reads from the map."""
+    import sa_solver
+    bad = []
+    for n in ENGMEMOS:
+        c = getattr(engine, n)
+        if type(c).__name__ != "EngineMemo":
+            bad.append(f"{n}: {type(c).__name__}")
+            continue
+        name, maxsize, rows = sa_solver.em_snapshot(c)
+        view = list(c.items())
+        if name != n or maxsize != c.maxsize or len(rows) != len(view) or any(
+                a[0] is not b[0] or a[1] is not b[1] for a, b in zip(rows, view)):
+            bad.append(n)
+    return bad
 
 
 def registry_rows(engine):
@@ -39,7 +87,8 @@ def main():
     if sys.argv[1] == "--cmp":
         a, b = (json.load(open(f)) for f in sys.argv[2:4])
         bad = []
-        for k in ("answers", "digest", "rerun_same"):
+        for k in ("answers", "digest", "rerun_same", "em_sizes", "em_content") + (
+                ("em_order",) if a.get("hash_seed") is not None and a.get("hash_seed") == b.get("hash_seed") else ()):
             if a.get(k) != b.get(k):
                 bad.append(f"{k}: {a.get(k)} != {b.get(k)}")
         if a.get("digest") != b.get("digest"):
@@ -51,6 +100,8 @@ def main():
         for f, d in ((sys.argv[2], a), (sys.argv[3], b)):
             if d.get("view_ok") is False:
                 bad.append(f"{f}: view != snapshot: {d['native']} vs {d['snapshot']}")
+            if d.get("em_view_bad"):
+                bad.append(f"{f}: engine memo view != map: {d['em_view_bad']}")
             if d.get("cleared"):
                 bad.append(f"{f}: not empty after clear: {d['cleared']}")
         print("MATCH" if not bad else "DIFF\n" + "\n".join(bad))
@@ -87,6 +138,13 @@ def main():
     eng = sympy_api.default_engine()
     rows = registry_rows(eng)
     r = dict(wl=wl, mode=mode, n=len(pairs), answers=_h(ans), digest=_h(rows), tables=rows)
+    em = engmemo_rows(eng)
+    r["em_sizes"] = {n: len(v) for n, v in em}
+    r["em_content"] = {n: _h(sorted(v)) for n, v in em}
+    r["em_order"] = {n: _h(v) for n, v in em}
+    r["hash_seed"] = os.environ.get("PYTHONHASHSEED")
+    if mode == "rust" and hasattr(__import__("sa_solver"), "em_snapshot") and type(eng.splits).__name__ == "EngineMemo":
+        r["em_view_bad"] = engmemo_view_ok(eng)
     if mode == "rust" and hasattr(__import__("sa_solver"), "memo_snapshot"):
         import sa_solver
         r["native"] = sorted((n, c.key, c.size, len(c)) for n, _, c in memos.PROCESS.items() if getattr(c, "native", False))
@@ -98,6 +156,8 @@ def main():
     left = [n for n, _, c in list(memos.PROCESS.items()) + list(eng.memos.items()) if len(c)]
     if "snapshot" in r:
         left += [f"map:{t[0]}" for t in sa_solver.memo_snapshot() if t[3]]
+    if "em_view_bad" in r:
+        left += [f"em:{n}" for n in ENGMEMOS if len(sa_solver.em_snapshot(getattr(eng, n))[2])]
     r["cleared"] = left
     r["rerun_same"] = run(pairs[:200]) == ans[:200]
     json.dump(r, open(out, "w"), indent=0)

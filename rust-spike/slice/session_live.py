@@ -722,14 +722,14 @@ def _install_glue():
     return undo
 
 
-#: Step 5c7: the discovery budget's stateless `Engine` rows `_union` and `_within_budget` run in `budget.rs`. The cone rows they
-#: call (`_query_cone`, `_cone_info`, `_struct`) stay Python's until the step that moves their containers (5c9/5c10), and Rust
-#: calls them back by name (`bud:cb_*`). SLICE_BUDGET=py puts Python's back. Python's own copies, for a budget that isn't an int.
+#: Step 5c7: the discovery budget's stateless `Engine` rows `_union` and `_within_budget` run in `budget.rs`; 5c9c adds
+#: `_query_cone` with its container `_qcones` (engmemo.rs). The cone rows left (`_cone_info`, `_struct`) stay Python's until 5c10c
+#: moves their containers, and Rust calls them back by name (`bud:cb_*`). SLICE_BUDGET=py puts Python's back. Python's own copies, for a budget that isn't an int.
 #: `_over_budget` and `_note_budget` write `last_budget_limited` and `stats` (5c10 containers), so by the planner's inventory
 #: ruling (8 Nov ~06:22) they go to 5c10d: their Rust code (`bud_over_budget`, `bud_note_budget`) stays in budget.rs, unwired
 #: unless SLICE_BUDGET_FLAGS=rust (not a landing configuration).
 PY_BUDGET = {}
-_BUDGET_METHODS = {'_union': 'bud_union', '_within_budget': 'bud_within_budget'}
+_BUDGET_METHODS = {'_union': 'bud_union', '_within_budget': 'bud_within_budget', '_query_cone': 'bud_query_cone'}
 if os.environ.get('SLICE_BUDGET_FLAGS') == 'rust':
     _BUDGET_METHODS.update(_over_budget='bud_over_budget', _note_budget='bud_note_budget')
 _BUDGET_PLANTS = ('union-skip-overlap', 'within-no-link', 'over-budget-no-flag', 'note-budget-keep-flag')
@@ -760,7 +760,8 @@ def _install_budget():
 #: Step 5c8: sympy_api's relevance rows run in `relevance.rs`. Installed over the module's names that Python calls (`_ask_general`,
 #: tests); Python's `_const_base`, `_closed_keys`, `_expr_keys`, `_arg_keys`, `_bool_keys`, `_sides_keys` stay as module names only
 #: for Python's `_keys_rel`, which keys a Boolean deeper than relevance.rs's DEPTH (`rv:py_deep`). SLICE_RELEVANCE=py puts
-#: Python's back. `Engine.splits`, `stats`, `_KEYS` and `_CONST` stay Python's (5c8 report, state section).
+#: Python's back. `Engine.stats`, `_KEYS` and `_CONST` stay Python's (5c8 report, state section); `Engine.splits` is Rust-native
+#: since 5c9c (`_install_engmemos`).
 PY_RELEVANCE = {}
 _RELEVANCE_NAMES = {'_relevant': 'rv_relevant', '_keys': 'rv_keys', '_keys_rel': 'rv_keys_rel', '_const_free': 'rv_const_free',
                     '_vocab_blocks': 'rv_vocab_blocks', '_part_consistent': 'rv_part_consistent', '_consistent': 'rv_consistent',
@@ -790,7 +791,13 @@ _MEMO_PLANTS = ('memo-view-drop', 'memo-clear-skip', 'memo-restamp-no-stamp', 'm
                 'memo-set-relspecs', 'memo-set-ext', 'memo-spec-unbounded',
                 # Step 5c9b (procmemo.rs, 180-187).
                 'pm-split-no-full-clear', 'pm-split-clear-skip', 'pm-want-key-len', 'pm-neigh-no-self', 'pm-neigh-memo-first',
-                'pm-closed-hit-none', 'pm-atoms-key-expr', 'pm-view-drop')
+                'pm-closed-hit-none', 'pm-atoms-key-expr', 'pm-view-drop',
+                # Step 5c9c (engmemo.rs, budget.rs, 190-198); 194 and 197 are for test_engmemo_core.py only.
+                'em-qcones-clear-skip', 'em-kids-set-drop', 'em-glue-no-store', 'em-xbasis-first', 'em-splits-no-bound',
+                'em-qcone-no-sums', 'em-qcone-key-f', 'em-slot-no-maxsize', 'em-splits-put-drop')
+
+#: Step 5c9c: the engine memos Rust works on, by `MemoSlot` index (engmemo.rs `SLOTS`).
+ENGMEMO_SLOTS = ('_kids', '_qcones', '_glue_adapters', '_xbasis', 'splits')
 
 
 def _install_memos():
@@ -799,10 +806,29 @@ def _install_memos():
     sa_solver.memo_install(memos.PROCESS)
 
     undo_pm = _install_procmemos()
+    undo_em = _install_engmemos() if os.environ.get('SLICE_ENGMEMOS', 'rust') == 'rust' else None
 
     def undo():
+        if undo_em is not None:
+            undo_em()
         undo_pm()
         sa_solver.memo_uninstall(memos.PROCESS)
+    return undo
+
+
+def _install_engmemos():
+    """Step 5c9c: puts a `MemoSlot` descriptor on `Engine` for each of `ENGMEMO_SLOTS`, so `Engine.__init__`'s assignments (and the
+    harness's `eng.splits = AnswerMemo(n)`) make Rust-native maps (engmemo.rs). Returns the undo."""
+    E = engine.Engine
+    saved = {n: E.__dict__[n] for n in ENGMEMO_SLOTS if n in E.__dict__}
+    for i, n in enumerate(ENGMEMO_SLOTS):
+        setattr(E, n, sa_solver.MemoSlot(i))
+
+    def undo():
+        for n in ENGMEMO_SLOTS:
+            delattr(E, n)
+        for n, v in saved.items():
+            setattr(E, n, v)
     return undo
 
 

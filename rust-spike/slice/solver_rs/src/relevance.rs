@@ -4,9 +4,10 @@
 //! `_vocab_blocks` :1009, `_part_consistent` :1076, `_consistent` :1088).
 //!
 //! What stays Python, by the planner's state ruling and sa-port-147's inventory:
-//! - `Engine.splits` (an `AnswerMemo`): its readers in 5c9 (`_drop_set_memos`, `_settings_changed`) remain, so the container
-//!   stays and Rust works on it through `get`/`put` (`rv:cb_memo`). The `_Split` values in it are this file's `Split`, whose
-//!   fields are Rust's: nothing in Python reads a split's fields (whole-tree search, 5c8 report).
+//! - `Engine.splits`: Rust-native since 5c9c (engmemo.rs, an `EngineMemo` with `AnswerMemo`'s bound), read here natively;
+//!   Python's `_drop_set_memos` (5c10d) and the harness still reach it through its view (`em:py_splits`). The `_Split` values
+//!   in it are this file's `Split`, whose fields are Rust's: nothing in Python reads a split's fields (whole-tree search, 5c8
+//!   report).
 //! - `Engine.stats`: written by sympy_api's conversion rows and the public `ask`, never moved by a planned step (inventory).
 //! - `_KEYS` and `_CONST` (PROCESS tables): no inventory row puts their last reader here (tests and `_Mark` read them), so
 //!   they stay, read and written through their own methods (`rv:cb_memo`).
@@ -27,10 +28,11 @@ use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{PyBool, PyFrozenSet, PyList, PySet, PyString, PyTuple};
 
+use crate::engmemo;
 use crate::relations_core::{
     planted, ARG_KEYS_NO_CLOSED, BOOL_KEYS_OPAQUE_IN, CLOSED_KEYS_NO_UNDEF, CONSISTENT_FAULT, CONSISTENT_IGNORE_VERDICT,
     CONST_BASE_NO_POW, CONST_FREE_NO_MUL, EXPR_KEYS_CLOSED_SKIP, KEYS_EMPTY, KEYS_REL_NO_FLAG, PART_CONSISTENT_TRUE,
-    RELEVANT_ASSUME_CONSISTENT, SIDES_KEYS_FIRST_ONLY, SPLIT_NO_MERGE, SPLIT_PART_FIRST, VOCAB_NO_DERIVED,
+    RELEVANT_ASSUME_CONSISTENT, SIDES_KEYS_FIRST_ONLY, SPLIT_NO_MERGE, SPLIT_PART_FIRST, VOCAB_NO_DERIVED, EM_SPLITS_PUT_DROP,
 };
 use crate::session::{
     tick, RV_BR_GLUE, RV_BR_PARTS, RV_BR_UNSUPPORTED, RV_BR_VERDICT, RV_CB_CATEGORY, RV_CB_EXT, RV_CB_FORMULA, RV_CB_MEMO,
@@ -648,14 +650,11 @@ fn part_consistent(p: Python<'_>, f: &Bound<'_, PyAny>, eng: &Bound<'_, PyAny>) 
     }
     let key = PyTuple::new(p, [api(p)?.getattr(intern!(p, "_OK"))?, f.clone()])?;
     let splits = eng.getattr(intern!(p, "splits"))?;
-    tick(RV_CB_MEMO);
-    let ok = splits.call_method1(intern!(p, "get"), (&key,))?;
-    if !ok.is_none() {
+    if let Some(ok) = engmemo::get(&splits, key.as_any())? {
         return ok.is_truthy();
     }
     let ok = consistent(p, f, eng)?;
-    tick(RV_CB_MEMO);
-    splits.call_method1(intern!(p, "put"), (&key, ok))?;
+    engmemo::put(&splits, key.as_any(), PyBool::new(p, ok).as_any())?;
     Ok(ok)
 }
 
@@ -663,15 +662,15 @@ fn part_consistent(p: Python<'_>, f: &Bound<'_, PyAny>, eng: &Bound<'_, PyAny>) 
 fn relevant<'py>(p: Python<'py>, prop: &Bound<'py, PyAny>, a: &Bound<'py, PyAny>, eng: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
     tick(RV_RELEVANT);
     let splits = eng.getattr(intern!(p, "splits"))?;
-    tick(RV_CB_MEMO);
-    let got = splits.call_method1(intern!(p, "get"), (a,))?;
-    let sp: Bound<'py, Split> = if got.is_none() {
-        let sp = Bound::new(p, Split::build(p, a)?)?;
-        tick(RV_CB_MEMO);
-        splits.call_method1(intern!(p, "put"), (a, &sp))?;
-        sp
-    } else {
-        got.cast_into::<Split>()?
+    let sp: Bound<'py, Split> = match engmemo::get(&splits, a)? {
+        None => {
+            let sp = Bound::new(p, Split::build(p, a)?)?;
+            if !planted(EM_SPLITS_PUT_DROP) {
+                engmemo::put(&splits, a, sp.as_any())?;
+            }
+            sp
+        }
+        Some(got) => got.cast_into::<Split>()?,
     };
     if sp.borrow().opaque {
         return Ok(a.clone());

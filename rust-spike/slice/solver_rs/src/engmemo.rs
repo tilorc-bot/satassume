@@ -258,7 +258,6 @@ impl MemoSlot {
     fn py_new(slot: u8) -> Self {
         MemoSlot { slot }
     }
-    #[pyo3(signature = (inst, _owner=None))]
     fn __get__<'py>(slf: &Bound<'py, Self>, inst: Option<&Bound<'py, PyAny>>, _owner: Option<&Bound<'py, PyAny>>) -> PyResult<Bound<'py, PyAny>> {
         let Some(inst) = inst.filter(|i| !i.is_none()) else { return Ok(slf.clone().into_any()) };
         let p = slf.py();
@@ -312,6 +311,15 @@ pub(crate) fn put(c: &Bound<'_, PyAny>, k: &Bound<'_, PyAny>, v: &Bound<'_, PyAn
     }
     tick(EM_FOREIGN);
     c.call_method1(intern!(c.py(), "put"), (k, v)).map(|_| ())
+}
+
+/// The first entry's value (plant `em-xbasis-first` only).
+pub(crate) fn first<'py>(c: &Bound<'py, PyAny>) -> PyResult<Option<Bound<'py, PyAny>>> {
+    let p = c.py();
+    if let Ok(m) = c.cast::<EngineMemo>() {
+        return Ok(m.borrow().map.borrow().entries.first().map(|(_, v)| v.clone_ref(p).into_bound(p)));
+    }
+    Ok(None)
 }
 
 pub(crate) fn len(c: &Bound<'_, PyAny>) -> PyResult<usize> {

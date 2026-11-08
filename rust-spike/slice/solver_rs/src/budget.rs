@@ -11,9 +11,10 @@ use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyFrozenSet, PyInt, PyList, PySet, PyTuple};
 
-use crate::relations_core::{planted, NOTE_BUDGET_KEEP_FLAG, OVER_BUDGET_NO_FLAG, UNION_SKIP_OVERLAP, WITHIN_NO_LINK};
+use crate::engmemo;
+use crate::relations_core::{planted, EM_QCONE_KEY_F, EM_QCONE_NO_SUMS, NOTE_BUDGET_KEEP_FLAG, OVER_BUDGET_NO_FLAG, UNION_SKIP_OVERLAP, WITHIN_NO_LINK};
 use crate::session::{
-    tick, BUD_CB_CONE_INFO, BUD_CB_GLOBAL, BUD_CB_QUERY_CONE, BUD_CB_STRUCT, BUD_NOTE_BUDGET, BUD_OVER_BUDGET, BUD_PY_FALLBACK,
+    tick, BUD_CB_CONE_INFO, BUD_CB_GLOBAL, BUD_QUERY_CONE, EM_FULL, BUD_CB_STRUCT, BUD_NOTE_BUDGET, BUD_OVER_BUDGET, BUD_PY_FALLBACK,
     BUD_UNION, BUD_UNION_CONE_NONE, BUD_UNION_OVER, BUD_UNION_PARTIAL, BUD_WITHIN_BUDGET, BUD_WITHIN_FALSE, BUD_WITHIN_PARTIAL,
 };
 
@@ -90,10 +91,85 @@ fn rel_obj(p: Python<'_>, rel: bool) -> Bound<'_, PyAny> {
     pyo3::types::PyBool::new(p, rel).to_owned().into_any()
 }
 
-/// `self._query_cone(f, link)`, called back by name.
-fn query_cone<'py>(eng: &Bound<'py, PyAny>, f: &Bound<'py, PyAny>, link: bool) -> PyResult<Bound<'py, PyAny>> {
-    tick(BUD_CB_QUERY_CONE);
-    eng.call_method1(intern!(eng.py(), "_query_cone"), (f, link))
+/// `Engine._query_cone` (engine.py:1726 on 2b98ab4): `(cone, weight, rel, sums, zs)` for `f`, memoized per engine in
+/// `_qcones` (Rust-native since 5c9c, engmemo.rs), keyed `(f, link)`, emptied at 50,000 entries as Python's.
+pub(crate) fn query_cone<'py>(eng: &Bound<'py, PyAny>, f: &Bound<'py, PyAny>, link: bool, budget: i64) -> PyResult<Bound<'py, PyAny>> {
+    tick(BUD_QUERY_CONE);
+    let p = eng.py();
+    let key = if planted(EM_QCONE_KEY_F) { f.clone() } else { PyTuple::new(p, [f.clone(), rel_obj(p, link)])?.into_any() };
+    let qc = eng.getattr(intern!(p, "_qcones"))?;
+    if let Some(r) = engmemo::get(&qc, &key)? {
+        return Ok(r);
+    }
+    let em = engine_mod(p)?;
+    let atoms = global(&em, intern!(p, "atoms_of"), f)?;
+    let specs = eng.getattr(intern!(p, "_relation_specs"))?;
+    let src = if specs.is_truthy()? { global(&em, intern!(p, "glue_atoms"), &atoms)? } else { atoms.clone() };
+    let kid = em.getattr(intern!(p, "_kid"))?;
+    let objs = PySet::empty(p)?;
+    for a in src.try_iter()? {
+        tick(BUD_CB_GLOBAL);
+        objs.add(kid.call1((a?,))?)?;
+    }
+    let pred = intern!(p, "pred");
+    let expr = intern!(p, "expr");
+    if link {
+        let index = em.getattr(intern!(p, "PRED_INDEX"))?;
+        let lo = em.getattr(intern!(p, "link_objects"))?;
+        let memo = eng.getattr(intern!(p, "_glue_adapters"))?;
+        for a in atoms.try_iter()? {
+            let a = a?;
+            if index.contains(a.getattr(pred)?)? {
+                tick(BUD_CB_GLOBAL);
+                let more = lo.call1((a.getattr(expr)?, &specs, &memo))?;
+                objs.call_method1(intern!(p, "__ior__"), (more,))?;
+            }
+        }
+    }
+    let sign = em.getattr(intern!(p, "_SIGN_PREDS"))?;
+    let sums = PySet::empty(p)?;
+    if !planted(EM_QCONE_NO_SUMS) {
+        for a in atoms.try_iter()? {
+            let a = a?;
+            if !sign.contains(a.getattr(pred)?)? {
+                continue;
+            }
+            let e = a.getattr(expr)?;
+            let is_add = match e.getattr(intern!(p, "is_Add")) {
+                Ok(v) => v.is_truthy()?,
+                Err(_) => false,
+            };
+            if !is_add {
+                continue;
+            }
+            let fs = match e.getattr(intern!(p, "free_symbols")) {
+                Ok(v) => v.is_truthy()?,
+                Err(_) => false,
+            };
+            if fs {
+                sums.add(e)?;
+            }
+        }
+    }
+    let sums = PyFrozenSet::new(p, sums.iter())?;
+    let u = union(eng, objs.as_any(), budget)?;
+    let zs = global(&em, intern!(p, "zero_args"), &atoms)?;
+    let r = PyTuple::new(p, [u.get_item(0)?, u.get_item(1)?, u.get_item(2)?, sums.into_any(), zs])?.into_any();
+    if engmemo::len(&qc)? >= 50_000 {
+        tick(EM_FULL);
+        engmemo::clear(&qc)?;
+    }
+    engmemo::set(&qc, &key, &r)?;
+    Ok(r)
+}
+
+/// `Engine._query_cone` as a method: Python's own when the budget isn't an int.
+#[pyfunction]
+fn bud_query_cone<'py>(eng: &Bound<'py, PyAny>, f: &Bound<'py, PyAny>, link: bool) -> PyResult<Bound<'py, PyAny>> {
+    match budget_of(eng)? {
+        Some(b) => query_cone(eng, f, link, b),
+        None => py_method(eng, "_query_cone")?.call1((eng, f, link)),
+    }
 }
 
 fn global<'py>(em: &Bound<'py, PyModule>, name: &Bound<'py, pyo3::types::PyString>, arg: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
@@ -104,14 +180,14 @@ fn global<'py>(em: &Bound<'py, PyModule>, name: &Bound<'py, pyo3::types::PyStrin
 /// `Engine._within_budget`.
 fn within_budget(eng: &Bound<'_, PyAny>, prop: &Bound<'_, PyAny>, assumptions: Option<&Bound<'_, PyAny>>, budget: i64) -> PyResult<bool> {
     let p = eng.py();
-    let r = query_cone(eng, prop, false)?;
+    let r = query_cone(eng, prop, false, budget)?;
     let mut rel = r.get_item(2)?.is_truthy()?;
     let mut sums = r.get_item(3)?;
     let zp = r.get_item(4)?.cast_into::<PyTuple>()?;
     let mut cross: Option<Bound<'_, PyList>> = None;
     let specs = eng.getattr(intern!(p, "_relation_specs"))?.is_truthy()?;
     if let Some(a) = assumptions {
-        let ra = query_cone(eng, a, false)?;
+        let ra = query_cone(eng, a, false, budget)?;
         rel = rel || ra.get_item(2)?.is_truthy()?;
         sums = sums.call_method1(intern!(p, "__or__"), (ra.get_item(3)?,))?;
         let za = ra.get_item(4)?.cast_into::<PyTuple>()?;
@@ -143,14 +219,14 @@ fn within_budget(eng: &Bound<'_, PyAny>, prop: &Bound<'_, PyAny>, assumptions: O
         }
     }
     let link = specs && (rel || sums.len()? >= 2) && !planted(WITHIN_NO_LINK);
-    let rp = query_cone(eng, prop, link)?;
+    let rp = query_cone(eng, prop, link, budget)?;
     let cp = rp.get_item(0)?;
     if cp.is_none() {
         return Ok(false);
     }
     let Some(a) = assumptions else { return Ok(true) };
     let wp: i64 = rp.get_item(1)?.extract()?;
-    let ra = query_cone(eng, a, link)?;
+    let ra = query_cone(eng, a, link, budget)?;
     let mut ca = ra.get_item(0)?;
     if ca.is_none() {
         return Ok(false);
@@ -251,6 +327,7 @@ fn bud_note_budget(eng: &Bound<'_, PyAny>, s: &Bound<'_, PyAny>) -> PyResult<()>
 
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(bud_union, m)?)?;
+    m.add_function(wrap_pyfunction!(bud_query_cone, m)?)?;
     m.add_function(wrap_pyfunction!(bud_within_budget, m)?)?;
     m.add_function(wrap_pyfunction!(bud_over_budget, m)?)?;
     m.add_function(wrap_pyfunction!(bud_note_budget, m)?)

@@ -241,6 +241,26 @@ pub(crate) const PM_CLOSED_HIT_NONE: u8 = 185;
 pub(crate) const PM_ATOMS_KEY_EXPR: u8 = 186;
 /// `_SPLIT`'s view isn't put in the registry (a moved table left out of the registry view).
 pub(crate) const PM_VIEW_DROP: u8 = 187;
+// Step 5c9c (engmemo.rs, budget.rs): 190-198.
+/// `_qcones`' `clear()` leaves the map as it is (the inventory's planted bug: `_drop_cones` not clearing `_qcones` on a
+/// settings change).
+pub(crate) const EM_QCONES_CLEAR_SKIP: u8 = 190;
+/// `_kids[k] = v` from Python's `_struct` is dropped.
+pub(crate) const EM_KIDS_SET_DROP: u8 = 191;
+/// `guarded_adapters` doesn't store what it built in `_glue_adapters`.
+pub(crate) const EM_GLUE_NO_STORE: u8 = 192;
+/// A `_xbasis` hit answers the map's first entry.
+pub(crate) const EM_XBASIS_FIRST: u8 = 193;
+/// `splits` isn't emptied at its `maxsize` (test only: 20,000).
+pub(crate) const EM_SPLITS_NO_BOUND: u8 = 194;
+/// `_query_cone` gives an empty `sums`.
+pub(crate) const EM_QCONE_NO_SUMS: u8 = 195;
+/// `_qcones`' key leaves `link` out.
+pub(crate) const EM_QCONE_KEY_F: u8 = 196;
+/// An assigned `AnswerMemo`'s `maxsize` is dropped (test only).
+pub(crate) const EM_SLOT_NO_MAXSIZE: u8 = 197;
+/// `relevant`'s `splits.put` is dropped.
+pub(crate) const EM_SPLITS_PUT_DROP: u8 = 198;
 
 #[pyfunction]
 fn rel_install(term_live: Py<PyAny>, relations: Py<PyAny>, euf_adapter: Py<PyAny>, fault: Py<PyAny>) {
@@ -406,6 +426,15 @@ fn rel_plant(name: Option<&str>) -> PyResult<()> {
         Some("pm-closed-hit-none") => PM_CLOSED_HIT_NONE,
         Some("pm-atoms-key-expr") => PM_ATOMS_KEY_EXPR,
         Some("pm-view-drop") => PM_VIEW_DROP,
+        Some("em-qcones-clear-skip") => EM_QCONES_CLEAR_SKIP,
+        Some("em-kids-set-drop") => EM_KIDS_SET_DROP,
+        Some("em-glue-no-store") => EM_GLUE_NO_STORE,
+        Some("em-xbasis-first") => EM_XBASIS_FIRST,
+        Some("em-splits-no-bound") => EM_SPLITS_NO_BOUND,
+        Some("em-qcone-no-sums") => EM_QCONE_NO_SUMS,
+        Some("em-qcone-key-f") => EM_QCONE_KEY_F,
+        Some("em-slot-no-maxsize") => EM_SLOT_NO_MAXSIZE,
+        Some("em-splits-put-drop") => EM_SPLITS_PUT_DROP,
         Some(x) => return Err(PyValueError::new_err(format!("no plant {x}"))),
     };
     PLANT.store(v, Relaxed);
@@ -2227,8 +2256,8 @@ fn rel_eq_links<'py>(rel: &Bound<'py, PyAny>, var: i32, atom: &Bound<'py, PyAny>
 
 // -- step 5c5, second part: relations.py's module functions ------------------------------------------------------------------------
 // Each follows its Python function line for line. They take no session, so a term resolves through `term_live.term_id` with no node
-// cache (`term_free`). Memos stay the Python objects they were (`_SYMPY_ATOMS`, `_CLOSED`, `engine._xbasis`, the adapter memo), so
-// everything Python can read later is the same. What stays Python is a named, counted callback: the engine's `is_many`, SymPy's
+// cache (`term_free`). `engine._xbasis` and the adapter memo (`_glue_adapters`) are Rust-native since 5c9c (engmemo.rs: read natively,
+// a foreign container through its methods); `_SYMPY_ATOMS` and `_CLOSED` since 5c9b. Everything Python can read later is the same. What stays Python is a named, counted callback: the engine's `is_many`, SymPy's
 // `Q.eq`/`Q.lt`, the adapters' reads, `closed_sign`, the templates' `units`, and `_under_apps`, `zero_twin`, `relation_atom` and
 // `_structural_subterms`, which `term_live` answers on ids. `AdapterSpec` and `Uninterpreted` are types, with nothing to run.
 
@@ -2498,8 +2527,12 @@ fn number_basis<'py>(engine: &Bound<'py, PyAny>, c: &Bound<'py, PyAny>, facts: b
     tick(session::REL_NUMBER_BASIS);
     let pick = |r: &Bound<'py, PyAny>| r.get_item(if facts { 1 } else { 0 });
     let memo = engine.getattr(intern!(p, "_xbasis"))?;
-    let r = memo.call_method1(intern!(p, "get"), (c,))?;
-    if !r.is_none() {
+    if let Some(r) = crate::engmemo::get(&memo, c)? {
+        if planted(EM_XBASIS_FIRST) {
+            if let Some(f) = crate::engmemo::first(&memo)? {
+                return pick(&f);
+            }
+        }
         return pick(&r);
     }
     let rules = p.import(intern!(p, "satassume.knowledge.rules"))?;
@@ -2560,7 +2593,7 @@ fn number_basis<'py>(engine: &Bound<'py, PyAny>, c: &Bound<'py, PyAny>, facts: b
     let fl: Vec<Bound<'py, PyTuple>> =
         basis.iter().map(|&l| PyTuple::new(p, [(l.abs() - 1).into_pyobject(p)?.into_any(), PyBool::new(p, l > 0).to_owned().into_any()])).collect::<PyResult<_>>()?;
     let r = PyTuple::new(p, [PyTuple::new(p, preds)?.into_any(), PyTuple::new(p, fl)?.into_any()])?.into_any();
-    memo.set_item(c, &r)?;
+    crate::engmemo::set(&memo, c, &r)?;
     pick(&r)
 }
 
@@ -2740,12 +2773,17 @@ fn guarded_adapters<'py>(specs: &Bound<'py, PyAny>, memo: &Bound<'py, PyAny>) ->
                 continue;
             }
             let name = row.name.bind(p);
-            let mut ad = memo.call_method1(intern!(p, "get"), (name,))?;
-            if ad.is_none() {
-                tick(session::REL_CB_ADAPTER_READ);
-                ad = make_adapter(p, &row)?;
-                memo.set_item(name, &ad)?;
-            }
+            let ad = match crate::engmemo::get(memo, name.as_any())? {
+                Some(ad) => ad,
+                None => {
+                    tick(session::REL_CB_ADAPTER_READ);
+                    let ad = make_adapter(p, &row)?;
+                    if !planted(EM_GLUE_NO_STORE) {
+                        crate::engmemo::set(memo, name.as_any(), &ad)?;
+                    }
+                    ad
+                }
+            };
             out.append(ad)?;
         }
     }
