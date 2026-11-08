@@ -24,7 +24,7 @@ thread_local! {
     static RAISED: std::cell::RefCell<Option<PyErr>> = const { std::cell::RefCell::new(None) };
 }
 
-fn refuse(r: Refuse) -> PyErr {
+pub(crate) fn refuse(r: Refuse) -> PyErr {
     if r.0 == READ_RAISED {
         if let Some(e) = RAISED.with(|x| x.borrow_mut().take()) {
             return e;
@@ -95,6 +95,11 @@ pub struct PyTermTable(TermTable, HashMap<(u8, u32, u32, bool), Py<PyAny>>, Hash
 
 /// The link's memo and the row reads made after it (`relations_core.rs`). The memo sits here so it dies with the query.
 impl PyTermTable {
+    /// The table itself, for Rust callers that hold the query's `TermTable` object (rows_tpl.rs's direct core calls).
+    pub(crate) fn tt(&self) -> &TermTable {
+        &self.0
+    }
+
     /// The id for `(session, node)` if the memo holds `x` itself; `Err(())` if it holds another object for that node.
     pub(crate) fn link_get(&self, session: u64, nid: u32, x: &Bound<'_, PyAny>) -> Result<Option<u32>, ()> {
         match self.2.get(&(session, nid)) {

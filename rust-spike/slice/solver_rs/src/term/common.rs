@@ -75,6 +75,21 @@ impl Common {
         Ok(!s.get_item(n - 1)?.getattr("kept")?.is_none())
     }
 
+    /// The innermost query's `_Query` (term_live), or None when there is none or it is kept: the core shells' `query()`.
+    pub(crate) fn query<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyAny>>> {
+        let s = match self.local.bind(py).getattr("stack") {
+            Ok(s) => s,
+            Err(e) if e.is_instance_of::<pyo3::exceptions::PyAttributeError>(py) => return Ok(None),
+            Err(e) => return Err(e),
+        };
+        let n = s.len()?;
+        if n == 0 {
+            return Ok(None);
+        }
+        let q = s.get_item(n - 1)?;
+        Ok(if q.getattr("kept")?.is_none() { Some(q) } else { None })
+    }
+
     pub(crate) fn fired(&self) {
         self.bump("plant:fired");
     }

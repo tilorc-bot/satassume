@@ -16,6 +16,10 @@
 //! in `wiring`'s namespace per call, so whatever is bound there (Python's or the core swap's) is what runs, as on Python.
 //! A kept query runs the Python template whole (`registry:kept:<name>`).
 use super::common::Common;
+use super::py::{refuse, PyTermTable};
+use super::tcore::Rest;
+use super::TermId;
+use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyCFunction, PyDict, PyList, PyModule, PyTuple};
@@ -50,6 +54,9 @@ pub const PLANTS: &[&str] = &[
     "rows-pow-irrational-skip",// power: the irrational b**(p/q) rule left out
     "rows-pow-ipi-skip",       // power: `ipi_rules` not added
     "rows-pow-unit-drop",      // power: `_unit_power_units`' facts dropped
+    "rows-half-parity",        // 6g(c) direct `_half_split`: each term's parity flipped
+    "rows-bound-coeff-one",    // 6g(c) direct `_bound_split`: the coefficient c read as 1
+    "rows-imag-drop-last",     // 6g(c) direct `_imag_split`: the last term dropped (fired 0 on core with len > 1)
     "rows-pow-of-constant-skip",// power: the terms of the constant not computed
 ];
 
@@ -284,6 +291,18 @@ impl RowsTpl {
         }))
     }
 
+    /// 6g(c): `name`'s core split straight from the query's table (tcore.rs), as knowledge_core_live.py's shell computes it,
+    /// with no Python between. Falls back to the shell (`wiring_fn`, counted `rows:python:NAME`) wherever the shell does
+    /// something this doesn't: no query or a kept one, an arg that isn't an input term of its own class, or a result that
+    /// is a derived term or a product rest (SymPy scaffolding, `core:kept_product`).
+    fn split<'py>(&self, py: Python<'py>, c: &Common, name: &str, args: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+        if let Some(r) = direct_split(py, c, name, args)? {
+            c.bump(&format!("rows:rust:{name}"));
+            return Ok(r);
+        }
+        self.wiring_fn(py, c, name)?.call1((args,))
+    }
+
     fn wiring_fn<'py>(&self, py: Python<'py>, c: &Common, name: &str) -> PyResult<Bound<'py, PyAny>> {
         c.bump(&format!("rows:python:{name}"));
         self.wiring.bind(py).getattr(name)
@@ -346,11 +365,11 @@ impl RowsTpl {
                 for f in self.wide_of(&cr, expr, &args)?.iter() {
                     out.append(f)?;
                 }
-                let split = self.wiring_fn(py, &cr, "_half_split")?.call1((&args,))?;
+                let split = self.split(py, &cr, "_half_split", &args)?;
                 if !split.is_none() {
                     out.append(self.wiring_fn(py, &cr, "_half_templates")?.call1((expr, split))?)?;
                 }
-                let split = self.wiring_fn(py, &cr, "_bound_split")?.call1((&args,))?;
+                let split = self.split(py, &cr, "_bound_split", &args)?;
                 if !split.is_none() {
                     if cr.plant == "rows-add-bound-skip" {
                         cr.fired();
@@ -362,7 +381,7 @@ impl RowsTpl {
                         }
                     }
                 }
-                let terms = self.wiring_fn(py, &cr, "_imag_split")?.call1((&args,))?;
+                let terms = self.split(py, &cr, "_imag_split", &args)?;
                 if !terms.is_none() {
                     let imag = self.wiring_fn(py, &cr, "_imag_templates")?.call1((expr, terms))?;
                     if !imag.is_none() {
@@ -1099,4 +1118,125 @@ fn piecewise_values<'py>(c: &Common, expr: &Bound<'py, PyAny>) -> PyResult<Optio
         values.push(v);
     }
     Ok(Some(PyTuple::new(py, values)?.into_any()))
+}
+
+/// The query's ids for rows_tpl.rs's direct core calls: knowledge_core_live.py's `ids_of` and `obj` for input terms.
+struct QIds<'py> {
+    table: Bound<'py, PyTermTable>,
+    ids: Bound<'py, PyAny>,
+    objects: Bound<'py, PyAny>,
+    n_input: usize,
+}
+
+impl<'py> QIds<'py> {
+    fn of(py: Python<'py>, c: &Common) -> PyResult<Option<Self>> {
+        let Some(q) = c.query(py)? else { return Ok(None) };
+        let table = q.getattr("table")?.cast_into::<PyTermTable>()?;
+        let n_input = table.borrow().tt().n_input;
+        Ok(Some(QIds { table, ids: q.getattr("ids")?, objects: q.getattr("objects")?, n_input }))
+    }
+
+    /// The ids of `xs`, each an input term of its own class (`==` can join classes), or None.
+    fn ids(&self, xs: &Bound<'py, PyAny>) -> PyResult<Option<Vec<TermId>>> {
+        let mut out = Vec::new();
+        for x in xs.try_iter()? {
+            let x = x?;
+            let i = self.ids.call_method1("get", (&x,))?;
+            if i.is_none() {
+                return Ok(None);
+            }
+            let i: u32 = i.extract()?;
+            if !self.objects.get_item(i)?.get_type().is(&x.get_type()) {
+                return Ok(None);
+            }
+            out.push(TermId(i));
+        }
+        Ok(if out.is_empty() { None } else { Some(out) })
+    }
+
+    /// The SymPy object of an input id; None for a derived one (the shell's `scaffold`).
+    fn obj(&self, t: TermId) -> PyResult<Option<Bound<'py, PyAny>>> {
+        Ok(if (t.0 as usize) < self.n_input { Some(self.objects.get_item(t.0)?) } else { None })
+    }
+
+    fn one(&self, t: &Rest) -> PyResult<Option<Bound<'py, PyAny>>> {
+        match t {
+            Rest::One(t) => self.obj(*t),
+            Rest::Product(_) => Ok(None),
+        }
+    }
+}
+
+/// `Some(result)` (Python's None for no split) when computed here, `None` to go to the shell.
+fn direct_split<'py>(py: Python<'py>, c: &Common, name: &str, args: &Bound<'py, PyAny>) -> PyResult<Option<Bound<'py, PyAny>>> {
+    let Some(q) = QIds::of(py, c)? else { return Ok(None) };
+    let Some(ids) = q.ids(args)? else { return Ok(None) };
+    let tb = q.table.borrow();
+    let t = tb.tt();
+    let none = || Ok(Some(py.None().into_bound(py)));
+    match name {
+        "_half_split" => {
+            let Some((a0, terms)) = t.core_half_split(&ids).map_err(refuse)? else { return none() };
+            let out = PyList::empty(py);
+            for (a, (_c, r)) in &terms {
+                let Some(o) = q.one(r)? else { return Ok(None) };
+                let a = if c.plant == "rows-half-parity" {
+                    c.fired();
+                    1 - *a
+                } else {
+                    *a
+                };
+                out.append((a, o))?;
+            }
+            Ok(Some((a0, out).into_bound_py_any(py)?))
+        }
+        "_bound_split" => {
+            let Some((c0, (k, r))) = t.core_bound_split(&ids).map_err(refuse)? else { return none() };
+            let (Some(c0), Some(u)) = (q.obj(c0)?, q.one(&r)?) else { return Ok(None) };
+            let k = match k {
+                Some(k) if c.plant == "rows-bound-coeff-one" => {
+                    c.fired();
+                    let _ = k;
+                    sympy_one(py)?
+                }
+                Some(k) => match q.obj(k)? {
+                    Some(o) => o,
+                    None => return Ok(None),
+                },
+                None => sympy_one(py)?,
+            };
+            Ok(Some((c0, k, u).into_bound_py_any(py)?))
+        }
+        "_imag_split" => {
+            let Some(mut terms) = t.core_imag_split(&ids).map_err(refuse)? else { return none() };
+            if !terms.is_empty() && c.plant == "rows-imag-drop-last" {
+                c.fired();
+                terms.pop();
+            }
+            let out = PyList::empty(py);
+            for (k, x) in &terms {
+                let k = match k {
+                    Some(k) => match q.obj(*k)? {
+                        Some(o) => o,
+                        None => return Ok(None),
+                    },
+                    None => sympy_one(py)?,
+                };
+                let x = match x {
+                    Some(x) => match q.obj(*x)? {
+                        Some(o) => o,
+                        None => return Ok(None),
+                    },
+                    None => py.None().into_bound(py),
+                };
+                out.append((k, x))?;
+            }
+            Ok(Some(out.into_any()))
+        }
+        _ => Ok(None),
+    }
+}
+
+fn sympy_one(py: Python<'_>) -> PyResult<Bound<'_, PyAny>> {
+    py.import("sympy")?.getattr("S")?.getattr("One")
 }
