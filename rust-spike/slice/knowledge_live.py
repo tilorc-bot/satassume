@@ -62,7 +62,8 @@ RAISED = term_live.RAISED
 #: fault sa-port-63's first rebase hit; 'knowledge-pattern-drop' drops the last clause of each non-empty pattern Rust builds;
 #: 'knowledge-value-multigamma-drop' drops the last clause of Rust's `value_units` pattern when multigamma's template calls it
 #: (special.py's `value_units(v, expr)`), for the reached-code ruling's value_units footnote.
-PLANTS = ('knowledge-rows-kept-raise', 'knowledge-pattern-drop', 'knowledge-value-multigamma-drop')
+PLANTS = ('knowledge-rows-kept-raise', 'knowledge-pattern-drop', 'knowledge-value-multigamma-drop',
+          'dispatch-ignores-epoch', 'dispatch-opaque-off', 'dispatch-redefines-off', 'dispatch-user-off')
 PLANT = [None]
 _UNDO = [None]
 
@@ -191,6 +192,47 @@ def from_env():
         atexit.register(lambda: json.dump(dict(mode=mode, plant=PLANT[0], counts=dict(COUNTS)),
                                           open(out + '.knowledge.json', 'w'), sort_keys=True))
     return install(shadow=mode == 'shadow')
+
+
+DISPATCH = [None]
+
+
+def install_dispatch():
+    """Bind `registry.clauses_for` to Rust's `Dispatch.clauses_for` (an instance attribute over the class's method),
+    so `Engine.__init__` hands the engine Rust's bound method. Its counts join COUNTS at exit and at undo."""
+    from sympy.core.basic import Basic
+    from sympy.core.function import Application
+    from sympy.core.singleton import S
+    from satassume.sat.formula import Formula, P
+    from satassume.state import epoch
+    from satassume.knowledge.templates import TemplateRegistry
+    builtin = ['satassume.knowledge.templates'] + [m.__name__ for m in (
+        sys.modules[__name__], knowledge_core_live, knowledge_f6_live, term_live)]
+    d = sa_solver.Dispatch(registry, TemplateRegistry.clauses_for.__get__(registry), epoch.EPOCH, Compiled, P, Formula,
+                           Application, Basic, S.NaN, [S.NaN, S.Infinity, S.NegativeInfinity, S.ComplexInfinity],
+                           set(VOCAB), builtin)
+    if PLANT[0] and PLANT[0].startswith('dispatch-'):
+        d.set_plant(PLANT[0])
+    DISPATCH[0] = d
+    registry.clauses_for = d.clauses_for
+
+    def flush():
+        for k, v in d.counts().items():
+            COUNTS[k] += v
+            if k == 'plant:fired':
+                m = sys.modules.get('session_live')
+                if m is not None:
+                    m.PLANT_FIRED[0] += v
+        d.clear_counts()
+    import atexit
+    atexit.register(flush)
+
+    def undo():
+        flush()
+        atexit.unregister(flush)
+        DISPATCH[0] = None
+        registry.__dict__.pop('clauses_for', None)
+    return undo
 
 
 def install(shadow=False, data=None):
@@ -466,11 +508,14 @@ def install(shadow=False, data=None):
     # Step 6f: functions, special, rootof, nodes, physics, stats (knowledge_f6_live.py).
     undo_f6 = knowledge_f6_live.install(shadow, COUNTS, KnowledgeFault, _mismatch)
     undo_term = term_live.install()
+    # Step 6g(a): the engine calls Rust's dispatch directly (term/dispatch.rs), not registry.clauses_for.
+    undo_dispatch = install_dispatch()
 
     def undo():
         _UNDO[0] = None
         active[0] = False
         wiring.generator, wiring.constant_value = py_generator, py_constant_value
+        undo_dispatch()
         undo_term()
         undo_f6()
         undo_core()

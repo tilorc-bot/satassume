@@ -31,6 +31,7 @@ impl ClassId {
 }
 
 pub mod algebra;
+pub mod dispatch;
 pub mod tcore;
 pub mod tf6;
 pub mod knowledge;
