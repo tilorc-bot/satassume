@@ -15,8 +15,8 @@ after `term_live`'s); SLICE_KNOWLEDGE=py keeps it off there.
    no query on the stack still runs Rust. A kept query can be served a pattern `_CACHE` got from Rust earlier: plain Python data,
    and no Rust runs for it. `facts`, `units` and `_CACHE` stay Python, and a constant's facts are read by `const_value`, in Python, in Python's order.
 
-Stays on Python, counted by reason in `COUNTS`: a query conversion keeps (`kept:<reason>`), and a template reached with no
-query on the stack, by a caller using `Engine` directly (`py:no-query`). A node that isn't an input term (`derived`, such
+Stays on Python, counted by reason in `COUNTS`: a query conversion keeps (`kept:<reason>`). A template reached with no query
+on the stack, by a caller using `Engine` directly, is read as a derived node is (`<kind>:no-query`, 6g(a)). A node that isn't an input term (`derived`, such
 as a Zero the engine built): Python reads its facts, and Rust closes them. That read is the "`is_` by callback" of
 section 10's row, and it goes when 4 and 5 stop building those nodes in Python.
 
@@ -61,9 +61,12 @@ RAISED = term_live.RAISED
 #: Test plants, by SLICE_SESSION_PLANT (the bar's channel): 'knowledge-rows-kept-raise' raises NameError inside `rows_kept`, the
 #: fault sa-port-63's first rebase hit; 'knowledge-pattern-drop' drops the last clause of each non-empty pattern Rust builds;
 #: 'knowledge-value-multigamma-drop' drops the last clause of Rust's `value_units` pattern when multigamma's template calls it
-#: (special.py's `value_units(v, expr)`), for the reached-code ruling's value_units footnote.
+#: (special.py's `value_units(v, expr)`), for the reached-code ruling's value_units footnote; 'knowledge-no-query-drop' drops
+#: the last clause of a pattern Rust builds with no query on the stack (atoms' no-query path, 6g(a)); the dispatch-* plants
+#: are term/dispatch.rs's.
 PLANTS = ('knowledge-rows-kept-raise', 'knowledge-pattern-drop', 'knowledge-value-multigamma-drop',
-          'dispatch-ignores-epoch', 'dispatch-opaque-off', 'dispatch-redefines-off', 'dispatch-user-off')
+          'dispatch-ignores-epoch', 'dispatch-opaque-off', 'dispatch-redefines-off', 'dispatch-user-off',
+          'knowledge-no-query-drop')
 PLANT = [None]
 _UNDO = [None]
 
@@ -251,16 +254,18 @@ def install(shadow=False, data=None):
     def rust_compiled(py, kind, is_symbol, value, obj):
         """`py()`'s `Compiled`, with Rust's pattern for the facts of `value`, as facts of `obj`."""
         q = term_live.current()
-        if q is None:
-            COUNTS['py:no-query'] += 1
-            return py()
-        if q.kept is not None:
+        if q is not None and q.kept is not None:
             COUNTS['py:kept'] += 1
             return py()
-        i = q.ids.get(value)
+        # No query on the stack (a caller using `Engine` directly): no term table, so the node is read as a derived one
+        # is (6g(a); it was `py:no-query`, wholly Python).
+        i = None if q is None else q.ids.get(value)
         try:
+            if q is None:
+                COUNTS[kind + ':no-query'] += 1
+                r = kn.units(_derived_facts(kn, value, is_symbol))
             # `==` can join classes (const_key's Float against Integer), so a row counts only for its own class.
-            if i is not None and type(q.objects[i]) is type(value):
+            elif i is not None and type(q.objects[i]) is type(value):
                 COUNTS[kind + ':input'] += 1
                 r = kn.symbol_units(q.table, i) if is_symbol else kn.constant_units(q.table, i)
             else:
@@ -270,6 +275,9 @@ def install(shadow=False, data=None):
             COUNTS['fault'] += 1
             raise KnowledgeFault(f'{kind} {value!r}: {e}') from e
         pat = _wrap(r)
+        if PLANT[0] == 'knowledge-no-query-drop' and q is None and pat.clauses:
+            _fired()
+            pat.clauses = pat.clauses[:-1]
         if PLANT[0] == 'knowledge-value-multigamma-drop' and kind == 'value' and type(obj).__name__ == 'multigamma' \
                 and pat.clauses:
             _fired()

@@ -69,10 +69,27 @@ def test_above_the_limit_no_value_is_read(live):
     assert live['value:derived'] == 1
 
 
-def test_with_no_query_python_answers(live):
+def test_with_no_query_rust_answers(live):
+    """6g(a): with no query on the stack (`Engine` used directly) the value is read as a derived node's is, on Rust, and
+    its pattern is Python's."""
     n = genocchi(8, evaluate=False)
     c = functions.value_units(Integer(17), n)
-    assert live['py:no-query'] == 1 and c.objs == (n,)
+    py = functions.value_units.__wrapped__(Integer(17), n)
+    assert live['value:no-query'] == 1 and c.objs == (n,)
+    assert (c.pattern.clauses, c.pattern.used, c.pattern.complete) == (py.pattern.clauses, py.pattern.used,
+                                                                       py.pattern.complete)
+
+
+def test_no_query_plant_is_caught(live):
+    """So the match above means something: 'knowledge-no-query-drop' fires on that path and the comparison sees it."""
+    n = genocchi(8, evaluate=False)
+    K.PLANT[0] = 'knowledge-no-query-drop'
+    try:
+        c = functions.value_units(Integer(17), n)
+    finally:
+        K.PLANT[0] = None
+    py = functions.value_units.__wrapped__(Integer(17), n)
+    assert live['knowledge:plant_fired'] == 1 and c.pattern.clauses != py.pattern.clauses
 
 
 def test_shadow_sees_a_wrong_value(live):
