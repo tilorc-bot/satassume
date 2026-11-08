@@ -152,6 +152,14 @@ pub(crate) const AL_DROP_DELTA: u8 = 100;
 pub(crate) const SET_GLUE_NO_EMIT: u8 = 101;
 pub(crate) const GROUP_SEL_NO_IMPL: u8 = 102;
 pub(crate) const GLUE_OF_PLAIN: u8 = 103;
+/// Adapters step, part B (adapters.rs): the Rust LRAAdapter's `register` leaves the atom's terms out of `_shared`.
+pub(crate) const AD_LRA_SHARED: u8 = 104;
+/// Adapters step, part B: the Rust EUFAdapter's `node_term` interns into `_terms`, so node terms become shared terms.
+pub(crate) const AD_EUF_NODE: u8 = 105;
+/// Adapters step, part B: `make_adapter` builds the other default adapter (EUF for LRA's spec and back).
+const AD_KIND_SWAP: u8 = 106;
+/// Adapters step, part B: the Rust EUFAdapter's `shared_terms` leaves out the last term interned.
+pub(crate) const AD_EUF_SHARED: u8 = 107;
 
 #[pyfunction]
 fn rel_install(term_live: Py<PyAny>, relations: Py<PyAny>, euf_adapter: Py<PyAny>, fault: Py<PyAny>) {
@@ -265,10 +273,20 @@ fn rel_plant(name: Option<&str>) -> PyResult<()> {
         Some("set-glue-no-emit") => SET_GLUE_NO_EMIT,
         Some("group-sel-no-impl") => GROUP_SEL_NO_IMPL,
         Some("glue-of-plain") => GLUE_OF_PLAIN,
+        Some("ad-lra-shared") => AD_LRA_SHARED,
+        Some("ad-euf-node") => AD_EUF_NODE,
+        Some("ad-kind-swap") => AD_KIND_SWAP,
+        Some("ad-euf-shared") => AD_EUF_SHARED,
         Some(x) => return Err(PyValueError::new_err(format!("no plant {x}"))),
     };
     PLANT.store(v, Relaxed);
     Ok(())
+}
+
+/// `relations`' package, for adapters.rs to find its modules; None before `rel_install`.
+pub(crate) fn relations_package(p: Python<'_>) -> Option<String> {
+    let h = HOOKS.read().unwrap().clone()?;
+    h.relations.bind(p).getattr(intern!(p, "__package__")).ok()?.extract().ok()
 }
 
 pub(crate) fn hooks() -> PyResult<Arc<Hooks>> {
@@ -1955,7 +1973,7 @@ fn rel_adapter<'py>(rel: &Bound<'py, PyAny>, spec: &Bound<'py, PyAny>) -> PyResu
     if !ad.is_none() {
         return Ok(ad);
     }
-    let ad = row.factory.bind(p).call0()?;
+    let ad = make_adapter(p, &row)?;
     if plant_on(ADAPTER_FRESH) {
         return Ok(ad);
     }
@@ -2157,6 +2175,55 @@ pub(crate) struct SpecRow {
     pub(crate) name: Py<PyAny>,
     pub(crate) factory: Py<PyAny>,
     pub(crate) guarded: bool,
+    /// The factory is one of the default adapter classes (Python's or adapters.rs'), so Rust builds that adapter itself.
+    pub(crate) kind: AdKind,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AdKind {
+    Lra,
+    Euf,
+    User,
+}
+
+/// The adapter for `row`: a default kind is built in Rust (adapters.rs) with no call into Python's factory; a user's factory is
+/// called, counted `ad:cb_factory`.
+pub(crate) fn make_adapter<'py>(p: Python<'py>, row: &SpecRow) -> PyResult<Bound<'py, PyAny>> {
+    let kind = match (row.kind, planted(AD_KIND_SWAP)) {
+        (AdKind::Lra, true) => AdKind::Euf,
+        (AdKind::Euf, true) => AdKind::Lra,
+        (k, _) => k,
+    };
+    match kind {
+        AdKind::Lra => Ok(Bound::new(p, crate::adapters::LraAdapter::build(p, None)?)?.into_any()),
+        AdKind::Euf => Ok(Bound::new(p, crate::adapters::EufAdapter::build(p, None)?)?.into_any()),
+        AdKind::User => {
+            tick(session::AD_CB_FACTORY);
+            row.factory.bind(p).call0()
+        }
+    }
+}
+
+/// Which adapter `factory` builds: the default classes by identity, Python's (read from their modules) or Rust's.
+fn ad_kind(factory: &Bound<'_, PyAny>) -> PyResult<AdKind> {
+    let p = factory.py();
+    if factory.is(&p.get_type::<crate::adapters::LraAdapter>()) {
+        return Ok(AdKind::Lra);
+    }
+    if factory.is(&p.get_type::<crate::adapters::EufAdapter>()) {
+        return Ok(AdKind::Euf);
+    }
+    let package = relations_package(p).unwrap_or_else(|| "satassume".to_string());
+    for (module, cls, kind) in [("theories.lra.lra_adapter", "LRAAdapter", AdKind::Lra), ("theories.euf.euf_adapter", "EUFAdapter", AdKind::Euf)] {
+        // only a module already imported: a factory from a module that never loaded can't be its class
+        let sys = p.import(intern!(p, "sys"))?.getattr(intern!(p, "modules"))?;
+        if let Some(m) = sys.call_method1(intern!(p, "get"), (format!("{package}.{module}"),)).ok().filter(|m| !m.is_none()) {
+            if factory.is(&m.getattr(cls)?) {
+                return Ok(kind);
+            }
+        }
+    }
+    Ok(AdKind::User)
 }
 
 static SPEC_ROWS: std::sync::Mutex<Option<std::collections::HashMap<usize, (Py<PyAny>, Arc<SpecRow>)>>> = std::sync::Mutex::new(None);
@@ -2168,16 +2235,18 @@ pub(crate) fn spec_row(spec: &Bound<'_, PyAny>) -> PyResult<Arc<SpecRow>> {
     let key = spec.as_ptr() as usize;
     if let Some((_, row)) = SPEC_ROWS.lock().unwrap().as_ref().and_then(|m| m.get(&key)) {
         if planted(SPEC_ROW_FLIP) {
-            return Ok(Arc::new(SpecRow { name: row.name.clone_ref(p), factory: row.factory.clone_ref(p), guarded: !row.guarded }));
+            return Ok(Arc::new(SpecRow { name: row.name.clone_ref(p), factory: row.factory.clone_ref(p), guarded: !row.guarded, kind: row.kind }));
         }
         return Ok(row.clone());
     }
     for _ in 0..3 {
         tick(session::REL_CB_SPEC_READ);
     }
+    let factory = spec.getattr(intern!(p, "factory"))?;
     let row = Arc::new(SpecRow {
         name: spec.getattr(intern!(p, "name"))?.unbind(),
-        factory: spec.getattr(intern!(p, "factory"))?.unbind(),
+        kind: ad_kind(&factory)?,
+        factory: factory.unbind(),
         guarded: spec.getattr(intern!(p, "guarded"))?.is_truthy()?,
     });
     let mut g = SPEC_ROWS.lock().unwrap();
@@ -2505,7 +2574,7 @@ fn guarded_adapters<'py>(specs: &Bound<'py, PyAny>, memo: &Bound<'py, PyAny>) ->
             let mut ad = memo.call_method1(intern!(p, "get"), (name,))?;
             if ad.is_none() {
                 tick(session::REL_CB_ADAPTER_READ);
-                ad = row.factory.bind(p).call0()?;
+                ad = make_adapter(p, &row)?;
                 memo.set_item(name, &ad)?;
             }
             out.append(ad)?;

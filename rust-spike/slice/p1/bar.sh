@@ -1,6 +1,7 @@
 #!/bin/bash
 # bar.sh NAME BRANCH [PHASE...]   the planner's landing bar for one sa-port step, on pareto1 under ~/sp19.
-# bar.sh land TESTED_SHA          on orion, in your clone: rebase on origin/rust-slice, print the incoming diff; PUSH=1 pushes.
+# bar.sh land TESTED_SHA          on orion, in your clone: rebase on origin/rust-slice, print the incoming diff; PUSH=1 pushes,
+#                                 refused when satassume/ or rust-spike/slice/ source (not results/) differs from TESTED.
 #
 # One parameterised script in place of the job/land/plant/sum scripts each session rewrote (sa-port-89's and -91's).
 # It prints every command it runs, with a UTC time, to stdout and to $B/commands.txt, and records the tested SHA, the
@@ -40,6 +41,18 @@ if [ "${1:-}" = land ]; then
   run "git rebase origin/rust-slice" || exit 1
   echo "landing source $(git rev-parse --short HEAD); diff tested..landing, files:"
   run "git diff --stat $TESTED HEAD | tail -20"
+  # Push guard (planner's ruling, 8 Nov): the landed source must be the tested source. Any file under
+  # satassume/ or rust-spike/slice/ (results/ excepted) that differs between TESTED and the rebased HEAD,
+  # whether it came in with the rebase or was edited after the bar, needs a full bar on HEAD first.
+  GUARD=$(git diff --name-only $TESTED HEAD -- satassume rust-spike/slice ':(exclude)rust-spike/slice/results')
+  if [ -n "$GUARD" ]; then
+    echo "source differs between tested $TESTED and landing $(git rev-parse --short HEAD) in:"
+    echo "$GUARD" | sed 's/^/  /'
+    if [ "${PUSH:-0}" = 1 ]; then
+      echo "REFUSED: PUSH=1 needs a full bar on $(git rev-parse --short HEAD) (bar.sh land $(git rev-parse --short HEAD) after it)"
+      exit 2
+    fi
+  fi
   if [ "${PUSH:-0}" = 1 ]; then
     run "git push origin HEAD:rust-slice" && echo "landed $(git rev-parse --short HEAD) on rust-slice"
     run "git push -f origin HEAD:$(git rev-parse --abbrev-ref HEAD)"

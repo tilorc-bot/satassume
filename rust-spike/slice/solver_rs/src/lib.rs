@@ -23,6 +23,7 @@ mod map;
 #[path = "../../../lra/port/src/rat.rs"]
 mod rat;
 mod realroots;
+mod adapters;
 mod relations_core;
 mod rows;
 mod scope_core;
@@ -572,6 +573,7 @@ fn sa_solver(m: &Bound<'_, PyModule>) -> PyResult<()> {
     constfield::register(m)?;
     lra_cert::register(m)?;
     euf_py::add_to(m)?;
+    adapters::register(m)?;
     formula_py::register(m)?;
     realroots::register(m)?;
     rows::register(m)?;

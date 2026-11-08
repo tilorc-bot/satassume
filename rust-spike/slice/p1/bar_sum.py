@@ -142,3 +142,36 @@ for d in sorted(glob.glob(os.path.join(B, 'suite-*/'))):
         if 'error' in c:
             errs.append(c['error'])
     print(f'  plant fired in the suite: {fired if nfiles else "not recorded (no counts files)"} ({nfiles} files){" errors: " + str(errs[:2]) if errs else ""}')
+
+
+# Planner's kept-reasons ruling (8 Nov): the share of queries kept per reason on each workload, against base. A rise in a
+# share is a finding even when answers MATCH. Counts are term_live's `kept:<reason>` and `refused[:<reason>]` rows, which the
+# Rust live run writes to <wl>-rust.knowledge.json; the denominator is that run's query count (<wl>-rust.tot). The base is
+# BASE's sibling live/ and extra/ (BASE is a .../suite directory), or KEPT_BASE if set.
+def kept(d):
+    out = {}
+    for k in sorted(glob.glob(os.path.join(d, '*-rust.knowledge.json'))):
+        wl = os.path.basename(k)[:-len('-rust.knowledge.json')]
+        try:
+            c = json.load(open(k))['counts']
+            q = json.loads((cat(k.replace('.knowledge.json', '.tot')) or ['{}'])[0]).get('queries')
+        except (OSError, ValueError, KeyError):
+            continue
+        out[wl] = (q, {r: n for r, n in c.items() if r.startswith('kept:') or r == 'refused' or r.startswith('refused:')})
+    return out
+
+
+print('\n== kept reasons: share of queries kept per reason, Rust run, against base')
+kb = os.environ.get('KEPT_BASE') or os.path.dirname(BASE.rstrip('/'))
+for sub in ('live', 'extra'):
+    now, base = kept(os.path.join(B, sub)), kept(os.path.join(kb, sub))
+    for wl, (q, c) in now.items():
+        bq, bc = base.get(wl, (None, {}))
+        reasons = sorted(set(c) | set(bc) | {'refused', 'kept:out-of-scope'})
+        cells = []
+        for r in reasons:
+            s = f'{c.get(r, 0)}/{q} ({100 * c.get(r, 0) / q:.2f}%)' if q else f'{c.get(r, 0)}/?'
+            b = f'{bc.get(r, 0)}/{bq} ({100 * bc.get(r, 0) / bq:.2f}%)' if bq else 'base not found'
+            rise = ' RISE' if bq and q and c.get(r, 0) / q > bc.get(r, 0) / bq else ''
+            cells.append(f'{r} {s} vs {b}{rise}')
+        print(f'  {sub}/{wl}: ' + '; '.join(cells))
