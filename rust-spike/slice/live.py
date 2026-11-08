@@ -267,6 +267,9 @@ def load(wl):
     if wl == "loop":    # loop_wl.py: vocabulary functions registered, for `_compile`'s demand path (5c2)
         import loop_wl
         return loop_wl.queries()
+    if wl in ("f6", "value", "rootof", "core"):    # knowledge_fresh.py's hidden-gap workloads (6, 6e, 6f), whole engine
+        import importlib
+        return importlib.import_module(f"knowledge_{wl}_wl").queries()
     return workload(wl)
 
 
