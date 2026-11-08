@@ -54,6 +54,16 @@ CASES = [
      lambda: Q.positive(x)),
     ('core:constant_value', 'rows-constant-value-base', lambda: Q.positive(Pow(Rational_(-1, 3), x, evaluate=False)),
      lambda: Q.even(x)),
+    # 6g(c5): the four Addition template builders computed in Rust (`RowsTpl::add_tpl`); the shadow runs core's builder with
+    # `facts` captured and compares (key, consts, objs, node, rules).
+    ('core:_half_templates', 'rows-half-tpl-flip', lambda: Q.integer(a(m(Rational_(1, 2), x), m(Rational_(1, 2), y))),
+     lambda: Q.odd(x) & Q.odd(y)),
+    ('core:_bound_templates', 'rows-bound-tpl-neg', lambda: Q.positive(a(S(1), m(S(2), x))),
+     lambda: Q.integer(x) & Q.nonnegative(x)),
+    ('core:recip_templates', 'rows-recip-tpl-neg', lambda: Q.positive(a(S(2), m(S(3), Pow(y, -1, evaluate=False)))),
+     lambda: Q.positive(y)),
+    ('core:imag_templates', 'rows-imag-tpl-sign', lambda: Q.imaginary(a(m(I, x), m(I, y))),
+     lambda: Q.positive(x) & Q.positive(y)),
 ]
 
 
@@ -62,7 +72,9 @@ DIRECT = {'core:half_split': '_half_split', 'core:bound_split': '_bound_split', 
           'core:_mul_factor_sets': '_mul_factor_sets', 'core:_quotient_templates': '_quotient_templates',
           'core:_unit_angle': '_unit_angle', 'core:_exp_arg': '_exp_arg', 'core:_pow_bound_templates': '_pow_bound_templates',
           'core:irrational_root': 'irrational_root', 'core:_unit_power_units': '_unit_power_units',
-          'core:_pi_split': 'ipi_split', 'core:ipi_rules': 'ipi_rules', 'core:constant_value': 'constant_value'}
+          'core:_pi_split': 'ipi_split', 'core:ipi_rules': 'ipi_rules', 'core:constant_value': 'constant_value',
+          'core:_half_templates': '_half_templates', 'core:_bound_templates': '_bound_templates',
+          'core:recip_templates': '_recip_templates', 'core:imag_templates': '_imag_templates'}
 
 
 def Rational_(p, q):
