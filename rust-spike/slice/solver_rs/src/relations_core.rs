@@ -99,6 +99,17 @@ pub(crate) const DROP_REL_PROCESS: u8 = 57;
 pub(crate) const DROP_EA_ENSURE: u8 = 58;
 pub(crate) const DROP_TWINS_VAR: u8 = 59;
 pub(crate) const DROP_EMIT: u8 = 60;
+/// From here, 5c4's: one effect dropped in each moved `Relations` method. `skip-share` is the clause off as
+/// `test_equality_sharing_is_needed_and_works` turns it off (`_share` and `_trichotomy` both patched away), for its replacement in
+/// `test_relations_core.py`; `drop-share` removes sharing alone (the pairs are counted, no interface atom is made).
+const DROP_INIT_ENGAGE: u8 = 61;
+const DROP_ENQUEUE: u8 = 62;
+const DROP_NOTE_TOP: u8 = 63;
+const DROP_PROC_EQ_LINKS: u8 = 64;
+const DROP_LINK_LATER: u8 = 65;
+const WANTS_NEVER: u8 = 66;
+const DROP_SHARE: u8 = 67;
+const SKIP_SHARE: u8 = 68;
 
 #[pyfunction]
 fn rel_install(term_live: Py<PyAny>, relations: Py<PyAny>, euf_adapter: Py<PyAny>, fault: Py<PyAny>) {
@@ -169,6 +180,14 @@ fn rel_plant(name: Option<&str>) -> PyResult<()> {
         Some("drop-ea-ensure") => DROP_EA_ENSURE,
         Some("drop-twins-var") => DROP_TWINS_VAR,
         Some("drop-emit") => DROP_EMIT,
+        Some("drop-init-engage") => DROP_INIT_ENGAGE,
+        Some("drop-enqueue") => DROP_ENQUEUE,
+        Some("drop-note-top") => DROP_NOTE_TOP,
+        Some("drop-proc-eq-links") => DROP_PROC_EQ_LINKS,
+        Some("drop-link-later") => DROP_LINK_LATER,
+        Some("wants-never") => WANTS_NEVER,
+        Some("drop-share") => DROP_SHARE,
+        Some("skip-share") => SKIP_SHARE,
         Some(x) => return Err(PyValueError::new_err(format!("no plant {x}"))),
     };
     PLANT.store(v, Relaxed);
@@ -466,7 +485,7 @@ fn rel_order_infinite<'py>(rel: &Bound<'py, PyAny>, var: i32, sides: &Bound<'py,
 fn rel_trichotomy<'py>(rel: &Bound<'py, PyAny>, var: i32, atom: &Bound<'py, PyAny>) -> PyResult<()> {
     let p = rel.py();
     tick(session::REL_TRICHOTOMY);
-    if PLANT.load(Relaxed) == SKIP_TRICHOTOMY {
+    if matches!(PLANT.load(Relaxed), SKIP_TRICHOTOMY | SKIP_SHARE) {
         tick(session::REL_PLANT);
         return Ok(());
     }
@@ -1528,6 +1547,324 @@ fn rel_link_probe(core: &Bound<'_, SessionCore>, x: &Bound<'_, PyAny>) -> PyResu
     Ok(term_of(&core.borrow(), &h, x)?.map(|l| l.id))
 }
 
+// -- step 5c4: the rest of `Relations` (relations.py:777-979, 1516-1598) ------------------------------------------------------
+//
+// `__init__`, `enqueue`, `note_formula`, `process`, `_link_later`, `wants_transfer`, `_share`. As in C2b and C2c, the object's
+// containers stay Python's dicts, sets and lists on the instance, so what Python reads later is Python's by construction; each read
+// and call Python makes, these make in the same order. Other methods are called by name, as Python calls them, so a patch on the
+// class or the instance is honoured (`process` is the driver loop: what it calls, a test may have replaced). Still Python and called
+// back, each counted (`rel:cb_*`): `_note_sides`, `_eq_links`, `_atom_selector`, `_atom_var` (5c4's "called back" rows) and
+// `_constant_term` (5c5's). `Session.discover`, `EqualitySharing` and `transfer_wanted` are read from their modules at each call:
+// `backend.install_transfer` replaces the last two with Rust's.
+
+fn plant_on(x: u8) -> bool {
+    planted(x)
+}
+
+/// `Relations.__init__`. Attributes are set in Python's order, since `vars(rel)` is something Python can read.
+#[pyfunction]
+fn rel_init<'py>(rel: &Bound<'py, PyAny>, session: &Bound<'py, PyAny>, specs: &Bound<'py, PyAny>) -> PyResult<()> {
+    let p = rel.py();
+    tick(session::REL_INIT);
+    let h = hooks()?;
+    let r = h.relations.bind(p);
+    let proxy = p.import(intern!(p, "weakref"))?.getattr(intern!(p, "proxy"))?.call1((session,))?;
+    let none = p.None();
+    let set = |name: &str, v: Bound<'py, PyAny>| rel.setattr(name, v);
+    set("session", proxy)?;
+    set("specs", PyList::new(p, specs.try_iter()?.collect::<PyResult<Vec<_>>>()?)?.into_any())?;
+    set("adapters", PyDict::new(p).into_any())?;
+    set("status", PyDict::new(p).into_any())?;
+    set("queue", PyList::empty(p).into_any())?;
+    set("linked", PySet::empty(p)?.into_any())?;
+    set("_bounded", PySet::empty(p)?.into_any())?;
+    set("_guards", PyDict::new(p).into_any())?;
+    set("_link_lt", PyDict::new(p).into_any())?;
+    set("top", PyDict::new(p).into_any())?;
+    set("active", PyBool::new(p, false).to_owned().into_any())?;
+    set("sharing", r.getattr(intern!(p, "EqualitySharing"))?.call0()?)?;
+    set("_pending_links", PyList::empty(p).into_any())?;
+    set("link_sel", PyDict::new(p).into_any())?;
+    set("atom_sel", PyDict::new(p).into_any())?;
+    set("num_sel", PyDict::new(p).into_any())?;
+    set("_xextra", PyList::empty(p).into_any())?;
+    set("xfer_sel", none.bind(p).clone())?;
+    set("_user_eq", PySet::empty(p)?.into_any())?;
+    set("_roles", PyDict::new(p).into_any())?;
+    set("_info", PyDict::new(p).into_any())?;
+    set("_link_of", PyDict::new(p).into_any())?;
+    set("_tv", PyDict::new(p).into_any())?;
+    set("_tsrc", PyDict::new(p).into_any())?;
+    set("_xpairs", PySet::empty(p)?.into_any())?;
+    set("_xtcur", 0i32.into_pyobject(p)?.into_any())?;
+    set("_xhn", 0i32.into_pyobject(p)?.into_any())?;
+    set("_xhseen", (-1i32).into_pyobject(p)?.into_any())?;
+    set("_aux_eq", PySet::empty(p)?.into_any())?;
+    set("_link_eq", PySet::empty(p)?.into_any())?;
+    set("_xside", PyDict::new(p).into_any())?;
+    set("xfer", none.bind(p).clone())?;
+    set("_xadapter", none.bind(p).clone())?;
+    set("_xslot", 1i32.into_pyobject(p)?.into_any())?;
+    set("_xterm", 0i32.into_pyobject(p)?.into_any())?;
+    set("_xnsides", (-1i32).into_pyobject(p)?.into_any())?;
+    set("_xsides_n", 0i32.into_pyobject(p)?.into_any())?;
+    set("_xpart", PySet::empty(p)?.into_any())?;
+    set("_xheads", PyDict::new(p).into_any())?;
+    set("_xcounted", PySet::empty(p)?.into_any())?;
+    set("_xpend", PyList::empty(p).into_any())?;
+    set("_xcand", PySet::empty(p)?.into_any())?;
+    let scope = session.getattr(intern!(p, "scope"))?;
+    set("scope", scope.clone())?;
+    if scope.getattr(intern!(p, "glue"))?.is_truthy()? {
+        set("active", PyBool::new(p, true).to_owned().into_any())?;
+        if scope.getattr(intern!(p, "transfer"))?.is_truthy()? && !plant_on(DROP_INIT_ENGAGE) {
+            rel.call_method0(intern!(p, "_engage_transfer"))?;
+        }
+    }
+    Ok(())
+}
+
+#[pyfunction]
+fn rel_enqueue(rel: &Bound<'_, PyAny>, atom: &Bound<'_, PyAny>) -> PyResult<()> {
+    let p = rel.py();
+    tick(session::REL_ENQUEUE);
+    if plant_on(DROP_ENQUEUE) {
+        return Ok(());
+    }
+    rel.getattr(intern!(p, "queue"))?.call_method1(intern!(p, "append"), (atom,))?;
+    Ok(())
+}
+
+#[pyfunction]
+fn rel_note_formula(rel: &Bound<'_, PyAny>, atoms: &Bound<'_, PyAny>) -> PyResult<()> {
+    let p = rel.py();
+    tick(session::REL_NOTE_FORMULA);
+    let h = hooks()?;
+    for a in atoms.try_iter()? {
+        let a = a?;
+        let index = h.relations.bind(p).getattr(intern!(p, "PRED_INDEX"))?;
+        if index.contains(a.getattr(intern!(p, "pred"))?)? {
+            let e = a.getattr(intern!(p, "expr"))?;
+            if !rel.getattr(intern!(p, "linked"))?.contains(&e)? {
+                if plant_on(DROP_NOTE_TOP) {
+                    continue;
+                }
+                rel.getattr(intern!(p, "top"))?.set_item(&e, p.None())?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// `_is_number(e)` as the moved methods read it: the term's row, else Python's function. The session borrow is held for that read only.
+fn number(rel: &Bound<'_, PyAny>, h: &Hooks, e: &Bound<'_, PyAny>) -> PyResult<bool> {
+    let (_, c) = session_of(rel.py(), h, rel)?;
+    let c = c.borrow();
+    is_number(&c, h, e)
+}
+
+fn link_later(rel: &Bound<'_, PyAny>, h: &Hooks, e: &Bound<'_, PyAny>) -> PyResult<()> {
+    let p = rel.py();
+    tick(session::REL_LINK_LATER);
+    let linked = rel.getattr(intern!(p, "linked"))?;
+    if !linked.contains(e)? && !number(rel, h, e)? {
+        linked.call_method1(intern!(p, "add"), (e,))?;
+        if plant_on(DROP_LINK_LATER) {
+            return Ok(());
+        }
+        rel.getattr(intern!(p, "_pending_links"))?.call_method1(intern!(p, "append"), (e,))?;
+    }
+    Ok(())
+}
+
+#[pyfunction]
+fn rel_link_later(rel: &Bound<'_, PyAny>, e: &Bound<'_, PyAny>) -> PyResult<()> {
+    let h = hooks()?;
+    link_later(rel, &h, e)
+}
+
+#[pyfunction]
+fn rel_wants_transfer<'py>(rel: &Bound<'py, PyAny>, atoms: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    let p = rel.py();
+    tick(session::REL_WANTS_TRANSFER);
+    let h = hooks()?;
+    let got = h.relations.bind(p).getattr(intern!(p, "transfer_wanted"))?.call1((atoms,))?;
+    if plant_on(WANTS_NEVER) {
+        return Ok(PyBool::new(p, false).to_owned().into_any());
+    }
+    Ok(got)
+}
+
+/// `_share`. The adapters' `shared_terms()` reach `update` as a lazy `map`, as Python's generator does.
+#[pyfunction]
+fn rel_share(rel: &Bound<'_, PyAny>) -> PyResult<bool> {
+    let p = rel.py();
+    tick(session::REL_SHARE);
+    if plant_on(SKIP_SHARE) {
+        return Ok(false);
+    }
+    let h = hooks()?;
+    let adapters = rel.getattr(intern!(p, "adapters"))?;
+    if adapters.len()? < 2 {
+        return Ok(false);
+    }
+    let builtins = p.import(intern!(p, "builtins"))?;
+    let caller = p.import(intern!(p, "operator"))?.getattr(intern!(p, "methodcaller"))?.call1((intern!(p, "shared_terms"),))?;
+    let terms = builtins.getattr(intern!(p, "map"))?.call1((caller, adapters.call_method0(intern!(p, "values"))?))?;
+    let pairs = rel.getattr(intern!(p, "sharing"))?.call_method1(intern!(p, "update"), (terms,))?;
+    let r = h.relations.bind(p);
+    let zero_drop = plant_on(DROP_SHARE);
+    for pair in pairs.try_iter()? {
+        let (a, b) = two(&pair?)?;
+        if number(rel, &h, &a)? && number(rel, &h, &b)? {
+            continue;
+        }
+        let ct = r.getattr(intern!(p, "_constant_term"))?;
+        tick(session::REL_CB_CONSTANT_TERM);
+        if ct.call1((&a,))?.is_truthy()? {
+            continue;
+        }
+        tick(session::REL_CB_CONSTANT_TERM);
+        if ct.call1((&b,))?.is_truthy()? {
+            continue;
+        }
+        if zero_drop {
+            continue;
+        }
+        let eqa = r.getattr(intern!(p, "relation_atom"))?.call1((intern!(p, "eq"), &a, &b))?;
+        let s = rel.getattr(intern!(p, "session"))?;
+        if !s.getattr(intern!(p, "table"))?.getattr(intern!(p, "custom"))?.contains(&eqa)? {
+            rel.getattr(intern!(p, "_aux_eq"))?.call_method1(intern!(p, "add"), (&eqa,))?;
+        }
+        tick(session::REL_CB_ATOM_VAR);
+        rel.call_method1(intern!(p, "_atom_var"), (&eqa,))?;
+        let ga = rel.call_method1(intern!(p, "_share_guard"), (&a,))?;
+        let gb = rel.call_method1(intern!(p, "_share_guard"), (&b,))?;
+        let g = ga.add(gb)?;
+        rel.call_method1(intern!(p, "_add_role"), (&eqa, g, intern!(p, "iface")))?;
+    }
+    pairs.is_truthy()
+}
+
+#[pyfunction]
+#[pyo3(signature = (rel, user_atoms=None))]
+fn rel_process<'py>(rel: &Bound<'py, PyAny>, user_atoms: Option<&Bound<'py, PyAny>>) -> PyResult<()> {
+    let p = rel.py();
+    tick(session::REL_PROCESS);
+    let h = hooks()?;
+    let r = h.relations.bind(p);
+    let s = rel.getattr(intern!(p, "session"))?;
+    let pred = intern!(p, "pred");
+    let expr = intern!(p, "expr");
+    let mut user: Vec<Bound<'py, PyAny>> = Vec::new();
+    if let Some(ua) = user_atoms {
+        let ratoms = r.getattr(intern!(p, "RELATION_ATOMS"))?;
+        for a in ua.try_iter()? {
+            let a = a?;
+            if ratoms.contains(a.getattr(pred)?)? {
+                user.push(a);
+            }
+        }
+    }
+    let unlinked = PySet::empty(p)?;
+    for a in &user {
+        let st = rel.getattr(intern!(p, "status"))?.call_method1(intern!(p, "get"), (a,))?;
+        if st.is_truthy()? {
+            for side in a.getattr(expr)?.try_iter()? {
+                rel.call_method1(intern!(p, "_link_later"), (side?,))?;
+            }
+        } else if st.is_none() {
+            unlinked.add(a)?;
+        }
+    }
+    for a in &user {
+        if a.getattr(pred)?.eq(intern!(p, "eq"))? {
+            if rel.getattr(intern!(p, "xfer"))?.is_none()
+                && !rel.getattr(intern!(p, "_want_transfer"))?.is_truthy()?
+                && s.getattr(intern!(p, "engine"))?.getattr(intern!(p, "transfer"))?.is_truthy()?
+            {
+                let stats = s.getattr(intern!(p, "engine"))?.getattr(intern!(p, "stats"))?;
+                let k = intern!(p, "scope_misses");
+                stats.set_item(k, stats.get_item(k)?.add(1)?)?;
+                rel.setattr(intern!(p, "_want_transfer"), true)?;
+            }
+            tick(session::REL_CB_NOTE_SIDES);
+            rel.call_method1(intern!(p, "_note_sides"), (a, 2))?;
+            let var = s.getattr(intern!(p, "table"))?.getattr(intern!(p, "custom"))?.call_method1(intern!(p, "get"), (a,))?;
+            let user_eq = rel.getattr(intern!(p, "_user_eq"))?;
+            if !var.is_none() && !user_eq.contains(a)? {
+                user_eq.call_method1(intern!(p, "add"), (a,))?;
+                if plant_on(DROP_PROC_EQ_LINKS) {
+                    continue;
+                }
+                tick(session::REL_CB_EQ_LINKS);
+                rel.call_method1(intern!(p, "_eq_links"), (&var, a))?;
+                tick(session::REL_CB_ATOM_SELECTOR);
+                let sel = rel.call_method1(intern!(p, "_atom_selector"), (a,))?;
+                let g = PyList::new(p, [sel.neg()?])?;
+                rel.call_method1(intern!(p, "_add_role"), (a, g, intern!(p, "user")))?;
+            }
+        }
+    }
+    loop {
+        s.call_method0(intern!(p, "discover"))?;
+        let queue = rel.getattr(intern!(p, "queue"))?;
+        if queue.is_truthy()? {
+            let atom = queue.call_method0(intern!(p, "pop"))?;
+            let ok = rel.call_method1(intern!(p, "_interpret"), (&atom,))?;
+            rel.getattr(intern!(p, "status"))?.set_item(&atom, &ok)?;
+            rel.setattr(intern!(p, "active"), true)?;
+            if ok.is_truthy()? && unlinked.contains(&atom)? {
+                for side in atom.getattr(expr)?.try_iter()? {
+                    rel.call_method1(intern!(p, "_link_later"), (side?,))?;
+                }
+            }
+            continue;
+        }
+        if rel.getattr(intern!(p, "active"))?.is_truthy()? && rel.getattr(intern!(p, "top"))?.is_truthy()? {
+            let top = rel.getattr(intern!(p, "top"))?;
+            rel.setattr(intern!(p, "top"), PyDict::new(p))?;
+            for e in top.try_iter()? {
+                let e = e?;
+                if number(rel, &h, &e)? {
+                    rel.call_method1(intern!(p, "_mention_number"), (&e,))?;
+                } else {
+                    rel.call_method1(intern!(p, "_link_later"), (&e,))?;
+                }
+            }
+        }
+        let pending = rel.getattr(intern!(p, "_pending_links"))?;
+        if pending.is_truthy()? {
+            let e = pending.call_method0(intern!(p, "pop"))?;
+            rel.call_method1(intern!(p, "_link"), (e,))?;
+            continue;
+        }
+        if rel.call_method0(intern!(p, "_share"))?.is_truthy()? {
+            continue;
+        }
+        if rel.getattr(intern!(p, "_want_transfer"))?.is_truthy()? && rel.getattr(intern!(p, "xfer"))?.is_none() {
+            rel.call_method0(intern!(p, "_engage_transfer"))?;
+        }
+        if !rel.getattr(intern!(p, "xfer"))?.is_none() && rel.call_method0(intern!(p, "_transfer_terms"))?.is_truthy()? {
+            continue;
+        }
+        break;
+    }
+    if !rel.getattr(intern!(p, "xfer"))?.is_none() {
+        rel.call_method0(intern!(p, "sync_transfer"))?;
+    }
+    if s.getattr(intern!(p, "engine"))?.getattr(intern!(p, "uninterpreted"))?.eq(intern!(p, "free"))? {
+        return Ok(());
+    }
+    for a in &user {
+        if !rel.getattr(intern!(p, "status"))?.call_method1(intern!(p, "get"), (a,))?.is_truthy()? {
+            let msg = format!("no theory interprets {}", a.str()?);
+            return Err(PyErr::from_value(r.getattr(intern!(p, "Uninterpreted"))?.call1((msg,))?));
+        }
+    }
+    Ok(())
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("REL_KINDS", (SD, EN, MC, IE, IL))?;
     m.add_function(wrap_pyfunction!(rel_link_probe, m)?)?;
@@ -1556,5 +1893,12 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(rel_transfer_terms, m)?)?;
     m.add_function(wrap_pyfunction!(rel_sync_transfer, m)?)?;
     m.add_function(wrap_pyfunction!(rel_xswitch, m)?)?;
-    m.add_function(wrap_pyfunction!(rel_congruence_pairs, m)?)
+    m.add_function(wrap_pyfunction!(rel_congruence_pairs, m)?)?;
+    m.add_function(wrap_pyfunction!(rel_init, m)?)?;
+    m.add_function(wrap_pyfunction!(rel_enqueue, m)?)?;
+    m.add_function(wrap_pyfunction!(rel_note_formula, m)?)?;
+    m.add_function(wrap_pyfunction!(rel_process, m)?)?;
+    m.add_function(wrap_pyfunction!(rel_link_later, m)?)?;
+    m.add_function(wrap_pyfunction!(rel_wants_transfer, m)?)?;
+    m.add_function(wrap_pyfunction!(rel_share, m)?)
 }

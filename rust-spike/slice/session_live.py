@@ -388,6 +388,30 @@ def _rel_congruence_pairs(self):
     return sa_solver.rel_congruence_pairs(self)
 
 
+# -- step 5c4: the rest of `Relations` (relations_core.rs, "step 5c4") -------------------------------------------------------
+def _rel_init(self, session, specs):
+    if not isinstance(session.table, TableView):
+        return PY_REL['__init__'](self, session, specs)
+    return sa_solver.rel_init(self, session, specs)
+
+
+def _rel_m(name, rname):
+    rf = getattr(sa_solver, rname)
+
+    def f(self, *a):
+        if not isinstance(self.session.table, TableView):
+            return PY_REL[name](self, *a)
+        return rf(self, *a)
+    f.__name__ = name
+    return f
+
+
+def _rel_process(self, user_atoms=()):
+    if not isinstance(self.session.table, TableView):
+        return PY_REL['process'](self, user_atoms)
+    return sa_solver.rel_process(self, user_atoms)
+
+
 #: Python's own methods, for a session with no core: `satassume/ref.py`, the reference, keeps Python's `VarTable` under `Relations`,
 #: as `_rust_call` already allows for the compiler.
 PY_REL = {}
@@ -411,13 +435,20 @@ _REL_METHODS = {
     'sync_transfer': _rel_sync_transfer,
     '_xswitch': _rel_xswitch,
     '_congruence_pairs': _rel_congruence_pairs,
+    # Step 5c4.
+    '__init__': _rel_init, 'enqueue': _rel_m('enqueue', 'rel_enqueue'), 'note_formula': _rel_m('note_formula', 'rel_note_formula'),
+    'process': _rel_process, '_link_later': _rel_m('_link_later', 'rel_link_later'),
+    'wants_transfer': _rel_m('wants_transfer', 'rel_wants_transfer'), '_share': _rel_m('_share', 'rel_share'),
 }
 #: Plants that live in `relations_core.rs`.
 _REL_PLANTS = ('link-none', 'drop-order-sides', 'drop-order-infinite', 'drop-trichotomy', 'drop-interpret', 'drop-guard',
                'drop-bound', 'drop-link', 'drop-selector', 'drop-eq-infinity', 'fresh-not-inert', 'fresh-skew', 'skip-trichotomy',
                'drop-add-role', 'drop-apply-role', 'drop-candidacy', 'drop-tsource', 'drop-tvar', 'drop-tvar-mc', 'drop-engage', 'drop-terms',
                'drop-terms-side', 'drop-fixed', 'drop-sync', 'drop-sync-polar', 'drop-xswitch', 'drop-congruence', 'congruent-never',
-               'share-guard-one')
+               'share-guard-one',
+               # Step 5c4.
+               'drop-init-engage', 'drop-enqueue', 'drop-note-top', 'drop-proc-eq-links', 'drop-link-later', 'wants-never',
+               'drop-share', 'skip-share')
 
 
 #: Step 5c1: `Session`'s discovery runs in `discovery.rs`. SLICE_DISC=py keeps Python's over the same core. Python's own copies, for a

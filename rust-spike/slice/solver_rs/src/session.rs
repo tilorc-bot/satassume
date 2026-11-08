@@ -14,7 +14,7 @@ use pyo3::types::{PyBool, PyDict, PyList, PySet, PyTuple};
 use crate::compile::{self, block_lits, Cx, Def, Kind, Need, F, R};
 use crate::formula_py::PyP;
 
-const NAMES: [&str; 78] = [
+const NAMES: [&str; 90] = [
     "py:var", "py:dvar", "py:node", "py:compile", "py:literal", "py:table", "rs:visit", "rs:add_clause", "rs:ensure_vars",
     "rs:def_implications", "rs:neg_shared", "join", "rs:emit_callback", "refuse:depth", "refuse:convert", "refuse:object", "second:visit", "custom:own",
     "link:hit", "link:resolved", "link:none", "link:no_table", "link:second", "link:no_node",
@@ -28,6 +28,8 @@ const NAMES: [&str; 78] = [
     "ses:want_of", "ses:split", "ses:emit_pattern", "ses:flush", "ses:compile", "ses:compile_pending",
     "ses:compile_patterns", "ses:custom", "ses:visit", "ses:core_visit", "ses:link",
     "ses:query_lit", "ses:prepare_query", "ses:emit", "ses:query_literal", "ses:query_all", "ses:literal_of", "ses:relations", "ses:ensure_atoms", "ses:ensure_twins",
+    "rel:init", "rel:enqueue", "rel:note_formula", "rel:process", "rel:link_later", "rel:wants_transfer", "rel:share",
+    "rel:cb_note_sides", "rel:cb_eq_links", "rel:cb_atom_selector", "rel:cb_atom_var", "rel:cb_constant_term",
 ];
 const VAR: usize = 0;
 const DVAR: usize = 1;
@@ -107,6 +109,19 @@ pub(crate) const SES_LITERAL_OF: usize = 74;
 pub(crate) const SES_RELATIONS: usize = 75;
 pub(crate) const SES_ENSURE_ATOMS: usize = 76;
 pub(crate) const SES_ENSURE_TWINS: usize = 77;
+/// Step 5c4: the rest of `Relations`, and the callbacks it makes to what stays Python.
+pub(crate) const REL_INIT: usize = 78;
+pub(crate) const REL_ENQUEUE: usize = 79;
+pub(crate) const REL_NOTE_FORMULA: usize = 80;
+pub(crate) const REL_PROCESS: usize = 81;
+pub(crate) const REL_LINK_LATER: usize = 82;
+pub(crate) const REL_WANTS_TRANSFER: usize = 83;
+pub(crate) const REL_SHARE: usize = 84;
+pub(crate) const REL_CB_NOTE_SIDES: usize = 85;
+pub(crate) const REL_CB_EQ_LINKS: usize = 86;
+pub(crate) const REL_CB_ATOM_SELECTOR: usize = 87;
+pub(crate) const REL_CB_ATOM_VAR: usize = 88;
+pub(crate) const REL_CB_CONSTANT_TERM: usize = 89;
 
 /// Deeper formulas compile on Python, over this same table. Python's own limit depends on the caller's stack, so it isn't
 /// reproduced: its deepest shape is `Implies`, 3 frames a level (first failure at depth 330 from a bare stack, limit 1000), so
@@ -114,7 +129,7 @@ pub(crate) const SES_ENSURE_TWINS: usize = 77;
 const FORMULA_DEPTH: u32 = 64;
 
 thread_local! {
-    static COUNTS: [Cell<u64>; 78] = const { [const { Cell::new(0) }; 78] };
+    static COUNTS: [Cell<u64>; 90] = const { [const { Cell::new(0) }; 90] };
     /// Each session's serial, for the link's memo: a pointer could alias a dead session's.
     static SERIAL: Cell<u64> = const { Cell::new(0) };
 }
