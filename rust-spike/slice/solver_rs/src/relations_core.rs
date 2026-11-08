@@ -261,6 +261,29 @@ pub(crate) const EM_QCONE_KEY_F: u8 = 196;
 pub(crate) const EM_SLOT_NO_MAXSIZE: u8 = 197;
 /// `relevant`'s `splits.put` is dropped.
 pub(crate) const EM_SPLITS_PUT_DROP: u8 = 198;
+/// Step 5c10a (factcache.rs). The inventory's planted bug, a put lost on a shared DictCache: `sync` compares the settings by
+/// identity, so a second engine with equal settings empties what the first one put.
+pub(crate) const FC_SHARED_SYNC_IS: u8 = 200;
+/// `put` drops a new node.
+pub(crate) const FC_PUT_NEW_DROP: u8 = 201;
+/// `DictCache(maxsize)` ignores `maxsize`.
+pub(crate) const FC_NEW_NO_MAXSIZE: u8 = 202;
+/// `sync` keeps the store on another epoch.
+pub(crate) const FC_SYNC_NO_CLEAR: u8 = 203;
+/// `facts` gives only the node's first fact.
+pub(crate) const FC_FACTS_FIRST: u8 = 204;
+/// `get` ignores its default.
+pub(crate) const FC_GET_NO_DEFAULT: u8 = 205;
+/// `put` never empties a full store.
+pub(crate) const FC_NO_BOUND: u8 = 206;
+/// `put` drops a custom predicate's fact (the `custom_cache` container).
+pub(crate) const FC_CUSTOM_PUT_DROP: u8 = 207;
+/// The view leaves the last node out.
+pub(crate) const FC_VIEW_DROP_LAST: u8 = 208;
+/// The rollback keeps what the refused run added.
+pub(crate) const FC_ROLLBACK_SKIP: u8 = 209;
+/// `clear` keeps the store.
+pub(crate) const FC_CLEAR_SKIP: u8 = 210;
 
 #[pyfunction]
 fn rel_install(term_live: Py<PyAny>, relations: Py<PyAny>, euf_adapter: Py<PyAny>, fault: Py<PyAny>) {
@@ -435,6 +458,17 @@ fn rel_plant(name: Option<&str>) -> PyResult<()> {
         Some("em-qcone-key-f") => EM_QCONE_KEY_F,
         Some("em-slot-no-maxsize") => EM_SLOT_NO_MAXSIZE,
         Some("em-splits-put-drop") => EM_SPLITS_PUT_DROP,
+        Some("fc-shared-sync-is") => FC_SHARED_SYNC_IS,
+        Some("fc-put-new-drop") => FC_PUT_NEW_DROP,
+        Some("fc-new-no-maxsize") => FC_NEW_NO_MAXSIZE,
+        Some("fc-sync-no-clear") => FC_SYNC_NO_CLEAR,
+        Some("fc-facts-first") => FC_FACTS_FIRST,
+        Some("fc-get-no-default") => FC_GET_NO_DEFAULT,
+        Some("fc-no-bound") => FC_NO_BOUND,
+        Some("fc-custom-put-drop") => FC_CUSTOM_PUT_DROP,
+        Some("fc-view-drop-last") => FC_VIEW_DROP_LAST,
+        Some("fc-rollback-skip") => FC_ROLLBACK_SKIP,
+        Some("fc-clear-skip") => FC_CLEAR_SKIP,
         Some(x) => return Err(PyValueError::new_err(format!("no plant {x}"))),
     };
     PLANT.store(v, Relaxed);

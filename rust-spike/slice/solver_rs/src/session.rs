@@ -14,7 +14,7 @@ use pyo3::types::{PyBool, PyDict, PyList, PySet, PyTuple};
 use crate::compile::{self, block_lits, Cx, Def, Kind, Need, F, R};
 use crate::formula_py::PyP;
 
-const NAMES: [&str; 260] = [
+const NAMES: [&str; 270] = [
     "py:var", "py:dvar", "py:node", "py:compile", "py:literal", "py:table", "rs:visit", "rs:add_clause", "rs:ensure_vars",
     "rs:def_implications", "rs:neg_shared", "join", "rs:emit_callback", "refuse:depth", "refuse:convert", "refuse:object", "second:visit", "custom:own",
     "link:hit", "link:resolved", "link:none", "link:no_table", "link:second", "link:no_node",
@@ -58,6 +58,8 @@ const NAMES: [&str; 260] = [
     "reserved:245", "reserved:246", "reserved:247", "reserved:248", "reserved:249",
     "em:py_kids", "em:py_qcones", "em:py_glue", "em:py_xbasis", "em:py_splits", "em:slot_set", "em:foreign", "em:full",
     "em:key_eq", "bud:query_cone",
+    "fc:py_facts", "fc:py_get", "fc:py_put", "fc:py_sync", "fc:view", "fc:clear", "fc:full", "fc:key_eq", "fc:rollback",
+    "fc:new",
 ];
 const VAR: usize = 0;
 const DVAR: usize = 1;
@@ -319,6 +321,24 @@ pub(crate) const EM_FULL: usize = 257;
 pub(crate) const EM_KEY_EQ: usize = 258;
 /// `_query_cone` run in Rust.
 pub(crate) const BUD_QUERY_CONE: usize = 259;
+/// Step 5c10a (factcache.rs): Python's calls into a fact cache, each a crossing: `facts` and `put` (`Engine.is_`, `is_many`,
+/// `_is_custom`, `_put_result`; 5c10c), `get` (tests, tools), `sync` (`_check_version`; 5c10d).
+pub(crate) const FC_PY_FACTS: usize = 260;
+pub(crate) const FC_PY_GET: usize = 261;
+pub(crate) const FC_PY_PUT: usize = 262;
+pub(crate) const FC_PY_SYNC: usize = 263;
+/// A read through the store's view (the tests, the registry's sizes and items, memo_check).
+pub(crate) const FC_VIEW: usize = 264;
+/// A store emptied by `clear` (the registry's clear, `_settings_changed`'s `store.clear()`).
+pub(crate) const FC_CLEAR: usize = 265;
+/// A store emptied at `maxsize` by a new node's `put`.
+pub(crate) const FC_FULL: usize = 266;
+/// A node's `==` run by a store lookup (not settled by identity).
+pub(crate) const FC_KEY_EQ: usize = 267;
+/// `_Mark`'s rollback of a fact cache on a refused query.
+pub(crate) const FC_ROLLBACK: usize = 268;
+/// A `FactCache` made (every `DictCache(...)` once installed).
+pub(crate) const FC_NEW: usize = 269;
 
 /// Deeper formulas compile on Python, over this same table. Python's own limit depends on the caller's stack, so it isn't
 /// reproduced: its deepest shape is `Implies`, 3 frames a level (first failure at depth 330 from a bare stack, limit 1000), so
@@ -326,7 +346,7 @@ pub(crate) const BUD_QUERY_CONE: usize = 259;
 const FORMULA_DEPTH: u32 = 64;
 
 thread_local! {
-    static COUNTS: [Cell<u64>; 260] = const { [const { Cell::new(0) }; 260] };
+    static COUNTS: [Cell<u64>; 270] = const { [const { Cell::new(0) }; 270] };
     /// Each session's serial, for the link's memo: a pointer could alias a dead session's.
     static SERIAL: Cell<u64> = const { Cell::new(0) };
 }

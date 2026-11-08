@@ -135,6 +135,7 @@ class _Mark:
         self.tables = {}
         self.engines = {}
         self.cache = []
+        self.facts = {}
         for _, _, t in memos.PROCESS.items():
             self._note(t)
         for t in (constfield._CONSTANTS, constfield._BY_KEY):
@@ -153,12 +154,18 @@ class _Mark:
         if id(eng) in self.engines:
             return
         self.engines[id(eng)] = (eng, dict(eng.stats), eng.last_budget_limited, set(eng._constructing))
+        for c in (eng.cache, eng.custom_cache):     # a Rust-native fact cache (factcache.rs, step 5c10a) marks itself
+            if id(c) not in self.facts and hasattr(c, '_fc_mark'):
+                self.facts[id(c)] = (c, c._fc_mark())
         for _, _, t in eng.memos.items():
             self._note(t)
 
     def rollback(self):
         for facts, pred in reversed(self.cache):
             facts.pop(pred, None)
+        for c, m in self.facts.values():
+            if c._fc_rollback(m):
+                COUNTS['rollback:cleared'] += 1
         for t, n, stamp, last in self.tables.values():
             if isinstance(t, list):
                 if len(t) < n:
@@ -930,7 +937,10 @@ def _install(keys, terms):
             s.pop()
 
     sympy_api._ask = _ask
-    engine.DictCache.put = _journaled_put
+    # Step 5c10a: a Rust-native fact cache rolls back by its own mark (`_Mark.add`); `_journaled_put` stays for SLICE_FACTCACHE=py.
+    import session_live
+    if not session_live.factcache_native():
+        engine.DictCache.put = _journaled_put
     py_key, py_sort = relations._key, lra_adapter.default_sort_key
     if keys:
         relations._key = _key_consumer('relations._key', py_key)

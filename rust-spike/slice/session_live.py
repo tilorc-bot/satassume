@@ -794,7 +794,11 @@ _MEMO_PLANTS = ('memo-view-drop', 'memo-clear-skip', 'memo-restamp-no-stamp', 'm
                 'pm-closed-hit-none', 'pm-atoms-key-expr', 'pm-view-drop',
                 # Step 5c9c (engmemo.rs, budget.rs, 190-198); 194 and 197 are for test_engmemo_core.py only.
                 'em-qcones-clear-skip', 'em-kids-set-drop', 'em-glue-no-store', 'em-xbasis-first', 'em-splits-no-bound',
-                'em-qcone-no-sums', 'em-qcone-key-f', 'em-slot-no-maxsize', 'em-splits-put-drop')
+                'em-qcone-no-sums', 'em-qcone-key-f', 'em-slot-no-maxsize', 'em-splits-put-drop',
+                # Step 5c10a (factcache.rs, 200-210); 200 is the inventory's planted bug (a put lost on a shared DictCache).
+                'fc-shared-sync-is', 'fc-put-new-drop', 'fc-new-no-maxsize', 'fc-sync-no-clear', 'fc-facts-first',
+                'fc-get-no-default', 'fc-no-bound', 'fc-custom-put-drop', 'fc-view-drop-last', 'fc-rollback-skip',
+                'fc-clear-skip')
 
 #: Step 5c9c: the engine memos Rust works on, by `MemoSlot` index (engmemo.rs `SLOTS`).
 ENGMEMO_SLOTS = ('_kids', '_qcones', '_glue_adapters', '_xbasis', 'splits')
@@ -807,12 +811,47 @@ def _install_memos():
 
     undo_pm = _install_procmemos()
     undo_em = _install_engmemos() if os.environ.get('SLICE_ENGMEMOS', 'rust') == 'rust' else None
+    undo_fc = _install_factcache() if factcache_native() else None
 
     def undo():
+        if undo_fc is not None:
+            undo_fc()
         if undo_em is not None:
             undo_em()
         undo_pm()
         sa_solver.memo_uninstall(memos.PROCESS)
+    return undo
+
+
+def factcache_native():
+    """Step 5c10a: whether the fact caches are Rust-native (SLICE_FACTCACHE, default rust; term_live reads it too, to leave
+    `_journaled_put` out)."""
+    return all(os.environ.get(k, 'rust') == 'rust' for k in ('SLICE_SESSION', 'SLICE_MEMOS', 'SLICE_FACTCACHE'))
+
+
+def _install_factcache():
+    """Step 5c10a: the public name `DictCache` (and `ObjectCache`) is the Rust-native cache (factcache.rs) from now on, in every
+    loaded module that bound Python's class, and Python's class makes one too (`__new__`) for a name bound before, so a cache
+    shared by several engines is one Rust object. A cache made before the install stays Python's. Returns the undo."""
+    import sys
+    D = engine.DictCache
+    saved = D.__dict__.get('__new__')
+
+    def __new__(cls, maxsize=200_000):
+        return sa_solver.DictCache(maxsize)
+    D.__new__ = __new__
+    bound = [(m, n) for m in list(sys.modules.values()) for n in ('DictCache', 'ObjectCache')
+             if getattr(m, '__dict__', {}).get(n) is D]
+    for m, n in bound:
+        setattr(m, n, sa_solver.DictCache)
+
+    def undo():
+        for m, n in bound:
+            setattr(m, n, D)
+        if saved is None:
+            del D.__new__
+        else:
+            D.__new__ = saved
     return undo
 
 

@@ -11,6 +11,8 @@ Runs WL once (MODE py: Python's backend; MODE rust: installed as `live.py WL rus
   must be none; then the first 200 queries run again and `rerun_same` says whether their answers equal the first pass's.
 - step 5c9c: `em_sizes`, `em_content` and `em_order` of the five engine memos moved to Rust (`ENGMEMOS`), and on Rust
   `em_view_bad`, the maps whose view differs from `sa_solver.em_snapshot` (test-only).
+- step 5c10a: the fact caches' stores (`cache.store`, `custom_cache.store`) join `em_sizes`, `em_content` and `em_order` (each
+  node's facts in their insertion order), and on Rust `fc_view_bad`, the caches whose view differs from `sa_solver.fc_snapshot`.
 `memo_check.py --cmp PY.json RUST.json` prints MATCH or each difference, and exits 1 on any.
 """
 import hashlib
@@ -54,6 +56,34 @@ def engmemo_rows(engine):
         glue = n == "_glue_adapters"
         out.append((n, [(_canon(k), type(v).__name__ if glue else _canon(v)) for k, v in list(c.items())]))
     return out
+
+
+#: Step 5c10a: the fact caches moved to Rust (factcache.rs), by their registry names.
+FACTCACHES = ("cache", "custom_cache")
+
+
+def factcache_rows(engine):
+    """Per fact cache: ("<name>.store", rows in insertion order, each node's facts in theirs)."""
+    return [(n + ".store", [(_canon(k), [(p, repr(v)) for p, v in f.items()]) for k, f in list(getattr(engine, n).store.items())])
+            for n in FACTCACHES]
+
+
+def factcache_view_ok(engine):
+    """Rust only: each cache's view holds the same nodes, facts and order as `fc_snapshot` reads from the store, and the same
+    `maxsize`, `_epoch`, `_settings`."""
+    import sa_solver
+    bad = []
+    for n in FACTCACHES:
+        c = getattr(engine, n)
+        if type(c).__module__ != "sa_solver":
+            bad.append(f"{n}: {type(c).__module__}.{type(c).__name__}")
+            continue
+        maxsize, epoch, settings, rows = sa_solver.fc_snapshot(c)
+        view = list(c.store.items())
+        if maxsize != c.maxsize or epoch != c._epoch or settings is not c._settings or len(rows) != len(view) or any(
+                a[0] is not b[0] or list(b[1].items()) != a[1] for a, b in zip(rows, view)):
+            bad.append(n)
+    return bad
 
 
 def engmemo_view_ok(engine):
@@ -102,6 +132,8 @@ def main():
         for f, d in ((sys.argv[2], a), (sys.argv[3], b)):
             if d.get("view_ok") is False:
                 bad.append(f"{f}: view != snapshot: {d['native']} vs {d['snapshot']}")
+            if d.get("fc_view_bad"):
+                bad.append(f"{f}: fact cache view != store: {d['fc_view_bad']}")
             if d.get("em_view_bad"):
                 bad.append(f"{f}: engine memo view != map: {d['em_view_bad']}")
             if d.get("cleared"):
@@ -140,13 +172,15 @@ def main():
     eng = sympy_api.default_engine()
     rows = registry_rows(eng)
     r = dict(wl=wl, mode=mode, n=len(pairs), answers=_h(ans), digest=_h(rows), tables=rows)
-    em = engmemo_rows(eng)
+    em = engmemo_rows(eng) + factcache_rows(eng)
     r["em_sizes"] = {n: len(v) for n, v in em}
     r["em_content"] = {n: _h(sorted(v)) for n, v in em}
     r["em_order"] = {n: _h(v) for n, v in em}
     r["hash_seed"] = os.environ.get("PYTHONHASHSEED")
     if mode == "rust" and hasattr(__import__("sa_solver"), "em_snapshot") and type(eng.splits).__name__ == "EngineMemo":
         r["em_view_bad"] = engmemo_view_ok(eng)
+    if mode == "rust" and hasattr(__import__("sa_solver"), "fc_snapshot"):
+        r["fc_view_bad"] = factcache_view_ok(eng)
     if mode == "rust" and hasattr(__import__("sa_solver"), "memo_snapshot"):
         import sa_solver
         r["native"] = sorted((n, c.key, c.size, len(c)) for n, _, c in memos.PROCESS.items() if getattr(c, "native", False))
@@ -160,7 +194,14 @@ def main():
         left += [f"map:{t[0]}" for t in sa_solver.memo_snapshot() if t[3]]
     if "em_view_bad" in r:
         left += [f"em:{n}" for n in ENGMEMOS if len(sa_solver.em_snapshot(getattr(eng, n))[2])]
+    if r.get("fc_view_bad") == []:
+        left += [f"fc:{n}" for n in FACTCACHES if len(sa_solver.fc_snapshot(getattr(eng, n))[3])]
     r["cleared"] = left
+    if mode == "rust":      # step 5c10a: the fact caches' counters, the plant's firings, the refusals `_Mark` rolled back
+        c = session_live.counts()
+        r["counts"] = {k: v for k, v in c.items() if v and k.startswith(("fc:", "em:"))}
+        r["fired"] = c.get("rel:plant_fired", 0)
+        r["refused"] = term_live.COUNTS["refused"]
     r["rerun_same"] = run(pairs[:200]) == ans[:200]
     json.dump(r, open(out, "w"), indent=0)
     print(json.dumps({k: v for k, v in r.items() if k != "tables"}))
