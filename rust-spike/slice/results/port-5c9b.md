@@ -26,10 +26,32 @@ sa-port-176, rows `~/sa-rust-ids-work/sa-port-176/trace/`), then:
   100,000 bound (100,001 fresh clause lists) and the registry's clear, and `neighbourhood` over every basis name and index.
 
 ## SHAs
-BAR_SHAS
+**Tested: 73c10d3** (port/5c9b on rust-slice e0ec542), all bar phases but seed1. Rows on pareto1:
+`~/sp19/sa-rust-ids-work/sa-port-177/bar-5c9b/`; `.so` sha256 f05dc270…. Base suite rows: 5c9a's (`sa-port-174/bar-5c9a/suite`).
+**Landed:** the commit carrying this file, on rust-slice, rebased on e0ec542 (unchanged since the bar started). **Incoming
+diff: none** (e0ec542..e0ec542). Between 73c10d3 and the landed commit there is only this report, port-ownership.md/.tsv
+(results/) and HANDOFF-sa-port-177.md (repo root); the landing guard saw no source difference. 5c9b's was the first clean bar,
+so it lands before the 6g c3-c5 stack (sa-port-175), which rebases onto it.
 
-## The bar
-BAR_ITEMS
+## The bar (sa-port-177/bar-5c9b on 73c10d3)
+1. **Suite by id against 5c9a's rows:** 5,992 passed, 126 failed, 23 skipped, 18 xfailed, 6,159 ids. New 0, gone 0,
+   changed outcome 0. Passed splits as 5,991 with no firing and 1 with a firing (`test_ci_stream_reports_only_what_replays`).
+   S's standing: S's gate is met except for the 46 named stub failures, one cause.
+2. **Fresh dev and fuzz, plus loop, zero, cert and scope:** answers and state MATCH, and every control MATCHes. Answers
+   unchanged: dev 31cd0945c07f02a6 (1,985 q), fuzz 173502b6ef285ad6 (3,000 q), loop 09238b2537e54383 (420 q), zero
+   d9ed3534a2093027 (854 q), cert 6a09c059eb266747 (61 q), scope 12e06b0586faee40 (169 q). The Rust runs made 0 Python
+   solvers, reentry 0. The registry's snapshot digest is equal at the switch on all six (below).
+3. **Plants:** 8 of 8 caught (table below), counting memo_check and test_procmemo_core.py; the bar's live comparison alone
+   catches 182, 185 and 186. None is void; 180, 183 and 184 fire on no workload and are caught only by the test (T).
+4. **Quiet handlers in the suite:** 39 rows in 2 tests, the same multiset as 5c9a's:
+   - `_consistent` AttributeError: 34 on `_ok` and 4 on `_rb_clauses` (the named needs-internals case);
+   - `Engine._build_context` "Already mutably borrowed": 1, in `test_protocol_on_fuzz` (the 46-stub cause).
+
+   The `caught` rows per id match base (0 ids differ). TermFault 0 in the suite log. The 12 live handler files and the 4
+   extra-workload handler files have 0 rows, and so do all 16 plant handler files.
+5. **Known differences in answers or read state:** none new. The pre-existing `_SPLIT` len difference Python vs Rust is
+   explained below (registry len only; answers unaffected). Tests: 580 passed, 0 failed (5c9a's 14 files plus
+   test_procmemo_core.py). `relations_direct.py` exited 0.
 
 ## The switch digest (planner's state ruling, item 3)
 `memo_check.py WL rust` on base Rust (e0ec542, a worktree with its own build) and on 5c9b Rust (5397118; 73c10d3 adds only
@@ -67,7 +89,21 @@ landing source). Caught by: V = registry view != Rust maps, C = not empty after 
 (memo_check, against the same workload's unplanted 5c9b run), T = test_procmemo_core.py, D = the bar's plants/extra comparison
 (live.py, answers and state). Rows: `sa-port-177/pl/`.
 
-PLANT_TABLE
+| plant | row | dev | fuzz | loop | zero | cert | scope | caught by |
+|---|---|---|---|---|---|---|---|---|
+| pm-split-no-full-clear (180, **`_SPLIT`'s bound, first half of the clear plant**) | `split_put` bound | 0 | 0 | 0 | 0 | 0 | 0 | **T only** (`split:lens`, 100,001 fresh lists); no workload reaches 100,000 |
+| pm-split-clear-skip (181, **the clear plant's second half**) | `_SPLIT` view `clear()` | 1 C | 1 C | 1 C | 1 C | 1 C | 1 C | memo_check every workload, T (`split:after_clear`); bar's live: fired 0 (live.py never clears the registry) |
+| pm-want-key-len (182) | `want_of` lookup | 5,364 S D | 54,479 S D | 5,388 S D | 7,358 S D | 1,462 S D | 2,310 S D | memo_check digest and the bar, every workload |
+| pm-neigh-no-self (183) | `pm_neighbourhood` | 0 | 0 | 0 | 0 | 0 | 0 | **T only** (`neigh:*`); 0 calls per query; tests/test_engine.py:195 passes under it |
+| pm-neigh-memo-first (184) | `_NEIGH` lookup | 0 | 0 | 0 | 0 | 0 | 0 | **T only** (`neigh:*`); as 183 |
+| pm-closed-hit-none (185) | `closed_units` hit | 2,555 S D | 17,642 S D | 3,094 | 3,426 | 446 S D | 980 | memo_check and the bar, dev, fuzz, cert; fires but changes nothing read on loop, zero, scope |
+| pm-atoms-key-expr (186) | `sympy_atom` lookup | 543 S A D | 22,525 S A D | 0 | 1,461 S A D | 582 S A D | 602 S A D | memo_check and the bar, every workload but loop (no atoms there) |
+| pm-view-drop (187, **the registry-view plant**) | `_install_procmemos` | 1 V C S | 1 V C S | 1 V C S | 1 V C S | 1 V C S | 1 V C S | memo_check every workload (bar's live: fired 1, MATCH, it reads no registry) |
+
+Fired counts in the table are memo_check's (one full pass plus the 200-query rerun). The bar's plant runs give the same
+picture on one pass (fired: want-key-len dev 5,227, fuzz 51,089; closed-hit-none dev 2,482, fuzz 16,537; atoms-key-expr dev
+543, fuzz 20,762; view-drop 1 everywhere; 180, 181, 183, 184 0 everywhere). **Void on workloads, caught by the test only:**
+180, 183, 184 (and 181 in the bar's live runs). No plant is void overall. The full suite didn't run under any 5c9b plant.
 
 ## Reached (counters on the unplanted 5c9b run, memo_check: one full pass plus the 200-query rerun)
 | workload | `ses:want_of` | `ses:split` | `rel:sympy_atom` | `rel:closed_units` | `pm:key_eq` | `pm:key_hash` | `pm:neigh` | `pm:cb_rules` | `pm:full` |
@@ -91,7 +127,18 @@ and `P` objects) that is a callback into Python, as is `pm:key_hash` (SymPy's or
 same calls. They go when the keys are Rust's term ids (conversion pass).
 
 ## Kept reasons (planner ruling, 03:42 UTC 8 Nov)
-KEPT_TABLE
+Share of all queries kept per reason, on the Rust run, against 5c9a's bar.
+
+| workload | queries | out-of-scope | refused | other named exceptions | base |
+|---|--:|--:|--:|--:|---|
+| dev | 1,985 | 24 (1.21%) | 0 | 0 | the same |
+| fuzz | 3,000 | 0 | 0 | 0 | the same |
+| zero | 854 | 0 | 0 | 0 | the same |
+| cert | 61 | 0 | 0 | 0 | the same |
+| loop | 420 | 0 | 0 | 0 | the same |
+| scope | 169 | 0 | 0 | 0 | not in 5c9a's bar (first bar to run it) |
+
+**No share rose.**
 
 ## State: each container 5c9b's rows touch (planner's state ruling, 8 Nov)
 | container | decision | readers past 5c9b | inventory row |
@@ -122,4 +169,30 @@ none goes on the needs-internals list.
   `rust_compiled` go through `_common._CACHE`, the lens should become equal.
 
 ## Not run
-NOT_RUN
+Moved to "before any backend PR", and none quoted as met:
+- the mutant 2, 5, 6, 7, 9 rerun and mutlive's control;
+- the boundary rescore and suite column;
+- the final drop score and its lost rows;
+- the suite split with Python's counter;
+- `order:_rows`' evidence (not caught meanwhile);
+- the `_forms` guard test;
+- history and seed reruns (seed1 not run);
+- forced moves;
+- the native path;
+- timing.
+
+Also not run:
+- the full suite under any 5c9b plant (SUITE_PLANTS empty);
+- the switch digest on budget (memo_check ran dev, fuzz, loop, zero, cert, scope);
+- a workload reaching `_SPLIT`'s bound, `neighbourhood` or `_NEIGH` (test_procmemo_core.py covers them instead).
+
+Other notes:
+- S's standing: S's gate is met except for the 46 named stub failures, one cause.
+- Mutants 2, 5, 6, 7, 9 still rest on the API fuzzer alone. 10 of the 25 boundary mutants have no real-engine catch, and
+  the boundary suite column wasn't run.
+- **Speed not measured.**
+- The `_n_conflicts` view in rust_plugin.py is a test-plugin shim, not a port (64 tests).
+- `tests/test_relations.py::test_equality_sharing_is_needed_and_works` is unedited and still named needs-internals.
+  This step doesn't touch it.
+- Quiet catches at engine.py:1906: not counted separately in this bar; the suite's `caught` rows per id match base.
+- The stub-spec test for plant 177 (5c9a) stays on the owed list, per the planner's go.
