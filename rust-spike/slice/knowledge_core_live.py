@@ -443,7 +443,10 @@ def install(shadow, counts, fault_cls, mismatch):
         counts['shadow:direct:' + name] += 1
         if ours is not None and ours != []:
             counts['shadow:direct:' + name + ':split'] += 1
-        mismatch('core:' + name, args, 'result', ours, py[name](args))
+        # `_quotient_templates`: Rust shows its shape `(a, v, v**k)` or None, as the shell's shadow compares (facts' result
+        # is a template object; the facts after the shape are Common::facts, shared with Python's path).
+        theirs = _quotient_shape_py(args) if name == '_quotient_templates' else py[name](args)
+        mismatch('core:' + name, args, 'result', ours, theirs)
     if shadow:
         SHADOW_SPLIT[0] = shadow_split
     for name, f in swap.items():
