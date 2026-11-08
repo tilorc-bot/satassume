@@ -34,7 +34,7 @@ use crate::relations_core::{
     FC_PUT_NEW_DROP, FC_ROLLBACK_SKIP, FC_SHARED_SYNC_IS, FC_SYNC_NO_CLEAR, FC_VIEW_DROP_LAST,
 };
 use crate::session::{
-    tick, FC_CLEAR, FC_FULL, FC_KEY_EQ, FC_NEW, FC_PY_FACTS, FC_PY_GET, FC_PY_PUT, FC_PY_SYNC, FC_ROLLBACK, FC_VIEW,
+    tick, FC_CLEAR, FC_FULL, FC_KEY_EQ, FC_NEW, FC_PY_FACTS, FC_PY_GET, FC_PY_KEY, FC_PY_PUT, FC_PY_SYNC, FC_ROLLBACK, FC_VIEW,
 };
 
 /// One node's facts: (pred, value, serial of the put that added the pred).
@@ -50,9 +50,7 @@ struct Store {
 pub struct FactCache {
     #[pyo3(get, set)]
     maxsize: usize,
-    #[pyo3(get, set, name = "_epoch")]
     epoch: i64,
-    #[pyo3(get, set, name = "_settings")]
     settings: Py<PyAny>,
     store: RefCell<Store>,
     serial: Cell<u64>,
@@ -173,6 +171,30 @@ impl FactCache {
     #[getter]
     fn native(&self) -> bool {
         true
+    }
+
+    #[getter(_epoch)]
+    fn get_epoch(&self) -> i64 {
+        tick(FC_PY_KEY);
+        self.epoch
+    }
+
+    #[setter(_epoch)]
+    fn set_epoch(&mut self, v: i64) {
+        tick(FC_PY_KEY);
+        self.epoch = v;
+    }
+
+    #[getter(_settings)]
+    fn get_settings(&self, p: Python<'_>) -> Py<PyAny> {
+        tick(FC_PY_KEY);
+        self.settings.clone_ref(p)
+    }
+
+    #[setter(_settings)]
+    fn set_settings(&mut self, v: Py<PyAny>) {
+        tick(FC_PY_KEY);
+        self.settings = v;
     }
 
     /// `DictCache.sync`.

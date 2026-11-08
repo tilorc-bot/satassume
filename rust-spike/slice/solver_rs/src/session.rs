@@ -14,7 +14,7 @@ use pyo3::types::{PyBool, PyDict, PyList, PySet, PyTuple};
 use crate::compile::{self, block_lits, Cx, Def, Kind, Need, F, R};
 use crate::formula_py::PyP;
 
-const NAMES: [&str; 270] = [
+const NAMES: [&str; 271] = [
     "py:var", "py:dvar", "py:node", "py:compile", "py:literal", "py:table", "rs:visit", "rs:add_clause", "rs:ensure_vars",
     "rs:def_implications", "rs:neg_shared", "join", "rs:emit_callback", "refuse:depth", "refuse:convert", "refuse:object", "second:visit", "custom:own",
     "link:hit", "link:resolved", "link:none", "link:no_table", "link:second", "link:no_node",
@@ -59,7 +59,7 @@ const NAMES: [&str; 270] = [
     "em:py_kids", "em:py_qcones", "em:py_glue", "em:py_xbasis", "em:py_splits", "em:slot_set", "em:foreign", "em:full",
     "em:key_eq", "bud:query_cone",
     "fc:py_facts", "fc:py_get", "fc:py_put", "fc:py_sync", "fc:view", "fc:clear", "fc:full", "fc:key_eq", "fc:rollback",
-    "fc:new",
+    "fc:new", "fc:py_key",
 ];
 const VAR: usize = 0;
 const DVAR: usize = 1;
@@ -339,6 +339,9 @@ pub(crate) const FC_KEY_EQ: usize = 267;
 pub(crate) const FC_ROLLBACK: usize = 268;
 /// A `FactCache` made (every `DictCache(...)` once installed).
 pub(crate) const FC_NEW: usize = 269;
+/// Python's read or write of a cache's memo key, `_settings` or `_epoch` (`Engine.is_`/`_is_custom` compare `_settings` every
+/// query, 5c10c; tests).
+pub(crate) const FC_PY_KEY: usize = 270;
 
 /// Deeper formulas compile on Python, over this same table. Python's own limit depends on the caller's stack, so it isn't
 /// reproduced: its deepest shape is `Implies`, 3 frames a level (first failure at depth 330 from a bare stack, limit 1000), so
@@ -346,7 +349,7 @@ pub(crate) const FC_NEW: usize = 269;
 const FORMULA_DEPTH: u32 = 64;
 
 thread_local! {
-    static COUNTS: [Cell<u64>; 270] = const { [const { Cell::new(0) }; 270] };
+    static COUNTS: [Cell<u64>; 271] = const { [const { Cell::new(0) }; 271] };
     /// Each session's serial, for the link's memo: a pointer could alias a dead session's.
     static SERIAL: Cell<u64> = const { Cell::new(0) };
 }

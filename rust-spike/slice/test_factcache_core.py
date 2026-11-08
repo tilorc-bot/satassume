@@ -164,7 +164,7 @@ def test_counters_fire(both):
     _, rust = both
     c = rust['counts']
     for k in ('fc:py_facts', 'fc:py_get', 'fc:py_put', 'fc:py_sync', 'fc:view', 'fc:clear', 'fc:full', 'fc:key_eq',
-              'fc:rollback', 'fc:new'):
+              'fc:rollback', 'fc:new', 'fc:py_key'):
         assert c[k] > 0, k
     assert c['rel:plant_fired'] == 0
 
