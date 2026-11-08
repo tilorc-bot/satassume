@@ -1,6 +1,6 @@
 module	name	line	suffix	inv_class	inv_component	owner	today	left	runs	finisher
 __init__.py	__getattr__	15	~i	none	none	not port (none, ownership ruling)	Python			
-engine.py	engine_memos	107		port	5	5c9	Python			
+engine.py	engine_memos	107		port	5	landed 5c9a (port-5c9a.md)	Python	import time, harness or tests: 0 per query (memo_trace dev/fuzz)	Python: 0 per query	
 engine.py	InconsistentAssumptions	123		port	5	5c10	Python			
 engine.py	_noncommutative	140		port	5	5c10	Python			
 engine.py	_noncommutative_answer	151	~u	port	5	5c10	Python			
@@ -56,22 +56,22 @@ engine.py	_context_free	1245	~u	port	5	5c10	Python
 engine.py	Engine	1251		port	5	5c10	Python			
 engine.py	Engine.__init__	1313		port	5	5c9	Python			
 engine.py	Engine._fresh_session	1412		port	5	5c9	Python			
-engine.py	Engine.extensions	1418		port	5	5c9	Python			
-engine.py	Engine.extensions	1425		port	5	5c9	Python			
-engine.py	Engine.relation_specs	1431		port	5	5c9	Python			
-engine.py	Engine.relation_specs	1440		port	5	5c9	Python			
-engine.py	Engine.discovery_budget	1447	~u	port	5	5c9	Python			
-engine.py	Engine.discovery_budget	1455	~u	port	5	5c9	Python			
-engine.py	Engine.transfer	1461		port	5	5c9	Python			
-engine.py	Engine.transfer	1467		port	5	5c9	Python			
-engine.py	Engine.uninterpreted	1473		port	5	5c9	Python			
-engine.py	Engine.uninterpreted	1480		port	5	5c9	Python			
-engine.py	Engine.writeback	1487	~u	port	5	5c9	Python			
-engine.py	Engine.writeback	1495	~u	port	5	5c9	Python			
-engine.py	Engine.relevance	1502		port	5	5c9	Python			
-engine.py	Engine.relevance	1508		port	5	5c9	Python			
-engine.py	Engine.templates	1514	~u	port	5	5c9	Python			
-engine.py	Engine.templates	1522	~u	port	5	5c9	Python			
+engine.py	Engine.extensions	1418		port	5	landed 5c9a (port-5c9a.md)	Rust+Python	Python getter kept for conversion callers (convert.py, _engine_ask, _ask_general) and public API	Rust: memos.rs setting reads the field (callbacks before, per dev/fuzz pass: dev 989, fuzz 2938; after: 0); property on an Engine subclass (memo:setting_prop)	
+engine.py	Engine.extensions	1425		port	5	landed 5c9a (port-5c9a.md)	Python	setter: public API configuration write; _settings_changed is 5c10's	Python: public API, 0 per query	
+engine.py	Engine.relation_specs	1431		port	5	landed 5c9a (port-5c9a.md)	Rust+Python	Python getter kept for conversion callers (convert.py, _engine_ask, _ask_general) and public API	Rust: memos.rs setting reads the field (callbacks before, per dev/fuzz pass: dev 122, fuzz 315; after: 0); property on an Engine subclass (memo:setting_prop)	
+engine.py	Engine.relation_specs	1440		port	5	landed 5c9a (port-5c9a.md)	Python	setter: public API configuration write; _settings_changed is 5c10's	Python: public API, 0 per query	
+engine.py	Engine.discovery_budget	1447	~u	port	5	landed 5c9a (port-5c9a.md)	Python	no Rust reader; conversion (convert.py default_engine_settings, _ask_general) and public API	Python: conversion layer only	
+engine.py	Engine.discovery_budget	1455	~u	port	5	landed 5c9a (port-5c9a.md)	Python	setter: public API configuration write; _settings_changed is 5c10's	Python: public API, 0 per query	
+engine.py	Engine.transfer	1461		port	5	landed 5c9a (port-5c9a.md)	Rust+Python	Python getter kept for conversion callers (convert.py, _engine_ask, _ask_general) and public API	Rust: memos.rs setting reads the field (callbacks before, per dev/fuzz pass: dev 35, fuzz 911; after: 0); property on an Engine subclass (memo:setting_prop)	
+engine.py	Engine.transfer	1467		port	5	landed 5c9a (port-5c9a.md)	Python	setter: public API configuration write; _settings_changed is 5c10's	Python: public API, 0 per query	
+engine.py	Engine.uninterpreted	1473		port	5	landed 5c9a (port-5c9a.md)	Rust+Python	Python getter kept for conversion callers (convert.py, _engine_ask, _ask_general) and public API	Rust: memos.rs setting reads the field (callbacks before, per dev/fuzz pass: dev 393, fuzz 5564; after: 0); property on an Engine subclass (memo:setting_prop)	
+engine.py	Engine.uninterpreted	1480		port	5	landed 5c9a (port-5c9a.md)	Python	setter: public API configuration write; _settings_changed is 5c10's	Python: public API, 0 per query	
+engine.py	Engine.writeback	1487	~u	port	5	landed 5c9a (port-5c9a.md)	Python	no Rust reader; conversion (convert.py default_engine_settings, _ask_general) and public API	Python: conversion layer only	
+engine.py	Engine.writeback	1495	~u	port	5	landed 5c9a (port-5c9a.md)	Python	setter: public API configuration write; _settings_changed is 5c10's	Python: public API, 0 per query	
+engine.py	Engine.relevance	1502		port	5	landed 5c9a (port-5c9a.md)	Python	no Rust reader; conversion (convert.py default_engine_settings, _ask_general) and public API	Python: conversion layer only	
+engine.py	Engine.relevance	1508		port	5	landed 5c9a (port-5c9a.md)	Python	setter: public API configuration write; _settings_changed is 5c10's	Python: public API, 0 per query	
+engine.py	Engine.templates	1514	~u	port	5	landed 5c9a (port-5c9a.md)	Python	no Rust reader; conversion (convert.py default_engine_settings, _ask_general) and public API	Python: conversion layer only	
+engine.py	Engine.templates	1522	~u	port	5	landed 5c9a (port-5c9a.md)	Python	setter: public API configuration write; _settings_changed is 5c10's	Python: public API, 0 per query	
 engine.py	Engine._settings_changed	1528	~u	port	5	5c9	Python			
 engine.py	Engine._check_version	1556		port	5	5c9	Python			
 engine.py	Engine._settings_fingerprint	1582		port	5	5c9	Python			
@@ -511,29 +511,29 @@ scope.py	scope_of_atoms	164		port	4	landed scope (port-scope.md)	Rust
 scope.py	theory_scope	177		port	4	landed scope (port-scope.md)	Rust			
 scope.py	_custom_pred	192		port	4	landed scope (port-scope.md)	Rust			
 scope.py	extension_atoms	196		port	4	landed scope (port-scope.md)	Rust			
-state/epoch.py	bump	42		port	5	5c9	Python			
-state/memos.py	Table	49		port	5	5c9	Python			
-state/memos.py	Table.__init__	57	~i	port	5	5c9	Python			
-state/memos.py	Table.put	63	~u	port	5	5c9	Python			
-state/memos.py	Table.restamp	72		port	5	5c9	Python			
-state/memos.py	Table.reset	77	~u	port	5	5c9	Python			
-state/memos.py	Table.__repr__	84	~u	port	5	5c9	Python			
-state/memos.py	Memos	89		port	5	5c9	Python			
-state/memos.py	Memos.__init__	92		port	5	5c9	Python			
-state/memos.py	Memos.table	99	~i	port	5	5c9	Python			
-state/memos.py	Memos.adopt	109		port	5	5c9	Python			
-state/memos.py	Memos.items	117	~u	port	5	5c9	Python			
-state/memos.py	Memos.names	128	~u	port	5	5c9	Python			
-state/memos.py	Memos.sizes	131	~u	port	5	5c9	Python			
-state/memos.py	Memos.clear	134	~u	port	5	5c9	Python			
-state/memos.py	Memos.__repr__	143	~u	port	5	5c9	Python			
-state/memos.py	_path	151	~u	port	5	5c9	Python			
-state/memos.py	_module_attr	168		port	5	5c9	Python			
-state/memos.py	load_owners	187	~u	port	5	5c9	Python			
-state/memos.py	__getattr__	206		port	5	5c9	Python			
-state/memos.py	adopt	213		port	5	5c9	Python			
-state/memos.py	module_locations	222	~u	port	5	5c9	Python			
-state/memos.py	owner_memos	234		port	5	5c9	Python			
+state/epoch.py	bump	42		port	5	landed 5c9a (port-5c9a.md)	Python	import time, harness or tests: 0 per query (memo_trace dev/fuzz)	Python: 0 per query	
+state/memos.py	Table	49		port	5	landed 5c9a (port-5c9a.md)	Python	the registry container, kept Python and made able to hold Rust-native views (Memos.attach/detach, _native); readers: public API/tests (names, sizes, clear, items), _Mark (slice wiring, parked for the conversion pass)	Python: _Mark per query (Memos.items ~42k a dev pass), import time	
+state/memos.py	Table.__init__	57	~i	port	5	landed 5c9a (port-5c9a.md)	Python	the registry container, kept Python and made able to hold Rust-native views (Memos.attach/detach, _native); readers: public API/tests (names, sizes, clear, items), _Mark (slice wiring, parked for the conversion pass)	Python: _Mark per query (Memos.items ~42k a dev pass), import time	
+state/memos.py	Table.put	63	~u	port	5	landed 5c9a (port-5c9a.md)	Python	the registry container, kept Python and made able to hold Rust-native views (Memos.attach/detach, _native); readers: public API/tests (names, sizes, clear, items), _Mark (slice wiring, parked for the conversion pass)	Python: _Mark per query (Memos.items ~42k a dev pass), import time	
+state/memos.py	Table.restamp	72		port	5	landed 5c9a (port-5c9a.md)	Rust+Python	Python method kept for _formula (_FORMULAS, conversion layer)	Rust: memos.rs restamp for keys_rel on _KEYS/_CONST (2 per dev pass, from C before; 0 after)	
+state/memos.py	Table.reset	77	~u	port	5	landed 5c9a (port-5c9a.md)	Python	the registry container, kept Python and made able to hold Rust-native views (Memos.attach/detach, _native); readers: public API/tests (names, sizes, clear, items), _Mark (slice wiring, parked for the conversion pass)	Python: _Mark per query (Memos.items ~42k a dev pass), import time	
+state/memos.py	Table.__repr__	84	~u	port	5	landed 5c9a (port-5c9a.md)	Python	the registry container, kept Python and made able to hold Rust-native views (Memos.attach/detach, _native); readers: public API/tests (names, sizes, clear, items), _Mark (slice wiring, parked for the conversion pass)	Python: _Mark per query (Memos.items ~42k a dev pass), import time	
+state/memos.py	Memos	89		port	5	landed 5c9a (port-5c9a.md)	Python	the registry container, kept Python and made able to hold Rust-native views (Memos.attach/detach, _native); readers: public API/tests (names, sizes, clear, items), _Mark (slice wiring, parked for the conversion pass)	Python: _Mark per query (Memos.items ~42k a dev pass), import time	
+state/memos.py	Memos.__init__	92		port	5	landed 5c9a (port-5c9a.md)	Python	the registry container, kept Python and made able to hold Rust-native views (Memos.attach/detach, _native); readers: public API/tests (names, sizes, clear, items), _Mark (slice wiring, parked for the conversion pass)	Python: _Mark per query (Memos.items ~42k a dev pass), import time	
+state/memos.py	Memos.table	99	~i	port	5	landed 5c9a (port-5c9a.md)	Python	the registry container, kept Python and made able to hold Rust-native views (Memos.attach/detach, _native); readers: public API/tests (names, sizes, clear, items), _Mark (slice wiring, parked for the conversion pass)	Python: _Mark per query (Memos.items ~42k a dev pass), import time	
+state/memos.py	Memos.adopt	109		port	5	landed 5c9a (port-5c9a.md)	Python	the registry container, kept Python and made able to hold Rust-native views (Memos.attach/detach, _native); readers: public API/tests (names, sizes, clear, items), _Mark (slice wiring, parked for the conversion pass)	Python: _Mark per query (Memos.items ~42k a dev pass), import time	
+state/memos.py	Memos.items	117	~u	port	5	landed 5c9a (port-5c9a.md)	Python	the registry container, kept Python and made able to hold Rust-native views (Memos.attach/detach, _native); readers: public API/tests (names, sizes, clear, items), _Mark (slice wiring, parked for the conversion pass)	Python: _Mark per query (Memos.items ~42k a dev pass), import time	
+state/memos.py	Memos.names	128	~u	port	5	landed 5c9a (port-5c9a.md)	Python	the registry container, kept Python and made able to hold Rust-native views (Memos.attach/detach, _native); readers: public API/tests (names, sizes, clear, items), _Mark (slice wiring, parked for the conversion pass)	Python: _Mark per query (Memos.items ~42k a dev pass), import time	
+state/memos.py	Memos.sizes	131	~u	port	5	landed 5c9a (port-5c9a.md)	Python	the registry container, kept Python and made able to hold Rust-native views (Memos.attach/detach, _native); readers: public API/tests (names, sizes, clear, items), _Mark (slice wiring, parked for the conversion pass)	Python: _Mark per query (Memos.items ~42k a dev pass), import time	
+state/memos.py	Memos.clear	134	~u	port	5	landed 5c9a (port-5c9a.md)	Python	the registry container, kept Python and made able to hold Rust-native views (Memos.attach/detach, _native); readers: public API/tests (names, sizes, clear, items), _Mark (slice wiring, parked for the conversion pass)	Python: _Mark per query (Memos.items ~42k a dev pass), import time	
+state/memos.py	Memos.__repr__	143	~u	port	5	landed 5c9a (port-5c9a.md)	Python	the registry container, kept Python and made able to hold Rust-native views (Memos.attach/detach, _native); readers: public API/tests (names, sizes, clear, items), _Mark (slice wiring, parked for the conversion pass)	Python: _Mark per query (Memos.items ~42k a dev pass), import time	
+state/memos.py	_path	151	~u	port	5	landed 5c9a (port-5c9a.md)	Python	import time, harness or tests: 0 per query (memo_trace dev/fuzz)	Python: 0 per query	
+state/memos.py	_module_attr	168		port	5	landed 5c9a (port-5c9a.md)	Python	import time, harness or tests: 0 per query (memo_trace dev/fuzz)	Python: 0 per query	
+state/memos.py	load_owners	187	~u	port	5	landed 5c9a (port-5c9a.md)	Python	import time, harness or tests: 0 per query (memo_trace dev/fuzz)	Python: 0 per query	
+state/memos.py	__getattr__	206		port	5	landed 5c9a (port-5c9a.md)	Python	import time, harness or tests: 0 per query (memo_trace dev/fuzz)	Python: 0 per query	
+state/memos.py	adopt	213		port	5	landed 5c9a (port-5c9a.md)	Python	import time, harness or tests: 0 per query (memo_trace dev/fuzz)	Python: 0 per query	
+state/memos.py	module_locations	222	~u	port	5	landed 5c9a (port-5c9a.md)	Python	import time, harness or tests: 0 per query (memo_trace dev/fuzz)	Python: 0 per query	
+state/memos.py	owner_memos	234		port	5	landed 5c9a (port-5c9a.md)	Python	import time, harness or tests: 0 per query (memo_trace dev/fuzz)	Python: 0 per query	
 sympy_api.py	_ask	560		conversion	5	not port (conversion, ownership ruling)	Python			
 sympy_api.py	_ask_general	576		conversion	5	not port (conversion, ownership ruling)	Python			
 sympy_api.py	_const_base	693		port	5	landed 5c8 (port-5c8.md)	Rust	reads of input terms are lazy conversion reads	Rust: via keys_rel (dev 1180, fuzz 7222 keys_rel calls)	
@@ -822,3 +822,7 @@ engine.py	state: Engine.splits	1364		state	5	5c9 (not moved in 5c8; INVENTORY-st
 engine.py	state: Engine.stats	1402		state	5	never by a planned step (INVENTORY-state.md :199; sympy_api _ask_general and public ask write it)	Python	relevance.rs _consistent increments it as Python does; view plus a write path, or moves with the conversion pass		
 sympy_api.py	state: _KEYS	683		state	5	stays (INVENTORY-state.md :169, no Rust worker before 5c8; PROCESS registry 5c9)	Python	readers: relevance.rs keys_rel through its table methods, Python _keys_rel deep fallback, state/memos PROCESS registry (5c9), term_live _Mark; tests test_memos.py:136-143, test_relevance.py:35, test_term_live.py:324, tools/relevance_fuzz.py:181		
 sympy_api.py	state: _CONST	684		state	5	stays (as _KEYS)	Python	readers: relevance.rs const_free through its table methods, Python deep fallback, PROCESS registry (5c9), term_live _Mark		
+state/memos.py	state: memos.PROCESS (registry)			state	5	landed 5c9a (port-5c9a.md)	Python container holding Rust-native views	kept Python: public API reads (names/sizes/clear/items), tests (test_memos.py, test_p4_review.py), _Mark; holds the views of SPEC_ROWS and ENCLOSURES	Python	
+engine.py	state: Engine.memos (ENGINE_MEMOS)			state	5	landed 5c9a (port-5c9a.md)	Python	kept Python: per-engine tables are 5c9c/5c10 containers; the registry view lists them	Python	
+solver_rs/relations_core.rs	state: SPEC_ROWS			state	5	landed 5c9a (port-5c9a.md)	Rust-native	Rust-native memo, now listed, sized and cleared through memos.PROCESS (memos.rs NativeTable); bound 4096 (SPEC_ROWS_SIZE)	Rust	
+solver_rs/constfield.rs	state: ENCLOSURES			state	5	landed 5c9a (port-5c9a.md)	Rust-native	Rust-native memo, now listed, sized and cleared through memos.PROCESS; new bound 100,000 (had none)	Rust	
