@@ -45,6 +45,7 @@ from .core import (
     _bound_split, _bound_templates, _exp_arg, _half_split, _half_templates, _imag_split,
     _imag_templates, _mul_factor_sets, _pow_bound_templates, _quotient_templates,
     _recip_templates, _unit_angle, _unit_power_units, ipi_rules, ipi_split, irrational_root,
+    pi_split,
 )
 from .registry import registry
 

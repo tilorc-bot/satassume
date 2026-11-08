@@ -440,6 +440,23 @@ def install(shadow, counts, fault_cls, mismatch):
         '_unit_angle': unit_angle, '_pi_split': pi_split_, 'ipi_rules': ipi_rules, 'irrational_root': irrational_root,
         '_unit_power_units': unit_power_units, '_exp_arg': exp_arg, '_pow_bound_templates': pow_bound_templates,
     }
+    def _functions_tpl_py(tpl, expr):
+        # 6g(c6): (key, consts, objs, node, gen()) of the template's `facts` call, or None; `_pi_trig_rules` the
+        # original (not knowledge_f6_live's shell, if installed).
+        got = []
+        saved = functions.__dict__['facts'], functions.__dict__['_pi_trig_rules']
+
+        def capture(key, gen, consts, objs, node):
+            got.append((key, dict(consts), tuple(objs), node, gen()))
+            return got[-1]
+        try:
+            functions.facts = capture
+            functions._pi_trig_rules = getattr(saved[1], '__wrapped__', saved[1])
+            r = tpl(expr)
+        finally:
+            functions.facts, functions._pi_trig_rules = saved
+        return None if r is None else got[-1]
+
     def _add_tpl_py(name, expr, split):
         # 6g(c5): Python's template builder with `facts` captured: (key, consts, objs, node, gen()), Python's rules
         # (the originals, not the Rust swap), or None when it builds no template.
@@ -476,8 +493,11 @@ def install(shadow, counts, fault_cls, mismatch):
         elif name == '_pow_bound_templates':
             ours = None if ours is None else tuple(ours[:3]) + ([core._INT_BOUNDS[i][0] for i in ours[3]],)
             theirs = _pow_bound_py(args)
-        elif name == 'ipi_split':
-            theirs = py['_pi_split'](args, True)
+        elif name in ('ipi_split', 'pi_split'):
+            theirs = py['_pi_split'](args, name == 'ipi_split')
+        elif name in ('_unary', '_pi_trig'):
+            # 6g(c6): Python's template (Rust passes it with the node) with functions.facts captured
+            theirs = _functions_tpl_py(*args)
         elif name == 'ipi_rules':
             theirs = []
             py['ipi_rules'](lambda p, k: theirs.append((p, k)), *args)
