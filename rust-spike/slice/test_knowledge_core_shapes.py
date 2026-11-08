@@ -41,6 +41,10 @@ CASES = [
 ]
 
 
+#: The shell counters of the splits rows_tpl.rs computes directly (6g(c)), by the shadow's name.
+DIRECT = {'core:half_split': '_half_split', 'core:bound_split': '_bound_split', 'core:imag_split': '_imag_split'}
+
+
 def Rational_(p, q):
     return S(p) / q
 
@@ -63,6 +67,9 @@ def test_shape(counter, plant, query, assume):
     finally:
         undo()
         K.COUNTS.clear()
-    assert c.get(counter, 0) > 0, (counter, sorted(c))
+    # 6g(c): rows_tpl.rs answers a split of input terms directly, so the shell never runs; the shadow then runs Python's split
+    # on that result and compares (`shadow:direct:NAME`, knowledge_core_live.shadow_split).
+    direct = 'shadow:direct:' + DIRECT[counter] if counter in DIRECT else None
+    assert c.get(counter, 0) + c.get(direct, 0) > 0, (counter, sorted(c))
     assert c.get('shadow:mismatch', 0) == 0, K.MISMATCHES[-3:]
     assert got == plain and c.get('fault', 0) == 0

@@ -11,6 +11,7 @@ Python still runs, named and counted in COUNTS: the template's `gen()` (`common:
 """
 import sys
 
+import knowledge_core_live
 import sa_solver
 import term_live
 from satassume.knowledge.templates import _common
@@ -36,10 +37,13 @@ COMMON = [None]
 
 def install(kn, counts, fault, contradiction, plant=None, dispatch=None):
     py_fns = {n: getattr(_common, n) for n in NAMES}
+    rust_fns = dict(py_fns)
+    if knowledge_core_live.SHADOW_SPLIT[0] is not None:        # 6g(c): the shadow of rows_tpl.rs's direct splits
+        rust_fns['_shadow_split'] = knowledge_core_live.SHADOW_SPLIT[0]
     c = sa_solver.Common(kn, _common._CACHE, _common.MAX_CACHE, _common.MAX_EXPAND, _common.Pattern
                          if isinstance(_common.Pattern, type) else _common.Pattern.__wrapped__, _common.Compiled,
                          _common.TemplateKeyError, fault, contradiction, _common.const_value, term_live._local,
-                         dict(py_fns), (P, Not, Or, Implies, And))
+                         rust_fns, (P, Not, Or, Implies, And))
     if plant in PLANTS:
         c.set_plant(plant)
     COMMON[0] = c

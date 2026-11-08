@@ -106,6 +106,11 @@ impl Common {
         }
     }
 
+    /// knowledge_core_live's `shadow_split`, present only under knowledge_live's shadow.
+    pub(crate) fn shadow_split<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyAny>>> {
+        self.py_fns.bind(py).get_item("_shadow_split")
+    }
+
     fn py_fn<'py>(&self, py: Python<'py>, name: &str) -> PyResult<Bound<'py, PyAny>> {
         self.py_fns.bind(py).get_item(name)?.ok_or_else(|| PyKeyError::new_err(name.to_string()))
     }

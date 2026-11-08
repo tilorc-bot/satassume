@@ -298,6 +298,10 @@ impl RowsTpl {
     fn split<'py>(&self, py: Python<'py>, c: &Common, name: &str, args: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
         if let Some(r) = direct_split(py, c, name, args)? {
             c.bump(&format!("rows:rust:{name}"));
+            // knowledge_live's shadow: Python's split for this result, compared by knowledge_core_live (the shell's `check`).
+            if let Some(f) = c.shadow_split(py)? {
+                f.call1((name, args, &r))?;
+            }
             return Ok(r);
         }
         self.wiring_fn(py, c, name)?.call1((args,))

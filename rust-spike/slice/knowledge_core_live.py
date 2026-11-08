@@ -35,6 +35,10 @@ MULPOW = ('_mul_factor_sets', '_quotient_rules', '_quotient_templates', '_unit_a
 #: A planted bug for the comparisons (`--plant core-...` in knowledge_fresh / the bar): name -> what it breaks. Python side only;
 #: the Rust plants are source mutants (mutate_knowledge.py).
 PLANT = [os.environ.get('SA_CORE_PLANT') or None]
+#: 6g(c): with `install(shadow=True)`, `shadow_split(name, args, ours)`: Python's split for a result rows_tpl.rs's direct path
+#: computed (the shell never runs there), compared field by field as the shell's `check` does. knowledge_common_live hands it
+#: to Rust's Common (py_fns '_shadow_split'). None when the shadow is off.
+SHADOW_SPLIT = [None]
 if not PLANT[0] and (os.environ.get('SLICE_SESSION_PLANT') or '').startswith('core-'):
     PLANT[0] = os.environ['SLICE_SESSION_PLANT']   # the bar's channel (bar.sh's plants phase)
 
@@ -434,6 +438,14 @@ def install(shadow, counts, fault_cls, mismatch):
         '_unit_angle': unit_angle, '_pi_split': pi_split_, 'ipi_rules': ipi_rules, 'irrational_root': irrational_root,
         '_unit_power_units': unit_power_units, '_exp_arg': exp_arg, '_pow_bound_templates': pow_bound_templates,
     }
+    def shadow_split(name, args, ours):
+        counts['shadow:core'] += 1
+        counts['shadow:direct:' + name] += 1
+        if ours is not None and ours != []:
+            counts['shadow:direct:' + name + ':split'] += 1
+        mismatch('core:' + name, args, 'result', ours, py[name](args))
+    if shadow:
+        SHADOW_SPLIT[0] = shadow_split
     for name, f in swap.items():
         if not hasattr(f, '__wrapped__'):
             f.__wrapped__ = py[name]
@@ -443,6 +455,7 @@ def install(shadow, counts, fault_cls, mismatch):
         setattr(m, n, swap[n])
 
     def undo():
+        SHADOW_SPLIT[0] = None
         for m, n, f in saved:
             setattr(m, n, f)
     return undo

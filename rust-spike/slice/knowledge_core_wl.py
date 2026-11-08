@@ -3,9 +3,10 @@ nor `_unit_power_units`, so a MATCH there says nothing about them. Rows: `exp(I*
 `IPI_GUARDS` case, with and without an `s`; `cosh(I*pi*c*s)` and `cos(pi*c*s)` (the `_pi_split` callers in functions.py);
 `I`, `-1`, `-I` to numeric powers (`_unit_power_units`, Rational and other exponents); `b**(p/q)` (`irrational_root`);
 `a/v**k` (`_quotient_templates`); `(c0 + c1*u)**-k` (`_pow_bound_templates`); `c*x*y` and `I*pi*c*x*y` Muls
-(`_mul_factor_sets`' derived sets).
+(`_mul_factor_sets`' derived sets); 6g(c), under the gaps ruling: `I*x + c*I*y` Adds of I-coefficient terms (with and without a
+real term), whose `_imag_split` is non-empty, so rows_tpl.rs's direct imag split and its plant rows-imag-drop-last are reached.
 """
-from sympy import E, I, Mul, Pow, Q, Rational, S, Symbol, cos, cosh, exp, pi, sqrt
+from sympy import Add, E, I, Mul, Pow, Q, Rational, S, Symbol, cos, cosh, exp, pi, sqrt
 
 PREDS = (Q.positive, Q.negative, Q.real, Q.imaginary, Q.zero, Q.integer, Q.algebraic, Q.irrational, Q.odd, Q.even)
 CS = (S.Zero, S.One, Rational(2), Rational(-3), Rational(1, 2), Rational(-3, 2), Rational(2, 3), Rational(5, 7))
@@ -52,4 +53,11 @@ def queries():
         out.append((Q.positive(Mul(c, x, y, z, evaluate=False)), Q.positive(y)))
         out.append((Q.real(Mul(c, I, pi, n, y, evaluate=False)), True))
         out.append((Q.imaginary(Mul(I, pi, n, y, evaluate=False)), Q.nonzero(n * y)))
+    for c in (S(1), S(2), S(-3), Rational(1, 2)):
+        for node in (Add(Mul(I, x, evaluate=False), Mul(c, I, y, evaluate=False), evaluate=False),
+                     Add(Mul(I, x, evaluate=False), Mul(c, I, z, evaluate=False), evaluate=False),
+                     Add(Mul(I, x, y, evaluate=False), Mul(c, I, evaluate=False), evaluate=False),
+                     Add(x, Mul(I, y, evaluate=False), Mul(c, I, z, evaluate=False), evaluate=False)):
+            for p in (Q.imaginary, Q.real, Q.zero, Q.nonzero):
+                out.append((p(node), Q.positive(y) & Q.positive(z)))
     return out
