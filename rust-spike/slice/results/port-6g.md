@@ -177,3 +177,107 @@ rust_plugin.py is a test-plugin shim (64 tests), not a port.
 **Not run:** seed1, history, forced moves, the native path, timing; the mutant 2/5/6/7/9 rerun, the boundary rescore and
 suite column, order:_rows evidence (not caught meanwhile), the `_forms` guard test; the rows plants on the suite.
 No evaluator asked for.
+
+# Step 6g(c1): the Add family's core splits straight from the query's table (issue 323)
+
+Tested source **85f4d87** (port/6g on rust-slice 9c8d981, adapters C2's report; rows pareto1
+`~/sp19/sa-rust-ids-work/sa-port-157/`, sum.txt, .so fa1fe0f3). Base suite rows: C2b's (`sa-port-153/bar-C2b/suite`).
+Landed **53c5b64 + this report** on rust-slice: the landing rebase brought nothing (rust-slice still 9c8d981); tested..landing
+adds only HANDOFF-sa-port-157.md and this file, outside the push guard.
+
+**Code.** rows_tpl.rs's Addition family computes `_half_split`, `_bound_split` and `_imag_split` from the query's
+TermTable (tcore.rs `core_half_split`/`core_bound_split`/`core_imag_split`; `RowsTpl::split`, `direct_split`, `QIds`;
+common.rs `Common::query`), counted `rows:rust:NAME`. It falls back to knowledge_core_live.py's shell, counted
+`rows:python:NAME`, wherever the shell does more than read input ids: no query or a kept one, an arg that isn't an input
+term of its own class (the shell's `core:derived:NAME`), a derived result id, or a product rest (`kept_product`
+scaffolding). The direct path has its own shadow: Rust hands each result to knowledge_core_live `shadow_split` (py_fns
+`_shadow_split`), which runs Python's split and compares (`shadow:direct:NAME`). knowledge_core_wl.py gained 64
+`I*x + c*I*y` rows (gaps ruling), so the imag split is reached.
+
+**Module count (count rule): 13 of 32, unchanged.** core.py still runs per query (trace orion
+`~/sa-rust-ids-work/sa-port-157/rc-core.txt`, `rc-dev.txt`, `rc.sh OUT WL core.py,wiring.py,functions.py`, pass 1):
+`_bound_split` from knowledge_core_live 69 on core (the derived-arg fallback), `_bound_templates` from engine 120 on core,
+`_half_templates` 86 and `_bound_templates` 10 on dev; functions.py's `_unary` templates on core; wiring.py's
+`template.<lambda>` 9 on dev. Counted against STATUS.md's "Counted modules".
+
+**Direct-split counts** (rows:rust / rows:python / the shell's core:derived, half; bound; imag):
+dev 45/20/3; 47/18/3; 54/11/3. fuzz 139/34/24 each. core 66/72/69; 69/69/69; 69/69/69. f6 144/32/6; 170/6/6; 170/6/6.
+value 172/0/0 each. cert 17/0/0 each. wiring 8/5/4; 9/4/4; 9/4/4. loop 8/6/5 each. opaque 1/7/7 each. zero 10/11/0 each.
+rootof, scope 0. rows:python exceeds core:derived by the shell's other fallbacks (no or kept query, derived result,
+product rest), which the shell doesn't count as derived.
+**Shadow** (test_knowledge_core_shapes, 10/10 on 85f4d87, run per case on orion): shadow:direct `_half_split` 5,
+`_bound_split` 5 (2 non-empty), `_imag_split` 5 (1 non-empty); shadow:mismatch 0.
+
+**Plants** (each run on dev, fuzz and the 10 workloads against this run's Python; fired / caught on):
+
+| plant | caught (DIFFER) on, fired | fired, MATCH |
+|---|---|---|
+| rows-half-parity (new) | dev 29, fuzz 83, core 16 | cert 10, f6 27, wiring 2 |
+| rows-bound-coeff-one (new) | dev 5, fuzz 34, core 39, f6 1, wiring 2, zero 1 | |
+| rows-imag-drop-last (new) | core 8, wiring 4 | |
+| rows-block-key-n | dev 85, fuzz 1151, core 154, f6 689, loop 63, wiring 435, zero 15 | |
+| rows-rules-for-shape | every workload but scope (dev 143 ... cert 33, wiring 111) | |
+| rows-of-constant-skip | dev 15, core 29, f6 24, wiring 13 | fuzz 6, cert 11, others 1-3 |
+| rows-matches-constant | dev 37, core 186, loop 29, wiring 148 | f6 8, opaque 8 |
+| rows-matches-coefficient | dev 104, core 104, f6 104, loop 26, rootof 26, value 26, wiring 78 | |
+| rows-expand-drop-last | dev 38, fuzz 28, cert 15, core 99, f6 50, loop 10, rootof 1, value 150, wiring 60, zero 7 | opaque 5 |
+| rows-placements-first | every workload but scope (dev 722 ... value 2404) | |
+| rows-instances-others | every workload but scope (dev 50 ... value 299) | |
+| rows-count-flip | dev 256, fuzz 136, core 740, f6 380, loop 60, rootof 8, value 604, wiring 224, zero 36 | cert 104, opaque 24 |
+| rows-clauses-concl-only | wiring 1792 | |
+| rows-wide-drop | wiring 6 | |
+| rows-piecewise-last | wiring 1 | |
+| rows-mul-sets-first | dev 17, core 141, f6 56, loop 2, wiring 9 | |
+| rows-add-bound-skip | dev 31, fuzz 45, core 120, f6 10, loop 4, opaque 8, wiring 6, zero 1 | |
+| rows-pow-key-same | wiring 1 | core 2 |
+| rows-pow-times-skip | dev 3, core 96, loop 3, wiring 12 | |
+| rows-pow-irrational-skip | core 16, wiring 2 | |
+| rows-pow-ipi-skip | core 14, wiring 3 | |
+| rows-pow-unit-drop | core 33, wiring 3 | |
+| rows-pow-of-constant-skip | dev 16, core 312, loop 8, opaque 4, wiring 62 | f6 4 |
+| common-wide-drop (6d) | wiring 3 | |
+| with-closed-skip (lra-on) | dev 231, fuzz 326, cert 168, core 134, f6 510, opaque 27, wiring 28 | |
+| rows-pow-head-any | **void** by construction (6g(b)): 0 everywhere | |
+
+- rows-imag-drop-last's reach is the core workload's 64 new rows (fired 8, caught, as on orion) and wiring (4, caught).
+- The parts ruling's three 6g(a) conditions still hold: `dispatch-ignores-epoch` (suite: 14 outcomes changed),
+  `dispatch-redefines-off` (suite: 1; fires 1 on f6 and value, MATCH, as before), `dispatch-user-off` (void on the suite
+  and workloads as before; caught by `dispatch_direct.py dispatch-user-off` on 85f4d87's source on orion, BAD 1, plain
+  BAD 0). `knowledge-no-query-drop`: suite 20 changed.
+- lra-on path (5c5's Rust `with_closed_units` over the dispatch): all runs MATCH with lra on; with-closed-skip caught (table).
+- **equiv-one and ge2-drop (planner's precision):** pure Python never calls `Rules.equiv` per query: it has no caller in
+  satassume/ (table.py:151-153 writes an equiv row's two rules itself). `ge2_alternatives` is called only from
+  table.py:141 (`_premise_alternatives`) for a row with an `int>=2` premise (`Row._ge2`, table.py:70), and no table in
+  satassume has one (`rg "GE2|int>=2" satassume` hits only table.py). So both are Python removal candidates, not port
+  items; their code keeps the "unreached by any workload; common_direct.py only" footnote.
+
+**Bar** (on 85f4d87)
+1. Suite by id against C2b's rows: 5,992 passed / 126 failed / 23 skipped / 18 xfailed, 6,159 ids; new 0, gone 0,
+   changed 0. Passed with no firing 5,991, with a firing 1 (`test_ci_stream_reports_only_what_replays`). S's standing:
+   S's gate is met except for the 46 named stub failures, one cause. 627 step tests pass (19 files); direct scripts:
+   relations_direct, dispatch_direct and common_direct exit 0, each of 6d's 13 common_direct plants exit 1.
+2. Dev (1,985) and fuzz (3,000): answers and end state MATCH, py vs rust, traced vs untraced, Python control. Workloads
+   f6, value, rootof, core (1,636), opaque, scope, loop, zero, wiring and cert: MATCH, each with a Python control.
+3. Plants: table above; every rows plant but the void one is caught, rows-imag-drop-last on core and wiring.
+4. Quiet handlers (suite): 39 rows in 2 tests, multiset same as base (34 `_ok` + 4 `_rb_clauses` in `_consistent`;
+   1 "Already mutably borrowed" at `_build_context`, the 46-stub cause). TermFault 0.
+5. Differences: none in answers, state or suite outcomes.
+
+Kept shares (Rust run, against base, unchanged): out-of-scope dev 24/1,985 (1.21%), 0 elsewhere; refused f6 13/2,902
+(Float 10, lra callback on a derived term 1, scaffold mismatch 2), opaque 7/2,546 (infinity/nan/Float), value 15/3,742
+(Float), wiring 1/6,512 (lra), 0 elsewhere. The engine's `except Exception` at the complete check: 0 TermFault, 0
+handler rows outside the suite's named ones.
+
+**Kept on Python with reason:** `_rows_runtime`'s I/-I values (read once per process when Pow's generator is built, not
+per query; not exact in rows' field without a reduction step) and Floats (SymPy's precision semantics, the planner's
+default). Queries under a non-default registry; `enclose`.
+
+**Owed before any backend PR:** `scaffold:rebuilt:f6` (90 on f6 this run) and `scaffold:mismatch` until 0, with
+`rows:python:Mul`/`Add`/`Integer` (rows scaffolding; core: Add 96, Mul 96, Integer 740; dev: Add 6, Mul 3, Integer 256);
+the NotImplementedError and hook re-entry contract notes; the items in OWED-satassume-rust.md; 6d's
+pattern-key-type/const-key-type/max-cache-off replacements. `_n_conflicts` in rust_plugin.py is a test-plugin shim
+(64 tests), not a port.
+
+**Not run:** seed1, history, forced moves, the native path, timing; the mutant 2/5/6/7/9 rerun, the boundary rescore and
+suite column, order:_rows evidence (not caught meanwhile), the `_forms` guard test; the rows plants on the suite.
+No evaluator asked for.
