@@ -33,7 +33,10 @@ Rows on pareto1: `~/sp19/sa-rust-ids-work/sa-port-170/bar-5c8/` (fece4c7, all ph
 `sum-fece4c7.txt` and `tests-fece4c7.txt` kept). `.so` sha256 on fece4c7: da93a769…. Base suite rows: 5c7b's
 (`sa-port-158/bar-5c7b/suite`), and S1's (`sa-port-167/bar-S1/suite`, the stack's f1e4a74) in `bar-5c8t/sum-vs-S1.txt`,
 so the stack's own changes aren't counted as 5c8's.
-**Landed:** not yet: waiting for the stack (sa-port-169) to land on rust-slice, which is still 17442af. **Incoming diff:** to be read at landing.
+**Landed:** the commit carrying this file, on rust-slice a2dc947 (the stack, landed from tested f1e4a74 unchanged). Between
+256e294 and it there is only this report and the rebased results. **Incoming diff** (f1e4a74..a2dc947): HANDOFF-sa-port-167.md,
+results/port-6g.md, results/port-elemnew.md, and one line each in results/port-ownership.md and .tsv (Element._new's
+owner text). None of it is guarded source, so the bar stands on the landing source.
 
 ## The bar (sa-port-170/bar-5c8 on fece4c7, tests rerun on 256e294)
 1. **Suite by id against 5c7b's rows and against S1's (f1e4a74):** 5,992 passed, 126 failed, 23 skipped, 18 xfailed,
