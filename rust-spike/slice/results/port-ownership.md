@@ -84,7 +84,7 @@ The original: By sa-port-95, 7 Nov, by reading only (rg, git show); no runs. Bas
 | `sat/solver.py` | S | 4 | `_block_models`, `_BlockClosure`, `_BlockClosure.__init__`, `_rule_tables` | landed S 35debd6 (partial) | called back |
 | `sat/theory.py` | S/3 | 3 | `EqualitySharing`, `EqualitySharing.__init__`, `EqualitySharing.update` | landed 3 0d3f392 | Rust |
 | `scope.py` | 4 | 1 | `affine_pair` | landed C1 63e085d | Rust |
-| `scope.py` | 4 | 6 | `Scope`, `linked_terms`, `scope_of_atoms`, `theory_scope`, `_custom_pred`, `extension_atoms` | scope (after 5c5, before 5c10) | Python |
+| `scope.py` | 4 | 6 | `Scope`, `linked_terms`, `scope_of_atoms`, `theory_scope`, `_custom_pred`, `extension_atoms` | landed scope (port-scope.md) | Rust |
 | `state/epoch.py` | 5 | 1 | `bump` | 5c9 | Python |
 | `state/memos.py` | 5 | 22 | `Table`, `Table.__init__~i`, `Table.put~u`, `Table.restamp`, `Table.reset~u`, `Table.__repr__~u`, `Memos`, `Memos.__init__`, `Memos.table~i`, `Memos.adopt`, `Memos.items~u`, `Memos.names~u`, `Memos.sizes~u`, `Memos.clear~u`, `Memos.__repr__~u`, `_path~u`, `_module_attr`, `load_owners~u`, `__getattr__`, `adopt`, `module_locations~u`, `owner_memos` | 5c9 | Python |
 | `sympy_api.py` | 5 | 16 | `_const_base`, `_const_free`, `_closed_keys`, `_expr_keys`, `_arg_keys`, `_keys~u`, `_keys_rel`, `_bool_keys`, `_sides_keys`, `_Split`, `_Split.__init__`, `_Split.part`, `_relevant`, `_vocab_blocks~u`, `_part_consistent`, `_consistent` | 5c8 | Python |
@@ -134,7 +134,7 @@ sa-port-105, doc only, on 67106e8. The TSV gains `left`, `runs` and `finisher` f
 
 (Since sa-port-105: `_basis_models` is 6h and `_applied_to_nan` 6g, so no row is UNOWNED.)
 
-- **`scope.py`** (6: `Scope`, `linked_terms`, `scope_of_atoms`, `theory_scope`, `_custom_pred`, `extension_atoms`; only `affine_pair` moved, in C1. C1 wraps `linked_terms` to count it, but its body stays Python.) **Proposed:** its own 5c session after 5c5 and before 5c10, since both relations' and the engine's callers reach it. Until then the engine's calls into it are called back and counted.
+- **`scope.py`** (6: `Scope`, `linked_terms`, `scope_of_atoms`, `theory_scope`, `_custom_pred`, `extension_atoms`; only `affine_pair` moved, in C1. C1 wraps `linked_terms` to count it, but its body stays Python.) **Proposed:** its own 5c session after 5c5 and before 5c10, since both relations' and the engine's callers reach it. **Landed** in step scope (port-scope.md): the six rows are in `solver_rs/src/scope_core.rs`, wired by `session_live.py` `_install_scope`; ref.py keeps Python's.
 - **`sympy_api.py`** (8). **Proposed:** `_const_base`, `_const_free`, `_closed_keys`, `_expr_keys` and `_arg_keys` (:693-778, the helpers `_keys` calls) join 5c8, whose stated range starts at :779. The relevance gate in `_ask_general` (:576) also goes to 5c8. `_ask` (:560) and `_engine_ask` (:1111) go to 5c10 if they stay port (see below).
 - **`engine.py`** (2: `InconsistentAssumptions`, `_construction_level`). **Proposed:** 5c10, with the module helpers.
 - **`relations.py`** (2: `AdapterSpec`, `Uninterpreted`). **Proposed:** 5c5.

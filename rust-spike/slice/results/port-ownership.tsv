@@ -504,13 +504,13 @@ sat/theory.py	PropagatingTheory.propagate	181	~u	none	S/3	not port (none, owners
 sat/theory.py	EqualitySharing	185		port	S/3	landed 3 0d3f392	Rust			
 sat/theory.py	EqualitySharing.__init__	202		port	S/3	landed 3 0d3f392	Rust			
 sat/theory.py	EqualitySharing.update	206		port	S/3	landed 3 0d3f392	Rust			
-scope.py	Scope	122		port	4	scope (after 5c5, before 5c10)	Python			
+scope.py	Scope	122		port	4	landed scope (port-scope.md)	Rust			
 scope.py	affine_pair	133		port	4	landed C1 63e085d	Rust			
-scope.py	linked_terms	150		port	4	scope (after 5c5, before 5c10)	Python			
-scope.py	scope_of_atoms	164		port	4	scope (after 5c5, before 5c10)	Python			
-scope.py	theory_scope	177		port	4	scope (after 5c5, before 5c10)	Python			
-scope.py	_custom_pred	192		port	4	scope (after 5c5, before 5c10)	Python			
-scope.py	extension_atoms	196		port	4	scope (after 5c5, before 5c10)	Python			
+scope.py	linked_terms	150		port	4	landed scope (port-scope.md)	Rust			
+scope.py	scope_of_atoms	164		port	4	landed scope (port-scope.md)	Rust			
+scope.py	theory_scope	177		port	4	landed scope (port-scope.md)	Rust			
+scope.py	_custom_pred	192		port	4	landed scope (port-scope.md)	Rust			
+scope.py	extension_atoms	196		port	4	landed scope (port-scope.md)	Rust			
 state/epoch.py	bump	42		port	5	5c9	Python			
 state/memos.py	Table	49		port	5	5c9	Python			
 state/memos.py	Table.__init__	57	~i	port	5	5c9	Python			
