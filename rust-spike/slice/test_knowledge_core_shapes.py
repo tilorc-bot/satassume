@@ -40,12 +40,23 @@ CASES = [
     ('core:_exp_arg', 'core-exp-arg-any', lambda: Q.positive(Pow(Pow(S(2), y, evaluate=False), m(I, x), evaluate=False)),
      lambda: Q.real(x) & Q.real(y)),
     ('core:_pow_bound_templates', 'core-pow-bound-any-exp', lambda: Q.positive(Pow(a(S(1), x), 3, evaluate=False)), lambda: Q.positive(x)),
+    # 6g(c3): the Pow family's direct pieces.
+    ('core:_pow_bound_templates', 'core-pow-bound-neg', lambda: Q.integer(Pow(a(S(2), m(S(3), x)), -1, evaluate=False)),
+     lambda: Q.integer(x) & Q.positive(x)),
+    ('core:irrational_root', 'core-irrational-root', lambda: Q.irrational(Pow(S(2), Rational_(1, 2), evaluate=False)), lambda: True),
+    ('core:_unit_power_units', 'core-unit-power', lambda: Q.real(Pow(I, S(3), evaluate=False)), lambda: True),
+    ('core:_pi_split', 'core-ipi-split-pow', lambda: Q.real(Pow(S.Exp1, m(I, pi, x), evaluate=False)), lambda: Q.integer(x)),
+    ('core:_exp_arg', 'core-exp-arg-inner', lambda: Q.positive(Pow(Pow(E, x, evaluate=False), 2, evaluate=False)), lambda: Q.real(x)),
+    ('core:ipi_rules', 'core-ipi-rules-pow', lambda: Q.complex(Pow(S.Exp1, m(S(2), I, pi, y), evaluate=False)), lambda: Q.real(y)),
 ]
 
 
 #: The shell counters of the splits rows_tpl.rs computes directly (6g(c)), by the shadow's name.
 DIRECT = {'core:half_split': '_half_split', 'core:bound_split': '_bound_split', 'core:imag_split': '_imag_split',
-          'core:_mul_factor_sets': '_mul_factor_sets', 'core:_quotient_templates': '_quotient_templates'}
+          'core:_mul_factor_sets': '_mul_factor_sets', 'core:_quotient_templates': '_quotient_templates',
+          'core:_unit_angle': '_unit_angle', 'core:_exp_arg': '_exp_arg', 'core:_pow_bound_templates': '_pow_bound_templates',
+          'core:irrational_root': 'irrational_root', 'core:_unit_power_units': '_unit_power_units',
+          'core:_pi_split': 'ipi_split', 'core:ipi_rules': 'ipi_rules'}
 
 
 def Rational_(p, q):

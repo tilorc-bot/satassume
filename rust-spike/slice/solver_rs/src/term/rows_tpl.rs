@@ -60,7 +60,19 @@ pub const PLANTS: &[&str] = &[
     "rows-pow-of-constant-skip",// power: the terms of the constant not computed
     "rows-mul-ipi-drop",       // 6g(c2) direct `_mul_factor_sets`: the (c, I, pi, s) set dropped
     "rows-quot-swap",          // 6g(c2) direct `_quotient_templates`: slots a and v swapped
+    "rows-exp-arg-none",       // 6g(c3) direct `_exp_arg`: None for exp(u) and E**u
+    "rows-unit-angle-neg",     // 6g(c3) direct `_unit_angle`: the angle negated
+    "rows-ipi-split-neg",      // 6g(c3) direct `ipi_split`: the coefficient c negated
+    "rows-irrational-false",   // 6g(c3) direct `irrational_root`: False where it is True
+    "rows-unit-power-drop-last",// 6g(c3) direct `_unit_power_units`: the last fact dropped
+    "rows-pow-bound-drop-last",// 6g(c3) direct `_pow_bound_templates`: the last bound premise dropped (none left: no split)
+    "rows-ipi-rules-drop-last",// 6g(c3) direct `ipi_rules`: the last rule dropped
 ];
+
+/// 6g(c3): the shells whose args `split` passes as a tuple (the others take one argument).
+const MULTI: &[&str] = &["irrational_root", "_unit_power_units"];
+/// 6g(c2)/(c3): the splits of one term (the ids come from the term itself, as a 1-tuple).
+const ONE: &[&str] = &["_mul_factor_sets", "_quotient_templates", "_exp_arg", "_unit_angle", "ipi_split", "_pow_bound_templates"];
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Family {
@@ -307,7 +319,12 @@ impl RowsTpl {
             }
             return Ok(r);
         }
-        self.wiring_fn(py, c, name)?.call1((args,))
+        let f = self.wiring_fn(py, c, name)?;
+        if MULTI.contains(&name) {
+            f.call1(args.cast::<PyTuple>()?.clone())
+        } else {
+            f.call1((args,))
+        }
     }
 
     fn wiring_fn<'py>(&self, py: Python<'py>, c: &Common, name: &str) -> PyResult<Bound<'py, PyAny>> {
@@ -583,7 +600,7 @@ fn matches(&self, py: Python<'_>, c: &Common, shape: &[Option<ShapeItem>], args:
             ShapeItem::Value(v) => same_value(&a, v.bind(py))?,
             ShapeItem::Same(j) => a.is(&args.get_item(*j)?),
             ShapeItem::Head => {
-                let m = !self.wiring_fn(py, c, "_exp_arg")?.call1((&a,))?.is_none();
+                let m = !self.split(py, c, "_exp_arg", &a)?.is_none();
                 if !m && c.plant == "rows-pow-head-any" {
                     c.fired();
                     true
@@ -683,7 +700,7 @@ impl RowsTpl {
         objs.resize(pw.nobjs, none.clone());
         let mut u: Option<Bound<'py, PyAny>> = None;
         for (k, i) in &pw.inner {
-            let r = self.wiring_fn(py, &cr, "_exp_arg")?.call1((args.get_item(*i)?,))?;
+            let r = self.split(py, &cr, "_exp_arg", &args.get_item(*i)?)?;
             u = if r.is_none() { None } else { Some(r) };
             if let Some(u) = &u {
                 objs[*k] = u.clone();
@@ -695,7 +712,7 @@ impl RowsTpl {
         let mut ipi: Option<(Bound<'py, PyAny>, bool)> = None;
         let exp1 = py.import("sympy")?.getattr("S")?.getattr("Exp1")?;
         if b.is(&exp1) && !consts.contains(1)? {
-            let split = self.wiring_fn(py, &cr, "ipi_split")?.call1((&e,))?;
+            let split = self.split(py, &cr, "ipi_split", &e)?;
             if !split.is_none() {
                 let (cc, s_) = (split.get_item(0)?, split.get_item(1)?);
                 ipi = Some((cc, !s_.is_none()));
@@ -726,7 +743,7 @@ impl RowsTpl {
                 objs[*k] = args.get_item(*i)?.add(cc.bind(py))?;
             }
         }
-        let angle = self.wiring_fn(py, &cr, "_unit_angle")?.call1((&b,))?;
+        let angle = self.split(py, &cr, "_unit_angle", &b)?;
         let mut same = b.is(&e);
         if same && cr.plant == "rows-pow-key-same" {
             cr.fired();
@@ -768,7 +785,8 @@ impl RowsTpl {
         })?;
         let out = cr.facts(py, &key.into_any(), gen.as_any(), consts.as_any(), objs_t.as_any(), 2)?;
         if !angle.is_none() && e.getattr("is_number")?.is_truthy()? {
-            let units = self.wiring_fn(py, &cr, "_unit_power_units")?.call1((&angle, &e, expr))?;
+            let a3 = PyTuple::new(py, [angle.clone(), e.clone(), expr.clone()])?.into_any();
+            let units = self.split(py, &cr, "_unit_power_units", &a3)?;
             let l = PyList::new(py, [out])?;
             if cr.plant == "rows-pow-unit-drop" {
                 cr.fired();
@@ -779,7 +797,7 @@ impl RowsTpl {
             }
             return Ok(l.into_any());
         }
-        let bound = self.wiring_fn(py, &cr, "_pow_bound_templates")?.call1((expr,))?;
+        let bound = self.split(py, &cr, "_pow_bound_templates", expr)?;
         if !bound.is_none() {
             return Ok(PyList::new(py, [out, bound])?.into_any());
         }
@@ -835,13 +853,32 @@ impl RowsTpl {
                     Ok(py.None())
                 })?;
                 let s = if *has_s { pw.s_slot.into_pyobject(py)?.into_any() } else { py.None().into_bound(py) };
-                self.wiring_fn(py, c, "ipi_rules")?.call1((rule, cc.bind(py), s, 2))?;
+                if c.kept(py)? {
+                    self.wiring_fn(py, c, "ipi_rules")?.call1((rule, cc.bind(py), s, 2))?;
+                } else {
+                    // 6g(c3): IPI_TABLE's rows straight from tcore.rs (knowledge_core_live's `ipi_rules` without the shell).
+                    c.bump("rows:rust:ipi_rules");
+                    let mut r = super::tcore::ipi_rules(&rat_of(cc.bind(py))?, has_s.then_some(pw.s_slot), 2);
+                    if r.len() > 1 && c.plant == "rows-ipi-rules-drop-last" {
+                        c.fired();
+                        r.pop();
+                    }
+                    let r = r.into_pyobject(py)?;
+                    if let Some(f) = c.shadow_split(py)? {
+                        f.call1(("ipi_rules", (cc.bind(py), &s, 2), &r))?;
+                    }
+                    for x in r.try_iter()? {
+                        let x = x?;
+                        rule.call1((x.get_item(0)?, x.get_item(1)?))?;
+                    }
+                }
             }
         }
         let none = py.None().into_bound(py);
         let c0 = consts.get_item(0)?.unwrap_or(none.clone());
         let c1 = consts.get_item(1)?.unwrap_or(none);
-        if self.wiring_fn(py, c, "irrational_root")?.call1((c0, c1))?.is_truthy()? {
+        let a2 = PyTuple::new(py, [c0, c1])?.into_any();
+        if self.split(py, c, "irrational_root", &a2)?.is_truthy()? {
             if c.plant == "rows-pow-irrational-skip" {
                 c.fired();
             } else {
@@ -1179,10 +1216,20 @@ impl<'py> QIds<'py> {
 type Direct<'py> = Option<(Bound<'py, PyAny>, Option<Bound<'py, PyAny>>)>;
 
 fn direct_split<'py>(py: Python<'py>, c: &Common, name: &str, args: &Bound<'py, PyAny>) -> PyResult<Direct<'py>> {
+    if name == "irrational_root" {
+        // `irrational_root(b, e)` with a constant missing is False, query or not (core.py's first two tests).
+        if args.get_item(0)?.is_none() || args.get_item(1)?.is_none() {
+            return Ok(Some((false.into_bound_py_any(py)?, None)));
+        }
+    }
     let Some(q) = QIds::of(py, c)? else { return Ok(None) };
-    // The product pair takes the Mul itself; the Add splits take its terms.
-    let one = matches!(name, "_mul_factor_sets" | "_quotient_templates");
-    let of = if one { PyTuple::new(py, [args])?.into_any() } else { args.clone() };
+    // The one-term splits take the term itself; `_unit_power_units(angle, e, expr)` reads `e`; the Add splits take its
+    // terms and `irrational_root` its two constants.
+    let of = match name {
+        "_unit_power_units" => PyTuple::new(py, [args.get_item(1)?])?.into_any(),
+        n if ONE.contains(&n) => PyTuple::new(py, [args])?.into_any(),
+        _ => args.clone(),
+    };
     let Some(ids) = q.ids(&of)? else { return Ok(None) };
     let r = {
         let tb = q.table.borrow();
@@ -1212,6 +1259,27 @@ fn direct_split<'py>(py: Python<'py>, c: &Common, name: &str, args: &Bound<'py, 
             let r = c.facts(py, &key, &gen, consts.as_any(), objs.as_any(), 3)?;
             Ok(Some((r, Some(shape))))
         }
+        Some(Direct1::PowBound(None)) => Ok(Some((py.None().into_bound(py), Some(py.None().into_bound(py))))),
+        Some(Direct1::PowBound(Some(pb))) => {
+            // `core.facts(('pow_bound', c0, c1, const_key(e) if consts else None), gen, consts, (u, e, b, expr), 3)`, gen
+            // IPI-free: `pow_bound_rules(idx)` (knowledge_core_live's `core_pow_bound_rules`).
+            let PowBound { b, e, c0, c1, u, idx, number } = pb;
+            let shown = (&c0, &c1, &u, PyList::new(py, &idx)?).into_bound_py_any(py)?;
+            let consts = PyDict::new(py);
+            let key_e = if number {
+                consts.set_item(1, &e)?;
+                const_key(&e)?
+            } else {
+                py.None().into_bound(py)
+            };
+            let key = ("pow_bound", &c0, &c1, key_e).into_bound_py_any(py)?;
+            let gen = PyCFunction::new_closure(py, None, None, move |t: &Bound<'_, PyTuple>, _kw: Option<&Bound<'_, PyDict>>| -> PyResult<Py<PyAny>> {
+                Ok(super::tcore::pow_bound_rules(&idx).into_pyobject(t.py())?.into_any().unbind())
+            })?;
+            let objs = PyTuple::new(py, [&u, &e, &b, args])?;
+            let r = c.facts(py, &key, gen.as_any(), consts.as_any(), objs.as_any(), 3)?;
+            Ok(Some((r, Some(shown))))
+        }
         None => Ok(None),
     }
 }
@@ -1220,6 +1288,19 @@ enum Direct1<'py> {
     Done(Bound<'py, PyAny>),
     /// `(a, v, v**k, a is a number)` or no shape; facts are built after the table's borrow ends.
     Quotient(Option<(Bound<'py, PyAny>, Bound<'py, PyAny>, Bound<'py, PyAny>, bool)>),
+    /// `_pow_bound_templates`' split or none.
+    PowBound(Option<PowBound<'py>>),
+}
+
+struct PowBound<'py> {
+    b: Bound<'py, PyAny>,
+    e: Bound<'py, PyAny>,
+    c0: Bound<'py, PyAny>,
+    c1: Bound<'py, PyAny>,
+    u: Bound<'py, PyAny>,
+    idx: Vec<usize>,
+    /// `e.is_number`: e is a constant of the pattern.
+    number: bool,
 }
 
 fn direct_rows<'py>(
@@ -1268,7 +1349,112 @@ fn direct_rows<'py>(
             let number = t.core_is_number(a).map_err(refuse)?;
             Ok(Some(Direct1::Quotient(Some((ao, vo, wo, number)))))
         }
-        _ => Ok(direct_add(py, c, q, t, name, ids)?.map(Direct1::Done)),
+        "_pow_bound_templates" => {
+            let Some((b, e)) = t.core_pow_bound_shape(ids[0]).map_err(refuse)? else {
+                return Ok(Some(Direct1::PowBound(None)));
+            };
+            let bargs = t.row(b).args.to_vec();
+            let Some((c0, (k, r))) = t.core_bound_split(&bargs).map_err(refuse)? else {
+                return Ok(Some(Direct1::PowBound(None)));
+            };
+            let (Some(bo), Some(eo), Some(c0), Some(u)) = (q.obj(b)?, q.obj(e)?, q.obj(c0)?, q.one(&r)?) else { return Ok(None) };
+            let c1 = match k {
+                Some(k) => match q.obj(k)? {
+                    Some(o) => o,
+                    None => return Ok(None),
+                },
+                None => sympy_one(py)?,
+            };
+            let mut idx = super::tcore::not_unit_premises(&rat_of(&c0)?, &rat_of(&c1)?);
+            if !idx.is_empty() && c.plant == "rows-pow-bound-drop-last" {
+                c.fired();
+                idx.pop();
+            }
+            if idx.is_empty() {
+                return Ok(Some(Direct1::PowBound(None)));
+            }
+            let number = t.core_is_number(e).map_err(refuse)?;
+            Ok(Some(Direct1::PowBound(Some(PowBound { b: bo, e: eo, c0, c1, u, idx, number }))))
+        }
+        _ => Ok(direct_pow(py, c, q, t, name, args, ids)?.map(Direct1::Done)),
+    }
+}
+
+/// 6g(c3) the Pow family's one-term pieces: `Some(result)`, `None` to go to the shell.
+fn direct_pow<'py>(
+    py: Python<'py>,
+    c: &Common,
+    q: &QIds<'py>,
+    t: &super::table::TermTable,
+    name: &str,
+    args: &Bound<'py, PyAny>,
+    ids: &[TermId],
+) -> PyResult<Option<Bound<'py, PyAny>>> {
+    let none = || Ok(Some(py.None().into_bound(py)));
+    let rational = |r: &super::rat::Rat| -> PyResult<Bound<'py, PyAny>> {
+        let (p, d) = super::py::core_pq(r);
+        py.import("sympy")?.getattr("Rational")?.call1((p, d))
+    };
+    match name {
+        "_exp_arg" => {
+            let Some(u) = t.core_exp_arg(ids[0]).map_err(refuse)? else { return none() };
+            if c.plant == "rows-exp-arg-none" {
+                c.fired();
+                return none();
+            }
+            Ok(q.obj(u)?)
+        }
+        "_unit_angle" => {
+            let Some(mut a) = t.core_unit_angle(ids[0]).map_err(refuse)? else { return none() };
+            if c.plant == "rows-unit-angle-neg" {
+                c.fired();
+                a = super::rat::Rat::new(-a.n.clone(), a.d.clone());
+            }
+            Ok(Some(rational(&a)?))
+        }
+        "ipi_split" => {
+            let Some((mut k, s)) = t.core_pi_split(ids[0], true).map_err(refuse)? else { return none() };
+            let s = match &s {
+                None => py.None().into_bound(py),
+                Some(r) => match q.one(r)? {
+                    Some(o) => o,
+                    None => return Ok(None),
+                },
+            };
+            if c.plant == "rows-ipi-split-neg" {
+                c.fired();
+                k = super::rat::Rat::new(-k.n.clone(), k.d.clone());
+            }
+            Ok(Some((rational(&k)?, s).into_bound_py_any(py)?))
+        }
+        "irrational_root" => {
+            let mut r = t.core_irrational_root(ids[0], ids[1]).map_err(refuse)?;
+            if r && c.plant == "rows-irrational-false" {
+                c.fired();
+                r = false;
+            }
+            Ok(Some(r.into_bound_py_any(py)?))
+        }
+        "_unit_power_units" => {
+            // A non-Rational exponent goes to the shell (its counted SymPy `as_real_imag` fallback).
+            let Some(mut facts) = t.core_unit_power_units(&rat_of(&args.get_item(0)?)?, ids[0]).map_err(refuse)? else {
+                return Ok(None);
+            };
+            if !facts.is_empty() && c.plant == "rows-unit-power-drop-last" {
+                c.fired();
+                facts.pop();
+            }
+            let f = py.import("satassume.sat.formula")?;
+            let (p, not) = (f.getattr("P")?, f.getattr("Not")?);
+            let expr = args.get_item(2)?;
+            let out = PyList::empty(py);
+            for (pred, v) in facts {
+                let a = p.call1((pred, &expr))?;
+                out.append(if v { a } else { not.call1((a,))? })?;
+            }
+            Ok(Some(out.into_any()))
+        }
+        _ => Ok(direct_add(py, c, q, t, name, ids)?),
     }
 }
 
@@ -1344,6 +1530,11 @@ fn direct_add<'py>(
         }
         _ => Ok(None),
     }
+}
+
+/// A SymPy Rational's `(p, q)` as a Rat.
+fn rat_of(x: &Bound<'_, PyAny>) -> PyResult<super::rat::Rat> {
+    Ok(super::rat::Rat::new(x.getattr("p")?.extract()?, x.getattr("q")?.extract()?))
 }
 
 fn sympy_one(py: Python<'_>) -> PyResult<Bound<'_, PyAny>> {
