@@ -38,7 +38,12 @@ BAD = []
 
 def key(r):
     compiled, formulas = r
-    return ([(id(c.pattern), tuple(c.objs)) for c in compiled], list(formulas))
+    # By content: with no query on the stack atoms' patterns are built by Rust per call (6g(a)), not Python's cached object.
+    return ([(_pat(c.pattern), tuple(c.objs)) for c in compiled], list(formulas))
+
+
+def _pat(p):
+    return (repr(p.rules), repr(p.clauses), p.used, p.complete, p.node, p.nobjs, repr(p.child_preds))
 
 
 def same(e, what):

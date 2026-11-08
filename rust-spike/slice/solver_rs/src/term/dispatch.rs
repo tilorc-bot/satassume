@@ -147,6 +147,27 @@ fn split(
     Ok(())
 }
 
+/// Empties the memo and the class cache when `state.epoch.EPOCH[0]` has moved since the last call.
+fn sync_epoch(slf: &Bound<'_, Dispatch>) -> PyResult<()> {
+    let py = slf.py();
+    let mut d = slf.borrow_mut();
+    let now: i64 = d.epoch.bind(py).get_item(0)?.extract()?;
+    if now != d.seen_epoch {
+        if d.plant == "dispatch-ignores-epoch" {
+            if !d.entries.is_empty() || d.memo.bind(py).len() > 0 {
+                bump(&mut d.counts, "plant:fired");
+            }
+        } else {
+            d.memo.bind(py).clear();
+            d.classes.bind(py).clear();
+            d.entries.clear();
+        }
+        d.seen_epoch = now;
+        bump(&mut d.counts, "registry:epoch-clear");
+    }
+    Ok(())
+}
+
 /// `templates_for(cls)`, with the user check; cached per class until the epoch moves.
 fn class_entry(slf: &Bound<'_, Dispatch>, cls: &Bound<'_, PyType>) -> PyResult<Arc<ClassEntry>> {
     let py = cls.py();
@@ -251,26 +272,20 @@ impl Dispatch {
     }
 
     /// `(compiled, formulas)` for `expr`, as `TemplateRegistry.clauses_for`. The result must not be mutated.
+    /// `registry.templates_for(cls)`: the same class walk `clauses_for` uses (MRO, `_redefines`, lazy `_load`), for
+    /// conversion's class rows (convert.py), so no registry Python runs per query there.
+    fn templates_for<'py>(slf: &Bound<'py, Self>, cls: &Bound<'py, PyType>) -> PyResult<Vec<Py<PyAny>>> {
+        let py = cls.py();
+        sync_epoch(slf)?;
+        bump(&mut slf.borrow_mut().counts, "registry:templates_for");
+        let e = class_entry(slf, cls)?;
+        Ok(e.templates.iter().map(|(t, _)| t.clone_ref(py)).collect())
+    }
+
     fn clauses_for<'py>(slf: &Bound<'py, Self>, expr: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
         let py = expr.py();
-        let memo = {
-            let mut d = slf.borrow_mut();
-            let now: i64 = d.epoch.bind(py).get_item(0)?.extract()?;
-            if now != d.seen_epoch {
-                if d.plant == "dispatch-ignores-epoch" {
-                    if !d.entries.is_empty() || d.memo.bind(py).len() > 0 {
-                        bump(&mut d.counts, "plant:fired");
-                    }
-                } else {
-                    d.memo.bind(py).clear();
-                    d.classes.bind(py).clear();
-                    d.entries.clear();
-                }
-                d.seen_epoch = now;
-                bump(&mut d.counts, "registry:epoch-clear");
-            }
-            d.memo.clone_ref(py)
-        };
+        sync_epoch(slf)?;
+        let memo = slf.borrow().memo.clone_ref(py);
         let memo = memo.bind(py);
         if let Some(r) = memo.get_item(expr)? {
             bump(&mut slf.borrow_mut().counts, "registry:memo");

@@ -218,6 +218,8 @@ def install_dispatch():
         d.set_plant(PLANT[0])
     DISPATCH[0] = d
     registry.clauses_for = d.clauses_for
+    import convert
+    convert.TEMPLATES_FOR[0] = d.templates_for
 
     def flush():
         for k, v in d.counts().items():
@@ -235,6 +237,7 @@ def install_dispatch():
         atexit.unregister(flush)
         DISPATCH[0] = None
         registry.__dict__.pop('clauses_for', None)
+        convert.TEMPLATES_FOR[0] = None
     return undo
 
 

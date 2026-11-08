@@ -26,6 +26,10 @@ from sympy.logic.boolalg import BooleanAtom, BooleanFunction
 from satassume import sympy_api as A
 from satassume.knowledge.domain import constructed_noncommutative
 from satassume.knowledge.templates import _may_be_nan, registry
+
+#: Rust's `Dispatch.templates_for` once knowledge_live.install_dispatch() runs (6g(a)): the class walk the engine's dispatch
+#: uses, so conversion's class rows run no registry Python per query. None: the registry's own method.
+TEMPLATES_FOR = [None]
 from satassume.knowledge.templates._common import const_value
 from satassume.knowledge.templates.atoms import _CONST_BASIS
 from satassume.theories.euf.euf_adapter import _STRUCTURAL, _inherits_from_basic
@@ -244,7 +248,7 @@ class _Walk:
             flags |= _PLAIN_ATOMS
         try:
             ckey = cls.class_key()
-            found = registry.templates_for(cls)
+            found = (TEMPLATES_FOR[0] or registry.templates_for)(cls)
         except Exception as e:
             raise _Keep('class-no-row', f'{name}: {type(e).__name__}')
         names = tuple(sorted(_template_name(f) for f in found))
