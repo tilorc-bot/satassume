@@ -458,7 +458,9 @@ _REL_PLANTS = ('link-none', 'drop-order-sides', 'drop-order-infinite', 'drop-tri
                # Step 5c5, second part: relations.py's module functions.
                'own-term-false', 'constant-term-never', 'basis-all', 'sympy-atom-swap', 'zero-args-empty', 'under-of-empty',
                'zero-twins-first', 'glue-no-twins', 'guarded-none', 'terms-of-no-order', 'link-objects-bare', 'closed-units-none',
-               'with-closed-skip', 'specs-no-euf', 'relname-swap')
+               'with-closed-skip', 'specs-no-euf', 'relname-swap',
+               # Adapters step, part A: the specs converted once.
+               'spec-row-flip')
 
 #: Step 5c5, second part: relations.py's module functions that run in `relations_core.rs`, by module attribute -> pyfunction.
 #: `_constant_term` has no pyfunction: Rust's callers use its own copy, and Python's few callers keep Python's.

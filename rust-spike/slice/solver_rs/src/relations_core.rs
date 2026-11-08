@@ -135,6 +135,8 @@ const CLOSED_UNITS_NONE: u8 = 86;
 const WITH_CLOSED_SKIP: u8 = 87;
 const SPECS_NO_EUF: u8 = 88;
 const RELNAME_SWAP: u8 = 89;
+/// Adapters step, part A: `spec_row` hands back a converted spec with `guarded` flipped on each memo hit.
+const SPEC_ROW_FLIP: u8 = 90;
 
 #[pyfunction]
 fn rel_install(term_live: Py<PyAny>, relations: Py<PyAny>, euf_adapter: Py<PyAny>, fault: Py<PyAny>) {
@@ -234,6 +236,7 @@ fn rel_plant(name: Option<&str>) -> PyResult<()> {
         Some("with-closed-skip") => WITH_CLOSED_SKIP,
         Some("specs-no-euf") => SPECS_NO_EUF,
         Some("relname-swap") => RELNAME_SWAP,
+        Some("spec-row-flip") => SPEC_ROW_FLIP,
         Some(x) => return Err(PyValueError::new_err(format!("no plant {x}"))),
     };
     PLANT.store(v, Relaxed);
@@ -791,7 +794,7 @@ fn rel_interpret<'py>(rel: &Bound<'py, PyAny>, atom: &Bound<'py, PyAny>) -> PyRe
     for spec in rel.getattr(intern!(p, "specs"))?.try_iter()? {
         let spec = spec?;
         let ad = rel.call_method1(intern!(p, "_adapter"), (&spec,))?;
-        if !spec.getattr(intern!(p, "guarded"))?.is_truthy()? {
+        if !spec_row(&spec)?.guarded {
             if ad.call_method1(intern!(p, "register"), (&solver, var, &sat))?.is_truthy()? {
                 ok = true;
                 if eq && ad.getattr_opt(intern!(p, "node_term"))?.is_some() {
@@ -905,7 +908,7 @@ fn rel_link<'py>(rel: &Bound<'py, PyAny>, e: &Bound<'py, PyAny>) -> PyResult<()>
     if r.getattr(intern!(p, "INTEGERS"))?.is_truthy()? {
         for spec in rel.getattr(intern!(p, "specs"))?.try_iter()? {
             let spec = spec?;
-            if spec.getattr(intern!(p, "guarded"))?.is_truthy()? {
+            if spec_row(&spec)?.guarded {
                 let ad = rel.call_method1(intern!(p, "_adapter"), (&spec,))?;
                 if ad.getattr_opt(intern!(p, "integer_form"))?.is_some() {
                     rel_link_integer(rel, &ad, e, g)?;
@@ -1245,7 +1248,7 @@ impl<'py> Cx<'_, 'py> {
         let mut ad = None;
         for spec in self.rel.getattr(intern!(p, "specs"))?.try_iter()? {
             let spec = spec?;
-            if !spec.getattr(intern!(p, "guarded"))?.is_truthy()? {
+            if !spec_row(&spec)?.guarded {
                 let a = self.rel.call_method1(intern!(p, "_adapter"), (&spec,))?;
                 if a.getattr_opt(intern!(p, "node_term"))?.is_some() {
                     ad = Some(a);
@@ -1918,16 +1921,17 @@ fn rel_adapter<'py>(rel: &Bound<'py, PyAny>, spec: &Bound<'py, PyAny>) -> PyResu
     let p = rel.py();
     tick(session::REL_ADAPTER);
     let adapters = rel.getattr(intern!(p, "adapters"))?;
-    let name = spec.getattr(intern!(p, "name"))?;
-    let ad = adapters.call_method1(intern!(p, "get"), (&name,))?;
+    let row = spec_row(spec)?;
+    let name = row.name.bind(p);
+    let ad = adapters.call_method1(intern!(p, "get"), (name,))?;
     if !ad.is_none() {
         return Ok(ad);
     }
-    let ad = spec.getattr(intern!(p, "factory"))?.call0()?;
+    let ad = row.factory.bind(p).call0()?;
     if plant_on(ADAPTER_FRESH) {
         return Ok(ad);
     }
-    adapters.set_item(&name, &ad)?;
+    adapters.set_item(name, &ad)?;
     Ok(ad)
 }
 
@@ -2118,6 +2122,45 @@ fn constant_term(rel: &Bound<'_, PyAny>, h: &Hooks, e: &Bound<'_, PyAny>) -> PyR
 }
 
 /// `RULE_INSTANTIATED` as clause masks, kept with the object they came from, as `rules._masks` keys by identity.
+/// An `AdapterSpec`, read once. A spec is a NamedTuple, so its fields can't change after Rust reads them. The memo holds the spec
+/// itself, so its address isn't reused while the row stands. Specs are made when an engine is set up, so the memo stays small;
+/// it's cleared past 4,096 entries anyway.
+pub(crate) struct SpecRow {
+    pub(crate) name: Py<PyAny>,
+    pub(crate) factory: Py<PyAny>,
+    pub(crate) guarded: bool,
+}
+
+static SPEC_ROWS: std::sync::Mutex<Option<std::collections::HashMap<usize, (Py<PyAny>, Arc<SpecRow>)>>> = std::sync::Mutex::new(None);
+
+/// `spec`'s fields, read from Python the first time Rust sees this spec (counted `rel:cb_spec_read`, one tick a field) and from
+/// the memo after that. The specs are configuration the user passes in, so they stay Python objects; only this conversion reads them.
+pub(crate) fn spec_row(spec: &Bound<'_, PyAny>) -> PyResult<Arc<SpecRow>> {
+    let p = spec.py();
+    let key = spec.as_ptr() as usize;
+    if let Some((_, row)) = SPEC_ROWS.lock().unwrap().as_ref().and_then(|m| m.get(&key)) {
+        if planted(SPEC_ROW_FLIP) {
+            return Ok(Arc::new(SpecRow { name: row.name.clone_ref(p), factory: row.factory.clone_ref(p), guarded: !row.guarded }));
+        }
+        return Ok(row.clone());
+    }
+    for _ in 0..3 {
+        tick(session::REL_CB_SPEC_READ);
+    }
+    let row = Arc::new(SpecRow {
+        name: spec.getattr(intern!(p, "name"))?.unbind(),
+        factory: spec.getattr(intern!(p, "factory"))?.unbind(),
+        guarded: spec.getattr(intern!(p, "guarded"))?.is_truthy()?,
+    });
+    let mut g = SPEC_ROWS.lock().unwrap();
+    let m = g.get_or_insert_with(Default::default);
+    if m.len() >= 4096 {
+        m.clear();
+    }
+    m.insert(key, (spec.clone().unbind(), row.clone()));
+    Ok(row)
+}
+
 static RULE_MASKS: RwLock<Option<(Py<PyAny>, Arc<Vec<u64>>)>> = RwLock::new(None);
 
 fn lit_bit(l: i64) -> PyResult<u32> {
@@ -2425,16 +2468,17 @@ fn guarded_adapters<'py>(specs: &Bound<'py, PyAny>, memo: &Bound<'py, PyAny>) ->
     let out = PyList::empty(p);
     for spec in specs.try_iter()? {
         let spec = spec?;
-        if spec.getattr(intern!(p, "guarded"))?.is_truthy()? {
+        let row = spec_row(&spec)?;
+        if row.guarded {
             if planted(GUARDED_NONE) {
                 continue;
             }
-            let name = spec.getattr(intern!(p, "name"))?;
-            let mut ad = memo.call_method1(intern!(p, "get"), (&name,))?;
+            let name = row.name.bind(p);
+            let mut ad = memo.call_method1(intern!(p, "get"), (name,))?;
             if ad.is_none() {
                 tick(session::REL_CB_ADAPTER_READ);
-                ad = spec.getattr(intern!(p, "factory"))?.call0()?;
-                memo.set_item(&name, &ad)?;
+                ad = row.factory.bind(p).call0()?;
+                memo.set_item(name, &ad)?;
             }
             out.append(ad)?;
         }

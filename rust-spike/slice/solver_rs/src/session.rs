@@ -14,7 +14,7 @@ use pyo3::types::{PyBool, PyDict, PyList, PySet, PyTuple};
 use crate::compile::{self, block_lits, Cx, Def, Kind, Need, F, R};
 use crate::formula_py::PyP;
 
-const NAMES: [&str; 122] = [
+const NAMES: [&str; 123] = [
     "py:var", "py:dvar", "py:node", "py:compile", "py:literal", "py:table", "rs:visit", "rs:add_clause", "rs:ensure_vars",
     "rs:def_implications", "rs:neg_shared", "join", "rs:emit_callback", "refuse:depth", "refuse:convert", "refuse:object", "second:visit", "custom:own",
     "link:hit", "link:resolved", "link:none", "link:no_table", "link:second", "link:no_node",
@@ -35,7 +35,7 @@ const NAMES: [&str; 122] = [
     "rel:zero_twins", "rel:glue_atoms", "rel:guarded_adapters", "rel:terms_of", "rel:link_objects", "rel:closed_units",
     "rel:with_closed_units", "rel:default_specs", "rel:relational_name", "rel:cb_is_many", "rel:cb_sympy_q", "rel:cb_under_apps",
     "rel:cb_zero_twin", "rel:cb_structural_subterms", "rel:cb_relation_atom", "rel:cb_adapter_read", "rel:cb_closed_sign", "rel:cb_units",
-    "rel:cb_clause_templates", "rel:py_is_number",
+    "rel:cb_clause_templates", "rel:py_is_number", "rel:cb_spec_read",
 ];
 const VAR: usize = 0;
 const DVAR: usize = 1;
@@ -162,6 +162,8 @@ pub(crate) const REL_CB_CLOSED_SIGN: usize = 118;
 pub(crate) const REL_CB_UNITS: usize = 119;
 pub(crate) const REL_CB_CLAUSE_TEMPLATES: usize = 120;
 pub(crate) const REL_PY_IS_NUMBER: usize = 121;
+/// Adapters step: each `AdapterSpec` field read from Rust. Each spec is read once, the first time Rust sees it (`spec_row`).
+pub(crate) const REL_CB_SPEC_READ: usize = 122;
 
 /// Deeper formulas compile on Python, over this same table. Python's own limit depends on the caller's stack, so it isn't
 /// reproduced: its deepest shape is `Implies`, 3 frames a level (first failure at depth 330 from a bare stack, limit 1000), so
@@ -169,7 +171,7 @@ pub(crate) const REL_PY_IS_NUMBER: usize = 121;
 const FORMULA_DEPTH: u32 = 64;
 
 thread_local! {
-    static COUNTS: [Cell<u64>; 122] = const { [const { Cell::new(0) }; 122] };
+    static COUNTS: [Cell<u64>; 123] = const { [const { Cell::new(0) }; 123] };
     /// Each session's serial, for the link's memo: a pointer could alias a dead session's.
     static SERIAL: Cell<u64> = const { Cell::new(0) };
 }
