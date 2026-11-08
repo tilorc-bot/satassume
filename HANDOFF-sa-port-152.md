@@ -53,3 +53,12 @@
 3. Rebase per LANDING ORDER, `bar.sh land TESTED` (no PUSH) to read the incoming diff, then `PUSH=1`.
 4. Report: extend results/port-adapters.md; port-ownership.md :101 (`pi_laurent` moved), :104 (6 rows: "not port: output/
    display conversion, C2 ruling"), :131; TSV. Per-workload callback counts before/after from `trace/`.
+
+## Results that came in after the handoff commit (07:16 UTC)
+- fuzz Rust vs Python **MATCH** (173502b6ef285ad6, 3,133 Python solvers / 0 Rust); dev MATCH as above.
+- **cf-laurent-rational fired dev 121 / fuzz 200 and MATCHed on both: void on dev and fuzz**, like the shift plant. The
+  certificate's reading of pi bounds doesn't move any dev/fuzz answer or compared state. Next: find a workload where it
+  does (start from test_term_live.py's CERT query, `Q.zero(x)` given `Q.ge(x, -pi/2)`, and the extra WLS in the bar), or run
+  the suite under it (SUITE_PLANTS), or name it void with this reason. test_cf_laurent.py catches it directly
+  (test_counter_and_plant_fire asserts the planted output), but that isn't a comparison catch.
+- trace/ still running at this note (trace/done.txt).
