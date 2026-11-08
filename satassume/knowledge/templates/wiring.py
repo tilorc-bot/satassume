@@ -338,6 +338,7 @@ def power(gen):
         return out
     template.__name__ = template.__qualname__ = 'pow_templates'
     template.__module__ = gen.__module__
+    template._satassume_rows = ('power', 'pow', gen, False, False)
     return template
 
 

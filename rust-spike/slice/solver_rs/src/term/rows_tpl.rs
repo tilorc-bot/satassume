@@ -40,6 +40,13 @@ pub const PLANTS: &[&str] = &[
     "rows-piecewise-last",     // piecewise_values: the final True not required
     "rows-mul-sets-first",     // product: only the first factor tuple
     "rows-add-bound-skip",     // addition: `c0 + c1*u` and `c0 + c1/v` left out
+    "rows-pow-key-same",       // power: `b is e` left out of the key, so x**x and x**y share a pattern
+    "rows-pow-times-skip",     // power: the terms `k*e` not built
+    "rows-pow-head-any",       // matches: ('head', 'exp') always met
+    "rows-pow-irrational-skip",// power: the irrational b**(p/q) rule left out
+    "rows-pow-ipi-skip",       // power: `ipi_rules` not added
+    "rows-pow-unit-drop",      // power: `_unit_power_units`' facts dropped
+    "rows-pow-of-constant-skip",// power: the terms of the constant not computed
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -47,6 +54,19 @@ pub enum Family {
     AnyArity,
     Product,
     Addition,
+    Power,
+}
+
+/// `power(gen)`'s rows, read once: the terms of `gen.terms[2]` by kind (slots from 3), `gen.specs[2]` with the
+/// terms each rule names.
+struct PowerRows {
+    s_slot: usize,
+    nobjs: usize,
+    shifts: Vec<(usize, usize, Py<PyAny>)>,
+    inner: Vec<(usize, usize)>,
+    times: Vec<(usize, usize, Py<PyAny>)>,
+    of_constant: Vec<(usize, usize, Py<PyAny>)>,
+    rules: Vec<(Vec<Lit>, Vec<Lit>, Option<Vec<Option<ShapeItem>>>, Vec<usize>)>,
 }
 
 enum Pick {
@@ -59,6 +79,7 @@ enum Pick {
 enum ShapeItem {
     Value(Py<PyAny>),
     Same(usize),
+    Head,
     Coefficient,
     Constant,
 }
@@ -100,6 +121,7 @@ pub struct RowsTpl {
     schemas: Vec<Schema>,
     piecewise: bool,
     leave_out_wide: bool,
+    power: Option<PowerRows>,
     /// the Python template, for kept queries
     pub py_template: Py<PyAny>,
     wiring: Py<PyModule>,
@@ -122,6 +144,12 @@ fn shape_of(s: &Bound<'_, PyAny>) -> PyResult<Vec<Option<ShapeItem>>> {
         out.push(Some(match kind.as_str() {
             "value" => ShapeItem::Value(x.get_item(1)?.unbind()),
             "same" => ShapeItem::Same(x.get_item(1)?.extract()?),
+            "head" => {
+                if x.get_item(1)?.extract::<String>()? != "exp" {
+                    return Err(PyValueError::new_err("Pow: no template matches this head"));
+                }
+                ShapeItem::Head
+            }
             "coefficient" => ShapeItem::Coefficient,
             "constant" => ShapeItem::Constant,
             k => return Err(PyValueError::new_err(format!("rows template: shape {k} not keyed for any arity"))),
@@ -162,12 +190,20 @@ impl RowsTpl {
             "any_arity" => Family::AnyArity,
             "product" => Family::Product,
             "addition" => Family::Addition,
+            "power" => Family::Power,
             _ => return Ok(None),
         };
         let tag = spec.get_item(1)?.unbind();
         let gen = spec.get_item(2)?;
         let piecewise: bool = spec.get_item(3)?.extract()?;
         let leave_out_wide: bool = spec.get_item(4)?.extract()?;
+        if family == Family::Power {
+            let wiring = py.import("satassume.knowledge.templates.wiring")?.unbind();
+            return Ok(Some(RowsTpl {
+                family, name, tag, terms: HashMap::new(), specs: HashMap::new(), schemas: Vec::new(), piecewise,
+                leave_out_wide, power: Some(power_rows(&gen)?), py_template: t.clone().unbind(), wiring,
+            }));
+        }
         let mut terms = HashMap::new();
         for (n, ts) in gen.getattr("terms")?.cast::<PyDict>()?.iter() {
             let mut v = Vec::new();
@@ -239,7 +275,8 @@ impl RowsTpl {
         }
         let wiring = py.import("satassume.knowledge.templates.wiring")?.unbind();
         Ok(Some(RowsTpl {
-            family, name, tag, terms, specs, schemas, piecewise, leave_out_wide, py_template: t.clone().unbind(), wiring,
+            family, name, tag, terms, specs, schemas, piecewise, leave_out_wide, power: None, py_template: t.clone().unbind(),
+            wiring,
         }))
     }
 
@@ -330,6 +367,10 @@ impl RowsTpl {
                 }
                 Ok(if out.len() == 1 { out.get_item(0)? } else { out.into_any() })
             }
+            Family::Power => {
+                drop(cr);
+                self.pow_call(c, expr)
+            }
         }
     }
 
@@ -387,7 +428,7 @@ impl RowsTpl {
         let out = PyList::empty(py);
         for r in self.specs.get(&n).map(|v| v.as_slice()).unwrap_or(&[]) {
             if let Some(shape) = &r.shape {
-                if !matches(c, shape, args, consts)? {
+                if !self.matches(py, c, shape, args, consts)? {
                     if c.plant == "rows-rules-for-shape" {
                         c.fired();
                     } else {
@@ -501,9 +542,9 @@ fn same_value(a: &Bound<'_, PyAny>, v: &Bound<'_, PyAny>) -> PyResult<bool> {
     Ok(a.get_type().is(&v.get_type()) && a.eq(v)?)
 }
 
-/// `matches(shape, args, consts)` for the shapes a function of any arity keys ('head' is Pow's, refused here).
-fn matches(c: &Common, shape: &[Option<ShapeItem>], args: &Bound<'_, PyTuple>, consts: &Bound<'_, PyDict>) -> PyResult<bool> {
-    let py = args.py();
+impl RowsTpl {
+/// `matches(shape, args, consts)`: 'head' (Pow's) through `_exp_arg`, called back.
+fn matches(&self, py: Python<'_>, c: &Common, shape: &[Option<ShapeItem>], args: &Bound<'_, PyTuple>, consts: &Bound<'_, PyDict>) -> PyResult<bool> {
     c.bump("rows:matches");
     for (i, s) in shape.iter().enumerate() {
         let Some(s) = s else { continue };
@@ -511,6 +552,15 @@ fn matches(c: &Common, shape: &[Option<ShapeItem>], args: &Bound<'_, PyTuple>, c
         let ok = match s {
             ShapeItem::Value(v) => same_value(&a, v.bind(py))?,
             ShapeItem::Same(j) => a.is(&args.get_item(*j)?),
+            ShapeItem::Head => {
+                let m = !self.wiring_fn(py, c, "_exp_arg")?.call1((&a,))?.is_none();
+                if !m && c.plant == "rows-pow-head-any" {
+                    c.fired();
+                    true
+                } else {
+                    m
+                }
+            }
             ShapeItem::Coefficient => i == 0 && is_number_at(consts, 0)?,
             ShapeItem::Constant => {
                 let m = consts.contains(i)?;
@@ -528,6 +578,242 @@ fn matches(c: &Common, shape: &[Option<ShapeItem>], args: &Bound<'_, PyTuple>, c
     }
     Ok(true)
 }
+}
+/// `power(gen)`'s reading of `gen.terms[2]` and `gen.specs[2]`.
+fn power_rows(gen: &Bound<'_, PyAny>) -> PyResult<PowerRows> {
+    let first = 3usize;
+    let terms = gen.getattr("terms")?.get_item(2)?;
+    let (mut shifts, mut inner, mut times, mut of_constant) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    let mut k = first;
+    for t in terms.try_iter()? {
+        let t = t?;
+        let kind = t.get_item(0)?;
+        match kind.extract::<String>().ok().as_deref() {
+            Some("inner") => inner.push((k, t.get_item(1)?.extract()?)),
+            Some("times") => times.push((k, t.get_item(1)?.extract()?, t.get_item(2)?.unbind())),
+            Some("of_constant") => of_constant.push((k, t.get_item(1)?.extract()?, t.get_item(2)?.unbind())),
+            _ => shifts.push((k, kind.extract()?, t.get_item(1)?.unbind())),
+        }
+        k += 1;
+    }
+    let s_slot = k;
+    let mut rules = Vec::new();
+    for r in gen.getattr("specs")?.get_item(2)?.try_iter()? {
+        let r = r?;
+        let prem: Vec<Lit> = r.get_item(0)?.try_iter()?.map(|x| lit3(&x?)).collect::<PyResult<_>>()?;
+        let concl: Vec<Lit> = r.get_item(1)?.try_iter()?.map(|x| lit3(&x?)).collect::<PyResult<_>>()?;
+        let shape = if r.len()? > 2 && !r.get_item(2)?.is_none() { Some(shape_of(&r.get_item(2)?)?) } else { None };
+        let mut terms_of: Vec<usize> =
+            prem.iter().chain(concl.iter()).filter(|l| l.0 >= first as i64).map(|l| l.0 as usize).collect();
+        terms_of.sort();
+        terms_of.dedup();
+        rules.push((prem, concl, shape, terms_of));
+    }
+    Ok(PowerRows { s_slot, nobjs: s_slot + 1, shifts, inner, times, of_constant, rules })
+}
+
+fn atom_number(x: &Bound<'_, PyAny>) -> PyResult<bool> {
+    Ok(x.getattr("is_Atom")?.is_truthy()? && x.getattr("is_number")?.is_truthy()?)
+}
+
+/// `const_key(obj)`: `(type(obj), obj)`.
+fn const_key<'py>(x: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    Ok(PyTuple::new(x.py(), [x.get_type().into_any(), x.clone()])?.into_any())
+}
+
+impl RowsTpl {
+    /// `power(gen)`'s template: the node's constants, objects and key; the rules (rows whose terms exist and whose
+    /// shape the node has, `ipi_rules`, `irrational_root`) built only for a new pattern; then `_unit_power_units` or
+    /// `_pow_bound_templates`. The core pieces are called back by name; `Mul(k, e)` and `b + c` are SymPy
+    /// construction (scaffolding, counted `rows:python:Mul`/`rows:python:Add`).
+    fn pow_call<'py>(self: &Arc<Self>, c: &Bound<'py, Common>, expr: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+        let py = expr.py();
+        let cr = c.borrow();
+        let pw = self.power.as_ref().expect("power rows");
+        cr.bump("rows:power");
+        let args = expr.getattr("args")?.cast_into::<PyTuple>()?;
+        let (b, e) = (args.get_item(0)?, args.get_item(1)?);
+        let consts = PyDict::new(py);
+        if atom_number(&b)? {
+            consts.set_item(0, &b)?;
+        }
+        if atom_number(&e)? {
+            consts.set_item(1, &e)?;
+        }
+        let none = py.None().into_bound(py);
+        let mut objs: Vec<Bound<'py, PyAny>> = vec![b.clone(), e.clone(), expr.clone()];
+        objs.resize(pw.nobjs, none.clone());
+        let mut u: Option<Bound<'py, PyAny>> = None;
+        for (k, i) in &pw.inner {
+            let r = self.wiring_fn(py, &cr, "_exp_arg")?.call1((args.get_item(*i)?,))?;
+            u = if r.is_none() { None } else { Some(r) };
+            if let Some(u) = &u {
+                objs[*k] = u.clone();
+                if atom_number(u)? {
+                    consts.set_item(*k, u)?;
+                }
+            }
+        }
+        let mut ipi: Option<(Bound<'py, PyAny>, bool)> = None;
+        let exp1 = py.import("sympy")?.getattr("S")?.getattr("Exp1")?;
+        if b.is(&exp1) && !consts.contains(1)? {
+            let split = self.wiring_fn(py, &cr, "ipi_split")?.call1((&e,))?;
+            if !split.is_none() {
+                let (cc, s_) = (split.get_item(0)?, split.get_item(1)?);
+                ipi = Some((cc, !s_.is_none()));
+                if !s_.is_none() {
+                    objs[pw.s_slot] = s_.clone();
+                    if atom_number(&s_)? {
+                        consts.set_item(pw.s_slot, &s_)?;
+                    }
+                }
+            }
+        }
+        let has_t = !consts.contains(1)? && !e.getattr("is_number")?.is_truthy()?;
+        for (k, i, cc) in &pw.times {
+            let a = args.get_item(*i)?;
+            if !a.getattr("is_number")?.is_truthy()? {
+                if cr.plant == "rows-pow-times-skip" {
+                    cr.fired();
+                    continue;
+                }
+                cr.bump("rows:python:Mul");
+                objs[*k] = py.import("sympy")?.getattr("Mul")?.call1((cc.bind(py), &a))?;
+            }
+        }
+        let has_b1 = has_t && !consts.contains(0)? && !b.getattr("is_number")?.is_truthy()?;
+        if has_b1 {
+            for (k, i, cc) in &pw.shifts {
+                cr.bump("rows:python:Add");
+                objs[*k] = args.get_item(*i)?.add(cc.bind(py))?;
+            }
+        }
+        let angle = self.wiring_fn(py, &cr, "_unit_angle")?.call1((&b,))?;
+        let mut same = b.is(&e);
+        if same && cr.plant == "rows-pow-key-same" {
+            cr.fired();
+            same = false;
+        }
+        let ukey = match &u {
+            None => false.into_pyobject(py)?.to_owned().into_any(),
+            Some(u) if atom_number(u)? => const_key(u)?,
+            Some(_) => true.into_pyobject(py)?.to_owned().into_any(),
+        };
+        let ipikey = match &ipi {
+            None => none.clone(),
+            Some((cc, s)) => PyTuple::new(py, [cc.clone(), s.into_pyobject(py)?.to_owned().into_any()])?.into_any(),
+        };
+        let key = PyTuple::new(py, [
+            "pow".into_pyobject(py)?.into_any(),
+            if consts.contains(0)? { const_key(&b)? } else { none.clone() },
+            if consts.contains(1)? { const_key(&e)? } else { none.clone() },
+            same.into_pyobject(py)?.to_owned().into_any(),
+            angle.clone(),
+            ukey,
+            ipikey,
+            if consts.contains(pw.s_slot)? { const_key(&objs[pw.s_slot])? } else { none.clone() },
+            has_t.into_pyobject(py)?.to_owned().into_any(),
+            has_b1.into_pyobject(py)?.to_owned().into_any(),
+        ])?;
+        let objs_t = PyTuple::new(py, &objs)?;
+        let me = self.clone();
+        let cobj = c.clone().unbind();
+        let cd = consts.clone().unbind();
+        let ot = objs_t.clone().unbind();
+        let at = args.clone().unbind();
+        let ipi_p = ipi.as_ref().map(|(cc, s)| (cc.clone().unbind(), *s));
+        let gen = PyCFunction::new_closure(py, None, None, move |t: &Bound<'_, PyTuple>, _kw: Option<&Bound<'_, PyDict>>| -> PyResult<Py<PyAny>> {
+            let py = t.py();
+            let c = cobj.bind(py).borrow();
+            let r = me.pow_build(py, &c, at.bind(py), ot.bind(py), cd.bind(py), ipi_p.as_ref())?;
+            Ok(r.into_any().unbind())
+        })?;
+        let out = cr.facts(py, &key.into_any(), gen.as_any(), consts.as_any(), objs_t.as_any(), 2)?;
+        if !angle.is_none() && e.getattr("is_number")?.is_truthy()? {
+            let units = self.wiring_fn(py, &cr, "_unit_power_units")?.call1((&angle, &e, expr))?;
+            let l = PyList::new(py, [out])?;
+            if cr.plant == "rows-pow-unit-drop" {
+                cr.fired();
+            } else {
+                for x in units.try_iter()? {
+                    l.append(x?)?;
+                }
+            }
+            return Ok(l.into_any());
+        }
+        let bound = self.wiring_fn(py, &cr, "_pow_bound_templates")?.call1((expr,))?;
+        if !bound.is_none() {
+            return Ok(PyList::new(py, [out, bound])?.into_any());
+        }
+        Ok(out)
+    }
+
+    /// `power`'s `build()`: run by `facts` only for a new pattern, adding the terms of the constants to `consts`.
+    fn pow_build<'py>(&self, py: Python<'py>, c: &Common, args: &Bound<'py, PyTuple>, objs: &Bound<'py, PyTuple>,
+                      consts: &Bound<'py, PyDict>, ipi: Option<&(Py<PyAny>, bool)>) -> PyResult<Bound<'py, PyList>> {
+        let pw = self.power.as_ref().expect("power rows");
+        c.bump("rows:pow_build");
+        for (k, i, t) in &pw.of_constant {
+            if let Some(cv) = consts.get_item(*i)? {
+                if cv.getattr("is_Number")?.is_truthy()? {
+                    if c.plant == "rows-pow-of-constant-skip" {
+                        c.fired();
+                        continue;
+                    }
+                    let v = self.wiring_fn(py, c, "constant_value")?.call1((t.bind(py), &cv))?;
+                    consts.set_item(*k, v)?;
+                }
+            }
+        }
+        let mut exist = Vec::new();
+        for k in 3..pw.nobjs {
+            if !objs.get_item(k)?.is_none() || consts.contains(k)? {
+                exist.push(k);
+            }
+        }
+        let out = PyList::empty(py);
+        for (prem, concl, shape, terms_of) in &pw.rules {
+            if !terms_of.iter().all(|k| exist.contains(k)) {
+                continue;
+            }
+            if let Some(shape) = shape {
+                if !self.matches(py, c, shape, args, consts)? {
+                    continue;
+                }
+            }
+            out.append((PyList::new(py, prem)?, PyList::new(py, concl)?))?;
+        }
+        if let Some((cc, has_s)) = ipi {
+            if c.plant == "rows-pow-ipi-skip" {
+                c.fired();
+            } else {
+                let o = out.clone().unbind();
+                let rule = PyCFunction::new_closure(py, None, None, move |t: &Bound<'_, PyTuple>, _kw: Option<&Bound<'_, PyDict>>| -> PyResult<Py<PyAny>> {
+                    let py = t.py();
+                    let prem = PyList::new(py, t.get_item(0)?.try_iter()?.collect::<PyResult<Vec<_>>>()?)?;
+                    let concl = t.get_item(1)?;
+                    let concl = if concl.is_instance_of::<PyList>() { concl } else { PyList::new(py, [concl])?.into_any() };
+                    o.bind(py).append((prem, concl))?;
+                    Ok(py.None())
+                })?;
+                let s = if *has_s { pw.s_slot.into_pyobject(py)?.into_any() } else { py.None().into_bound(py) };
+                self.wiring_fn(py, c, "ipi_rules")?.call1((rule, cc.bind(py), s, 2))?;
+            }
+        }
+        let none = py.None().into_bound(py);
+        let c0 = consts.get_item(0)?.unwrap_or(none.clone());
+        let c1 = consts.get_item(1)?.unwrap_or(none);
+        if self.wiring_fn(py, c, "irrational_root")?.call1((c0, c1))?.is_truthy()? {
+            if c.plant == "rows-pow-irrational-skip" {
+                c.fired();
+            } else {
+                out.append((PyList::empty(py), PyList::new(py, [(2i64, "irrational", true)])?))?;
+            }
+        }
+        Ok(out)
+    }
+}
+
 
 /// `_allowed(kind, n, consts)`.
 fn allowed(c: &Common, kind: &Pick, n: usize, consts: &Bound<'_, PyDict>) -> PyResult<Vec<usize>> {

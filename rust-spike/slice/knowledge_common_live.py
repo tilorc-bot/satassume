@@ -27,7 +27,8 @@ PLANTS = ('common-facts-drop', 'common-units-drop', 'common-max-cache-off', 'com
 PLANTS += ('rows-block-key-n', 'rows-rules-for-shape', 'rows-of-constant-skip', 'rows-matches-constant',
            'rows-expand-drop-last', 'rows-placements-first', 'rows-allowed-coefficient', 'rows-instances-others',
            'rows-count-flip', 'rows-clauses-one', 'rows-wide-drop', 'rows-piecewise-last', 'rows-mul-sets-first',
-           'rows-add-bound-skip')
+           'rows-add-bound-skip', 'rows-pow-key-same', 'rows-pow-times-skip', 'rows-pow-head-any',
+           'rows-pow-irrational-skip', 'rows-pow-ipi-skip', 'rows-pow-unit-drop', 'rows-pow-of-constant-skip')
 COMMON = [None]
 
 
