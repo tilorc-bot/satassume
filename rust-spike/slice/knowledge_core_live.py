@@ -445,7 +445,23 @@ def install(shadow, counts, fault_cls, mismatch):
             counts['shadow:direct:' + name + ':split'] += 1
         # `_quotient_templates`: Rust shows its shape `(a, v, v**k)` or None, as the shell's shadow compares (facts' result
         # is a template object; the facts after the shape are Common::facts, shared with Python's path).
-        theirs = _quotient_shape_py(args) if name == '_quotient_templates' else py[name](args)
+        # 6g(c3): `_pow_bound_templates` shows `(c0, c1, u, bound indices)`, compared as the shell's shadow does; `ipi_split` is
+        # Python's `_pi_split(arg, True)`; `ipi_rules` collects Python's rows through its `rule`; the two-constant and
+        # three-argument shells get their args as a tuple.
+        if name == '_quotient_templates':
+            theirs = _quotient_shape_py(args)
+        elif name == '_pow_bound_templates':
+            ours = None if ours is None else tuple(ours[:3]) + ([core._INT_BOUNDS[i][0] for i in ours[3]],)
+            theirs = _pow_bound_py(args)
+        elif name == 'ipi_split':
+            theirs = py['_pi_split'](args, True)
+        elif name == 'ipi_rules':
+            theirs = []
+            py['ipi_rules'](lambda p, k: theirs.append((p, k)), *args)
+        elif name in ('irrational_root', '_unit_power_units'):
+            theirs = py[name](*args)
+        else:
+            theirs = py[name](args)
         mismatch('core:' + name, args, 'result', ours, theirs)
     if shadow:
         SHADOW_SPLIT[0] = shadow_split
