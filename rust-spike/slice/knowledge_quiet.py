@@ -101,7 +101,11 @@ def rust(wl, limit):
     import term_live as T
     K.install()
     check = E.Engine._build_context.__code__
-    cons = A._consistent.__code__
+    # 5c8: under Rust's relevance `A._consistent` is a builtin with no frame, so a raise inside Rust's `_consistent` isn't
+    # found here and prints as not reached (never a pass); the `consistent-fault` plant covers that site. Python's code
+    # object is kept so SLICE_RELEVANCE=py runs as before.
+    import session_live
+    cons = getattr(A._consistent, '__code__', None) or session_live.PY_RELEVANCE['_consistent'].__code__
     src = open(check.co_filename).read().splitlines()
     line = next(i + 1 for i in range(check.co_firstlineno, len(src)) if "self._complete_check(s, s.assumption_lits())" in src[i])
 
