@@ -17,6 +17,68 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 
+def shadow_install(counts):
+    """Wrap Rust's `facts`/`units` wherever knowledge_common_live bound them: each call also runs Python's function on a
+    private cache, and the two results are compared field by field."""
+    import knowledge_common_live as K
+    from satassume.knowledge.templates import _common as C
+    rust_c = K.COMMON[0]
+    import importlib
+    import types
+    src = importlib.import_module("satassume.knowledge.templates._common")
+    # Python's `facts`/`units` from the source file, over a copy of the module's namespace with a private _CACHE
+    ns = dict(src.__dict__)
+    ns["_CACHE"] = {}
+    import ast
+    tree = ast.parse(open(src.__file__).read())
+    mod = ast.Module(body=[d for d in tree.body if isinstance(d, ast.FunctionDef) and d.name in ("facts", "units")],
+                     type_ignores=[])
+    exec(compile(mod, src.__file__, "exec"), ns)
+    FIELDS = ("rules", "node", "nobjs", "complete", "clauses", "used", "child_preds", "wide")
+    shown = [0]
+
+    def fields(c):
+        return (c.objs,) + tuple(getattr(c.pattern, f, None) for f in FIELDS)
+
+    def wrap(n):
+        rust_f, py_f = getattr(rust_c, n), ns[n]
+
+        def shadowed(*a):
+            try:
+                r = rust_f(*a)
+            except C.TemplateKeyError as e:
+                r = e
+            if K.COMMON[0] is None or __import__("term_live").current() is None or \
+                    __import__("term_live").current().kept is not None:
+                if isinstance(r, Exception):
+                    raise r
+                return r
+            try:
+                p = py_f(*a)
+            except C.TemplateKeyError as e:
+                p = e
+            counts[f"shadow:{n}"] += 1
+            same = (type(r) is type(p)) if isinstance(r, Exception) or isinstance(p, Exception) else fields(r) == fields(p)
+            if not same:
+                counts[f"shadow:diff:{n}"] += 1
+                if shown[0] < 5:
+                    shown[0] += 1
+                    print(f"SHADOW DIFF {n} key={a[0]!r}", flush=True)
+            if isinstance(r, Exception):
+                raise r
+            return r
+        return shadowed
+
+    for n in ("facts", "units"):
+        rf = getattr(rust_c, n)
+        w = wrap(n)
+        for m in list(sys.modules.values()):
+            d = getattr(m, "__dict__", None)
+            if d is not None and n in d and d[n] == rf and m is not ns:
+                d[n] = w
+                counts[f"shadow:bound:{n}"] += 1
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("wl", nargs="?", default="dev")
@@ -24,6 +86,9 @@ def main():
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--trace", help="comma-separated file basenames under knowledge/templates: count every Python call "
                     "into them per pass (sys.setprofile), by function and caller file")
+    ap.add_argument("--shadow", action="store_true", help="6d: compare each Rust `facts`/`units` result with Python's "
+                    "own function on a private cache (same pattern fields, objects and TemplateKeyError); "
+                    "differences counted as shadow:diff:<name> and the first 5 printed")
     args = ap.parse_args()
 
     import p_install
@@ -44,6 +109,8 @@ def main():
 
     counts = collections.Counter()
     cur = [0]
+    if args.shadow:
+        shadow_install(counts)
     init = os.path.abspath(TP.__file__)
 
     def wrap(owner, name, static=False, by_caller=False):
@@ -103,7 +170,9 @@ def main():
         if os.path.dirname(fn) == tdir and os.path.basename(fn) in traced:
             b = frame.f_back
             who = "?" if b is None else os.path.basename(b.f_code.co_filename)
-            counts[f"pass{cur[0]}:trace:{os.path.basename(fn)}:{co.co_qualname}<-{who}"] += 1
+            q = term_live.current()
+            why = "no-query" if q is None else "query" if q.kept is None else "kept:" + q.kept
+            counts[f"pass{cur[0]}:trace:{os.path.basename(fn)}:{co.co_qualname}<-{who}[{why}]"] += 1
     if traced:
         sys.setprofile(prof)
     for p in range(1, args.passes + 1):
@@ -127,6 +196,12 @@ def main():
             d.clear_counts()
     print("dispatch installed:", knowledge_live.installed(), "COUNTS:",
           {k: v for k, v in knowledge_live.COUNTS.items() if k.startswith(("registry", "fault"))})
+    import knowledge_common_live
+    c = knowledge_common_live.COMMON[0]
+    print("common:", dict(sorted((c.counts() if c is not None else {}).items())))
+    print("knowledge COUNTS:", dict(sorted((k, v) for k, v in knowledge_live.COUNTS.items()
+                                           if k.startswith(("core:", "kept", "py:kept", "fault", "common")))))
+    print("term_live kept:", dict(sorted((k, v) for k, v in term_live.COUNTS.items() if k.startswith("kept"))))
     print("convert in sys.modules:", "convert" in sys.modules,
           getattr(sys.modules.get("convert"), "_may_be_nan", None) is mbn)
     for k in sorted(counts):

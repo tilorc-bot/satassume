@@ -281,6 +281,13 @@ impl Common {
         PLANT_FIRED.with(|c| c.set(0));
     }
 
+    /// `Compiled(objs, pattern)`, made as `facts`/`units` make theirs (`__new__`, slots set), for knowledge_live's
+    /// `rust_compiled` (the symbol/constant/value templates' result).
+    fn make_compiled<'py>(&self, py: Python<'py>, objs: &Bound<'py, PyAny>, pat: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+        self.bump("common:compiled");
+        self.compiled(py, objs, pat)
+    }
+
     /// `_common.facts(key, gen, consts, objs, node)`.
     fn facts<'py>(
         &self,

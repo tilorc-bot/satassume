@@ -289,7 +289,8 @@ def install(shadow=False, data=None):
             pat.clauses = pat.clauses[:-1]
         if shadow:
             _compare(kind, value, pat, py().pattern)
-        return Compiled((obj,), pat)
+        c = knowledge_common_live.COMMON[0]
+        return Compiled((obj,), pat) if c is None else c.make_compiled((obj,), pat)
 
     def template(py, kind, is_symbol, python=None):
         python = python or py
