@@ -432,12 +432,13 @@ pub(crate) fn core_visit(s: &Bound<'_, PyAny>, node: &Bound<'_, PyAny>, b: i32, 
     if !sl.getattr(intern!(p, "CENSUS"))?.is_none() {
         sl.getattr(intern!(p, "_census"))?.call1((node,))?;
     }
+    // step 5c10c: `_constructing` is Rust-native (engmemo.rs slot 9), reached directly
     let constructing = s.getattr(intern!(p, "engine"))?.getattr(intern!(p, "_constructing"))?;
-    constructing.call_method1(intern!(p, "add"), (node,))?;
+    crate::engmemo::set_add(&constructing, node)?;
     // by name, as Python's `Session.node` calls `self._visit`: the class's is Rust's (`ses_visit`); a test's instance override
     // (test_session_limits.py `_object_case`) is honoured
     let r = s.call_method1(intern!(p, "_visit"), (node, b, demanded)).map(|_| ());
-    constructing.call_method1(intern!(p, "discard"), (node,))?;
+    crate::engmemo::set_discard(&constructing, node)?;
     r
 }
 

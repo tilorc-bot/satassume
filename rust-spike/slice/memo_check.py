@@ -31,7 +31,9 @@ def _h(x):
 #: `em_order` (insertion order: compare under one PYTHONHASHSEED).
 #: Step 5c10b: `_failed`, `_verdict`, `_context_sessions` (context.rs; engmemo slots 5-7) join them.
 CTXMEMOS = ("_failed", "_verdict", "_context_sessions")
-ENGMEMOS = ("_kids", "_qcones", "_glue_adapters", "_xbasis", "splits") + CTXMEMOS
+#: Step 5c10c: `_cones` and `_constructing` (budget.rs cone rows; engmemo slots 8-9) join them (`_constructing` holds `None` values).
+CONEMEMOS = ("_cones", "_constructing")
+ENGMEMOS = ("_kids", "_qcones", "_glue_adapters", "_xbasis", "splits") + CTXMEMOS + CONEMEMOS
 
 
 def _canon(x):
@@ -56,6 +58,9 @@ def engmemo_rows(engine):
     for n in ENGMEMOS:
         c = getattr(engine, n)
         glue = n == "_glue_adapters"
+        if n == "_constructing":    # a set on Python, a map to None on Rust (5c10c): its members, sorted (a set's order isn't read)
+            out.append((n, sorted((_canon(k), "None") for k in list(c))))
+            continue
         out.append((n, [(_canon(k), type(v).__name__ if glue else _canon(v)) for k, v in list(c.items())]))
     return out
 
@@ -95,6 +100,8 @@ def engmemo_view_ok(engine):
     for n in ENGMEMOS:
         c = getattr(engine, n)
         if n in CTXMEMOS and not __import__("session_live").context_native():
+            continue
+        if n in CONEMEMOS and not getattr(__import__("session_live"), "cones_native", lambda: False)():
             continue
         if type(c).__name__ != "EngineMemo":
             bad.append(f"{n}: {type(c).__name__}")
@@ -197,13 +204,14 @@ def main():
     if "snapshot" in r:
         left += [f"map:{t[0]}" for t in sa_solver.memo_snapshot() if t[3]]
     if "em_view_bad" in r:
-        left += [f"em:{n}" for n in ENGMEMOS if len(sa_solver.em_snapshot(getattr(eng, n))[2])]
+        left += [f"em:{n}" for n in ENGMEMOS if type(getattr(eng, n)).__name__ == "EngineMemo"
+                 and len(sa_solver.em_snapshot(getattr(eng, n))[2])]
     if r.get("fc_view_bad") == []:
         left += [f"fc:{n}" for n in FACTCACHES if len(sa_solver.fc_snapshot(getattr(eng, n))[3])]
     r["cleared"] = left
     if mode == "rust":      # step 5c10a: the fact caches' counters, the plant's firings, the refusals `_Mark` rolled back
         c = session_live.counts()
-        r["counts"] = {k: v for k, v in c.items() if v and k.startswith(("fc:", "em:"))}
+        r["counts"] = {k: v for k, v in c.items() if v and k.startswith(("fc:", "em:", "bud:"))}
         r["fired"] = c.get("rel:plant_fired", 0)
         r["refused"] = term_live.COUNTS["refused"]
     r["rerun_same"] = run(pairs[:200]) == ans[:200]

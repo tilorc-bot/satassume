@@ -14,7 +14,7 @@ use pyo3::types::{PyBool, PyDict, PyList, PySet, PyTuple};
 use crate::compile::{self, block_lits, Cx, Def, Kind, Need, F, R};
 use crate::formula_py::PyP;
 
-const NAMES: [&str; 288] = [
+const NAMES: [&str; 301] = [
     "py:var", "py:dvar", "py:node", "py:compile", "py:literal", "py:table", "rs:visit", "rs:add_clause", "rs:ensure_vars",
     "rs:def_implications", "rs:neg_shared", "join", "rs:emit_callback", "refuse:depth", "refuse:convert", "refuse:object", "second:visit", "custom:own",
     "link:hit", "link:resolved", "link:none", "link:no_table", "link:second", "link:no_node",
@@ -63,6 +63,10 @@ const NAMES: [&str; 288] = [
     "em:py_failed", "em:py_verdict", "em:py_ctxs", "ctx:context_session", "ctx:build_memoized", "ctx:build_context",
     "ctx:verdict", "ctx:complete_check", "ctx:cb_check_version", "ctx:cb_fresh_session", "ctx:cb_helpers", "ctx:py_stats",
     "ctx:caught", "ctx:cb_patched", "ctx:failed_hit", "ctx:verdict_hit", "ctx:fallback",
+    // step 5c10c (budget.rs cone rows, engmemo.rs slots 8-9)
+    "em:py_cones", "em:py_constructing", "bud:struct", "bud:cone_info", "bud:drop_cones", "bud:cb_templates", "bud:cb_ext",
+    "bud:struct_wide", "bud:kids_hit", "bud:cones_hit",
+    "bud:py_struct", "bud:py_cone_info", "bud:py_drop_cones",
 ];
 const VAR: usize = 0;
 const DVAR: usize = 1;
@@ -370,6 +374,27 @@ pub(crate) const CTX_CB_PATCHED: usize = 284;
 pub(crate) const CTX_FAILED_HIT: usize = 285;
 pub(crate) const CTX_VERDICT_HIT: usize = 286;
 pub(crate) const CTX_FALLBACK: usize = 287;
+/// Step 5c10c: a Python call into `_cones`' or `_constructing`'s view (a crossing): `is_`/`is_many` (`_cones.get`,
+/// `node in _constructing`, 5c10d), `_Mark.add`/`rollback` (wiring, the state step), the tests and the registry.
+pub(crate) const EM_PY_CONES: usize = 288;
+pub(crate) const EM_PY_CONSTRUCTING: usize = 289;
+/// The cone rows run in Rust (budget.rs): `_struct`, `_cone_info`, `_drop_cones`.
+pub(crate) const BUD_STRUCT: usize = 290;
+pub(crate) const BUD_CONE_INFO: usize = 291;
+pub(crate) const BUD_DROP_CONES: usize = 292;
+/// `_struct`'s callbacks: the engine's `clause_templates`/`templates` (knowledge, Python), and the extensions'
+/// `facts_for`/`has_node_facts`/`node_facts` (knowledge.extensions, Python).
+pub(crate) const BUD_CB_TEMPLATES: usize = 293;
+pub(crate) const BUD_CB_EXT: usize = 294;
+/// `_struct`'s wide-sum guard (#180 C-WIDEADD) taken; `_kids`/`_cones` hits (for reach).
+pub(crate) const BUD_STRUCT_WIDE: usize = 295;
+pub(crate) const BUD_KIDS_HIT: usize = 296;
+pub(crate) const BUD_CONES_HIT: usize = 297;
+/// The cone rows entered from Python (`is_`, `is_many`, `_is_custom`, `_settings_changed`, `_check_version`, the registry, tests),
+/// against the totals above, which count Rust's own calls too (`_union`, `_cone_info`'s walk).
+pub(crate) const BUD_PY_STRUCT: usize = 298;
+pub(crate) const BUD_PY_CONE_INFO: usize = 299;
+pub(crate) const BUD_PY_DROP_CONES: usize = 300;
 
 /// Deeper formulas compile on Python, over this same table. Python's own limit depends on the caller's stack, so it isn't
 /// reproduced: its deepest shape is `Implies`, 3 frames a level (first failure at depth 330 from a bare stack, limit 1000), so
@@ -377,7 +402,7 @@ pub(crate) const CTX_FALLBACK: usize = 287;
 const FORMULA_DEPTH: u32 = 64;
 
 thread_local! {
-    static COUNTS: [Cell<u64>; 288] = const { [const { Cell::new(0) }; 288] };
+    static COUNTS: [Cell<u64>; 301] = const { [const { Cell::new(0) }; 301] };
     /// Each session's serial, for the link's memo: a pointer could alias a dead session's.
     static SERIAL: Cell<u64> = const { Cell::new(0) };
 }

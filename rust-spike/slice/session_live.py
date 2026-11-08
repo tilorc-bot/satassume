@@ -723,13 +723,15 @@ def _install_glue():
 
 
 #: Step 5c7: the discovery budget's stateless `Engine` rows `_union` and `_within_budget` run in `budget.rs`; 5c9c adds
-#: `_query_cone` with its container `_qcones` (engmemo.rs). The cone rows left (`_cone_info`, `_struct`) stay Python's until 5c10c
-#: moves their containers, and Rust calls them back by name (`bud:cb_*`). SLICE_BUDGET=py puts Python's back. Python's own copies, for a budget that isn't an int.
+#: `_query_cone` with its container `_qcones` (engmemo.rs); 5c10c adds `_struct`, `_cone_info` and `_drop_cones` with their containers
+#: `_cones` and `_constructing` (engmemo.rs slots 8-9, `cones_native`). SLICE_BUDGET=py puts Python's back. Python's own copies, for a
+#: budget that isn't an int.
 #: `_over_budget` and `_note_budget` write `last_budget_limited` and `stats` (5c10 containers), so by the planner's inventory
 #: ruling (8 Nov ~06:22) they go to 5c10d: their Rust code (`bud_over_budget`, `bud_note_budget`) stays in budget.rs, unwired
 #: unless SLICE_BUDGET_FLAGS=rust (not a landing configuration).
 PY_BUDGET = {}
-_BUDGET_METHODS = {'_union': 'bud_union', '_within_budget': 'bud_within_budget', '_query_cone': 'bud_query_cone'}
+_BUDGET_METHODS = {'_union': 'bud_union', '_within_budget': 'bud_within_budget', '_query_cone': 'bud_query_cone',
+                   '_struct': 'bud_struct', '_cone_info': 'bud_cone_info', '_drop_cones': 'bud_drop_cones'}
 if os.environ.get('SLICE_BUDGET_FLAGS') == 'rust':
     _BUDGET_METHODS.update(_over_budget='bud_over_budget', _note_budget='bud_note_budget')
 _BUDGET_PLANTS = ('union-skip-overlap', 'within-no-link', 'over-budget-no-flag', 'note-budget-keep-flag')
@@ -804,6 +806,15 @@ _MEMO_PLANTS = ('memo-view-drop', 'memo-clear-skip', 'memo-restamp-no-stamp', 'm
 ENGMEMO_SLOTS = ('_kids', '_qcones', '_glue_adapters', '_xbasis', 'splits')
 #: Step 5c10b: `_failed`, `_verdict`, `_context_sessions` are slots 5-7 when the context rows are Rust's (`context_native`).
 CTX_SLOTS = ('_failed', '_verdict', '_context_sessions')
+#: Step 5c10c: `_cones` and `_constructing` are slots 8-9 when the cone rows are Rust's (`cones_native`).
+CONE_SLOTS = ('_cones', '_constructing')
+ALL_SLOTS = ENGMEMO_SLOTS + CTX_SLOTS + CONE_SLOTS
+
+
+def cones_native():
+    """Step 5c10c: whether `_cones` and `_constructing` are Rust-native, with the cone rows (SLICE_CONES, default rust)."""
+    return all(os.environ.get(k, 'rust') == 'rust' for k in ('SLICE_SESSION', 'SLICE_MEMOS', 'SLICE_ENGMEMOS', 'SLICE_BUDGET',
+                                                             'SLICE_CONES'))
 
 
 def context_native():
@@ -819,6 +830,10 @@ CTX_RUST = {}
 _CTX_PLANTS = ('ctx-verdict-clear-skip', 'ctx-failed-clear-skip', 'ctx-failed-no-memo', 'ctx-verdict-no-bound',
                'ctx-session-inconsistent-pass', 'ctx-build-no-fallback', 'ctx-build-no-link', 'ctx-verdict-skip-budget',
                'ctx-check-no-escalate', 'ctx-check-no-truncated', 'ctx-check-raise', 'ctx-sessions-store')
+#: Step 5c10c (budget.rs cone rows, engmemo.rs slots 8-9; relations_core.rs 223-230). 223 is the inventory's planted bug (a node
+#: left in `_constructing`); 228 and 229 are for test_cones_core.py only.
+_CONE_PLANTS = ('cn-discard-skip', 'cone-struct-weight-one', 'cone-info-over-fits', 'cone-drop-skip-cones', 'em-cones-store-drop',
+                'cone-kids-no-bound', 'cone-cones-no-bound', 'cone-struct-wide-skip')
 
 
 def _install_context():
@@ -913,10 +928,10 @@ def _install_engmemos():
     harness's `eng.splits = AnswerMemo(n)`) make Rust-native maps (engmemo.rs). Returns the undo."""
     E = engine.Engine
     saved = {n: E.__dict__[n] for n in ENGMEMO_SLOTS if n in E.__dict__}
-    slots = ENGMEMO_SLOTS + (CTX_SLOTS if context_native() else ())
+    slots = ENGMEMO_SLOTS + (CTX_SLOTS if context_native() else ()) + (CONE_SLOTS if cones_native() else ())
     saved.update({n: E.__dict__[n] for n in slots if n in E.__dict__})
-    for i, n in enumerate(slots):
-        setattr(E, n, sa_solver.MemoSlot(i))
+    for n in slots:
+        setattr(E, n, sa_solver.MemoSlot(ALL_SLOTS.index(n)))
 
     def undo():
         for n in slots:
@@ -1116,7 +1131,8 @@ def from_env():
             PLANT[0] = os.environ['SLICE_SESSION_PLANT']
             if PLANT[0] in _REL_PLANTS or PLANT[0] in _DISC_PLANTS or PLANT[0] in _LOOP_PLANTS or PLANT[0] in _QUERY_PLANTS \
                     or PLANT[0] in _SCOPE_PLANTS or PLANT[0] in _GLUE_PLANTS or PLANT[0] in _BUDGET_PLANTS \
-                    or PLANT[0] in _RELEVANCE_PLANTS or PLANT[0] in _MEMO_PLANTS or PLANT[0] in _CTX_PLANTS:
+                    or PLANT[0] in _RELEVANCE_PLANTS or PLANT[0] in _MEMO_PLANTS or PLANT[0] in _CTX_PLANTS \
+                    or PLANT[0] in _CONE_PLANTS:
                 sa_solver.rel_plant(PLANT[0])
         return install()
     return None

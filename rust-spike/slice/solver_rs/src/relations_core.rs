@@ -308,6 +308,23 @@ pub(crate) const CTX_CHECK_NO_TRUNCATED: u8 = 220;
 pub(crate) const CTX_CHECK_RAISE: u8 = 221;
 /// `_context_session` keeps the session in `_context_sessions`.
 pub(crate) const CTX_SESSIONS_STORE: u8 = 222;
+/// Step 5c10c (budget.rs cone rows, engmemo.rs slots 8-9). The inventory's planted bug: a node left in `_constructing`
+/// (its `discard`, from `core_visit` or `_struct`, keeps the node).
+pub(crate) const CN_DISCARD_SKIP: u8 = 223;
+/// `_struct` gives weight 1 to a node with both compiled patterns and formulas.
+pub(crate) const CONE_STRUCT_WEIGHT_ONE: u8 = 224;
+/// `_cone_info` returns the cone of a walk that went over the budget as if it fit.
+pub(crate) const CONE_INFO_OVER_FITS: u8 = 225;
+/// `_drop_cones` leaves `_cones` as it is.
+pub(crate) const CONE_DROP_SKIP_CONES: u8 = 226;
+/// The `_cones` map drops a store.
+pub(crate) const EM_CONES_STORE_DROP: u8 = 227;
+/// `_struct` doesn't empty `_kids` at 200,000 entries (test_cones_core.py only).
+pub(crate) const CONE_KIDS_NO_BOUND: u8 = 228;
+/// `_cone_info` doesn't empty `_cones` at 100,000 entries (test_cones_core.py only).
+pub(crate) const CONE_CONES_NO_BOUND: u8 = 229;
+/// `_struct` skips the wide-sum guard (#180 C-WIDEADD).
+pub(crate) const CONE_STRUCT_WIDE_SKIP: u8 = 230;
 
 #[pyfunction]
 fn rel_install(term_live: Py<PyAny>, relations: Py<PyAny>, euf_adapter: Py<PyAny>, fault: Py<PyAny>) {
@@ -505,6 +522,14 @@ fn rel_plant(name: Option<&str>) -> PyResult<()> {
         Some("ctx-check-no-truncated") => CTX_CHECK_NO_TRUNCATED,
         Some("ctx-check-raise") => CTX_CHECK_RAISE,
         Some("ctx-sessions-store") => CTX_SESSIONS_STORE,
+        Some("cn-discard-skip") => CN_DISCARD_SKIP,
+        Some("cone-struct-weight-one") => CONE_STRUCT_WEIGHT_ONE,
+        Some("cone-info-over-fits") => CONE_INFO_OVER_FITS,
+        Some("cone-drop-skip-cones") => CONE_DROP_SKIP_CONES,
+        Some("em-cones-store-drop") => EM_CONES_STORE_DROP,
+        Some("cone-kids-no-bound") => CONE_KIDS_NO_BOUND,
+        Some("cone-cones-no-bound") => CONE_CONES_NO_BOUND,
+        Some("cone-struct-wide-skip") => CONE_STRUCT_WIDE_SKIP,
         Some(x) => return Err(PyValueError::new_err(format!("no plant {x}"))),
     };
     PLANT.store(v, Relaxed);

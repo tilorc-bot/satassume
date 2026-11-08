@@ -17,11 +17,18 @@
 //! - **Rust readers** (`get`, `set`, `put`, `len`, `clear` below) reach the map directly. A container that isn't an
 //!   `EngineMemo` (ref.py's engine, a test's dict passed as `memo`) is read through its own Python methods, counted
 //!   `em:foreign`.
-//! - **Python readers left, each a counted crossing** (`em:py_<container>` per Python call into a map's methods): Python's
-//!   `_struct` reads and fills `_kids` and passes `_glue_adapters` to `glue_objects` (5c10c); `_drop_cones` clears
-//!   `_kids`, `_qcones`, `_glue_adapters` (5c10c); `_drop_set_memos` clears `splits` and `_xbasis` (5c10d); the registry
+//! - **Python readers left, each a counted crossing** (`em:py_<container>` per Python call into a map's methods): 5c9c's
+//!   crossing from Python's `_struct` and `_drop_cones` is gone (5c10c: both are Rust's, budget.rs, and reach the maps
+//!   directly); `_drop_set_memos` clears `splits` and `_xbasis` (5c10d); the registry
 //!   (`Engine.memos`: names, sizes, clear, items) and the tests read them as views. `_Mark` (term_live.py) skips them
 //!   (`native`), as it skips 5c9b's.
+//! - **Step 5c10c: `_cones` (slot 8) and `_constructing` (slot 9).** `_cones` is a map like the others. `_constructing` is a set
+//!   held as a map to `None` (Python's `set()` assigned by `Engine.__init__` converts the same way), with `add`/`discard`/`update`
+//!   for its Python writers; its order isn't read (a set's order isn't insertion order, and its only iterating readers, `_Mark`
+//!   and test_compile_loop_core, copy or sort it). Rust's `core_visit` and `_struct` reach both directly. Python readers left,
+//!   counted `em:py_cones`/`em:py_constructing`: `Engine.is_`/`is_many` (`self._cones.get(node)`, `node in self._constructing`)
+//!   until 5c10d; `_Mark.add`/`rollback` copy and restore
+//!   `_constructing` until the state step; Python's `Session.node` (SLICE_LOOP=py, a Python-backend path only).
 //! - **Test-only snapshot export:** `em_snapshot(memo)` reads a map's entries from the Rust map itself, not through the view's
 //!   methods, so memo_check can show the view and the map agree.
 use std::cell::RefCell;
@@ -32,18 +39,23 @@ use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PyString, PyTuple};
 
-use crate::relations_core::{planted, CTX_FAILED_CLEAR_SKIP, CTX_VERDICT_CLEAR_SKIP, EM_KIDS_SET_DROP, EM_QCONES_CLEAR_SKIP, EM_SLOT_NO_MAXSIZE, EM_SPLITS_NO_BOUND};
-use crate::session::{tick, EM_FOREIGN, EM_FULL, EM_KEY_EQ, EM_PY_GLUE, EM_PY_KIDS, EM_PY_QCONES, EM_PY_SPLITS, EM_PY_XBASIS, EM_SLOT_SET, EM_PY_FAILED, EM_PY_VERDICT, EM_PY_CTXS};
+use crate::relations_core::{planted, CN_DISCARD_SKIP, EM_CONES_STORE_DROP, CTX_FAILED_CLEAR_SKIP, CTX_VERDICT_CLEAR_SKIP, EM_KIDS_SET_DROP, EM_QCONES_CLEAR_SKIP, EM_SLOT_NO_MAXSIZE, EM_SPLITS_NO_BOUND};
+use crate::session::{tick, EM_FOREIGN, EM_FULL, EM_KEY_EQ, EM_PY_GLUE, EM_PY_KIDS, EM_PY_QCONES, EM_PY_SPLITS, EM_PY_XBASIS, EM_SLOT_SET, EM_PY_FAILED, EM_PY_VERDICT, EM_PY_CTXS, EM_PY_CONES, EM_PY_CONSTRUCTING};
 
 /// The containers, by slot: Python's attribute names.
-pub(crate) const SLOTS: [&str; 8] = ["_kids", "_qcones", "_glue_adapters", "_xbasis", "splits", "_failed", "_verdict", "_context_sessions"];
+pub(crate) const SLOTS: [&str; 10] =
+    ["_kids", "_qcones", "_glue_adapters", "_xbasis", "splits", "_failed", "_verdict", "_context_sessions", "_cones", "_constructing"];
 pub(crate) const KIDS: u8 = 0;
 pub(crate) const QCONES: u8 = 1;
 pub(crate) const SPLITS: u8 = 4;
 /// Step 5c10b (context.rs).
 pub(crate) const FAILED: u8 = 5;
 pub(crate) const VERDICT: u8 = 6;
-const PY_TICK: [usize; 8] = [EM_PY_KIDS, EM_PY_QCONES, EM_PY_GLUE, EM_PY_XBASIS, EM_PY_SPLITS, EM_PY_FAILED, EM_PY_VERDICT, EM_PY_CTXS];
+/// Step 5c10c.
+pub(crate) const CONES: u8 = 8;
+pub(crate) const CONSTRUCTING: u8 = 9;
+const PY_TICK: [usize; 10] =
+    [EM_PY_KIDS, EM_PY_QCONES, EM_PY_GLUE, EM_PY_XBASIS, EM_PY_SPLITS, EM_PY_FAILED, EM_PY_VERDICT, EM_PY_CTXS, EM_PY_CONES, EM_PY_CONSTRUCTING];
 
 /// A Python dict over Python keys, held in Rust, in insertion order.
 #[derive(Default)]
@@ -95,6 +107,9 @@ impl EngineMemo {
 
     /// `self[k] = v`: an equal key keeps its place and its stored key, as a dict's does.
     pub(crate) fn store(&self, k: &Bound<'_, PyAny>, v: &Bound<'_, PyAny>) -> PyResult<()> {
+        if self.slot == CONES && planted(EM_CONES_STORE_DROP) {
+            return Ok(());
+        }
         let h = k.hash()?;
         let at = self.find(k, h)?.map(|(i, _)| i);
         let mut m = self.map.borrow_mut();
@@ -122,6 +137,30 @@ impl EngineMemo {
 
     pub(crate) fn len(&self) -> usize {
         self.map.borrow().entries.len()
+    }
+
+    /// Step 5c10c, `_constructing`'s `discard`: removes the entry equal to `k`, if any (the set holds the nodes being built, a
+    /// handful, so the index is rebuilt). The inventory's planted bug keeps it.
+    pub(crate) fn remove(&self, k: &Bound<'_, PyAny>) -> PyResult<()> {
+        if self.slot == CONSTRUCTING && planted(CN_DISCARD_SKIP) {
+            return Ok(());
+        }
+        let h = k.hash()?;
+        let Some((i, _)) = self.find(k, h)? else { return Ok(()) };
+        let mut m = self.map.borrow_mut();
+        if i >= m.entries.len() {
+            return Ok(());
+        }
+        let (hk, _) = m.entries.remove(i);
+        drop(hk);
+        let mut index: HashMap<isize, Vec<usize>> = HashMap::new();
+        let p = k.py();
+        let hs: Vec<PyResult<isize>> = m.entries.iter().map(|(kk, _)| kk.bind(p).hash()).collect();
+        for (j, hj) in hs.into_iter().enumerate() {
+            index.entry(hj?).or_default().push(j);
+        }
+        m.index = index;
+        Ok(())
     }
 
     pub(crate) fn wipe(&self) {
@@ -224,6 +263,24 @@ impl EngineMemo {
     fn __iter__<'py>(&self, p: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         Ok(self.keys(p)?.try_iter()?.into_any())
     }
+    /// Step 5c10c: `_constructing`'s set methods, for its Python writers (Python's `Session.node`, `_Mark.rollback`).
+    fn add(&self, k: &Bound<'_, PyAny>) -> PyResult<()> {
+        self.py();
+        if self.lookup(k)?.is_some() {
+            return Ok(());
+        }
+        self.store(k, &k.py().None().into_bound(k.py()))
+    }
+    fn discard(&self, k: &Bound<'_, PyAny>) -> PyResult<()> {
+        self.py();
+        self.remove(k)
+    }
+    fn update(&self, it: &Bound<'_, PyAny>) -> PyResult<()> {
+        for k in it.try_iter()? {
+            self.add(&k?)?;
+        }
+        Ok(())
+    }
     fn __repr__(&self) -> String {
         format!("<EngineMemo {} {}/{}>", SLOTS[self.slot as usize], self.len(), self.maxsize.map_or("-".to_string(), |n| n.to_string()))
     }
@@ -248,6 +305,11 @@ fn convert<'py>(p: Python<'py>, slot: u8, value: &Bound<'py, PyAny>) -> PyResult
     if let Ok(d) = value.cast::<PyDict>() {
         for (k, v) in d.iter() {
             m.store(&k, &v)?;
+        }
+    } else if let Ok(st) = value.cast::<pyo3::types::PySet>() {
+        // `_constructing`'s `set()` (step 5c10c)
+        for k in st.iter() {
+            m.store(&k, &p.None().into_bound(p))?;
         }
     }
     Bound::new(p, m)
@@ -318,6 +380,35 @@ pub(crate) fn put(c: &Bound<'_, PyAny>, k: &Bound<'_, PyAny>, v: &Bound<'_, PyAn
     }
     tick(EM_FOREIGN);
     c.call_method1(intern!(c.py(), "put"), (k, v)).map(|_| ())
+}
+
+/// Step 5c10c: `_constructing`'s `add`, `discard` and `in` from Rust (`core_visit`, `_struct`).
+pub(crate) fn set_add(c: &Bound<'_, PyAny>, k: &Bound<'_, PyAny>) -> PyResult<()> {
+    if let Ok(m) = c.cast::<EngineMemo>() {
+        let m = m.borrow();
+        if m.lookup(k)?.is_none() {
+            m.store(k, &k.py().None().into_bound(k.py()))?;
+        }
+        return Ok(());
+    }
+    tick(EM_FOREIGN);
+    c.call_method1(intern!(c.py(), "add"), (k,)).map(|_| ())
+}
+
+pub(crate) fn set_discard(c: &Bound<'_, PyAny>, k: &Bound<'_, PyAny>) -> PyResult<()> {
+    if let Ok(m) = c.cast::<EngineMemo>() {
+        return m.borrow().remove(k);
+    }
+    tick(EM_FOREIGN);
+    c.call_method1(intern!(c.py(), "discard"), (k,)).map(|_| ())
+}
+
+pub(crate) fn contains(c: &Bound<'_, PyAny>, k: &Bound<'_, PyAny>) -> PyResult<bool> {
+    if let Ok(m) = c.cast::<EngineMemo>() {
+        return Ok(m.borrow().lookup(k)?.is_some());
+    }
+    tick(EM_FOREIGN);
+    c.contains(k)
 }
 
 /// The first entry's value (plant `em-xbasis-first` only).
