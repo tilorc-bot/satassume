@@ -14,7 +14,7 @@ use pyo3::types::{PyBool, PyDict, PyList, PySet, PyTuple};
 use crate::compile::{self, block_lits, Cx, Def, Kind, Need, F, R};
 use crate::formula_py::PyP;
 
-const NAMES: [&str; 178] = [
+const NAMES: [&str; 179] = [
     "py:var", "py:dvar", "py:node", "py:compile", "py:literal", "py:table", "rs:visit", "rs:add_clause", "rs:ensure_vars",
     "rs:def_implications", "rs:neg_shared", "join", "rs:emit_callback", "refuse:depth", "refuse:convert", "refuse:object", "second:visit", "custom:own",
     "link:hit", "link:resolved", "link:none", "link:no_table", "link:second", "link:no_node",
@@ -46,7 +46,7 @@ const NAMES: [&str; 178] = [
     "bud:cb_global", "bud:py_fallback",
     "bud:union_cone_none", "bud:union_over", "bud:union_partial", "bud:within_partial", "bud:within_false",
     "cf:elem_new", "cf:elem_py_read", "cf:elem_eq", "cf:elem_hash", "cf:elem_repr", "lra:memo_hit", "lra:memo_miss",
-    "cf:elem_sign",
+    "cf:elem_sign", "rel:elem_sign",
 ];
 const VAR: usize = 0;
 const DVAR: usize = 1;
@@ -244,6 +244,8 @@ pub(crate) const LRA_MEMO_HIT: usize = 175;
 pub(crate) const LRA_MEMO_MISS: usize = 176;
 /// Python's `constfield.sign` of the pyclass, answered on Rust (`Elem::sign`, as `Element.sign` on the Python backend).
 pub(crate) const CF_ELEM_SIGN: usize = 177;
+/// `_order_infinite`'s sign of a Rust Element coefficient, read on Rust (relations_core.rs; it was Python's `relations.sign`).
+pub(crate) const REL_ELEM_SIGN: usize = 178;
 
 /// Deeper formulas compile on Python, over this same table. Python's own limit depends on the caller's stack, so it isn't
 /// reproduced: its deepest shape is `Implies`, 3 frames a level (first failure at depth 330 from a bare stack, limit 1000), so
@@ -251,7 +253,7 @@ pub(crate) const CF_ELEM_SIGN: usize = 177;
 const FORMULA_DEPTH: u32 = 64;
 
 thread_local! {
-    static COUNTS: [Cell<u64>; 178] = const { [const { Cell::new(0) }; 178] };
+    static COUNTS: [Cell<u64>; 179] = const { [const { Cell::new(0) }; 179] };
     /// Each session's serial, for the link's memo: a pointer could alias a dead session's.
     static SERIAL: Cell<u64> = const { Cell::new(0) };
 }

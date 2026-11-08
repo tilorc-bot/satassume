@@ -546,6 +546,14 @@ fn rel_order_infinite<'py>(rel: &Bound<'py, PyAny>, var: i32, sides: &Bound<'py,
             }
             let (nonzero, positive) = if co.get_type().is(&fraction) {
                 (co.is_truthy()?, co.gt(0)?)
+            } else if let Ok(pe) = co.cast::<crate::constfield::PyElem>() {
+                // The Rust Element (an lra_* memo coefficient): its sign on Rust, as Python's `sign` gives Element.sign().
+                tick(session::REL_ELEM_SIGN);
+                match crate::constfield::Num::E(pe.borrow().e.clone()).sign() {
+                    Ok(sg) => (sg != 0, sg > 0),
+                    Err(e) if e.is_undecided() => return Ok(()),
+                    Err(e) => return Err(e.into()),
+                }
             } else {
                 match r.getattr(intern!(p, "sign"))?.call1((&co,)) {
                     Ok(sg) => (sg.is_truthy()?, sg.gt(0)?),
