@@ -14,7 +14,7 @@ use pyo3::types::{PyBool, PyDict, PyList, PySet, PyTuple};
 use crate::compile::{self, block_lits, Cx, Def, Kind, Need, F, R};
 use crate::formula_py::PyP;
 
-const NAMES: [&str; 301] = [
+const NAMES: [&str; 327] = [
     "py:var", "py:dvar", "py:node", "py:compile", "py:literal", "py:table", "rs:visit", "rs:add_clause", "rs:ensure_vars",
     "rs:def_implications", "rs:neg_shared", "join", "rs:emit_callback", "refuse:depth", "refuse:convert", "refuse:object", "second:visit", "custom:own",
     "link:hit", "link:resolved", "link:none", "link:no_table", "link:second", "link:no_node",
@@ -67,6 +67,7 @@ const NAMES: [&str; 301] = [
     "em:py_cones", "em:py_constructing", "bud:struct", "bud:cone_info", "bud:drop_cones", "bud:cb_templates", "bud:cb_ext",
     "bud:struct_wide", "bud:kids_hit", "bud:cones_hit",
     "bud:py_struct", "bud:py_cone_info", "bud:py_drop_cones",
+    "ent:is", "ent:is_many", "ent:decide", "ent:put_result", "ent:is_custom", "ent:ask", "ent:ask_inner", "ent:check_version", "ent:settings_changed", "ent:drop_set_memos", "ent:fresh_session", "ent:cb_noncomm", "ent:cb_gave_up", "ent:cb_scope", "ent:cb_basis", "st:rec_cache_hit", "st:rec_relevant", "st:rec_consistency_check", "st:rec_scope_miss", "st:rec_clear_flag", "st:rec_keep_flag", "st:py_read", "st:slot_set", "st:flag_set", "st:foreign", "st:mark",
 ];
 const VAR: usize = 0;
 const DVAR: usize = 1;
@@ -396,13 +397,41 @@ pub(crate) const BUD_PY_STRUCT: usize = 298;
 pub(crate) const BUD_PY_CONE_INFO: usize = 299;
 pub(crate) const BUD_PY_DROP_CONES: usize = 300;
 
+/// Step 5c10d (entry.rs): the query-entry rows run in Rust, one counter per row.
+pub(crate) const ENT_IS: usize = 301;
+pub(crate) const ENT_IS_MANY: usize = 302;
+pub(crate) const ENT_DECIDE: usize = 303;
+pub(crate) const ENT_PUT_RESULT: usize = 304;
+pub(crate) const ENT_IS_CUSTOM: usize = 305;
+pub(crate) const ENT_ASK: usize = 306;
+pub(crate) const ENT_ASK_INNER: usize = 307;
+pub(crate) const ENT_CHECK_VERSION: usize = 308;
+pub(crate) const ENT_SETTINGS_CHANGED: usize = 309;
+pub(crate) const ENT_DROP_SET_MEMOS: usize = 310;
+pub(crate) const ENT_FRESH_SESSION: usize = 311;
+pub(crate) const ENT_CB_NONCOMM: usize = 312;
+pub(crate) const ENT_CB_GAVE_UP: usize = 313;
+pub(crate) const ENT_CB_SCOPE: usize = 314;
+pub(crate) const ENT_CB_BASIS: usize = 315;
+pub(crate) const ST_REC_CACHE_HIT: usize = 316;
+pub(crate) const ST_REC_RELEVANT: usize = 317;
+pub(crate) const ST_REC_CONSISTENCY_CHECK: usize = 318;
+pub(crate) const ST_REC_SCOPE_MISS: usize = 319;
+pub(crate) const ST_REC_CLEAR_FLAG: usize = 320;
+pub(crate) const ST_REC_KEEP_FLAG: usize = 321;
+pub(crate) const ST_PY_READ: usize = 322;
+pub(crate) const ST_SLOT_SET: usize = 323;
+pub(crate) const ST_FLAG_SET: usize = 324;
+pub(crate) const ST_FOREIGN: usize = 325;
+pub(crate) const ST_MARK: usize = 326;
+
 /// Deeper formulas compile on Python, over this same table. Python's own limit depends on the caller's stack, so it isn't
 /// reproduced: its deepest shape is `Implies`, 3 frames a level (first failure at depth 330 from a bare stack, limit 1000), so
 /// 64 is below what Python reaches with up to about 800 frames already on the stack.
 const FORMULA_DEPTH: u32 = 64;
 
 thread_local! {
-    static COUNTS: [Cell<u64>; 301] = const { [const { Cell::new(0) }; 301] };
+    static COUNTS: [Cell<u64>; 327] = const { [const { Cell::new(0) }; 327] };
     /// Each session's serial, for the link's memo: a pointer could alias a dead session's.
     static SERIAL: Cell<u64> = const { Cell::new(0) };
 }

@@ -466,7 +466,7 @@ def ask(proposition, assumptions=True, engine: Optional[Engine] = None, *,
     # the adapters) is the one it was filled under.  An answer over the
     # discovery budget is not memoized, so a hit is never budget-limited
     # and ``last_budget_limited`` (cleared here) is the same warm or fresh
-    eng.last_budget_limited = False
+    eng._clear_budget_flag()
     key = None
     if isinstance(proposition, _Basic) and (assumptions is True or isinstance(assumptions, _Basic)):
         key = (proposition, assumptions)
@@ -475,7 +475,7 @@ def ask(proposition, assumptions=True, engine: Optional[Engine] = None, *,
             eng._check_version()
         r = memo.get(key, _MISS)
         if r is not _MISS:
-            eng.stats["cache_hits"] += 1
+            eng._record_cache_hit()
             return r
     r = _ask(proposition, assumptions, eng)
     if key is not None and not eng.last_budget_limited:
@@ -568,7 +568,7 @@ def _ask(proposition, assumptions, eng: Engine) -> Optional[bool]:
             # The answer also rests on that None: keep its budget flag.
             limited = eng.last_budget_limited
             r = _ask_general(proposition, assumptions, eng)
-            eng.last_budget_limited = eng.last_budget_limited or limited
+            eng._keep_budget_flag(limited)
             return r
     return _ask_general(proposition, assumptions, eng)
 
@@ -580,13 +580,13 @@ def _ask_general(proposition, assumptions, eng: Engine) -> Optional[bool]:
             if f is not assumptions:
                 # answered under the conjuncts connected to the query; the
                 # answer memo is shared by every set with the same part
-                eng.stats["relevant"] += 1
+                eng._record_relevant()
                 key = (proposition, f)
                 memo = eng.answers
                 r = memo.get(key, _MISS)
                 if r is not _MISS:
-                    eng.stats["cache_hits"] += 1
-                    eng.last_budget_limited = False     # never memoized
+                    eng._record_cache_hit()
+                    eng._clear_budget_flag()     # never memoized
                     return r
                 r = _engine_ask(proposition, f, eng)
                 if not eng.last_budget_limited:
@@ -1096,7 +1096,7 @@ def _consistent(a, eng: Engine) -> bool:
     (out of scope, a relation no theory reads, an error): the caller then
     answers under ``a`` as a whole, so whatever that does (None,
     ValueError) stays as it was."""
-    eng.stats["consistency_checks"] += 1
+    eng._record_consistency_check()
     try:
         g = _formula(a, bool(eng.relation_specs), True)
         if g is TRUE:
@@ -1111,7 +1111,7 @@ def _consistent(a, eng: Engine) -> bool:
 def _engine_ask(proposition, assumptions, eng: Engine) -> Optional[bool]:
     # the flag is the answer's: not left over from a query the relevance
     # layer made (Engine.is_ of a closed term), set by the engine call below
-    eng.last_budget_limited = False
+    eng._clear_budget_flag()
     rel = bool(eng.relation_specs)
     try:
         prop = _formula(proposition, rel)

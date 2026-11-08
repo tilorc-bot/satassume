@@ -7,7 +7,7 @@
 //! gone; `bud:cb_struct`/`bud:cb_cone_info` no longer fire. `_struct` still calls the knowledge layer's templates
 //! (`bud:cb_templates`) and the extensions (`bud:cb_ext`), and reads SymPy's `args`/`is_Add`/`is_Mul`/`is_Atom`/`is_number`
 //! of a cone object (conversion-layer reads).
-//! `stats` and `last_budget_limited` are the engine's public attributes and stay Python's.
+//! `stats` and `last_budget_limited` are Rust-owned since 5c10d (entry.rs `EngineStats`); `_over_budget`/`_note_budget` write them there.
 //! Module globals (`atoms_of`, `under_of`, `zero_twin`, `_kid`) are read from `satassume.engine` at the call.
 //! A budget that isn't an int (Python accepts any value) runs Python's own methods (`bud:py_fallback`).
 use pyo3::exceptions::PyAssertionError;
@@ -549,42 +549,51 @@ fn bud_within_budget<'py>(eng: &Bound<'py, PyAny>, proposition: &Bound<'py, PyAn
     }
 }
 
-/// `Engine._over_budget`: a query over the discovery budget, None, no session touched.
-#[pyfunction]
-fn bud_over_budget<'py>(eng: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+/// `Engine._over_budget`: a query over the discovery budget, None, no session touched. Step 5c10d: writes the Rust-owned
+/// flag and counter (entry.rs).
+pub(crate) fn over_budget<'py>(eng: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
     tick(BUD_OVER_BUDGET);
     let p = eng.py();
     if !planted(OVER_BUDGET_NO_FLAG) {
-        eng.setattr(intern!(p, "last_budget_limited"), true)?;
+        crate::entry::set_flag(eng, true)?;
     }
-    bump_limited(eng)?;
+    crate::entry::bump(eng, crate::entry::BUDGET_LIMITED, 1)?;
     Ok(p.None().into_bound(p))
 }
 
-fn bump_limited(eng: &Bound<'_, PyAny>) -> PyResult<()> {
-    let p = eng.py();
-    let stats = eng.getattr(intern!(p, "stats"))?;
-    let k = intern!(p, "budget_limited");
-    let v = stats.get_item(k)?;
-    stats.set_item(k, v.add(1)?)
+#[pyfunction]
+fn bud_over_budget<'py>(eng: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    over_budget(eng)
 }
 
 /// `Engine._note_budget`: the query passed `_within_budget`, so its session ran uncapped.
-#[pyfunction]
-fn bud_note_budget(eng: &Bound<'_, PyAny>, s: &Bound<'_, PyAny>) -> PyResult<()> {
+pub(crate) fn note_budget(eng: &Bound<'_, PyAny>, s: &Bound<'_, PyAny>) -> PyResult<()> {
     tick(BUD_NOTE_BUDGET);
     let p = eng.py();
-    let tr = intern!(p, "truncated");
-    if s.getattr(tr)?.is_truthy()? {
+    let truncated = s.getattr(intern!(p, "truncated"))?.is_truthy()?;
+    if truncated {
         return Err(PyAssertionError::new_err("a session of a query within the budget was truncated"));
     }
     if !planted(NOTE_BUDGET_KEEP_FLAG) {
-        eng.setattr(intern!(p, "last_budget_limited"), s.getattr(tr)?)?;
+        crate::entry::set_flag(eng, truncated)?;
     }
-    if s.getattr(tr)?.is_truthy()? {
-        bump_limited(eng)?;
+    if truncated || planted(crate::relations_core::NOTE_BUDGET_COUNT) {
+        crate::entry::bump(eng, crate::entry::BUDGET_LIMITED, 1)?;
     }
     Ok(())
+}
+
+#[pyfunction]
+fn bud_note_budget(eng: &Bound<'_, PyAny>, s: &Bound<'_, PyAny>) -> PyResult<()> {
+    note_budget(eng, s)
+}
+
+/// `self._cone_info(d)` from Rust (entry.rs): Python's for a budget that isn't an int, as `bud_cone_info`.
+pub(crate) fn cone_info_any<'py>(eng: &Bound<'py, PyAny>, d: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    match budget_of(eng)? {
+        Some(b) => cone_info(eng, d, b),
+        None => py_method(eng, "_cone_info")?.call1((eng, d)),
+    }
 }
 
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {

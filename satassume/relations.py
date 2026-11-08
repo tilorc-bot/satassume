@@ -904,7 +904,7 @@ class Relations:
                 # node fact, Extensions.node_facts) still engages it, and
                 # is counted (stats["scope_misses"])
                 if self.xfer is None and not self._want_transfer and s.engine.transfer:
-                    s.engine.stats["scope_misses"] += 1
+                    s.engine._record_scope_miss()
                     self._want_transfer = True
                 self._note_sides(a, 2)
                 var = s.table.custom.get(a)

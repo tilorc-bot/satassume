@@ -325,6 +325,47 @@ pub(crate) const CONE_KIDS_NO_BOUND: u8 = 228;
 pub(crate) const CONE_CONES_NO_BOUND: u8 = 229;
 /// `_struct` skips the wide-sum guard (#180 C-WIDEADD).
 pub(crate) const CONE_STRUCT_WIDE_SKIP: u8 = 230;
+/// Step 5c10d (entry.rs, query entry and counters).
+/// `is_` doesn't count a fact-cache hit in `stats`.
+pub(crate) const ENT_IS_NO_HIT_COUNT: u8 = 231;
+/// `is_many` counts one query fewer than it decides in its session.
+pub(crate) const ENT_IS_MANY_QUERIES_SHORT: u8 = 232;
+/// `_decide` doesn't escalate an incomplete session (goes to search).
+pub(crate) const ENT_DECIDE_NO_ESCALATE: u8 = 233;
+/// `_put_result` doesn't store the answer in the fact cache.
+pub(crate) const ENT_PUT_RESULT_NO_PUT: u8 = 234;
+/// `_is_custom` ignores the custom fact cache's facts.
+pub(crate) const ENT_IS_CUSTOM_NO_HIT: u8 = 235;
+/// `ask` doesn't clear `last_budget_limited` on entry.
+pub(crate) const ENT_ASK_NO_CLEAR_FLAG: u8 = 236;
+/// `_ask` doesn't count `theory_gave_up`.
+pub(crate) const ENT_ASK_NO_GAVE_UP: u8 = 237;
+/// `_check_version` doesn't sync the fact caches.
+pub(crate) const ENT_CHECK_VERSION_NO_SYNC: u8 = 238;
+/// `_settings_changed` doesn't clear the fact caches' stores.
+pub(crate) const ENT_SETTINGS_NO_CLEAR: u8 = 239;
+/// `_drop_set_memos` doesn't clear the answer memo.
+pub(crate) const ENT_DROP_MEMOS_KEEP_ANSWERS: u8 = 240;
+/// `_fresh_session` doesn't count the session.
+pub(crate) const ENT_FRESH_NO_COUNT: u8 = 241;
+/// The record method for sympy_api's cache hit is lost.
+pub(crate) const ST_CACHE_HIT_DROP: u8 = 242;
+/// The record method for sympy_api's relevant count is lost.
+pub(crate) const ST_RELEVANT_DROP: u8 = 243;
+/// `_consistent`'s count (relevance.rs) is lost.
+pub(crate) const ST_CONSISTENCY_DROP: u8 = 244;
+/// A scope miss is counted twice.
+pub(crate) const ST_SCOPE_MISS_DOUBLE: u8 = 245;
+/// The record method that clears `last_budget_limited` (sympy_api) doesn't.
+pub(crate) const ST_CLEAR_FLAG_SKIP: u8 = 246;
+/// The record method that keeps the constant's budget flag (sympy_api `_ask`) drops it.
+pub(crate) const ST_KEEP_FLAG_DROP: u8 = 247;
+/// The `stats` view lists `budget_limited` first (Python's order is the dict's).
+pub(crate) const ST_VIEW_ORDER: u8 = 248;
+/// The `last_budget_limited` view reads False always.
+pub(crate) const ST_FLAG_VIEW_STALE: u8 = 249;
+/// `_note_budget` counts `budget_limited` for an untruncated session.
+pub(crate) const NOTE_BUDGET_COUNT: u8 = 250;
 
 #[pyfunction]
 fn rel_install(term_live: Py<PyAny>, relations: Py<PyAny>, euf_adapter: Py<PyAny>, fault: Py<PyAny>) {
@@ -530,6 +571,26 @@ fn rel_plant(name: Option<&str>) -> PyResult<()> {
         Some("cone-kids-no-bound") => CONE_KIDS_NO_BOUND,
         Some("cone-cones-no-bound") => CONE_CONES_NO_BOUND,
         Some("cone-struct-wide-skip") => CONE_STRUCT_WIDE_SKIP,
+        Some("ent-is-no-hit-count") => ENT_IS_NO_HIT_COUNT,
+        Some("ent-is-many-queries-short") => ENT_IS_MANY_QUERIES_SHORT,
+        Some("ent-decide-no-escalate") => ENT_DECIDE_NO_ESCALATE,
+        Some("ent-put-result-no-put") => ENT_PUT_RESULT_NO_PUT,
+        Some("ent-is-custom-no-hit") => ENT_IS_CUSTOM_NO_HIT,
+        Some("ent-ask-no-clear-flag") => ENT_ASK_NO_CLEAR_FLAG,
+        Some("ent-ask-no-gave-up") => ENT_ASK_NO_GAVE_UP,
+        Some("ent-check-version-no-sync") => ENT_CHECK_VERSION_NO_SYNC,
+        Some("ent-settings-no-clear") => ENT_SETTINGS_NO_CLEAR,
+        Some("ent-drop-memos-keep-answers") => ENT_DROP_MEMOS_KEEP_ANSWERS,
+        Some("ent-fresh-no-count") => ENT_FRESH_NO_COUNT,
+        Some("st-cache-hit-drop") => ST_CACHE_HIT_DROP,
+        Some("st-relevant-drop") => ST_RELEVANT_DROP,
+        Some("st-consistency-drop") => ST_CONSISTENCY_DROP,
+        Some("st-scope-miss-double") => ST_SCOPE_MISS_DOUBLE,
+        Some("st-clear-flag-skip") => ST_CLEAR_FLAG_SKIP,
+        Some("st-keep-flag-drop") => ST_KEEP_FLAG_DROP,
+        Some("st-view-order") => ST_VIEW_ORDER,
+        Some("st-flag-view-stale") => ST_FLAG_VIEW_STALE,
+        Some("note-budget-count") => NOTE_BUDGET_COUNT,
         Some(x) => return Err(PyValueError::new_err(format!("no plant {x}"))),
     };
     PLANT.store(v, Relaxed);
@@ -2139,9 +2200,7 @@ fn rel_process<'py>(rel: &Bound<'py, PyAny>, user_atoms: Option<&Bound<'py, PyAn
                 && !rel.getattr(intern!(p, "_want_transfer"))?.is_truthy()?
                 && s.getattr(intern!(p, "engine")).and_then(|e| crate::memos::setting(&e, intern!(p, "_transfer"), intern!(p, "transfer")))?.is_truthy()?
             {
-                let stats = s.getattr(intern!(p, "engine"))?.getattr(intern!(p, "stats"))?;
-                let k = intern!(p, "scope_misses");
-                stats.set_item(k, stats.get_item(k)?.add(1)?)?;
+                crate::entry::scope_miss(&s.getattr(intern!(p, "engine"))?)?;
                 rel.setattr(intern!(p, "_want_transfer"), true)?;
             }
             tick(session::REL_CB_NOTE_SIDES);

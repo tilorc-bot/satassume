@@ -718,7 +718,7 @@ class Session:
                 # cone, which the syntax does not foresee; the facts of
                 # custom atoms are in the scope, ``scope.extension_atoms``);
                 # counted (stats["scope_misses"])
-                engine.stats["scope_misses"] += 1
+                engine._record_scope_miss()
                 rel = self.relations = Relations(self, engine._relation_specs)
                 if self.assumption_formula is not None:
                     # unary atoms of the assumptions become link candidates
@@ -1412,6 +1412,28 @@ class Engine:
     def _fresh_session(self, scope: Scope = _EMPTY_SCOPE) -> Session:
         self.stats["sessions"] += 1
         return Session(self, scope)
+
+    # The named record methods: the writers of ``stats`` and
+    # ``last_budget_limited`` outside the query rows (``sympy_api``'s answer
+    # memo, relevance and consistency counts, the scope-miss sites) call
+    # these, so a backend that owns the counters puts its own in their place.
+    def _record_cache_hit(self) -> None:
+        self.stats["cache_hits"] += 1
+
+    def _record_relevant(self) -> None:
+        self.stats["relevant"] += 1
+
+    def _record_consistency_check(self) -> None:
+        self.stats["consistency_checks"] += 1
+
+    def _record_scope_miss(self) -> None:
+        self.stats["scope_misses"] += 1
+
+    def _clear_budget_flag(self) -> None:
+        self.last_budget_limited = False
+
+    def _keep_budget_flag(self, limited: bool) -> None:
+        self.last_budget_limited = self.last_budget_limited or limited
 
     # -- the registry epoch ---------------------------------------------------
     @property

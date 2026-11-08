@@ -628,9 +628,9 @@ fn consistent_body(p: Python<'_>, a: &Bound<'_, PyAny>, eng: &Bound<'_, PyAny>) 
 /// `_consistent`: the set's verdict is consistent or unknown; False also when it can't be checked.
 fn consistent(p: Python<'_>, a: &Bound<'_, PyAny>, eng: &Bound<'_, PyAny>) -> PyResult<bool> {
     tick(RV_CONSISTENT);
-    let stats = eng.getattr(intern!(p, "stats"))?;
-    let k = intern!(p, "consistency_checks");
-    stats.set_item(k, stats.get_item(k)?.add(1)?)?;
+    if !planted(crate::relations_core::ST_CONSISTENCY_DROP) {
+        crate::entry::bump(eng, crate::entry::CONSISTENCY_CHECKS, 1)?;
+    }
     match consistent_body(p, a, eng) {
         Ok(v) => Ok(v),
         Err(err) if err.is_instance_of::<PyException>(p) => {

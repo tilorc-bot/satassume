@@ -726,14 +726,11 @@ def _install_glue():
 #: `_query_cone` with its container `_qcones` (engmemo.rs); 5c10c adds `_struct`, `_cone_info` and `_drop_cones` with their containers
 #: `_cones` and `_constructing` (engmemo.rs slots 8-9, `cones_native`). SLICE_BUDGET=py puts Python's back. Python's own copies, for a
 #: budget that isn't an int.
-#: `_over_budget` and `_note_budget` write `last_budget_limited` and `stats` (5c10 containers), so by the planner's inventory
-#: ruling (8 Nov ~06:22) they go to 5c10d: their Rust code (`bud_over_budget`, `bud_note_budget`) stays in budget.rs, unwired
-#: unless SLICE_BUDGET_FLAGS=rust (not a landing configuration).
+#: `_over_budget` and `_note_budget` write `last_budget_limited` and `stats`, so by the planner's inventory ruling (8 Nov ~06:22)
+#: they go to 5c10d: `_install_entry` binds them (budget.rs, writing entry.rs's Rust-owned counters).
 PY_BUDGET = {}
 _BUDGET_METHODS = {'_union': 'bud_union', '_within_budget': 'bud_within_budget', '_query_cone': 'bud_query_cone',
                    '_struct': 'bud_struct', '_cone_info': 'bud_cone_info', '_drop_cones': 'bud_drop_cones'}
-if os.environ.get('SLICE_BUDGET_FLAGS') == 'rust':
-    _BUDGET_METHODS.update(_over_budget='bud_over_budget', _note_budget='bud_note_budget')
 _BUDGET_PLANTS = ('union-skip-overlap', 'within-no-link', 'over-budget-no-flag', 'note-budget-keep-flag')
 
 
@@ -834,6 +831,57 @@ _CTX_PLANTS = ('ctx-verdict-clear-skip', 'ctx-failed-clear-skip', 'ctx-failed-no
 #: left in `_constructing`); 228 and 229 are for test_cones_core.py only.
 _CONE_PLANTS = ('cn-discard-skip', 'cone-struct-weight-one', 'cone-info-over-fits', 'cone-drop-skip-cones', 'em-cones-store-drop',
                 'cone-kids-no-bound', 'cone-cones-no-bound', 'cone-struct-wide-skip')
+
+
+#: Step 5c10d (entry.rs): the query-entry rows and the counters. `Engine.stats` and `Engine.last_budget_limited` are Rust-owned
+#: (`EngineStats`, through the `StatsSlot` descriptors); sympy_api's writers and the scope-miss sites call the record methods.
+#: SLICE_ENTRY=py puts Python's back (with Python's dict and flag). `PY_ENTRY` keeps Python's.
+PY_ENTRY = {}
+_ENTRY_METHODS = {'is_': 'ent_is', 'is_many': 'ent_is_many', '_decide': 'ent_decide', '_put_result': 'ent_put_result',
+                  '_is_custom': 'ent_is_custom', 'ask': 'ent_ask', '_ask': 'ent_ask_inner', '_check_version': 'ent_check_version',
+                  '_settings_changed': 'ent_settings_changed', '_drop_set_memos': 'ent_drop_set_memos',
+                  '_fresh_session': 'ent_fresh_session', '_over_budget': 'bud_over_budget', '_note_budget': 'bud_note_budget',
+                  '_record_cache_hit': 'ent_record_cache_hit', '_record_relevant': 'ent_record_relevant',
+                  '_record_consistency_check': 'ent_record_consistency_check', '_record_scope_miss': 'ent_record_scope_miss',
+                  '_clear_budget_flag': 'ent_clear_budget_flag', '_keep_budget_flag': 'ent_keep_budget_flag'}
+_ENTRY_PLANTS = ('ent-is-no-hit-count', 'ent-is-many-queries-short', 'ent-decide-no-escalate', 'ent-put-result-no-put',
+                 'ent-is-custom-no-hit', 'ent-ask-no-clear-flag', 'ent-ask-no-gave-up', 'ent-check-version-no-sync',
+                 'ent-settings-no-clear', 'ent-drop-memos-keep-answers', 'ent-fresh-no-count', 'st-cache-hit-drop',
+                 'st-relevant-drop', 'st-consistency-drop', 'st-scope-miss-double', 'st-clear-flag-skip', 'st-keep-flag-drop',
+                 'st-view-order', 'st-flag-view-stale', 'note-budget-count')
+
+
+def entry_native():
+    """Step 5c10d: whether the entry rows and the counters are Rust's (SLICE_ENTRY, default rust)."""
+    return cones_native() and context_native() and os.environ.get('SLICE_ENTRY', 'rust') == 'rust'
+
+
+def _ent(name, rf):
+    """A method over the pyfunction `rf` (a builtin doesn't bind)."""
+    def f(self, *a, **k):
+        return rf(self, *a, **k)
+    f.__name__ = name
+    return f
+
+
+def _install_entry():
+    """Returns the undo."""
+    E = engine.Engine
+    names = tuple(_ENTRY_METHODS) + ('stats', 'last_budget_limited')
+    saved = {n: E.__dict__[n] for n in names if n in E.__dict__}
+    PY_ENTRY.update(saved)
+    for n, rn in _ENTRY_METHODS.items():
+        setattr(E, n, _ent(n, getattr(sa_solver, rn)))
+    E.stats = sa_solver.StatsSlot(False)
+    E.last_budget_limited = sa_solver.StatsSlot(True)
+
+    def undo():
+        for n in names:
+            if n in E.__dict__:
+                delattr(E, n)
+        for n, v in saved.items():
+            setattr(E, n, v)
+    return undo
 
 
 def _install_context():
@@ -1084,8 +1132,11 @@ def install():
     undo_relevance = _install_relevance() if os.environ.get('SLICE_RELEVANCE', 'rust') == 'rust' else None
     undo_memos = _install_memos() if os.environ.get('SLICE_MEMOS', 'rust') == 'rust' else None
     undo_ctx = _install_context() if context_native() else None
+    undo_entry = _install_entry() if entry_native() else None
 
     def undo():
+        if undo_entry is not None:
+            undo_entry()
         if undo_ctx is not None:
             undo_ctx()
         if undo_memos is not None:
@@ -1132,7 +1183,7 @@ def from_env():
             if PLANT[0] in _REL_PLANTS or PLANT[0] in _DISC_PLANTS or PLANT[0] in _LOOP_PLANTS or PLANT[0] in _QUERY_PLANTS \
                     or PLANT[0] in _SCOPE_PLANTS or PLANT[0] in _GLUE_PLANTS or PLANT[0] in _BUDGET_PLANTS \
                     or PLANT[0] in _RELEVANCE_PLANTS or PLANT[0] in _MEMO_PLANTS or PLANT[0] in _CTX_PLANTS \
-                    or PLANT[0] in _CONE_PLANTS:
+                    or PLANT[0] in _CONE_PLANTS or PLANT[0] in _ENTRY_PLANTS:
                 sa_solver.rel_plant(PLANT[0])
         return install()
     return None

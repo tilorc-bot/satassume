@@ -170,9 +170,7 @@ fn build_context<'py>(eng: &Bound<'py, PyAny>, assumptions: &Bound<'py, PyAny>, 
     tick(CTX_BUILD_CONTEXT);
     let p = eng.py();
     tick(CTX_PY_STATS);
-    let stats = eng.getattr(intern!(p, "stats"))?;
-    let n = stats.get_item("set_checks")?;
-    stats.set_item("set_checks", n.add(1)?)?;
+    crate::entry::bump(eng, crate::entry::SET_CHECKS, 1)?;
     let em = engine_mod(p)?;
     let scope = em.getattr(intern!(p, "theory_scope"))?.call1((assumptions, proposition, eng.getattr(intern!(p, "_extensions"))?))?;
     let (mut s, mut lits) = fresh(eng, &scope, assumptions)?;

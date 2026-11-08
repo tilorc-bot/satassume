@@ -31,6 +31,7 @@ mod payloads;
 mod memos;
 mod procmemo;
 mod engmemo;
+mod entry;
 mod factcache;
 mod relations_core;
 mod rows;
@@ -598,6 +599,7 @@ fn sa_solver(m: &Bound<'_, PyModule>) -> PyResult<()> {
     relevance::register(m)?;
     memos::register(m)?;
     engmemo::register(m)?;
+    entry::register(m)?;
     factcache::register(m)?;
     procmemo::register(m)?;
     transfer_py::register(m)

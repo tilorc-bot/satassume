@@ -153,7 +153,9 @@ class _Mark:
     def add(self, eng):
         if id(eng) in self.engines:
             return
-        self.engines[id(eng)] = (eng, dict(eng.stats), eng.last_budget_limited, set(eng._constructing))
+        st = eng.stats     # Rust-owned since 5c10d (entry.rs `EngineStats`): snapshot and restore through its own methods
+        mark = st._st_mark() if hasattr(st, '_st_mark') else (dict(st), eng.last_budget_limited)
+        self.engines[id(eng)] = (eng, mark, set(eng._constructing))
         for c in (eng.cache, eng.custom_cache):     # a Rust-native fact cache (factcache.rs, step 5c10a) marks itself
             if id(c) not in self.facts and hasattr(c, '_fc_mark'):
                 self.facts[id(c)] = (c, c._fc_mark())
@@ -182,10 +184,13 @@ class _Mark:
             if moved:
                 COUNTS['rollback:restamped'] += 1
                 t.stamp = stamp
-        for eng, st, budget, constructing in self.engines.values():
-            eng.stats.clear()
-            eng.stats.update(st)
-            eng.last_budget_limited = budget
+        for eng, mark, constructing in self.engines.values():
+            if hasattr(eng.stats, '_st_rollback'):
+                eng.stats._st_rollback(mark)
+            else:
+                eng.stats.clear()
+                eng.stats.update(mark[0])
+                eng.last_budget_limited = mark[1]
             eng._constructing.clear()
             eng._constructing.update(constructing)
 

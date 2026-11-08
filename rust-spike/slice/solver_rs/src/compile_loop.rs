@@ -319,9 +319,7 @@ pub(crate) fn custom(s: &Bound<'_, PyAny>, atom: &Bound<'_, PyAny>) -> PyResult<
     {
         let mut rel = s.getattr(intern!(p, "relations"))?;
         if rel.is_none() {
-            let stats = engine.getattr(intern!(p, "stats"))?;
-            let k = intern!(p, "scope_misses");
-            stats.set_item(k, stats.get_item(k)?.add(1)?)?;
+            crate::entry::scope_miss(&engine)?;
             rel = eng.getattr(intern!(p, "Relations"))?.call1((s, engine.getattr(intern!(p, "_relation_specs"))?))?;
             s.setattr(intern!(p, "relations"), &rel)?;
             let af = s.getattr(intern!(p, "assumption_formula"))?;
