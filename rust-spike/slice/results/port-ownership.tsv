@@ -650,7 +650,7 @@ theories/lra/constfield.py	_make	854		port	1b	landed 1b 60493d6	Rust
 theories/lra/constfield.py	_coerce	872		port	1b	landed 1b 60493d6	Rust			
 theories/lra/constfield.py	_coerce_foreign	885	~u	port	1b	not port (output/display conversion, C2 ruling)	Python	Element.__eq__ with a non-constfield operand only (constfield.py:1214); 0 on every workload; removal candidate next to _bound	0 from the engine on all 12 workloads (cf_trace, sa-port-156)	none: not port by ruling
 theories/lra/constfield.py	Element	906		port	1b	landed 1b 60493d6	Rust			
-theories/lra/constfield.py	Element._new	914		port	1b	landed 1b 60493d6 (partial)	called back	called back to build a Python Element for an Undecided's message (constfield.rs:2022)	dev 703, fuzz 1,552, cert 163, f6 30, core 24, wiring 3, opaque 2 per pass, before and after C2 (lra_live _rust, lra_backend check and _state)	Element._new step after C2 (planner C2 ruling (b))
+theories/lra/constfield.py	Element._new	914		port	1b	landed Element._new step (tested 62a6723)	Rust (constfield.rs `PyElem` pyclass from `Num::to_py`; lra_* memo on Rust values, term/py.rs `LraMemo`; `sign` on Rust); `to_py_element` kept for cf_op and the named callback `cf:elem_py_read` (0 on every workload)	Python's own `constant`/`radical` callbacks and `from_sympy` build Python Elements; no crossing from Rust	Rust crossings, before (C2) -> after: dev 703 -> 0, fuzz 1,552 -> 0, cert 163 -> 0; f6 30, core 24, wiring 3, opaque 2 unchanged, all inside `constant`/`radical` or Python's from_sympy	done for Rust; the rest goes with `constant`'s owner (adapters, after 5c4)
 theories/lra/constfield.py	Element.__init__	925	~u	port	1b	landed 1b 60493d6	Rust			
 theories/lra/constfield.py	Element.numerator	931	~u	port	1b	landed 1b 60493d6	Rust			
 theories/lra/constfield.py	Element.denominator	935	~u	port	1b	landed 1b 60493d6	Rust			
@@ -765,7 +765,7 @@ theories/lra/lra_adapter.py	terms	351	~u	port	4	adapters B+C1: module wrapper, n
 theories/lra/lra_adapter.py	_side	359		port	4	landed D db697fc	Rust			
 theories/lra/lra_adapter.py	order_sides	382		port	4	landed D db697fc	Rust			
 theories/lra/lra_adapter.py	integer_form	400		port	4	landed D db697fc	Rust			
-theories/lra/lra_adapter.py	_memoized	439		port	4	landed adapters B+C1 4dd2ed9	called back			
+theories/lra/lra_adapter.py	_memoized	439		port	4	landed adapters B+C1 4dd2ed9	called back	Rust adapter -> Python `_memoized` -> lra_live `memoized` -> `interpret`/`relation(atom)`/`_ids` -> Rust table -> back; no Element crosses after the Element._new step	ad:cb_memoized dev 5,508, fuzz 164,954, cert 2,270 per pass, unchanged by the Element._new step	its own named step inside the state step(s), first when they're split (planner, 8 Nov ~09:40): the atom's term ids and the query table on the Rust adapter
 theories/lra/lra_adapter.py	LRAAdapter	454		port	4	landed adapters B+C1 4dd2ed9	Rust			
 theories/lra/lra_adapter.py	LRAAdapter.__init__	466		port	4	landed adapters B+C1 4dd2ed9	Rust			
 theories/lra/lra_adapter.py	LRAAdapter.register	471		port	4	landed adapters B+C1 4dd2ed9	Rust			
