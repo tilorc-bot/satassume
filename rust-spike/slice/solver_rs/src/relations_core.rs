@@ -187,6 +187,8 @@ pub(crate) const ELEM_EQ_FLIP: u8 = 119;
 pub(crate) const ELEM_HASH_SKEW: u8 = 120;
 pub(crate) const ELEM_REPR_BRACKET: u8 = 121;
 pub(crate) const ELEM_FROM_NEG: u8 = 122;
+/// Element._new step, part 2b (`_order_infinite`): a Rust Element coefficient's sign is read negated (a wrong value).
+pub(crate) const REL_ELEM_SIGN_FLIP: u8 = 123;
 
 #[pyfunction]
 fn rel_install(term_live: Py<PyAny>, relations: Py<PyAny>, euf_adapter: Py<PyAny>, fault: Py<PyAny>) {
@@ -319,6 +321,7 @@ fn rel_plant(name: Option<&str>) -> PyResult<()> {
         Some("elem-hash-skew") => ELEM_HASH_SKEW,
         Some("elem-repr-bracket") => ELEM_REPR_BRACKET,
         Some("elem-from-neg") => ELEM_FROM_NEG,
+        Some("rel-elem-sign-flip") => REL_ELEM_SIGN_FLIP,
         Some(x) => return Err(PyValueError::new_err(format!("no plant {x}"))),
     };
     PLANT.store(v, Relaxed);
@@ -550,6 +553,7 @@ fn rel_order_infinite<'py>(rel: &Bound<'py, PyAny>, var: i32, sides: &Bound<'py,
                 // The Rust Element (an lra_* memo coefficient): its sign on Rust, as Python's `sign` gives Element.sign().
                 tick(session::REL_ELEM_SIGN);
                 match crate::constfield::Num::E(pe.borrow().e.clone()).sign() {
+                    Ok(sg) if plant_on(REL_ELEM_SIGN_FLIP) => (sg != 0, sg < 0),
                     Ok(sg) => (sg != 0, sg > 0),
                     Err(e) if e.is_undecided() => return Ok(()),
                     Err(e) => return Err(e.into()),

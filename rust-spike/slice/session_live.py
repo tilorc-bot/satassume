@@ -466,7 +466,9 @@ _REL_PLANTS = ('link-none', 'drop-order-sides', 'drop-order-infinite', 'drop-tri
                # Adapters step, part C2: constfield's `pi_laurent` on Rust.
                'cf-laurent-rational',
                # Element._new step: the term table's memo on Rust values, the Rust Element pyclass.
-               'elem-memo-plus1', 'elem-eq-flip', 'elem-hash-skew', 'elem-repr-bracket', 'elem-from-neg')
+               'elem-memo-plus1', 'elem-eq-flip', 'elem-hash-skew', 'elem-repr-bracket', 'elem-from-neg',
+               # Element._new step, part 2b: relations_core.rs `_order_infinite` reads a Rust Element's sign.
+               'rel-elem-sign-flip')
 
 #: Step 5c5, second part: relations.py's module functions that run in `relations_core.rs`, by module attribute -> pyfunction.
 #: `_constant_term` has no pyfunction: Rust's callers use its own copy, and Python's few callers keep Python's.
