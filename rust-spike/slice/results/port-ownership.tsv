@@ -553,10 +553,10 @@ sympy_api.py	_vocab_blocks	1009	~u	port	5	5c8	Python
 sympy_api.py	_part_consistent	1076		port	5	5c8	Python			
 sympy_api.py	_consistent	1088		port	5	5c8	Python			
 sympy_api.py	_engine_ask	1111		conversion	5	not port (conversion, ownership ruling)	Python			
-theories/euf/euf.py	EqAtom	75		port	2	adapters (after 5c4)	Python			
-theories/euf/euf.py	EqAtom.__new__	84		port	2	adapters (after 5c4)	Python			
-theories/euf/euf.py	EqAtom.__getnewargs__	87	~u	port	2	adapters (after 5c4)	Python			
-theories/euf/euf.py	EqAtom.__repr__	90	~u	port	2	adapters (after 5c4)	Python			
+theories/euf/euf.py	EqAtom	75		port	2	landed adapters B+C1 4dd2ed9	Rust			
+theories/euf/euf.py	EqAtom.__new__	84		port	2	landed adapters B+C1 4dd2ed9	Rust			
+theories/euf/euf.py	EqAtom.__getnewargs__	87	~u	port	2	landed adapters B+C1 4dd2ed9	Rust			
+theories/euf/euf.py	EqAtom.__repr__	90	~u	port	2	landed adapters B+C1 4dd2ed9	Rust			
 theories/euf/euf.py	EUFTheory	101		port	2	landed 2 e5dd23f	Rust			
 theories/euf/euf.py	EUFTheory.__init__	118		port	2	landed 2 e5dd23f	Rust			
 theories/euf/euf.py	EUFTheory._new	146		port	2	landed 2 e5dd23f	Rust			
@@ -581,20 +581,20 @@ theories/euf/euf.py	EUFTheory.propagate	468		port	2	landed 2 e5dd23f	Rust
 theories/euf/euf.py	EUFTheory.push_level	487		port	2	landed 2 e5dd23f	Rust			
 theories/euf/euf.py	EUFTheory.pop_level	490		port	2	landed 2 e5dd23f	Rust			
 theories/euf/euf.py	EUFTheory.__repr__	530	~u	port	2	landed 2 e5dd23f	Rust			
-theories/euf/euf_adapter.py	_inherits_from_basic	66		port	4	adapters (after 5c4)	Python			
+theories/euf/euf_adapter.py	_inherits_from_basic	66		port	4	not port (conversion, ownership ruling)	Python			
 theories/euf/euf_adapter.py	structural	73		port	4	landed C1 63e085d	Rust			
-theories/euf/euf_adapter.py	EUFAdapter	98		port	4	adapters (after 5c4)	Python			
-theories/euf/euf_adapter.py	EUFAdapter.__init__	105		port	4	adapters (after 5c4)	Python			
-theories/euf/euf_adapter.py	EUFAdapter.interprets	139	~u	port	4	adapters (after 5c4)	Python			
-theories/euf/euf_adapter.py	EUFAdapter.register	142		port	4	adapters (after 5c4)	Python			
-theories/euf/euf_adapter.py	EUFAdapter.attach	156		port	4	adapters (after 5c4)	Python			
-theories/euf/euf_adapter.py	EUFAdapter.term	169		port	4	adapters (after 5c4)	Python			
-theories/euf/euf_adapter.py	EUFAdapter.node_term	176		port	4	adapters (after 5c4)	Python			
-theories/euf/euf_adapter.py	EUFAdapter._intern	191		port	4	adapters (after 5c4)	Python			
+theories/euf/euf_adapter.py	EUFAdapter	98		port	4	landed adapters B+C1 4dd2ed9	Rust			
+theories/euf/euf_adapter.py	EUFAdapter.__init__	105		port	4	landed adapters B+C1 4dd2ed9	Rust			
+theories/euf/euf_adapter.py	EUFAdapter.interprets	139	~u	port	4	landed adapters B+C1 4dd2ed9	Rust			
+theories/euf/euf_adapter.py	EUFAdapter.register	142		port	4	landed adapters B+C1 4dd2ed9	Rust			
+theories/euf/euf_adapter.py	EUFAdapter.attach	156		port	4	landed adapters B+C1 4dd2ed9	Rust			
+theories/euf/euf_adapter.py	EUFAdapter.term	169		port	4	landed adapters B+C1 4dd2ed9	Rust			
+theories/euf/euf_adapter.py	EUFAdapter.node_term	176		port	4	landed adapters B+C1 4dd2ed9	Rust			
+theories/euf/euf_adapter.py	EUFAdapter._intern	191		port	4	landed adapters B+C1 4dd2ed9	Rust			
 theories/euf/euf_adapter.py	EUFAdapter.interned	216		port	4	landed C1 63e085d	Rust			
-theories/euf/euf_adapter.py	EUFAdapter.term_of	231		port	4	adapters (after 5c4)	Python			
-theories/euf/euf_adapter.py	EUFAdapter.terms_since	235		port	4	adapters (after 5c4)	Python			
-theories/euf/euf_adapter.py	EUFAdapter.shared_terms	243		port	4	adapters (after 5c4)	Python			
+theories/euf/euf_adapter.py	EUFAdapter.term_of	231		port	4	landed adapters B+C1 4dd2ed9	Rust			
+theories/euf/euf_adapter.py	EUFAdapter.terms_since	235		port	4	landed adapters B+C1 4dd2ed9	Rust			
+theories/euf/euf_adapter.py	EUFAdapter.shared_terms	243		port	4	landed adapters B+C1 4dd2ed9	Rust			
 theories/lra/constfield.py	Undecided	180		port	1b	landed 1b 60493d6	Rust			
 theories/lra/constfield.py	TooLarge	188		port	1b	landed 1b 60493d6	Rust			
 theories/lra/constfield.py	_zero	198		port	1b	landed 1b 60493d6	Rust			
@@ -696,14 +696,14 @@ theories/lra/constfield.py	_Unread	1367		port	1b	landed D db697fc	Rust
 theories/lra/constfield.py	_from_sympy	1375		port	1b	landed D db697fc	Rust			
 theories/lra/constfield.py	_generic	1415		port	1b	landed D db697fc (partial)	called back	called back from lra_read.rs:446 for any other constant; calls constant and Constant.__init__ (registry _CONSTANTS stays Python)	not measured	adapters (after 5c4), with constfield's other rows
 theories/lra/constfield.py	_sympy_constant	1439	~u	port	1b	adapters (after 5c4)	Python			
-theories/lra/lra.py	Negated	230		port	1a	adapters (after 5c4)	Python			
-theories/lra/lra.py	Negated.__new__	235	~u	port	1a	adapters (after 5c4)	Python			
-theories/lra/lra.py	Negated.__getnewargs__	238	~u	port	1a	adapters (after 5c4)	Python			
-theories/lra/lra.py	Negated.__repr__	241	~u	port	1a	adapters (after 5c4)	Python			
-theories/lra/lra.py	Integral	247		port	1a	adapters (after 5c4)	Python			
-theories/lra/lra.py	Integral.__new__	252		port	1a	adapters (after 5c4)	Python			
-theories/lra/lra.py	Integral.__getnewargs__	255	~u	port	1a	adapters (after 5c4)	Python			
-theories/lra/lra.py	Integral.__repr__	258	~u	port	1a	adapters (after 5c4)	Python			
+theories/lra/lra.py	Negated	230		port	1a	landed adapters B+C1 4dd2ed9	Rust			
+theories/lra/lra.py	Negated.__new__	235	~u	port	1a	landed adapters B+C1 4dd2ed9	Rust			
+theories/lra/lra.py	Negated.__getnewargs__	238	~u	port	1a	landed adapters B+C1 4dd2ed9	Rust			
+theories/lra/lra.py	Negated.__repr__	241	~u	port	1a	landed adapters B+C1 4dd2ed9	Rust			
+theories/lra/lra.py	Integral	247		port	1a	landed adapters B+C1 4dd2ed9	Rust			
+theories/lra/lra.py	Integral.__new__	252		port	1a	landed adapters B+C1 4dd2ed9	Rust			
+theories/lra/lra.py	Integral.__getnewargs__	255	~u	port	1a	landed adapters B+C1 4dd2ed9	Rust			
+theories/lra/lra.py	Integral.__repr__	258	~u	port	1a	landed adapters B+C1 4dd2ed9	Rust			
 theories/lra/lra.py	constraint	265	~u	none	1a	not port (none, ownership ruling)	Python			
 theories/lra/lra.py	_is_int	287	~u	port	1a	landed 1a 69639da	Rust			
 theories/lra/lra.py	_floor	298		port	1a	landed 1a 69639da	Rust			
@@ -755,29 +755,29 @@ theories/lra/lra_adapter.py	_Unhandled	139		port	4	landed D db697fc	Rust
 theories/lra/lra_adapter.py	_lin	179		port	4	landed D db697fc	Rust			
 theories/lra/lra_adapter.py	_closed	225		port	4	landed D db697fc	Rust			
 theories/lra/lra_adapter.py	closed_sign	254		port	4	landed D db697fc	Rust			
-theories/lra/lra_adapter.py	constant_bounds	275		port	4	adapters (after 5c4)	Python			
-theories/lra/lra_adapter.py	constant_enclosure	283	~u	port	4	adapters (after 5c4)	Python			
+theories/lra/lra_adapter.py	constant_bounds	275		port	4	landed adapters B+C1 4dd2ed9	called back			
+theories/lra/lra_adapter.py	constant_enclosure	283	~u	port	4	adapters B+C1: lra_bounds re-export, no Rust caller, ~u	Python			
 theories/lra/lra_adapter.py	_linear	289		port	4	landed D db697fc	Rust			
-theories/lra/lra_adapter.py	to_constraint	302	~u	port	4	adapters (after 5c4)	Python			
+theories/lra/lra_adapter.py	to_constraint	302	~u	port	4	adapters B+C1: module wrapper, no Rust caller, ~u	Python			
 theories/lra/lra_adapter.py	_constraint	318		port	4	landed D db697fc	Rust			
 theories/lra/lra_adapter.py	interpret	337		port	4	landed D db697fc	Rust			
-theories/lra/lra_adapter.py	terms	351	~u	port	4	adapters (after 5c4)	Python			
+theories/lra/lra_adapter.py	terms	351	~u	port	4	adapters B+C1: module wrapper, no Rust caller, ~u	Python			
 theories/lra/lra_adapter.py	_side	359		port	4	landed D db697fc	Rust			
 theories/lra/lra_adapter.py	order_sides	382		port	4	landed D db697fc	Rust			
 theories/lra/lra_adapter.py	integer_form	400		port	4	landed D db697fc	Rust			
-theories/lra/lra_adapter.py	_memoized	439		port	4	adapters (after 5c4)	Python			
-theories/lra/lra_adapter.py	LRAAdapter	454		port	4	adapters (after 5c4)	Python			
-theories/lra/lra_adapter.py	LRAAdapter.__init__	466		port	4	adapters (after 5c4)	Python			
-theories/lra/lra_adapter.py	LRAAdapter.register	471		port	4	adapters (after 5c4)	Python			
-theories/lra/lra_adapter.py	LRAAdapter._attach	490		port	4	adapters (after 5c4)	Python			
-theories/lra/lra_adapter.py	LRAAdapter.interpret	498		port	4	adapters (after 5c4)	Python			
-theories/lra/lra_adapter.py	LRAAdapter.order_sides	504		port	4	adapters (after 5c4)	Python			
-theories/lra/lra_adapter.py	LRAAdapter.integer_form	508		port	4	adapters (after 5c4)	Python			
-theories/lra/lra_adapter.py	LRAAdapter.register_integer	512		port	4	adapters (after 5c4)	Python			
-theories/lra/lra_adapter.py	LRAAdapter.terms	520		port	4	adapters (after 5c4)	Python			
-theories/lra/lra_adapter.py	LRAAdapter.to_constraint	525	~u	port	4	adapters (after 5c4)	Python			
-theories/lra/lra_adapter.py	LRAAdapter.register_bounds	530	~u	port	4	adapters (after 5c4)	Python			
-theories/lra/lra_adapter.py	LRAAdapter.shared_terms	547		port	4	adapters (after 5c4)	Python			
+theories/lra/lra_adapter.py	_memoized	439		port	4	landed adapters B+C1 4dd2ed9	called back			
+theories/lra/lra_adapter.py	LRAAdapter	454		port	4	landed adapters B+C1 4dd2ed9	Rust			
+theories/lra/lra_adapter.py	LRAAdapter.__init__	466		port	4	landed adapters B+C1 4dd2ed9	Rust			
+theories/lra/lra_adapter.py	LRAAdapter.register	471		port	4	landed adapters B+C1 4dd2ed9	Rust			
+theories/lra/lra_adapter.py	LRAAdapter._attach	490		port	4	landed adapters B+C1 4dd2ed9	Rust			
+theories/lra/lra_adapter.py	LRAAdapter.interpret	498		port	4	landed adapters B+C1 4dd2ed9	Rust			
+theories/lra/lra_adapter.py	LRAAdapter.order_sides	504		port	4	landed adapters B+C1 4dd2ed9	Rust			
+theories/lra/lra_adapter.py	LRAAdapter.integer_form	508		port	4	landed adapters B+C1 4dd2ed9	Rust			
+theories/lra/lra_adapter.py	LRAAdapter.register_integer	512		port	4	landed adapters B+C1 4dd2ed9	Rust			
+theories/lra/lra_adapter.py	LRAAdapter.terms	520		port	4	landed adapters B+C1 4dd2ed9	Rust			
+theories/lra/lra_adapter.py	LRAAdapter.to_constraint	525	~u	port	4	landed adapters B+C1 4dd2ed9	Rust			
+theories/lra/lra_adapter.py	LRAAdapter.register_bounds	530	~u	port	4	landed adapters B+C1 4dd2ed9	Rust			
+theories/lra/lra_adapter.py	LRAAdapter.shared_terms	547		port	4	landed adapters B+C1 4dd2ed9	Rust			
 theories/lra/lra_cert.py	_ceil_abs	31		port	1a/1b	landed 1b 60493d6	Rust			
 theories/lra/lra_cert.py	_magnitude	35		port	1a/1b	landed 1b 60493d6	Rust			
 theories/lra/lra_cert.py	within	41		port	1a/1b	landed 1b 60493d6	Rust			
