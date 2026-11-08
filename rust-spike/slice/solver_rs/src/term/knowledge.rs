@@ -417,7 +417,7 @@ pub struct BuiltPattern {
 }
 
 impl Rules {
-    fn cnf(&self, pred: &str, pos: bool) -> Result<&Vec<Vec<Lit>>, String> {
+    pub(crate) fn cnf(&self, pred: &str, pos: bool) -> Result<&Vec<Vec<Lit>>, String> {
         (if pos { &self.cnf_pos } else { &self.cnf_neg }).get(pred).ok_or_else(|| pred.to_string())
     }
 

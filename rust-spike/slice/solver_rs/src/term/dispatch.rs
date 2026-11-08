@@ -17,9 +17,15 @@ use std::sync::Arc;
 const CLAUSES_CACHE_SIZE: usize = 50_000;
 const OWN_FACTS: &str = "_satassume_own_facts";
 
+/// 6g(b): a built-in rows template (`wiring`'s `any_arity`, `product`, `addition`) runs on Rust.
+enum Tpl {
+    Python,
+    Rows(Arc<super::rows_tpl::RowsTpl>),
+}
+
 struct ClassEntry {
-    /// `(template, counter name)`, most specific class first, as `templates_for`.
-    templates: Vec<(Py<PyAny>, String)>,
+    /// `(template, counter name, Rust's)`, most specific class first, as `templates_for`.
+    templates: Vec<(Py<PyAny>, String, Tpl)>,
     /// A template registered by someone other than a built-in module: the whole node goes to Python.
     user: bool,
 }
@@ -226,7 +232,15 @@ fn class_entry(slf: &Bound<'_, Dispatch>, cls: &Bound<'_, PyType>) -> PyResult<A
                 .or_else(|_| t.getattr("__name__"))
                 .and_then(|n| n.extract::<String>())
                 .unwrap_or_else(|_| "?".into());
-            templates.push((t.unbind(), format!("registry:python:{name}")));
+            let rows = if slf.borrow().is_builtin(&t) && slf.borrow().plant != "dispatch-rows-off" {
+                super::rows_tpl::RowsTpl::from_template(&t, name.clone())?
+            } else {
+                None
+            };
+            match rows {
+                Some(r) => templates.push((t.unbind(), format!("registry:rust:{name}"), Tpl::Rows(Arc::new(r)))),
+                None => templates.push((t.unbind(), format!("registry:python:{name}"), Tpl::Python)),
+            }
         }
     }
     let e = Arc::new(ClassEntry { templates, user });
@@ -297,7 +311,7 @@ impl Dispatch {
         sync_epoch(slf)?;
         bump(&mut slf.borrow_mut().counts, "registry:templates_for");
         let e = class_entry(slf, cls)?;
-        Ok(e.templates.iter().map(|(t, _)| t.clone_ref(py)).collect())
+        Ok(e.templates.iter().map(|(t, _, _)| t.clone_ref(py)).collect())
     }
 
     fn clauses_for<'py>(slf: &Bound<'py, Self>, expr: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
@@ -326,9 +340,22 @@ impl Dispatch {
         if opaque {
             bump(&mut slf.borrow_mut().counts, "registry:opaque");
         } else {
-            for (t, name) in entry.templates.iter() {
-                bump(&mut slf.borrow_mut().counts, name);
-                let r = t.bind(py).call1((expr,))?;
+            let common = slf.borrow().common.as_ref().map(|c| c.clone_ref(py));
+            for (t, name, tpl) in entry.templates.iter() {
+                let r = match (tpl, &common) {
+                    (Tpl::Rows(rt), Some(c)) if !c.bind(py).borrow().kept(py)? => {
+                        bump(&mut slf.borrow_mut().counts, name);
+                        rt.call(c.bind(py), expr)?
+                    }
+                    (Tpl::Rows(rt), _) => {
+                        bump(&mut slf.borrow_mut().counts, &format!("registry:kept:{}", rt.name));
+                        t.bind(py).call1((expr,))?
+                    }
+                    (Tpl::Python, _) => {
+                        bump(&mut slf.borrow_mut().counts, name);
+                        t.bind(py).call1((expr,))?
+                    }
+                };
                 split(slf, &r, &compiled, &formulas)?;
             }
         }

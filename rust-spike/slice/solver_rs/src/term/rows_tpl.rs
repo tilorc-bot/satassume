@@ -1,0 +1,807 @@
+//! Step 6g(b): `knowledge/templates/wiring.py`'s rows families on Rust, run from `Dispatch`'s class entry in place of
+//! the Python template: `any_arity` (with `piecewise_values` for Piecewise), `product`, `addition`, and what they call
+//! per node: `rows_block`, `rules_for`, `matches`, `expand`, `_placements`, `_allowed`, `_instances`, `_clauses`,
+//! `_wide_of`, `wide_formulas`, `_wide`.
+//!
+//! The family's rows (`gen.terms`, `gen.specs`, `gen.schemas`, already Rust's `RowsGen`) are read once when the class
+//! entry is built (per class and registry epoch). Per node, the template reads the node's SymPy arguments (class
+//! attributes, `type`, `==`, `is`), builds the block with 6d's `Common` (`consts_of`, `pattern_key`, `facts`), and hands
+//! `facts` a Rust `gen` that builds the rules only for a new pattern, as Python's lambda does.
+//!
+//! Still called back, each named and counted (`rows:python:<name>`): `constant_value` (`_rows_runtime`'s, through
+//! `wiring.constant_value`, already swapped to Rust's with Python's for Floats), `const_value` (6d's named callback),
+//! `Integer(len(rest))` for `count` (SymPy construction), and the core pieces `product`/`addition` call
+//! (`_mul_factor_sets`, `_quotient_templates`, `_half_split`, `_half_templates`, `_bound_split`, `_bound_templates`,
+//! `_recip_templates`, `_imag_split`, `_imag_templates`): 6e's shells over Rust, which 6g(c) removes. They are looked up
+//! in `wiring`'s namespace per call, so whatever is bound there (Python's or the core swap's) is what runs, as on Python.
+//! A kept query runs the Python template whole (`registry:kept:<name>`).
+use super::common::Common;
+use pyo3::exceptions::PyValueError;
+use pyo3::prelude::*;
+use pyo3::types::{PyCFunction, PyDict, PyList, PyModule, PyTuple};
+use std::collections::HashMap;
+use std::sync::Arc;
+
+/// `SOME_PER_ARGUMENT` in wiring.py.
+pub const SOME_PER_ARGUMENT: usize = 32;
+
+pub const PLANTS: &[&str] = &[
+    "rows-block-key-n",        // rows_block: keyed with n + 1, so nodes of n and n + 1 arguments share patterns
+    "rows-rules-for-shape",    // rules_for: a rule's shape not checked
+    "rows-of-constant-skip",   // rules_for: no terms of the constant
+    "rows-matches-constant",   // matches: 'constant' always met
+    "rows-expand-drop-last",   // expand: the last rule of each node dropped
+    "rows-placements-first",   // _placements: only the first placement
+    "rows-allowed-coefficient",// _allowed: 'coefficient' allowed without a Number at 0
+    "rows-instances-others",   // _instances: `others` left out of the premises
+    "rows-count-flip",         // _instances: `count` decided the other way
+    "rows-clauses-one",        // _clauses: conclusions not counted
+    "rows-wide-drop",          // wide_formulas: the last formula dropped
+    "rows-piecewise-last",     // piecewise_values: the final True not required
+    "rows-mul-sets-first",     // product: only the first factor tuple
+    "rows-add-bound-skip",     // addition: `c0 + c1*u` and `c0 + c1/v` left out
+];
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Family {
+    AnyArity,
+    Product,
+    Addition,
+}
+
+enum Pick {
+    Any,
+    Coefficient,
+    Value(Py<PyAny>),
+    Constant,
+}
+
+enum ShapeItem {
+    Value(Py<PyAny>),
+    Same(usize),
+    Coefficient,
+    Constant,
+}
+
+type Lit = (i64, String, bool);
+
+struct Spec {
+    prem: Vec<Lit>,
+    concl: Vec<Lit>,
+    shape: Option<Vec<Option<ShapeItem>>>,
+}
+
+enum W {
+    Slot(usize),
+    Node,
+    Every,
+    Some,
+    Others,
+    Count,
+}
+
+type SLit = (W, String, bool);
+
+struct Schema {
+    at_most: Option<usize>,
+    picks: Vec<Pick>,
+    /// group of each pick, by first appearance (Python's dict of groups)
+    groups: Vec<Vec<usize>>,
+    rules: Vec<(Vec<SLit>, Vec<SLit>)>,
+}
+
+pub struct RowsTpl {
+    pub family: Family,
+    pub name: String,
+    tag: Py<PyAny>,
+    /// `gen.terms`: n -> `(i, t)` of each term of the constant, slots n + 1, ...
+    terms: HashMap<usize, Vec<(usize, Py<PyAny>)>>,
+    specs: HashMap<usize, Vec<Spec>>,
+    schemas: Vec<Schema>,
+    piecewise: bool,
+    leave_out_wide: bool,
+    /// the Python template, for kept queries
+    pub py_template: Py<PyAny>,
+    wiring: Py<PyModule>,
+}
+
+fn lit3(x: &Bound<'_, PyAny>) -> PyResult<Lit> {
+    let (k, p, s): (i64, String, bool) = x.extract()?;
+    Ok((k, p, s))
+}
+
+fn shape_of(s: &Bound<'_, PyAny>) -> PyResult<Vec<Option<ShapeItem>>> {
+    let mut out = Vec::new();
+    for x in s.try_iter()? {
+        let x = x?;
+        if x.is_none() {
+            out.push(None);
+            continue;
+        }
+        let kind: String = x.get_item(0)?.extract()?;
+        out.push(Some(match kind.as_str() {
+            "value" => ShapeItem::Value(x.get_item(1)?.unbind()),
+            "same" => ShapeItem::Same(x.get_item(1)?.extract()?),
+            "coefficient" => ShapeItem::Coefficient,
+            "constant" => ShapeItem::Constant,
+            k => return Err(PyValueError::new_err(format!("rows template: shape {k} not keyed for any arity"))),
+        }));
+    }
+    Ok(out)
+}
+
+fn slit(x: &Bound<'_, PyAny>) -> PyResult<SLit> {
+    let w = x.get_item(0)?;
+    let p: String = x.get_item(1)?.extract()?;
+    let s: bool = x.get_item(2)?.extract()?;
+    let w = if let Ok(i) = w.extract::<usize>() {
+        if w.is_instance_of::<pyo3::types::PyBool>() {
+            return Err(PyValueError::new_err("rows template: a bool slot"));
+        }
+        W::Slot(i)
+    } else {
+        match w.extract::<String>()?.as_str() {
+            "node" => W::Node,
+            "every" => W::Every,
+            "some" => W::Some,
+            "others" => W::Others,
+            "count" => W::Count,
+            o => return Err(PyValueError::new_err(format!("rows template: schema word {o}"))),
+        }
+    };
+    Ok((w, p, s))
+}
+
+impl RowsTpl {
+    /// From the attributes `wiring` gives a rows template: `_satassume_rows = (family, tag, gen, piecewise,
+    /// leave_out_wide)`.
+    pub fn from_template(t: &Bound<'_, PyAny>, name: String) -> PyResult<Option<RowsTpl>> {
+        let py = t.py();
+        let Ok(spec) = t.getattr("_satassume_rows") else { return Ok(None) };
+        let family = match spec.get_item(0)?.extract::<String>()?.as_str() {
+            "any_arity" => Family::AnyArity,
+            "product" => Family::Product,
+            "addition" => Family::Addition,
+            _ => return Ok(None),
+        };
+        let tag = spec.get_item(1)?.unbind();
+        let gen = spec.get_item(2)?;
+        let piecewise: bool = spec.get_item(3)?.extract()?;
+        let leave_out_wide: bool = spec.get_item(4)?.extract()?;
+        let mut terms = HashMap::new();
+        for (n, ts) in gen.getattr("terms")?.cast::<PyDict>()?.iter() {
+            let mut v = Vec::new();
+            for t in ts.try_iter()? {
+                let t = t?;
+                let kind: String = t.get_item(0)?.extract()?;
+                if kind != "of_constant" {
+                    return Ok(None); // wiring refuses these at registration
+                }
+                v.push((t.get_item(1)?.extract()?, t.get_item(2)?.unbind()));
+            }
+            terms.insert(n.extract()?, v);
+        }
+        let mut specs = HashMap::new();
+        for (n, rs) in gen.getattr("specs")?.cast::<PyDict>()?.iter() {
+            let mut v = Vec::new();
+            for r in rs.try_iter()? {
+                let r = r?;
+                let prem = r.get_item(0)?.try_iter()?.map(|x| lit3(&x?)).collect::<PyResult<_>>()?;
+                let concl = r.get_item(1)?.try_iter()?.map(|x| lit3(&x?)).collect::<PyResult<_>>()?;
+                let shape = if r.len()? > 2 { Some(shape_of(&r.get_item(2)?)?) } else { None };
+                v.push(Spec { prem, concl, shape });
+            }
+            specs.insert(n.extract()?, v);
+        }
+        let mut schemas = Vec::new();
+        for s in gen.getattr("schemas")?.try_iter()? {
+            let s = s?;
+            let at_most: Option<usize> = s.get_item(0)?.extract()?;
+            let mut picks = Vec::new();
+            let mut gkeys: Vec<Bound<'_, PyAny>> = Vec::new();
+            let mut groups: Vec<Vec<usize>> = Vec::new();
+            for (i, p) in s.get_item(1)?.try_iter()?.enumerate() {
+                let p = p?;
+                let kind = p.get_item(0)?;
+                picks.push(if kind.is_none() {
+                    Pick::Any
+                } else {
+                    match kind.get_item(0)?.extract::<String>()?.as_str() {
+                        "coefficient" => Pick::Coefficient,
+                        "value" => Pick::Value(kind.get_item(1)?.unbind()),
+                        _ => Pick::Constant,
+                    }
+                });
+                let g = p.get_item(1)?;
+                let mut at = None;
+                for (j, k) in gkeys.iter().enumerate() {
+                    if k.eq(&g)? {
+                        at = Some(j);
+                        break;
+                    }
+                }
+                match at {
+                    Some(j) => groups[j].push(i),
+                    None => {
+                        gkeys.push(g);
+                        groups.push(vec![i]);
+                    }
+                }
+            }
+            let mut rules = Vec::new();
+            for r in s.get_item(2)?.try_iter()? {
+                let r = r?;
+                let prem = r.get_item(0)?.try_iter()?.map(|x| slit(&x?)).collect::<PyResult<_>>()?;
+                let concl = r.get_item(1)?.try_iter()?.map(|x| slit(&x?)).collect::<PyResult<_>>()?;
+                rules.push((prem, concl));
+            }
+            schemas.push(Schema { at_most, picks, groups, rules });
+        }
+        let wiring = py.import("satassume.knowledge.templates.wiring")?.unbind();
+        Ok(Some(RowsTpl {
+            family, name, tag, terms, specs, schemas, piecewise, leave_out_wide, py_template: t.clone().unbind(), wiring,
+        }))
+    }
+
+    fn wiring_fn<'py>(&self, py: Python<'py>, c: &Common, name: &str) -> PyResult<Bound<'py, PyAny>> {
+        c.bump(&format!("rows:python:{name}"));
+        self.wiring.bind(py).getattr(name)
+    }
+
+    /// The template: `(result for split)`.
+    pub fn call<'py>(self: &Arc<Self>, c: &Bound<'py, Common>, expr: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+        let py = expr.py();
+        let cr = c.borrow();
+        match self.family {
+            Family::AnyArity => {
+                let args = if self.piecewise {
+                    match piecewise_values(&cr, expr)? {
+                        Some(a) => a,
+                        None => return Ok(py.None().into_bound(py)),
+                    }
+                } else {
+                    expr.getattr("args")?
+                };
+                let block = self.block(c, &args, expr)?;
+                let wide = self.wide_of(&cr, expr, &args)?;
+                if wide.is_empty() {
+                    return Ok(block);
+                }
+                let out = PyList::new(py, [block])?;
+                for f in wide.iter() {
+                    out.append(f)?;
+                }
+                Ok(out.into_any())
+            }
+            Family::Product => {
+                let args = expr.getattr("args")?;
+                if args.len()? == 0 {
+                    return Ok(PyTuple::empty(py).into_any());
+                }
+                let out = PyList::empty(py);
+                let sets = self.wiring_fn(py, &cr, "_mul_factor_sets")?.call1((expr,))?;
+                for (i, fs) in sets.try_iter()?.enumerate() {
+                    if i > 0 && cr.plant == "rows-mul-sets-first" {
+                        cr.fired();
+                        break;
+                    }
+                    out.append(self.block(c, &fs?, expr)?)?;
+                }
+                let quot = self.wiring_fn(py, &cr, "_quotient_templates")?.call1((expr,))?;
+                if !quot.is_none() {
+                    out.append(quot)?;
+                }
+                for f in self.wide_of(&cr, expr, &args)?.iter() {
+                    out.append(f)?;
+                }
+                Ok(if out.len() == 1 { out.get_item(0)? } else { out.into_any() })
+            }
+            Family::Addition => {
+                let args = expr.getattr("args")?;
+                if args.len()? == 0 {
+                    return Ok(PyTuple::empty(py).into_any());
+                }
+                let out = PyList::new(py, [self.block(c, &args, expr)?])?;
+                for f in self.wide_of(&cr, expr, &args)?.iter() {
+                    out.append(f)?;
+                }
+                let split = self.wiring_fn(py, &cr, "_half_split")?.call1((&args,))?;
+                if !split.is_none() {
+                    out.append(self.wiring_fn(py, &cr, "_half_templates")?.call1((expr, split))?)?;
+                }
+                let split = self.wiring_fn(py, &cr, "_bound_split")?.call1((&args,))?;
+                if !split.is_none() {
+                    if cr.plant == "rows-add-bound-skip" {
+                        cr.fired();
+                    } else {
+                        out.append(self.wiring_fn(py, &cr, "_bound_templates")?.call1((expr, &split))?)?;
+                        let recip = self.wiring_fn(py, &cr, "_recip_templates")?.call1((expr, &split))?;
+                        if !recip.is_none() {
+                            out.append(recip)?;
+                        }
+                    }
+                }
+                let terms = self.wiring_fn(py, &cr, "_imag_split")?.call1((&args,))?;
+                if !terms.is_none() {
+                    let imag = self.wiring_fn(py, &cr, "_imag_templates")?.call1((expr, terms))?;
+                    if !imag.is_none() {
+                        out.append(imag)?;
+                    }
+                }
+                Ok(if out.len() == 1 { out.get_item(0)? } else { out.into_any() })
+            }
+        }
+    }
+
+    /// `rows_block(tag, gen, leave_out_wide)(args, expr)`.
+    fn block<'py>(self: &Arc<Self>, c: &Bound<'py, Common>, args: &Bound<'py, PyAny>, expr: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+        let py = expr.py();
+        let cr = c.borrow();
+        cr.bump("rows:block");
+        let args = PyTuple::new(py, args.try_iter()?.collect::<PyResult<Vec<_>>>()?)?;
+        let n = args.len();
+        let consts = cr.consts_of(py, args.as_any())?;
+        let mut objs: Vec<Bound<'py, PyAny>> = args.iter().collect();
+        objs.push(expr.clone());
+        for _ in 0..self.terms.get(&n).map_or(0, |t| t.len()) {
+            objs.push(py.None().into_bound(py));
+        }
+        let objs = PyTuple::new(py, objs)?;
+        let mut kn = n;
+        if cr.plant == "rows-block-key-n" {
+            cr.fired();
+            kn = n + 1;
+        }
+        let key = cr.pattern_key(py, self.tag.bind(py), &kn.into_pyobject(py)?.into_any(), &consts)?;
+        let me = self.clone();
+        let cobj = c.clone().unbind();
+        let a = args.clone().unbind();
+        let cd = consts.clone().unbind();
+        let gen = PyCFunction::new_closure(py, None, None, move |t: &Bound<'_, PyTuple>, _kw: Option<&Bound<'_, PyDict>>| -> PyResult<Py<PyAny>> {
+            let py = t.py();
+            let c = cobj.bind(py).borrow();
+            let r = me.rules_for(py, &c, a.bind(py), cd.bind(py).cast::<PyDict>()?)?;
+            Ok(r.into_any().unbind())
+        })?;
+        cr.facts(py, &key, gen.as_any(), &consts, objs.as_any(), n as i64)
+    }
+
+    /// `rules_for(gen, args, consts, leave_out_wide)`: `consts` gets the terms of the constant.
+    fn rules_for<'py>(&self, py: Python<'py>, c: &Common, args: &Bound<'py, PyTuple>, consts: &Bound<'py, PyDict>) -> PyResult<Bound<'py, PyList>> {
+        c.bump("rows:rules_for");
+        let n = args.len();
+        if let Some(ts) = self.terms.get(&n) {
+            if c.plant == "rows-of-constant-skip" && !ts.is_empty() {
+                c.fired();
+            } else {
+                for (k, (i, t)) in ts.iter().enumerate() {
+                    if let Some(cv) = consts.get_item(*i)? {
+                        if cv.getattr("is_Number")?.is_truthy()? {
+                            let v = self.wiring_fn(py, c, "constant_value")?.call1((t.bind(py), &cv))?;
+                            consts.set_item(n + 1 + k, v)?;
+                        }
+                    }
+                }
+            }
+        }
+        let out = PyList::empty(py);
+        for r in self.specs.get(&n).map(|v| v.as_slice()).unwrap_or(&[]) {
+            if let Some(shape) = &r.shape {
+                if !matches(c, shape, args, consts)? {
+                    if c.plant == "rows-rules-for-shape" {
+                        c.fired();
+                    } else {
+                        continue;
+                    }
+                }
+            }
+            let mut missing = false;
+            for (k, _, _) in r.prem.iter().chain(r.concl.iter()) {
+                if *k > n as i64 && !consts.contains(*k)? {
+                    missing = true;
+                    break;
+                }
+            }
+            if missing {
+                continue;
+            }
+            out.append((PyList::new(py, &r.prem)?, PyList::new(py, &r.concl)?))?;
+        }
+        for r in self.expand(py, c, n, consts)? {
+            out.append((PyList::new(py, &r.0)?, PyList::new(py, &r.1)?))?;
+        }
+        Ok(out)
+    }
+
+    /// `expand(gen.schemas, n, consts, leave_out_wide)`.
+    fn expand(&self, py: Python<'_>, c: &Common, n: usize, consts: &Bound<'_, PyDict>) -> PyResult<Vec<(Vec<Lit>, Vec<Lit>)>> {
+        c.bump("rows:expand");
+        let mut out = Vec::new();
+        for s in &self.schemas {
+            if n < s.picks.len() || s.at_most.is_some_and(|m| n > m) {
+                continue;
+            }
+            for placed in placements(c, s, n, consts)? {
+                let rest: Vec<usize> = (0..n).filter(|i| !placed.contains(i)).collect();
+                for (prem, concl) in &s.rules {
+                    if n > SOME_PER_ARGUMENT && prem.iter().any(|(w, _, _)| matches!(w, W::Some)) {
+                        continue;
+                    }
+                    out.extend(instances(py, c, prem, concl, &placed, &rest, n)?);
+                }
+            }
+        }
+        if self.leave_out_wide {
+            let mut kept = Vec::with_capacity(out.len());
+            for r in out {
+                if clauses(c, &r)? <= c.max_expand {
+                    kept.push(r);
+                }
+            }
+            out = kept;
+        }
+        if c.plant == "rows-expand-drop-last" && !out.is_empty() {
+            c.fired();
+            out.pop();
+        }
+        Ok(out)
+    }
+
+    /// `_wide_of(gen, expr, args)`, with `wide_formulas` and `_wide`.
+    fn wide_of<'py>(&self, c: &Common, expr: &Bound<'py, PyAny>, args: &Bound<'py, PyAny>) -> PyResult<Vec<Bound<'py, PyAny>>> {
+        let py = expr.py();
+        let args: Vec<Bound<'py, PyAny>> = args.try_iter()?.collect::<PyResult<_>>()?;
+        let n = args.len();
+        if n <= SOME_PER_ARGUMENT {
+            return Ok(vec![]);
+        }
+        c.bump("rows:wide_formulas");
+        let consts = c.consts_of(py, PyTuple::new(py, &args)?.as_any())?;
+        let consts = consts.cast::<PyDict>()?;
+        let mut out = Vec::new();
+        for s in &self.schemas {
+            if s.at_most.is_some_and(|m| n > m) {
+                continue;
+            }
+            for (prem, concl) in &s.rules {
+                if prem.iter().any(|(w, _, _)| matches!(w, W::Some)) {
+                    if let Some(f) = wide(py, c, expr, &args, consts, prem, concl)? {
+                        out.push(f);
+                    }
+                }
+            }
+        }
+        if c.plant == "rows-wide-drop" && !out.is_empty() {
+            c.fired();
+            out.pop();
+        }
+        Ok(out)
+    }
+}
+
+/// `const_value(x, pred)`, 6d's named callback: True, False or None.
+fn const_value(c: &Common, x: &Bound<'_, PyAny>, pred: &str) -> PyResult<Option<bool>> {
+    c.bump("rows:python:const_value");
+    c.const_value.bind(x.py()).call1((x, pred))?.extract()
+}
+
+fn integer<'py>(py: Python<'py>, c: &Common, n: usize) -> PyResult<Bound<'py, PyAny>> {
+    c.bump("rows:python:Integer");
+    py.import("sympy")?.getattr("Integer")?.call1((n,))
+}
+
+fn is_number_at(consts: &Bound<'_, PyDict>, k: usize) -> PyResult<bool> {
+    match consts.get_item(k)? {
+        Some(v) => v.getattr("is_Number")?.is_truthy(),
+        None => Ok(false),
+    }
+}
+
+fn same_value(a: &Bound<'_, PyAny>, v: &Bound<'_, PyAny>) -> PyResult<bool> {
+    Ok(a.get_type().is(&v.get_type()) && a.eq(v)?)
+}
+
+/// `matches(shape, args, consts)` for the shapes a function of any arity keys ('head' is Pow's, refused here).
+fn matches(c: &Common, shape: &[Option<ShapeItem>], args: &Bound<'_, PyTuple>, consts: &Bound<'_, PyDict>) -> PyResult<bool> {
+    let py = args.py();
+    c.bump("rows:matches");
+    for (i, s) in shape.iter().enumerate() {
+        let Some(s) = s else { continue };
+        let a = args.get_item(i)?;
+        let ok = match s {
+            ShapeItem::Value(v) => same_value(&a, v.bind(py))?,
+            ShapeItem::Same(j) => a.is(&args.get_item(*j)?),
+            ShapeItem::Coefficient => i == 0 && is_number_at(consts, 0)?,
+            ShapeItem::Constant => {
+                let m = consts.contains(i)?;
+                if !m && c.plant == "rows-matches-constant" {
+                    c.fired();
+                    true
+                } else {
+                    m
+                }
+            }
+        };
+        if !ok {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+/// `_allowed(kind, n, consts)`.
+fn allowed(c: &Common, kind: &Pick, n: usize, consts: &Bound<'_, PyDict>) -> PyResult<Vec<usize>> {
+    let py = consts.py();
+    Ok(match kind {
+        Pick::Any => (0..n).collect(),
+        Pick::Coefficient => {
+            let num = is_number_at(consts, 0)?;
+            if 0 < n && consts.contains(0)? && !num && c.plant == "rows-allowed-coefficient" {
+                c.fired();
+                vec![0]
+            } else if 0 < n && num {
+                vec![0]
+            } else {
+                vec![]
+            }
+        }
+        _ => {
+            let mut at: Vec<usize> = Vec::new();
+            for k in consts.keys() {
+                let k: usize = k.extract()?;
+                if k < n {
+                    at.push(k);
+                }
+            }
+            at.sort_unstable();
+            if let Pick::Value(v) = kind {
+                let mut r = Vec::new();
+                for k in at {
+                    if same_value(&consts.get_item(k)?.unwrap(), v.bind(py))? {
+                        r.push(k);
+                    }
+                }
+                r
+            } else {
+                at
+            }
+        }
+    })
+}
+
+/// k-combinations of `xs` in lexicographic order, as `itertools.combinations`.
+fn combinations(xs: &[usize], k: usize) -> Vec<Vec<usize>> {
+    fn go(xs: &[usize], k: usize, from: usize, cur: &mut Vec<usize>, out: &mut Vec<Vec<usize>>) {
+        if cur.len() == k {
+            out.push(cur.clone());
+            return;
+        }
+        for i in from..xs.len() {
+            cur.push(xs[i]);
+            go(xs, k, i + 1, cur, out);
+            cur.pop();
+        }
+    }
+    let mut out = Vec::new();
+    go(xs, k, 0, &mut Vec::new(), &mut out);
+    out
+}
+
+/// `_placements(picks, n, consts)`: each placement, in Python's generator order.
+fn placements(c: &Common, s: &Schema, n: usize, consts: &Bound<'_, PyDict>) -> PyResult<Vec<Vec<usize>>> {
+    c.bump("rows:placements");
+    let allowed: Vec<Vec<usize>> = s.picks.iter().map(|k| allowed(c, k, n, consts)).collect::<PyResult<_>>()?;
+    let mut out = Vec::new();
+    let mut placed = vec![usize::MAX; s.picks.len()];
+    fn place(gi: usize, used: &mut Vec<usize>, s: &Schema, allowed: &[Vec<usize>], placed: &mut Vec<usize>, out: &mut Vec<Vec<usize>>) {
+        if gi == s.groups.len() {
+            out.push(placed.clone());
+            return;
+        }
+        let members = &s.groups[gi];
+        let free: Vec<usize> = allowed[members[0]].iter().copied().filter(|p| !used.contains(p)).collect();
+        for at in combinations(&free, members.len()) {
+            for (i, p) in members.iter().zip(at.iter()) {
+                placed[*i] = *p;
+            }
+            let before = used.len();
+            used.extend(at.iter().copied());
+            place(gi + 1, used, s, allowed, placed, out);
+            used.truncate(before);
+        }
+    }
+    place(0, &mut Vec::new(), s, &allowed, &mut placed, &mut out);
+    if c.plant == "rows-placements-first" && out.len() > 1 {
+        c.fired();
+        out.truncate(1);
+    }
+    Ok(out)
+}
+
+/// `_instances(prem, concl, placed, rest, n)`.
+fn instances(
+    py: Python<'_>,
+    c: &Common,
+    prem: &[SLit],
+    concl: &[SLit],
+    placed: &[usize],
+    rest: &[usize],
+    n: usize,
+) -> PyResult<Vec<(Vec<Lit>, Vec<Lit>)>> {
+    c.bump("rows:instances");
+    let lits = |w: &W, p: &str, s: bool| -> Vec<Lit> {
+        match w {
+            W::Node => vec![(n as i64, p.to_string(), s)],
+            W::Slot(i) => vec![(placed[*i] as i64, p.to_string(), s)],
+            _ => rest.iter().map(|&j| (j as i64, p.to_string(), s)).collect(),
+        }
+    };
+    let mut ps: Vec<Lit> = Vec::new();
+    let mut others: Vec<(&str, bool)> = Vec::new();
+    let mut some_: Option<(&str, bool)> = None;
+    for (w, p, s) in prem {
+        match w {
+            W::Count => {
+                let mut differs = const_value(c, &integer(py, c, rest.len())?, p)? != Some(*s);
+                if c.plant == "rows-count-flip" {
+                    c.fired();
+                    differs = !differs;
+                }
+                if differs {
+                    return Ok(vec![]);
+                }
+            }
+            W::Some => some_ = Some((p, *s)),
+            W::Others => {
+                if c.plant == "rows-instances-others" {
+                    c.fired();
+                } else {
+                    others.push((p, *s));
+                }
+            }
+            _ => ps.extend(lits(w, p, *s)),
+        }
+    }
+    let cs: Vec<Lit> = concl.iter().flat_map(|(w, p, s)| lits(w, p, *s)).collect();
+    let Some((sp, ss)) = some_ else { return Ok(vec![(ps, cs)]) };
+    Ok(rest
+        .iter()
+        .map(|&k| {
+            let mut r = ps.clone();
+            for &j in rest {
+                if j != k {
+                    for (p, s) in &others {
+                        r.push((j as i64, p.to_string(), *s));
+                    }
+                }
+            }
+            r.push((k as i64, sp.to_string(), ss));
+            (r, cs.clone())
+        })
+        .collect())
+}
+
+/// `_clauses(rule)`: the number of clauses of the rule over the basis.
+fn clauses(c: &Common, r: &(Vec<Lit>, Vec<Lit>)) -> PyResult<u128> {
+    c.bump("rows:clauses");
+    let kn = &c.kn.get().0;
+    let mut k: u128 = 1;
+    for (_, p, s) in &r.0 {
+        k = k.saturating_mul(kn.cnf(p, !*s).map_err(pyo3::exceptions::PyKeyError::new_err)?.len() as u128);
+    }
+    if c.plant == "rows-clauses-one" && !r.1.is_empty() {
+        c.fired();
+        return Ok(k);
+    }
+    for (_, p, s) in &r.1 {
+        k = k.saturating_mul(kn.cnf(p, *s).map_err(pyo3::exceptions::PyKeyError::new_err)?.len() as u128);
+    }
+    Ok(k)
+}
+
+fn atom<'py>(c: &Common, py: Python<'py>, pred: &str, sign: bool, obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    let a = c.ctors[0].bind(py).call1((pred, obj))?;
+    if sign { Ok(a) } else { c.ctors[1].bind(py).call1((a,)) }
+}
+
+/// `_wide(expr, args, consts, prem, concl)`.
+fn wide<'py>(
+    py: Python<'py>,
+    c: &Common,
+    expr: &Bound<'py, PyAny>,
+    args: &[Bound<'py, PyAny>],
+    consts: &Bound<'py, PyDict>,
+    prem: &[SLit],
+    concl: &[SLit],
+) -> PyResult<Option<Bound<'py, PyAny>>> {
+    let every: Vec<(&str, bool)> =
+        prem.iter().filter(|(w, _, _)| matches!(w, W::Every | W::Others)).map(|(_, p, s)| (p.as_str(), *s)).collect();
+    let somes: Vec<(&str, bool)> = prem.iter().filter(|(w, _, _)| matches!(w, W::Some)).map(|(_, p, s)| (p.as_str(), *s)).collect();
+    if somes.len() != 1 {
+        return Err(PyValueError::new_err("_wide: not one `some`"));
+    }
+    let (sp, ss) = somes[0];
+    c.bump("rows:wide");
+    for (w, p, s) in prem {
+        if matches!(w, W::Count) && const_value(c, &integer(py, c, args.len())?, p)? != Some(*s) {
+            return Ok(None);
+        }
+    }
+    let (mut weak, mut strong, mut met) = (Vec::new(), Vec::new(), false);
+    for (k, a) in args.iter().enumerate() {
+        match consts.get_item(k)? {
+            None => {
+                for (p, s) in &every {
+                    weak.push(atom(c, py, p, *s, a)?);
+                }
+                strong.push(atom(c, py, sp, ss, a)?);
+            }
+            Some(cv) => {
+                let mut drop = false;
+                for (p, s) in &every {
+                    if const_value(c, &cv, p)? != Some(*s) {
+                        drop = true;
+                        break;
+                    }
+                }
+                if drop {
+                    return Ok(None);
+                }
+                if const_value(c, &cv, sp)? == Some(ss) {
+                    met = true;
+                }
+            }
+        }
+    }
+    if !(met || !strong.is_empty()) {
+        return Ok(None);
+    }
+    let mut ps: Vec<Bound<'py, PyAny>> = Vec::new();
+    for (w, p, s) in prem {
+        if matches!(w, W::Node) {
+            ps.push(atom(c, py, p, *s, expr)?);
+        }
+    }
+    ps.extend(weak);
+    if !met {
+        ps.push(c.ctors[2].bind(py).call1(PyTuple::new(py, &strong)?)?);
+    }
+    let cs: Vec<Bound<'py, PyAny>> = concl.iter().map(|(_, p, s)| atom(c, py, p, *s, expr)).collect::<PyResult<_>>()?;
+    let cc = if cs.len() == 1 { cs[0].clone() } else { c.ctors[2].bind(py).call1(PyTuple::new(py, &cs)?)? };
+    if ps.is_empty() {
+        return Ok(Some(cc));
+    }
+    let and = c.ctors[4].bind(py).call1(PyTuple::new(py, &ps)?)?;
+    Ok(Some(c.ctors[3].bind(py).call1((and, cc))?))
+}
+
+/// `piecewise_values(expr)`.
+fn piecewise_values<'py>(c: &Common, expr: &Bound<'py, PyAny>) -> PyResult<Option<Bound<'py, PyAny>>> {
+    let py = expr.py();
+    c.bump("rows:piecewise_values");
+    let args: Vec<Bound<'py, PyAny>> = expr.getattr("args")?.try_iter()?.collect::<PyResult<_>>()?;
+    let sympy = py.import("sympy")?;
+    let t = sympy.getattr("S")?.getattr("true")?;
+    match args.last() {
+        None => return Ok(None),
+        Some(last) => {
+            if !last.getattr("cond")?.is(&t) {
+                if c.plant == "rows-piecewise-last" {
+                    c.fired();
+                } else {
+                    return Ok(None);
+                }
+            }
+        }
+    }
+    let expr_t = sympy.getattr("Expr")?;
+    let mut values = Vec::with_capacity(args.len());
+    for a in &args {
+        let v = a.getattr("expr")?;
+        if !v.is_instance(&expr_t)? {
+            return Ok(None);
+        }
+        values.push(v);
+    }
+    Ok(Some(PyTuple::new(py, values)?.into_any()))
+}

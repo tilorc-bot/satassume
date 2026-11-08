@@ -23,6 +23,11 @@ MODULES = tuple('satassume.knowledge.templates.' + m for m in (
 PLANTS = ('common-facts-drop', 'common-units-drop', 'common-max-cache-off', 'common-key-shape-off',
           'common-compiled-swap', 'common-wide-drop', 'common-rule-drop', 'common-equiv-one', 'common-lits-flip',
           'common-ge2-drop', 'common-consts-of-skip', 'common-pattern-key-type', 'common-const-key-type')
+#: 6g(b): wiring's rows families on Rust (term/rows_tpl.rs `PLANTS`), set on `Common`, which the rows templates read.
+PLANTS += ('rows-block-key-n', 'rows-rules-for-shape', 'rows-of-constant-skip', 'rows-matches-constant',
+           'rows-expand-drop-last', 'rows-placements-first', 'rows-allowed-coefficient', 'rows-instances-others',
+           'rows-count-flip', 'rows-clauses-one', 'rows-wide-drop', 'rows-piecewise-last', 'rows-mul-sets-first',
+           'rows-add-bound-skip')
 COMMON = [None]
 
 

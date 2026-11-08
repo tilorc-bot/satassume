@@ -41,4 +41,5 @@ pub mod offline;
 pub mod py;
 pub mod rat;
 pub mod relations;
+pub mod rows_tpl;
 pub mod table;

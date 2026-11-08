@@ -41,28 +41,28 @@ fn bump(c: &mut HashMap<String, u64>, k: &str) {
 
 #[pyclass(name = "Common")]
 pub struct Common {
-    kn: Py<PyKnowledge>,
+    pub(crate) kn: Py<PyKnowledge>,
     cache: Py<PyDict>,
     max_cache: usize,
-    max_expand: u128,
+    pub(crate) max_expand: u128,
     pattern_t: Py<PyType>,
     compiled_t: Py<PyType>,
     key_error_t: Py<PyAny>,
     fault_t: Py<PyAny>,
     contradiction: String,
-    const_value: Py<PyAny>,
+    pub(crate) const_value: Py<PyAny>,
     /// `term_live._local`: its `stack`'s last `_Query` has `kept` set on a kept query. Read, never called.
     local: Py<PyAny>,
     /// Python's own functions, by name, for kept queries.
     py_fns: Py<PyDict>,
     /// `P`, `Not`, `Or`, `Implies`, `And`.
-    ctors: [Py<PyAny>; 5],
+    pub(crate) ctors: [Py<PyAny>; 5],
     counts: std::sync::Mutex<HashMap<String, u64>>,
-    plant: String,
+    pub(crate) plant: String,
 }
 
 impl Common {
-    fn kept(&self, py: Python<'_>) -> PyResult<bool> {
+    pub(crate) fn kept(&self, py: Python<'_>) -> PyResult<bool> {
         let s = match self.local.bind(py).getattr("stack") {
             Ok(s) => s,
             Err(e) if e.is_instance_of::<pyo3::exceptions::PyAttributeError>(py) => return Ok(false),
@@ -75,11 +75,11 @@ impl Common {
         Ok(!s.get_item(n - 1)?.getattr("kept")?.is_none())
     }
 
-    fn fired(&self) {
+    pub(crate) fn fired(&self) {
         self.bump("plant:fired");
     }
 
-    fn bump(&self, k: &str) {
+    pub(crate) fn bump(&self, k: &str) {
         bump(&mut self.counts.lock().unwrap(), k);
     }
 
@@ -260,7 +260,7 @@ impl Common {
     }
 
     fn set_plant(&mut self, p: &str) -> PyResult<()> {
-        if !PLANTS.contains(&p) {
+        if !PLANTS.contains(&p) && !super::rows_tpl::PLANTS.contains(&p) {
             return Err(PyValueError::new_err(format!("unknown plant {p}")));
         }
         self.plant = p.to_string();
@@ -289,7 +289,7 @@ impl Common {
     }
 
     /// `_common.facts(key, gen, consts, objs, node)`.
-    fn facts<'py>(
+    pub(crate) fn facts<'py>(
         &self,
         py: Python<'py>,
         key: &Bound<'py, PyAny>,
@@ -530,7 +530,7 @@ impl Common {
     }
 
     /// The constants among `args` by position: `is_Atom and is_number`, both class attributes on atoms.
-    fn consts_of<'py>(&self, py: Python<'py>, args: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    pub(crate) fn consts_of<'py>(&self, py: Python<'py>, args: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
         if self.kept(py)? {
             self.bump("common:kept:consts_of");
             return self.py_fn(py, "consts_of")?.call1((args,));
@@ -551,7 +551,7 @@ impl Common {
         Ok(d.into_any())
     }
 
-    fn pattern_key<'py>(&self, py: Python<'py>, tag: &Bound<'py, PyAny>, n: &Bound<'py, PyAny>, consts: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    pub(crate) fn pattern_key<'py>(&self, py: Python<'py>, tag: &Bound<'py, PyAny>, n: &Bound<'py, PyAny>, consts: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
         if self.kept(py)? {
             self.bump("common:kept:pattern_key");
             return self.py_fn(py, "pattern_key")?.call1((tag, n, consts));

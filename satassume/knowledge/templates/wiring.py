@@ -552,6 +552,8 @@ def any_arity(tag, gen, arguments=None, leave_out_wide=False):
         return [block(args, expr), *wide] if wide else block(args, expr)
     template.__name__ = template.__qualname__ = f'{tag}_rows_templates'
     template.__module__ = gen.__module__
+    if arguments is None or arguments is piecewise_values:
+        template._satassume_rows = ('any_arity', tag, gen, arguments is not None, leave_out_wide)
     return template
 
 
@@ -639,6 +641,7 @@ def product(gen):
         return out if len(out) > 1 else out[0]
     template.__name__ = template.__qualname__ = 'mul_rows_templates'
     template.__module__ = gen.__module__
+    template._satassume_rows = ('product', 'mul', gen, False, False)
     return template
 
 
@@ -680,4 +683,5 @@ def addition(gen):
         return out if len(out) > 1 else out[0]
     template.__name__ = template.__qualname__ = 'add_rows_templates'
     template.__module__ = gen.__module__
+    template._satassume_rows = ('addition', 'add', gen, False, False)
     return template
