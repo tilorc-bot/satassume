@@ -2,6 +2,7 @@
 the hand cases: contradiction, undecidable constant literal, repeated premise, wide at and past `MAX_EXPAND`, empty clause, unknown
 predicate. Also that the counters fire, what a read raises comes through as itself, a Rust failure is loud, and `undo` restores both.
 """
+import collections
 import os
 import random
 import sys
@@ -19,12 +20,20 @@ from satassume.knowledge import rules as R
 from satassume.knowledge.templates import _common
 from satassume.knowledge.templates._common import Compiled, VOCAB
 
+import knowledge_common_live
 import knowledge_live as K
 
 PY_RESOLVE, PY_PATTERN = _common.resolve, _common.Pattern
 CONSTS = [Integer(0), Integer(1), Integer(-1), Integer(2), Integer(4), Rational(1, 2), S.Infinity, S.NegativeInfinity, S.ComplexInfinity,
           S.NaN, pi, EE, I, 2 * I, S.Half + I]
 PREDS = sorted(VOCAB)
+
+
+def rust_common():
+    """Step 6d: Rust's `facts`/`units` call `resolve` and `Pattern` directly, so knowledge_live's `common:resolve` and
+    `common:pattern` wrappers no longer see them; Rust's own counts (flushed into K.COUNTS only at undo) do."""
+    c = knowledge_common_live.COMMON[0]
+    return collections.Counter(c.counts() if c is not None else {})
 
 
 @pytest.fixture
@@ -277,8 +286,9 @@ def test_every_template_goes_through_rust_and_the_answers_stand():
         assert sympy_api.ask(Q.even(2 * y)) is True
         assert sympy_api.ask(Q.real(x * y)) is True
         assert isinstance(_common.Compiled, type) and _common.Compiled is Compiled
-        assert K.COUNTS['common:resolve'] > 0 and K.COUNTS['common:pattern'] > 0
-        assert K.COUNTS['shadow:common'] >= K.COUNTS['common:resolve'] + K.COUNTS['common:pattern']
+        # 6d: through Rust's facts/units; their shadow against Python's is registry_count.py --shadow
+        rust = rust_common()
+        assert rust['common:facts'] > 0 and rust['common:units'] > 0, dict(rust)
         assert not K.COUNTS['shadow:mismatch'], K.MISMATCHES
         assert not K.COUNTS['shadow:order'], K.ORDER_DIFFS
         assert not K.COUNTS['fault']
@@ -293,11 +303,14 @@ def test_a_kept_query_stays_wholly_on_python(live):
     sympy_api.set_default_engine(E.Engine())
     sympy_api.ask(Q.positive(Sum(x, (x, 1, Symbol('n', integer=True)))))
     assert live['kept:sum-product-integral'] == 1 and live['common:kept'] > 0
+    rust = rust_common()
     assert not live['common:resolve'] and not live['common:pattern']
+    assert not rust['common:facts'] and not rust['common:units'], dict(rust)
     reset_module_state(sympy_cache=False)
     sympy_api.set_default_engine(E.Engine())
     sympy_api.ask(Q.positive(x + 1))
-    assert live['common:resolve'] + live['common:pattern'] > 0
+    rust = rust_common()
+    assert rust['common:facts'] + rust['common:units'] > 0, dict(rust)
 
 
 def test_undo_restores_both_globals():

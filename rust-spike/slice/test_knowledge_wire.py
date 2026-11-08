@@ -34,7 +34,10 @@ def test_default_installs(env):
     x = Symbol('x')
     K.COUNTS.clear()
     assert sympy_api.ask(Q.positive(x**2 + 1), Q.real(x)) is True
-    assert K.COUNTS['common:pattern'] > 0, dict(K.COUNTS)
+    # 6d: Rust's facts/units make the Patterns; their counts reach K.COUNTS only at undo
+    import knowledge_common_live
+    rust = knowledge_common_live.COMMON[0].counts()
+    assert rust.get('common:facts', 0) + rust.get('common:units', 0) > 0, (dict(K.COUNTS), rust)
 
 
 def test_py_keeps_it_off(env):
