@@ -185,6 +185,25 @@ thread_local! {
     static ENCLOSURES: RefCell<HashMap<(u32, i64), (Py<PyAny>, Rc<(BigInt, BigInt)>)>> = RefCell::new(HashMap::new());
 }
 
+/// `ENCLOSURES`' bound (step 5c9a: a registry table is bounded; it had none), as `NativeTable.size` gives it.
+pub(crate) const ENCLOSURES_SIZE: usize = 100_000;
+
+/// memos.rs's accessors of `ENCLOSURES`.
+pub(crate) fn enclosures_len() -> usize {
+    ENCLOSURES.with(|m| m.borrow().len())
+}
+
+pub(crate) fn enclosures_clear() {
+    ENCLOSURES.with(|m| m.borrow_mut().clear());
+}
+
+/// `[((index, prec), (lo, hi))]`, converted for the registry view's `items()`.
+pub(crate) fn enclosures_items(p: Python<'_>) -> PyResult<Vec<(Py<PyAny>, Py<PyAny>)>> {
+    ENCLOSURES.with(|m| {
+        m.borrow().iter().map(|(k, (t, _))| Ok(((k.0, k.1).into_pyobject(p)?.into_any().unbind(), t.clone_ref(p)))).collect()
+    })
+}
+
 fn read_limits(py: Python<'_>) -> PyResult<Limits> {
     let m = module(py)?;
     // Past i64 means "no limit" for anything a Poly can reach, as an unbounded Python int would.
@@ -1240,7 +1259,14 @@ fn enclose(i: u32, prec: i64) -> R<Rc<Pair>> {
         }
         let (lo, hi): (BigInt, BigInt) = r.extract()?;
         let p = Rc::new((lo, hi));
-        ENCLOSURES.with(|m| m.borrow_mut().insert((i, prec), (r.unbind(), p.clone())));
+        ENCLOSURES.with(|m| {
+            let mut m = m.borrow_mut();
+            if m.len() >= ENCLOSURES_SIZE {
+                crate::session::tick(crate::session::MEMO_FULL);
+                m.clear();
+            }
+            m.insert((i, prec), (r.unbind(), p.clone()))
+        });
         Ok(p)
     })
 }

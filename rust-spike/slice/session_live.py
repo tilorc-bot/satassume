@@ -785,6 +785,21 @@ def _install_relevance():
     return undo
 
 
+#: Step 5c9a's plants (memos.rs, relations_core.rs 170-177).
+_MEMO_PLANTS = ('memo-view-drop', 'memo-clear-skip', 'memo-restamp-no-stamp', 'memo-set-transfer', 'memo-set-uninterp',
+                'memo-set-relspecs', 'memo-set-ext', 'memo-spec-unbounded')
+
+
+def _install_memos():
+    """Attaches the Rust-native memo tables' views to `memos.PROCESS` (memos.rs). Returns the undo."""
+    from satassume.state import memos
+    sa_solver.memo_install(memos.PROCESS)
+
+    def undo():
+        sa_solver.memo_uninstall(memos.PROCESS)
+    return undo
+
+
 def _install_relations():
     """Returns the undo."""
     import term_live
@@ -901,8 +916,11 @@ def install():
     undo_glue = _install_glue() if os.environ.get('SLICE_GLUE', 'rust') == 'rust' else None
     undo_budget = _install_budget() if os.environ.get('SLICE_BUDGET', 'rust') == 'rust' else None
     undo_relevance = _install_relevance() if os.environ.get('SLICE_RELEVANCE', 'rust') == 'rust' else None
+    undo_memos = _install_memos() if os.environ.get('SLICE_MEMOS', 'rust') == 'rust' else None
 
     def undo():
+        if undo_memos is not None:
+            undo_memos()
         if undo_relevance is not None:
             undo_relevance()
         if undo_budget is not None:
@@ -944,7 +962,7 @@ def from_env():
             PLANT[0] = os.environ['SLICE_SESSION_PLANT']
             if PLANT[0] in _REL_PLANTS or PLANT[0] in _DISC_PLANTS or PLANT[0] in _LOOP_PLANTS or PLANT[0] in _QUERY_PLANTS \
                     or PLANT[0] in _SCOPE_PLANTS or PLANT[0] in _GLUE_PLANTS or PLANT[0] in _BUDGET_PLANTS \
-                    or PLANT[0] in _RELEVANCE_PLANTS:
+                    or PLANT[0] in _RELEVANCE_PLANTS or PLANT[0] in _MEMO_PLANTS:
                 sa_solver.rel_plant(PLANT[0])
         return install()
     return None

@@ -14,7 +14,7 @@ use pyo3::types::{PyBool, PyDict, PyList, PySet, PyTuple};
 use crate::compile::{self, block_lits, Cx, Def, Kind, Need, F, R};
 use crate::formula_py::PyP;
 
-const NAMES: [&str; 200] = [
+const NAMES: [&str; 236] = [
     "py:var", "py:dvar", "py:node", "py:compile", "py:literal", "py:table", "rs:visit", "rs:add_clause", "rs:ensure_vars",
     "rs:def_implications", "rs:neg_shared", "join", "rs:emit_callback", "refuse:depth", "refuse:convert", "refuse:object", "second:visit", "custom:own",
     "link:hit", "link:resolved", "link:none", "link:no_table", "link:second", "link:no_node",
@@ -50,6 +50,9 @@ const NAMES: [&str; 200] = [
     "rv:relevant", "rv:split_new", "rv:keys_rel", "rv:keys_miss", "rv:const_free_miss", "rv:vocab_blocks", "rv:part_consistent", "rv:consistent",
     "rv:consistent_caught", "rv:cb_formula", "rv:cb_verdict", "rv:cb_theory_scope", "rv:cb_category", "rv:cb_ext", "rv:cb_memo",
     "rv:py_deep", "rv:br_verdict", "rv:br_glue", "rv:br_parts", "rv:br_unsupported", "rv:sympy_and",
+    // 200-229 reserved for the 6g stack (sa-port-172); 230-235 step 5c9a (memos.rs).
+    "reserved:200", "reserved:201", "reserved:202", "reserved:203", "reserved:204", "reserved:205", "reserved:206", "reserved:207", "reserved:208", "reserved:209", "reserved:210", "reserved:211", "reserved:212", "reserved:213", "reserved:214", "reserved:215", "reserved:216", "reserved:217", "reserved:218", "reserved:219", "reserved:220", "reserved:221", "reserved:222", "reserved:223", "reserved:224", "reserved:225", "reserved:226", "reserved:227", "reserved:228", "reserved:229",
+    "memo:native_clear", "memo:native_items", "memo:restamp", "memo:setting", "memo:setting_prop", "memo:spec_full",
 ];
 const VAR: usize = 0;
 const DVAR: usize = 1;
@@ -270,6 +273,18 @@ pub(crate) const RV_BR_GLUE: usize = 196;
 pub(crate) const RV_BR_PARTS: usize = 197;
 pub(crate) const RV_BR_UNSUPPORTED: usize = 198;
 pub(crate) const RV_SYMPY_AND: usize = 199;
+/// Step 5c9a (memos.rs): a native table's view emptied (`PROCESS.clear()` and the like).
+pub(crate) const MEMO_NATIVE_CLEAR: usize = 230;
+/// A native table's entries converted for `items()`/`keys()` (tests and the inventory only).
+pub(crate) const MEMO_NATIVE_ITEMS: usize = 231;
+/// `Table.restamp` of `_KEYS`/`_CONST`, run in Rust (it was a callback into memos.py).
+pub(crate) const MEMO_RESTAMP: usize = 232;
+/// An `Engine` setting's field read by Rust: the crossing into the Python `Engine` (5c10's container), removed by 5c10.
+pub(crate) const MEMO_SETTING: usize = 233;
+/// A setting read through its property, on an `Engine` subclass.
+pub(crate) const MEMO_SETTING_PROP: usize = 234;
+/// A native table emptied at its bound.
+pub(crate) const MEMO_FULL: usize = 235;
 
 /// Deeper formulas compile on Python, over this same table. Python's own limit depends on the caller's stack, so it isn't
 /// reproduced: its deepest shape is `Implies`, 3 frames a level (first failure at depth 330 from a bare stack, limit 1000), so
@@ -277,7 +292,7 @@ pub(crate) const RV_SYMPY_AND: usize = 199;
 const FORMULA_DEPTH: u32 = 64;
 
 thread_local! {
-    static COUNTS: [Cell<u64>; 200] = const { [const { Cell::new(0) }; 200] };
+    static COUNTS: [Cell<u64>; 236] = const { [const { Cell::new(0) }; 236] };
     /// Each session's serial, for the link's memo: a pointer could alias a dead session's.
     static SERIAL: Cell<u64> = const { Cell::new(0) };
 }
@@ -292,6 +307,9 @@ fn session_counts<'py>(p: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
     let d = PyDict::new(p);
     COUNTS.with(|c| {
         for (i, n) in NAMES.iter().enumerate() {
+            if n.starts_with("reserved:") {
+                continue;
+            }
             d.set_item(*n, c[i].get())?;
         }
         Ok::<_, PyErr>(())

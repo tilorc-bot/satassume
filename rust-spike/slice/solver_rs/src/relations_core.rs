@@ -207,6 +207,23 @@ pub(crate) const VOCAB_NO_DERIVED: u8 = 136;
 pub(crate) const PART_CONSISTENT_TRUE: u8 = 137;
 pub(crate) const CONSISTENT_FAULT: u8 = 138;
 pub(crate) const CONSISTENT_IGNORE_VERDICT: u8 = 139;
+// Step 5c9a (memos.rs): 170-177; the 6g stack's plants sit below 170.
+/// The registry view leaves `SPEC_ROWS` out (the inventory's planted bug: a table left out of the registry view).
+pub(crate) const MEMO_VIEW_DROP: u8 = 170;
+/// `ENCLOSURES`' view doesn't empty the map on `clear()`.
+pub(crate) const MEMO_CLEAR_SKIP: u8 = 171;
+/// Rust's `Table.restamp` empties the table but leaves the stamp.
+pub(crate) const MEMO_RESTAMP_NO_STAMP: u8 = 172;
+/// `Engine.transfer` read by Rust gives the opposite value.
+pub(crate) const MEMO_SET_TRANSFER: u8 = 173;
+/// `Engine.uninterpreted` read by Rust gives the other value.
+pub(crate) const MEMO_SET_UNINTERP: u8 = 174;
+/// `Engine.relation_specs` read by Rust gives `()`.
+pub(crate) const MEMO_SET_RELSPECS: u8 = 175;
+/// `Engine.extensions` read by Rust gives None.
+pub(crate) const MEMO_SET_EXT: u8 = 176;
+/// `SPEC_ROWS` is never emptied at its bound.
+pub(crate) const MEMO_SPEC_UNBOUNDED: u8 = 177;
 
 #[pyfunction]
 fn rel_install(term_live: Py<PyAny>, relations: Py<PyAny>, euf_adapter: Py<PyAny>, fault: Py<PyAny>) {
@@ -356,6 +373,14 @@ fn rel_plant(name: Option<&str>) -> PyResult<()> {
         Some("part-consistent-true") => PART_CONSISTENT_TRUE,
         Some("consistent-fault") => CONSISTENT_FAULT,
         Some("consistent-ignore-verdict") => CONSISTENT_IGNORE_VERDICT,
+        Some("memo-view-drop") => MEMO_VIEW_DROP,
+        Some("memo-clear-skip") => MEMO_CLEAR_SKIP,
+        Some("memo-restamp-no-stamp") => MEMO_RESTAMP_NO_STAMP,
+        Some("memo-set-transfer") => MEMO_SET_TRANSFER,
+        Some("memo-set-uninterp") => MEMO_SET_UNINTERP,
+        Some("memo-set-relspecs") => MEMO_SET_RELSPECS,
+        Some("memo-set-ext") => MEMO_SET_EXT,
+        Some("memo-spec-unbounded") => MEMO_SPEC_UNBOUNDED,
         Some(x) => return Err(PyValueError::new_err(format!("no plant {x}"))),
     };
     PLANT.store(v, Relaxed);
@@ -1381,7 +1406,7 @@ impl<'py> Cx<'_, 'py> {
     fn engage_transfer(&self) -> PyResult<()> {
         let p = self.rel.py();
         tick(session::REL_ENGAGE);
-        if !self.s.getattr(intern!(p, "engine"))?.getattr(intern!(p, "transfer"))?.is_truthy()? {
+        if !self.s.getattr(intern!(p, "engine")).and_then(|e| crate::memos::setting(&e, intern!(p, "_transfer"), intern!(p, "transfer")))?.is_truthy()? {
             return Ok(());
         }
         let mut ad = None;
@@ -1963,7 +1988,7 @@ fn rel_process<'py>(rel: &Bound<'py, PyAny>, user_atoms: Option<&Bound<'py, PyAn
         if a.getattr(pred)?.eq(intern!(p, "eq"))? {
             if rel.getattr(intern!(p, "xfer"))?.is_none()
                 && !rel.getattr(intern!(p, "_want_transfer"))?.is_truthy()?
-                && s.getattr(intern!(p, "engine"))?.getattr(intern!(p, "transfer"))?.is_truthy()?
+                && s.getattr(intern!(p, "engine")).and_then(|e| crate::memos::setting(&e, intern!(p, "_transfer"), intern!(p, "transfer")))?.is_truthy()?
             {
                 let stats = s.getattr(intern!(p, "engine"))?.getattr(intern!(p, "stats"))?;
                 let k = intern!(p, "scope_misses");
@@ -2035,7 +2060,7 @@ fn rel_process<'py>(rel: &Bound<'py, PyAny>, user_atoms: Option<&Bound<'py, PyAn
     if !rel.getattr(intern!(p, "xfer"))?.is_none() {
         rel.call_method0(intern!(p, "sync_transfer"))?;
     }
-    if s.getattr(intern!(p, "engine"))?.getattr(intern!(p, "uninterpreted"))?.eq(intern!(p, "free"))? {
+    if s.getattr(intern!(p, "engine")).and_then(|e| crate::memos::setting(&e, intern!(p, "_uninterpreted"), intern!(p, "uninterpreted")))?.eq(intern!(p, "free"))? {
         return Ok(());
     }
     for a in &user {
@@ -2344,11 +2369,40 @@ pub(crate) fn spec_row(spec: &Bound<'_, PyAny>) -> PyResult<Arc<SpecRow>> {
     });
     let mut g = SPEC_ROWS.lock().unwrap();
     let m = g.get_or_insert_with(Default::default);
-    if m.len() >= 4096 {
+    if m.len() >= SPEC_ROWS_SIZE && !planted(MEMO_SPEC_UNBOUNDED) {
+        tick(session::MEMO_FULL);
         m.clear();
     }
     m.insert(key, (spec.clone().unbind(), row.clone()));
     Ok(row)
+}
+
+/// `SPEC_ROWS`' bound, as the registry's `NativeTable.size` gives it.
+pub(crate) const SPEC_ROWS_SIZE: usize = 4096;
+
+/// memos.rs's accessors of `SPEC_ROWS`.
+pub(crate) fn spec_rows_len() -> usize {
+    SPEC_ROWS.lock().unwrap().as_ref().map_or(0, |m| m.len())
+}
+
+pub(crate) fn spec_rows_clear() {
+    if let Some(m) = SPEC_ROWS.lock().unwrap().as_mut() {
+        m.clear();
+    }
+}
+
+/// `[(spec, (name, factory, guarded))]`, converted for the registry view's `items()`.
+pub(crate) fn spec_rows_items(p: Python<'_>) -> PyResult<Vec<(Py<PyAny>, Py<PyAny>)>> {
+    let g = SPEC_ROWS.lock().unwrap();
+    let mut out = Vec::new();
+    if let Some(m) = g.as_ref() {
+        for (spec, row) in m.values() {
+            let v = PyTuple::new(p, [row.name.clone_ref(p).into_bound(p), row.factory.clone_ref(p).into_bound(p),
+                                     pyo3::types::PyBool::new(p, row.guarded).to_owned().into_any()])?;
+            out.push((spec.clone_ref(p), v.into_any().unbind()));
+        }
+    }
+    Ok(out)
 }
 
 static RULE_MASKS: RwLock<Option<(Py<PyAny>, Arc<Vec<u64>>)>> = RwLock::new(None);

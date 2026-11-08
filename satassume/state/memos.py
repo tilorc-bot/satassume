@@ -95,6 +95,10 @@ class Memos:
         #: memos kept elsewhere: name -> (what it is keyed on, getter of
         #: the container or None when it does not exist yet)
         self._adopted: Dict[str, Tuple[str, Callable[[], Any]]] = {}
+        #: tables another runtime keeps (the Rust backend's own memos), by
+        #: name: read-only views with ``key``, ``len()`` and ``clear()``
+        #: (:meth:`attach`); empty on the Python backend
+        self._native: Dict[str, Any] = {}
 
     def table(self, name: str, key: str = "pure", size: int = 100_000) -> Table:
         """A new table registered under ``name`` (a re-import of the
@@ -114,6 +118,19 @@ class Memos:
             raise ValueError(f"memo {name}: bad key {key!r}")
         self._adopted[name] = (key, getter)
 
+    def attach(self, name: str, view: Any) -> None:
+        """Register a table that another runtime keeps (the Rust backend's
+        native memos): ``view`` is a read-only view with ``key``, ``len()``
+        and ``clear()``; :meth:`items`, :meth:`names`, :meth:`sizes` and
+        :meth:`clear` list and empty it with the others."""
+        if view.key not in KEYS or (self is PROCESS and view.key not in PROCESS_KEYS):
+            raise ValueError(f"memo {name}: bad key {view.key!r}")
+        self._native[name] = view
+
+    def detach(self, name: str) -> None:
+        """Forget a table registered with :meth:`attach`."""
+        self._native.pop(name, None)
+
     def items(self) -> Iterator[Tuple[str, str, Any]]:
         """``(name, key, container)`` of every memo, adopted ones whose
         owner is not loaded left out; an adopted name whose owner is
@@ -124,9 +141,11 @@ class Memos:
             c = get()
             if c is not None:
                 yield name, key, c
+        for name, v in self._native.items():
+            yield name, v.key, v
 
     def names(self) -> List[str]:
-        return list(self._tables) + list(self._adopted)
+        return list(self._tables) + list(self._adopted) + list(self._native)
 
     def sizes(self) -> Dict[str, int]:
         return {name: len(c) for name, _, c in self.items()}
@@ -139,9 +158,12 @@ class Memos:
             c = get()
             if c is not None:
                 c.clear()
+        for v in self._native.values():
+            v.clear()
 
     def __repr__(self) -> str:
-        return f"<Memos {self.owner}: {len(self._tables)} tables, {len(self._adopted)} adopted>"
+        n = f", {len(self._native)} native" if self._native else ""
+        return f"<Memos {self.owner}: {len(self._tables)} tables, {len(self._adopted)} adopted{n}>"
 
 
 #: the process-wide memos: pure functions of their keys and the epoch

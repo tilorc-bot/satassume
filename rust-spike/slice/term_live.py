@@ -142,6 +142,8 @@ class _Mark:
         self.add(eng)
 
     def _note(self, t):
+        if getattr(t, 'native', False):     # a Rust-native table's view (memos.rs, step 5c9a): Rust's, not rolled back here
+            return
         self.tables[id(t)] = (t, len(t), getattr(t, 'stamp', _NO_STAMP), next(reversed(t), None) if len(t) else None)
         if isinstance(t, collections.defaultdict) and t.default_factory is dict:
             for inner in t.values():

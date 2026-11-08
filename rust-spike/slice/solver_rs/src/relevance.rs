@@ -382,8 +382,8 @@ fn keys_rel<'py>(p: Python<'py>, e: &Bound<'py, PyAny>) -> PyResult<Bound<'py, P
     tick(RV_CB_MEMO);
     let stamp = intern!(p, "stamp");
     if keys.getattr(stamp)?.ne(&state)? {
-        keys.call_method1(intern!(p, "restamp"), (&state,))?;
-        a.getattr(intern!(p, "_CONST"))?.call_method1(intern!(p, "restamp"), (&state,))?;
+        crate::memos::restamp(&keys, &state)?;
+        crate::memos::restamp(&a.getattr(intern!(p, "_CONST"))?, &state)?;
     }
     let k = keys.call_method1(intern!(p, "get"), (e,))?;
     if !k.is_none() {
@@ -596,7 +596,7 @@ fn caller_hint(p: Python<'_>, name: Option<&str>) -> PyResult<()> {
 
 fn consistent_body(p: Python<'_>, a: &Bound<'_, PyAny>, eng: &Bound<'_, PyAny>) -> PyResult<bool> {
     let m = api(p)?;
-    let rel = eng.getattr(intern!(p, "relation_specs"))?.is_truthy()?;
+    let rel = crate::memos::setting(eng, intern!(p, "_relation_specs"), intern!(p, "relation_specs"))?.is_truthy()?;
     tick(RV_CB_FORMULA);
     caller_hint(p, Some("_consistent"))?;
     let g = m.getattr(intern!(p, "_formula"))?.call1((a, rel, true));
@@ -676,7 +676,7 @@ fn relevant<'py>(p: Python<'py>, prop: &Bound<'py, PyAny>, a: &Bound<'py, PyAny>
     if sp.borrow().opaque {
         return Ok(a.clone());
     }
-    let ext = eng.getattr(intern!(p, "extensions"))?;
+    let ext = crate::memos::setting(eng, intern!(p, "_extensions"), intern!(p, "extensions"))?;
     if !ext.is_none() && ext.getattr(intern!(p, "has_node_facts"))?.is_truthy()? {
         let v0 = sp.borrow().vocab;
         let v = match v0 {
@@ -728,7 +728,7 @@ fn relevant<'py>(p: Python<'py>, prop: &Bound<'py, PyAny>, a: &Bound<'py, PyAny>
                 tick(RV_BR_VERDICT);
                 consistent(p, a, eng)?
             } else {
-                let rel = eng.getattr(intern!(p, "relation_specs"))?.is_truthy()?;
+                let rel = crate::memos::setting(eng, intern!(p, "_relation_specs"), intern!(p, "relation_specs"))?.is_truthy()?;
                 tick(RV_CB_FORMULA);
                 match m.getattr(intern!(p, "_formula"))?.call1((a, rel, true)) {
                     Err(err) if err.is_instance(p, &m.getattr(intern!(p, "Unsupported"))?) => {
