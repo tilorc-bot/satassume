@@ -52,4 +52,4 @@ Counters: `python3 ~/sp19/f6counts-113.py ~/sp19/sa-rust-ids-work/sa-port-113` s
    and test changes, not-run list), SendMessage the architect.
 
 ## Map
-knowledge_f6_live.py: `_AfterImport` :62-100, install :103, swap_module/hook/undo at the end. Rest as HANDOFF-sa-port-112.md.
+knowledge_f6_live.py: `_AfterImport` :65, install :107, swap_module :335, undo :359. Rest as HANDOFF-sa-port-112.md.
