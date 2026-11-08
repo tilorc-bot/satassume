@@ -34,6 +34,8 @@ CASES = [
     ('core:_pi_split', 'core-pi-split-second-i', lambda: Q.real(exp(m(I, I, pi, x), evaluate=False)), lambda: Q.integer(x)),
     ('core:_mul_factor_sets', 'core-mul-sets-ipi-any', lambda: Q.real(m(I, pi, x)), lambda: Q.integer(x)),
     ('core:_mul_factor_sets', 'core-mul-sets-ct-two', lambda: Q.positive(m(S(2), x)), lambda: Q.positive(x)),
+    ('core:_quotient_templates', 'core-quotient-rules', lambda: Q.integer(m(x, Pow(y, -1, evaluate=False))),
+     lambda: Q.odd(x) & Q.even(y)),
     ('core:_unit_angle', 'core-unit-angle-neg', lambda: Q.real(Pow(m(S.NegativeOne, I), Rational_(1, 2), evaluate=False)), lambda: True),
     ('core:_exp_arg', 'core-exp-arg-any', lambda: Q.positive(Pow(Pow(S(2), y, evaluate=False), m(I, x), evaluate=False)),
      lambda: Q.real(x) & Q.real(y)),
@@ -42,7 +44,8 @@ CASES = [
 
 
 #: The shell counters of the splits rows_tpl.rs computes directly (6g(c)), by the shadow's name.
-DIRECT = {'core:half_split': '_half_split', 'core:bound_split': '_bound_split', 'core:imag_split': '_imag_split'}
+DIRECT = {'core:half_split': '_half_split', 'core:bound_split': '_bound_split', 'core:imag_split': '_imag_split',
+          'core:_mul_factor_sets': '_mul_factor_sets', 'core:_quotient_templates': '_quotient_templates'}
 
 
 def Rational_(p, q):

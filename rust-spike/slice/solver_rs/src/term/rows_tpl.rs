@@ -58,6 +58,8 @@ pub const PLANTS: &[&str] = &[
     "rows-bound-coeff-one",    // 6g(c) direct `_bound_split`: the coefficient c read as 1
     "rows-imag-drop-last",     // 6g(c) direct `_imag_split`: the last term dropped (fired 0 on core with len > 1)
     "rows-pow-of-constant-skip",// power: the terms of the constant not computed
+    "rows-mul-ipi-drop",       // 6g(c2) direct `_mul_factor_sets`: the (c, I, pi, s) set dropped
+    "rows-quot-swap",          // 6g(c2) direct `_quotient_templates`: slots a and v swapped
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -296,11 +298,12 @@ impl RowsTpl {
     /// something this doesn't: no query or a kept one, an arg that isn't an input term of its own class, or a result that
     /// is a derived term or a product rest (SymPy scaffolding, `core:kept_product`).
     fn split<'py>(&self, py: Python<'py>, c: &Common, name: &str, args: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
-        if let Some(r) = direct_split(py, c, name, args)? {
+        if let Some((r, shown)) = direct_split(py, c, name, args)? {
             c.bump(&format!("rows:rust:{name}"));
             // knowledge_live's shadow: Python's split for this result, compared by knowledge_core_live (the shell's `check`).
+            // `_quotient_templates` shows its shape `(a, v, t)` or None, as the shell's shadow compares.
             if let Some(f) = c.shadow_split(py)? {
-                f.call1((name, args, &r))?;
+                f.call1((name, args, shown.as_ref().unwrap_or(&r)))?;
             }
             return Ok(r);
         }
@@ -343,7 +346,7 @@ impl RowsTpl {
                     return Ok(PyTuple::empty(py).into_any());
                 }
                 let out = PyList::empty(py);
-                let sets = self.wiring_fn(py, &cr, "_mul_factor_sets")?.call1((expr,))?;
+                let sets = self.split(py, &cr, "_mul_factor_sets", expr)?;
                 for (i, fs) in sets.try_iter()?.enumerate() {
                     if i > 0 && cr.plant == "rows-mul-sets-first" {
                         cr.fired();
@@ -351,7 +354,7 @@ impl RowsTpl {
                     }
                     out.append(self.block(c, &fs?, expr)?)?;
                 }
-                let quot = self.wiring_fn(py, &cr, "_quotient_templates")?.call1((expr,))?;
+                let quot = self.split(py, &cr, "_quotient_templates", expr)?;
                 if !quot.is_none() {
                     out.append(quot)?;
                 }
@@ -1171,12 +1174,114 @@ impl<'py> QIds<'py> {
     }
 }
 
-/// `Some(result)` (Python's None for no split) when computed here, `None` to go to the shell.
-fn direct_split<'py>(py: Python<'py>, c: &Common, name: &str, args: &Bound<'py, PyAny>) -> PyResult<Option<Bound<'py, PyAny>>> {
+/// `Some((result, shown))` (result Python's None for no split) when computed here, `None` to go to the shell; `shown` is
+/// what the shadow compares when it isn't the result.
+type Direct<'py> = Option<(Bound<'py, PyAny>, Option<Bound<'py, PyAny>>)>;
+
+fn direct_split<'py>(py: Python<'py>, c: &Common, name: &str, args: &Bound<'py, PyAny>) -> PyResult<Direct<'py>> {
     let Some(q) = QIds::of(py, c)? else { return Ok(None) };
-    let Some(ids) = q.ids(args)? else { return Ok(None) };
-    let tb = q.table.borrow();
-    let t = tb.tt();
+    // The product pair takes the Mul itself; the Add splits take its terms.
+    let one = matches!(name, "_mul_factor_sets" | "_quotient_templates");
+    let of = if one { PyTuple::new(py, [args])?.into_any() } else { args.clone() };
+    let Some(ids) = q.ids(&of)? else { return Ok(None) };
+    let r = {
+        let tb = q.table.borrow();
+        direct_rows(py, c, &q, tb.tt(), name, args, &ids)?
+    };
+    match r {
+        Some(Direct1::Done(r)) => Ok(Some((r, None))),
+        Some(Direct1::Quotient(None)) => Ok(Some((py.None().into_bound(py), Some(py.None().into_bound(py))))),
+        Some(Direct1::Quotient(Some((a, v, t, number)))) => {
+            // `core.facts(('mul_quot', const_key(a) if consts else None), _quotient_rules, consts, (a, v, t, expr), 3)`.
+            let shape = PyTuple::new(py, [&a, &v, &t])?.into_any();
+            let consts = PyDict::new(py);
+            let key_c = if a.getattr("is_Atom")?.is_truthy()? && number {
+                consts.set_item(0, &a)?;
+                const_key(&a)?
+            } else {
+                py.None().into_bound(py)
+            };
+            let key = ("mul_quot", key_c).into_bound_py_any(py)?;
+            let gen = py.import("satassume.knowledge.templates.core")?.getattr("_quotient_rules")?;
+            let objs = if c.plant == "rows-quot-swap" {
+                c.fired();
+                PyTuple::new(py, [&v, &a, &t, args])?
+            } else {
+                PyTuple::new(py, [&a, &v, &t, args])?
+            };
+            let r = c.facts(py, &key, &gen, consts.as_any(), objs.as_any(), 3)?;
+            Ok(Some((r, Some(shape))))
+        }
+        None => Ok(None),
+    }
+}
+
+enum Direct1<'py> {
+    Done(Bound<'py, PyAny>),
+    /// `(a, v, v**k, a is a number)` or no shape; facts are built after the table's borrow ends.
+    Quotient(Option<(Bound<'py, PyAny>, Bound<'py, PyAny>, Bound<'py, PyAny>, bool)>),
+}
+
+fn direct_rows<'py>(
+    py: Python<'py>,
+    c: &Common,
+    q: &QIds<'py>,
+    t: &super::table::TermTable,
+    name: &str,
+    args: &Bound<'py, PyAny>,
+    ids: &[TermId],
+) -> PyResult<Option<Direct1<'py>>> {
+    match name {
+        "_mul_factor_sets" => {
+            // `[expr.args, (c, rest), ((c,) if c != 1 else ()) + (I, pi, s)]`; a product rest (`kept_product`) goes to
+            // the shell, and every ct set has one (it is the Mul's other >= 2 factors).
+            let (ct, ipi) = t.core_mul_factor_sets(ids[0]).map_err(refuse)?;
+            if ct.is_some() {
+                return Ok(None);
+            }
+            let out = PyList::new(py, [args.getattr("args")?])?;
+            if let Some((k, r)) = ipi {
+                let Some(s) = q.one(&r)? else { return Ok(None) };
+                if s.getattr("is_Mul")?.is_truthy()? && c.plant == "rows-mul-ipi-drop" {
+                    c.fired();
+                } else if s.getattr("is_Mul")?.is_truthy()? {
+                    let sp = py.import("sympy")?;
+                    let (p, d) = super::py::core_pq(&k);
+                    let k = sp.getattr("Rational")?.call1((p, d))?;
+                    let mut set: Vec<Bound<'py, PyAny>> = Vec::new();
+                    if !k.eq(1)? {
+                        set.push(k);
+                    }
+                    set.push(sp.getattr("S")?.getattr("ImaginaryUnit")?);
+                    set.push(sp.getattr("S")?.getattr("Pi")?);
+                    set.push(s);
+                    out.append(PyTuple::new(py, set)?)?;
+                }
+            }
+            Ok(Some(Direct1::Done(out.into_any())))
+        }
+        "_quotient_templates" => {
+            let Some((a, v, w)) = t.core_quotient_shape(ids[0]).map_err(refuse)? else {
+                return Ok(Some(Direct1::Quotient(None)));
+            };
+            let (Some(ao), Some(vo), Some(wo)) = (q.obj(a)?, q.obj(v)?, q.obj(w)?) else { return Ok(None) };
+            let number = t.core_is_number(a).map_err(refuse)?;
+            Ok(Some(Direct1::Quotient(Some((ao, vo, wo, number)))))
+        }
+        _ => Ok(direct_add(py, c, q, t, name, ids)?.map(Direct1::Done)),
+    }
+}
+
+/// The Add family's splits: `Some(result)` (Python's None for no split), `None` to go to the shell.
+fn direct_add<'py>(
+    py: Python<'py>,
+    c: &Common,
+    q: &QIds<'py>,
+    t: &super::table::TermTable,
+    name: &str,
+    ids: &[TermId],
+) -> PyResult<Option<Bound<'py, PyAny>>> {
+    let ids = ids.to_vec();
     let none = || Ok(Some(py.None().into_bound(py)));
     match name {
         "_half_split" => {
