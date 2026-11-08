@@ -10,18 +10,33 @@ Then `_keys`, `_keys_rel`, `_const_free`, `_relevant` and `_consistent` agree wi
 """
 import pytest
 
-from test_relations_core import _rust
-
-SL = _rust()
-
-import sa_solver  # noqa: E402
-from sympy import E, Function, Q, Symbol, pi, sqrt  # noqa: E402
-from satassume import sympy_api as A  # noqa: E402
-from satassume.engine import Engine  # noqa: E402
+import sa_solver
+import session_live as SL
+from sympy import E, Function, Q, Symbol, pi, sqrt
+from satassume import sympy_api as A
+from satassume.engine import Engine
 
 x, y, z, w = (Symbol(n) for n in 'xyzw')
 f, g = Function('f'), Function('g')
-PY = SL.PY_RELEVANCE
+PY = SL.PY_RELEVANCE      # filled by `_install_relevance` when the fixture installs
+
+
+@pytest.fixture(scope='module', autouse=True)
+def _rust():
+    """Installs Rust for this module only, as test_relations_core's `_rust` does, and undoes it after, so collecting this
+    file doesn't leave Rust installed for the other files in the same pytest process."""
+    import backend
+    import lra_live
+    import term_live
+    undos = [backend.install_euf(), backend.install_transfer(), term_live.from_env(), lra_live.from_env(), SL.from_env()]
+    try:
+        yield SL
+    finally:
+        for u in reversed(undos):
+            if u is not None:
+                u()
+        A._KEYS.clear()
+        A._CONST.clear()
 
 
 def _py(name, *args):
