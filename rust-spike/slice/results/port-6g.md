@@ -281,3 +281,99 @@ pattern-key-type/const-key-type/max-cache-off replacements. `_n_conflicts` in ru
 **Not run:** seed1, history, forced moves, the native path, timing; the mutant 2/5/6/7/9 rerun, the boundary rescore and
 suite column, order:_rows evidence (not caught meanwhile), the `_forms` guard test; the rows plants on the suite.
 No evaluator asked for.
+
+# Step 6g(c2): the Product family's `_mul_factor_sets` and `_quotient_templates` from the query's table (issue 323)
+
+Source **14b76fd** (sa-port-161, port/6g over 30f3309), **landed as one stack with the Element._new step** (planner's
+stack ruling, 8 Nov ~11:10): cherry-picked clean onto Element._new (9139a9b + d0965f3) over rust-slice 17442af (5c7) as
+**f1e4a74**, the tested source. One full bar, **S1**, on f1e4a74 (pareto1 `~/sp19/sa-rust-ids-work/sa-port-167/bar-S1/`,
+`sum.txt`, end markers written by the job; .so 43dea1a1…), base suite rows 5c7's (`sa-port-158/bar-5c7b/suite`). Landed
+by `PUSH=1 bar.sh land f1e4a74` with this report (sa-port-169); incoming diff at landing **none** (rust-slice still
+17442af). The five bar items, the shared config and Element._new's own plant table are in results/port-elemnew.md; this
+section keeps 6g(c2)'s evidence and plant table apart, as the stack ruling asks. S1 equals base on every item, so no
+bisect ran and c2's solo bar wasn't used (its `done.txt` was written by its own job on pareto1 at 11:11:09Z, the second
+of its `sum` phase, not by hand).
+
+**Code.** rows_tpl.rs's Product family calls `RowsTpl::split` for `_mul_factor_sets` and `_quotient_templates`;
+`direct_split` takes the Mul itself (a 1-tuple to `QIds::ids`) and returns `(result, shown)`, then `direct_rows` (product
+pair) and `direct_add` (c1's three Add splits). `_mul_factor_sets` direct: `core_mul_factor_sets`; any ct set goes to the
+shell (its rest is the Mul's other >= 2 factors, `kept_product`), and the (c, I, pi, s) set only when s is an input Mul
+(`q.one`), else the shell. `_quotient_templates` direct: `core_quotient_shape`, objects by `q.obj`, then `Common::facts`
+with the shell's key `('mul_quot', const_key(a) or None)`, consts `{0: a}` when a is an Atom and `core_is_number`,
+objects `(a, v, t, expr)`, node 3; gen is core's `_quotient_rules` (knowledge_core_live's Rust rules). Shadow: the shape
+`(a, v, t)` or None, compared by knowledge_core_live `shadow_split` with `_quotient_shape_py`. py.rs `core_pq`
+pub(crate). Plants rows-mul-ipi-drop and rows-quot-swap. test_knowledge_core_shapes: new case `core-quotient-rules`
+(`Q.integer(x*y**-1)`, odd x, even y).
+
+**Module count (count rule): 13 of 32, unchanged**, against STATUS.md's "Counted modules" (lines 11-17; list in
+port-elemnew.md). core.py still runs per query (orion retrace on f1e4a74, `~/sa-rust-ids-work/sa-port-167/c2/rc-core.txt`,
+`rc-dev.txt`, `rc.sh OUT WL core.py,wiring.py,functions.py`, pass 1): on dev `_half_templates` 29, `_bound_templates` 31,
+`_bound_split`/`_half_split`/`_imag_split` from knowledge_core_live 3 each, `irrational_root` 4; functions.py's `_unary`
+templates 31, wiring.py's `template.<lambda>` 31. `_mul_factor_sets` and `_quotient_templates` themselves appear in the
+retrace only under `[kept:out-of-scope]` (2 each on dev).
+
+**Direct-split counts** (S1 knowledge.json, rows:rust / rows:python, `_mul_factor_sets`; `_quotient_templates`; before =
+5c7's bar, all rows:python): dev 46/36; 63/19 (before 0/82; 0/82). fuzz 7/2; 7/2 (before 0/9; 0/9). cert 11/0; 11/0
+(before 0/11; 0/11). core 72/158; 184/46. f6 25/65; 81/9. wiring 9/13; 16/6. loop 7/6; 8/5. zero 4/7; 4/7. rootof 368/0
+each. value 318/0 each. opaque 1/0 each. scope, budget 0 (scope's 4/4 shell calls don't go through rows). rows:python is
+the shell (`core:_mul_factor_sets`/`core:_quotient_templates` equal it on every workload): ct sets and derived s go there
+by design; `core:derived:` is 0 for these two.
+**Shadow** (test_knowledge_core_shapes 11/11 on f1e4a74, orion, `~/sa-rust-ids-work/sa-port-167/c2/shadow.txt`, tree.txt
+shows sa-port-19 imported): shadow:direct `_mul_factor_sets` 10 (10 non-empty), `_quotient_templates` 11 (1 non-empty,
+`core-quotient-rules`); c1's three 5/5/5 as before; **shadow:mismatch 0**.
+
+**Plants, this step** (S1; each on dev, fuzz and the 11 workloads against this run's Python; fired / caught on):
+
+| plant | caught (DIFFER) on, fired | fired, MATCH |
+|---|---|---|
+| **rows-quot-swap (new)** | dev 4, core 44, f6 1 | wiring 1 |
+| **rows-mul-ipi-drop (new)** | **void**: 0 on all 13 workloads (reason below) | |
+| rows-half-parity | dev 29, fuzz 83, core 16 | cert 10, f6 27, wiring 2 |
+| rows-bound-coeff-one | dev 5, fuzz 34, core 39, f6 1, wiring 2, zero 1 | |
+| rows-imag-drop-last | core 8, wiring 4 | |
+| rows-block-key-n | dev 85, fuzz 1,151, budget 7, core 154, f6 689, loop 63, wiring 435, zero 15 | |
+| rows-rules-for-shape | every workload but budget and scope (dev 143 ... cert 33, wiring 111) | |
+| rows-of-constant-skip | dev 15, core 29, f6 24, wiring 13 | fuzz 6, cert 11, others 1-3 |
+| rows-matches-constant | dev 37, core 186, loop 29, wiring 148 | f6 8, opaque 8 |
+| rows-matches-coefficient | dev 104, core 104, f6 104, loop 26, rootof 26, value 26, wiring 78 | |
+| rows-expand-drop-last | dev 38, fuzz 28, budget 10, cert 15, core 99, f6 50, loop 10, rootof 1, value 150, wiring 60, zero 7 | opaque 5 |
+| rows-placements-first | every workload but scope (dev 722 ... value 2,404) | |
+| rows-instances-others | every workload but scope (dev 50 ... value 299) | |
+| rows-count-flip | dev 256, fuzz 136, core 740, f6 380, loop 60, rootof 8, value 604, wiring 224, zero 36 | budget 40, cert 104, opaque 24 |
+| rows-clauses-concl-only | wiring 1,792 | |
+| rows-wide-drop | budget 22, wiring 6 | |
+| rows-piecewise-last | wiring 1 | |
+| rows-mul-sets-first | dev 17, core 141, f6 56, loop 2, wiring 9 | |
+| rows-add-bound-skip | dev 31, fuzz 45, core 120, f6 10, loop 4, opaque 8, wiring 6, zero 1 | |
+| rows-pow-key-same | wiring 1 | core 2 |
+| rows-pow-times-skip | dev 3, core 96, loop 3, wiring 12 | |
+| rows-pow-irrational-skip | core 16, wiring 2 | |
+| rows-pow-ipi-skip | core 14, wiring 3 | |
+| rows-pow-unit-drop | core 33, wiring 3 | |
+| rows-pow-of-constant-skip | dev 16, core 312, loop 8, opaque 4, wiring 62 | f6 4 |
+| common-wide-drop (6d) | budget 38, wiring 3 | |
+| with-closed-skip (lra-on) | dev 231, fuzz 326, cert 168, core 134, f6 510, opaque 27, wiring 28 | |
+| rows-pow-head-any | **void** by construction (6g(b)): 0 everywhere | |
+
+- **rows-quot-swap** is caught on dev, core and f6 (core: as on sa-port-161's orion run, fired 44, answers DIFFER).
+- **rows-mul-ipi-drop is void, with its reason:** it drops the (c, I, pi, s) set of the direct `_mul_factor_sets`, which
+  the direct path builds only when s is an input Mul. On every workload s is derived (e.g. `x*y` of `I*pi*x*y`), so
+  that set goes to the shell and the plant's line never runs (fired 0 on all 13; 0 on core and dev on orion too). The
+  direct path then returns only `[expr.args]` on these workloads. No workload reaches that branch yet; per the reached-code
+  ruling it counts as not reached until one does.
+- **The parts ruling's three 6g(a) conditions still hold** (S1's suite plants): `dispatch-ignores-epoch` suite 12
+  outcomes changed (`test_registry_versioning.py` x2, `test_templates.py` x1, `test_transfer*.py` x9), 0 on workloads;
+  `dispatch-redefines-off` suite 1 changed (`test_s10_override.py::test_reproducers`), fires 1 on f6 and value, MATCH,
+  as before; `dispatch-user-off` void on the suite and workloads as before (its catch is `dispatch_direct.py
+  dispatch-user-off`, c1's evidence). `knowledge-no-query-drop`: suite 25 changed (c1's bar: 20; S1's base includes 5c7).
+  Every suite plant run kept the handler multiset equal to base.
+
+**Kept shares, bar items 1, 2, 4, 5:** in port-elemnew.md (S1, all equal to base). **Kept on Python with reason**, as
+c1: `_rows_runtime`'s I/-I values and Floats; queries under a non-default registry; `enclose`.
+
+**Owed before any backend PR:** `scaffold:rebuilt:f6` (45 on f6 in S1, as c1's bar rows and F2) and `scaffold:mismatch`
+(2 on f6) until 0, with `rows:python:Mul`/`Add`/`Integer` (core 96/96/740; dev 3/6/256); a workload whose s is an input
+Mul for the (c, I, pi, s) direct set (rows-mul-ipi-drop's reach); the rest as c1.
+
+**Not run:** as in port-elemnew.md (history, forced moves, the native path, timing, the mutant rerun, the boundary rescore
+and suite column, order:_rows evidence, the `_forms` guard test); the rows plants on the suite. No evaluator asked for.
