@@ -69,3 +69,18 @@ stack). No container moved, so no digest switch. Scripts: ~/sa-rust-ids-work/sa-
 3. Write results/port-5c8.md in port-5c7.md's form (sections: What moved, SHAs, The bar, Plants, Reached [the handoff-168
    rv table + pycalls], Kept reasons, State [splits/stats/_KEYS/_CONST rows 821-824], Module count, Owed, Not run). Then
    `agent report` and push.
+
+## UPDATE 12:20Z: the bar finished (done.txt 12:15:03Z, 39 min). One finding, so it's NOT clean yet
+- Suite: 5,992 passed, 126 failed, 23 skipped, 18 xfailed, 6,159 ids. Against 5c7b: new 0, gone 0, changed 0. Passed is
+  5,991 with no firing and 1 with a firing (test_ci_stream_reports_only_what_replays). Handler rows 39 in 2 tests, the same
+  multiset as base. Caught rows per id the same. TermFault 0. Every live/extra MATCH. Kept shares the same as base (loop has no base).
+- **Tests phase: 8 failed, 566 passed** (test_term_ids x6, test_knowledge_wire::test_needs_the_table,
+  test_knowledge_core_fallback imag_templates). Cause, reproduced on orion: **test_relevance_core.py installs Rust at
+  import** (`SL = _rust()` at module level, :13), so collection pollutes every other file in the same pytest process.
+  test_term_ids.py + test_knowledge_wire.py alone give 114 passed. With test_relevance_core.py first: 7 failed.
+  S1's tests (no test_relevance_core) had 0 failed.
+- Fix: move the install into a module-scoped fixture that undoes it, as the other *_core tests do (check
+  test_relations_core.py's `_rust` and its undo). Then rerun at least the tests phase:
+  `bash ~/sp19/bar-sa-port-170.sh NAME port/5c8 build tests sum` with OUT set. The suite, live, plants and extra don't run
+  this file, so under the rebase rule they stand. Name the tested SHA change in the report.
+- Plant rows from the bar are in sum.txt :105 on. Read them for the plant table.
