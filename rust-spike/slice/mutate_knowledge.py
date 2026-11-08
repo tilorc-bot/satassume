@@ -85,6 +85,22 @@ M = [
     ('core', 'core-bound-rules-sign', 'solver_rs/src/term/tcore.rs', 'let pos = c1.n.is_positive();\n    for (ps, lower, b) in INT_BOUNDS {', 'let pos = !c1.n.is_positive();\n    for (ps, lower, b) in INT_BOUNDS {'),
     ('core', 'core-recip-rules-noswap', 'solver_rs/src/term/tcore.rs', '        if c1.n.is_negative() {\n            std::mem::swap(&mut a, &mut b);', '        if false {\n            std::mem::swap(&mut a, &mut b);'),
     ('core', 'core-imag-rules-strict', 'solver_rs/src/term/tcore.rs', 'if k == j { strict[k] } else { weak[k] }', 'if k == j { weak[k] } else { weak[k] }'),
+    ('f6', 'f6-pi-trig-mod', 'solver_rs/src/term/tf6.rs', 'let r = Rat::new(c.n.mod_floor(&two_d), c.d.clone());', 'let r = Rat::new(c.n.mod_floor(&c.d), c.d.clone());'),
+    ('f6', 'f6-pi-trig-half-odd', 'solver_rs/src/term/tf6.rs', 'if r.d == BigInt::from(2) {\n                out.push(r1(vec![], (N, "odd", true)));', 'if r.d == BigInt::from(3) {\n                out.push(r1(vec![], (N, "odd", true)));'),
+    ('f6', 'f6-pi-trig-cos-shift', 'solver_rs/src/term/tf6.rs', 'let c = if cos_ { c.add(&Rat::new(BigInt::one(), BigInt::from(2))) } else { c.clone() };', 'let c = c.clone();'),
+    ('f6', 'f6-pi-trig-sin-even', 'solver_rs/src/term/tf6.rs', 'out.push(r1(vec![(PS, "even", true)], (N, "zero", true)));', 'out.push(r1(vec![(PS, "odd", true)], (N, "zero", true)));'),
+    ('f6', 'f6-cosh-rules-alts-swap', 'solver_rs/src/term/tf6.rs', 'vec![(vec![(CS, "even", true)], true), (vec![(CS, "odd", true)], false)]', 'vec![(vec![(CS, "even", true)], false), (vec![(CS, "odd", true)], true)]'),
+    ('f6', 'f6-genocchi-sign', 'solver_rs/src/term/tf6.rs', '(h, "odd", true)], (N, "negative", true)),', '(h, "odd", true)], (N, "positive", true)),'),
+    ('f6', 'f6-unit-interval-lo', 'solver_rs/src/term/tf6.rs', 'let lo = c.n >= -&c.d;', 'let lo = c.n > -&c.d;'),
+    ('f6', 'f6-unit-interval-acos-zero', 'solver_rs/src/term/tf6.rs', 'out.push((if c.n < c.d { "positive" } else { "zero" }, true));', 'out.push((if c.n <= c.d { "positive" } else { "zero" }, true));'),
+    ('f6', 'f6-multigamma-p-gt-one', 'solver_rs/src/term/tf6.rs', 'if *p > BigInt::one() {', 'if *p > BigInt::from(2) {'),
+    ('f6', 'f6-multigamma-zero', 'solver_rs/src/term/tf6.rs', 'r1(vec![(x, "real", true), (y, "integer", false)], (node, "zero", false)),', 'r1(vec![(x, "real", true), (y, "integer", false)], (node, "zero", true)),'),
+    ('f6', 'f6-rootof-real-negate', 'solver_rs/src/term/tf6.rs', 'out.push(("extended_real", real));', 'out.push(("extended_real", !real));'),
+    ('f6', 'f6-rootof-zero-sign', 'solver_rs/src/term/tf6.rs', 'Some(0) => out.push(("zero", true)),', 'Some(0) => {}'),
+    ('f6', 'f6-random-integer', 'solver_rs/src/term/tf6.rs', 'out.push(("integer", v));', 'out.push(("integer", !v));'),
+    ('f6', 'f6-cosh-split-nonint', 'solver_rs/src/term/tf6.rs', 'if !c.is_int() {\n                continue;', 'if false {\n                continue;'),
+    ('f6', 'f6-shifted-no-raw', 'solver_rs/src/term/tf6.rs', 'return Ok(self.raw_add(vec![x, k]));', 'return self.add(vec![x, k]);'),
+    ('f6', 'f6-doubled-no-raw', 'solver_rs/src/term/tf6.rs', 'return Ok(self.raw_mul(vec![two, x]));', 'return self.mul(vec![two, x]);'),
     ('core', 'core-imag-number-rules', 'solver_rs/src/term/tcore.rs', '(vec![(0, "real", true), (0, "zero", false)], vec![(1, "imaginary", true)]),', '(vec![(0, "real", true)], vec![(1, "imaginary", true)]),'),
     ('core', 'core-not-unit-two', 'solver_rs/src/term/tcore.rs', '*lower == pos && v >= two || *lower != pos && v <= minus_two', '*lower == pos && v >= Rat::int(1) || *lower != pos && v <= minus_two'),
     ('core', 'core-pi-split-second-i', 'solver_rs/src/term/tcore.rs', 'if kind == Kind::ImaginaryUnit && !seen_i {', 'if kind == Kind::ImaginaryUnit {'),
@@ -192,7 +208,7 @@ def score(name, kind, path, old, new, a):
     # off
     row['off'], by_wl = 'no', {}
     # `rootof` is scored only when its plain rows are there, so older runs keep their columns.
-    wls = ('dev', 'fuzz', 'value') + tuple(w for w in ('rootof', 'rows', 'core') if os.path.exists(os.path.join(a.plain, f'{w}-plain.tsv')))
+    wls = ('dev', 'fuzz', 'value') + tuple(w for w in ('rootof', 'rows', 'core', 'f6') if os.path.exists(os.path.join(a.plain, f'{w}-plain.tsv')))
     for wl in wls:
         rc, out = fresh(d, env, log, wl, 'atoms')
         if rc:

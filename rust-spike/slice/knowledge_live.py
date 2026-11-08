@@ -59,8 +59,10 @@ CONTRADICTION = 'template asserts a contradiction'
 #: (kind, id, exception type) of the first few reads that raised, across queries.
 RAISED = term_live.RAISED
 #: Test plants, by SLICE_SESSION_PLANT (the bar's channel): 'knowledge-rows-kept-raise' raises NameError inside `rows_kept`, the
-#: fault sa-port-63's first rebase hit; 'knowledge-pattern-drop' drops the last clause of each non-empty pattern Rust builds.
-PLANTS = ('knowledge-rows-kept-raise', 'knowledge-pattern-drop')
+#: fault sa-port-63's first rebase hit; 'knowledge-pattern-drop' drops the last clause of each non-empty pattern Rust builds;
+#: 'knowledge-value-multigamma-drop' drops the last clause of Rust's `value_units` pattern when multigamma's template calls it
+#: (special.py's `value_units(v, expr)`), for the reached-code ruling's value_units footnote.
+PLANTS = ('knowledge-rows-kept-raise', 'knowledge-pattern-drop', 'knowledge-value-multigamma-drop')
 PLANT = [None]
 _UNDO = [None]
 
@@ -226,6 +228,11 @@ def install(shadow=False, data=None):
             COUNTS['fault'] += 1
             raise KnowledgeFault(f'{kind} {value!r}: {e}') from e
         pat = _wrap(r)
+        if PLANT[0] == 'knowledge-value-multigamma-drop' and kind == 'value' and type(obj).__name__ == 'multigamma' \
+                and pat.clauses:
+            _fired()
+            COUNTS['value:multigamma:plant'] += 1
+            pat.clauses = pat.clauses[:-1]
         if shadow:
             _compare(kind, value, pat, py().pattern)
         return Compiled((obj,), pat)

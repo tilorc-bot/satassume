@@ -61,6 +61,8 @@ if args.mode == 'discard':
     sympy_api._ask = _discard
 elif args.mode != 'plain':
     import knowledge_live as K
+    if os.environ.get('SLICE_SESSION_PLANT') in K.PLANTS:     # the bar's channel, as from_env reads it
+        K.PLANT[0] = os.environ['SLICE_SESSION_PLANT']
     K.install(shadow=args.mode == 'shadow')
     if args.plant:
         knowledge_plants.wrap_templates(args.plant)
