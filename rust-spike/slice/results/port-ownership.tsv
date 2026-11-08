@@ -76,13 +76,13 @@ engine.py	Engine._settings_changed	1528	~u	port	5	5c9	Python
 engine.py	Engine._check_version	1556		port	5	5c9	Python			
 engine.py	Engine._settings_fingerprint	1582		port	5	5c9	Python			
 engine.py	Engine._drop_set_memos	1589	~u	port	5	5c9	Python			
-engine.py	Engine._drop_cones	1603		port	5	5c7	Python			
-engine.py	Engine._struct	1609		port	5	5c7	Python			
-engine.py	Engine._cone_info	1676		port	5	5c7	Python			
-engine.py	Engine._query_cone	1726		port	5	5c7	Python			
-engine.py	Engine._union	1759		port	5	5c7	Python			
-engine.py	Engine._within_budget	1783		port	5	5c7	Python			
-engine.py	Engine._over_budget	1829	~u	port	5	5c7	Python			
+engine.py	Engine._drop_cones	1603		port	5	5c9 (from 5c7, move ruling 8 Nov: with _kids, _qcones, _glue_adapters)	Python			
+engine.py	Engine._struct	1609		port	5	5c9 (from 5c7, move ruling 8 Nov: with _kids)	Python			
+engine.py	Engine._cone_info	1676		port	5	5c10 (from 5c7, move ruling 8 Nov: with _cones)	Python			
+engine.py	Engine._query_cone	1726		port	5	5c9 (from 5c7, move ruling 8 Nov: with _qcones)	Python			
+engine.py	Engine._union	1759		port	5	landed 5c7 (port-5c7.md)	Rust			
+engine.py	Engine._within_budget	1783		port	5	landed 5c7 (port-5c7.md)	Rust			
+engine.py	Engine._over_budget	1829	~u	port	5	landed 5c7 (port-5c7.md)	Rust			
 engine.py	Engine._context_session	1835		port	5	5c10	Python			
 engine.py	Engine._build_context_memoized	1854		port	5	5c10	Python			
 engine.py	Engine._build_context	1878		port	5	5c10	Python			
@@ -95,10 +95,10 @@ engine.py	Engine._put_result	2119		port	5	5c10	Python
 engine.py	Engine._is_custom	2152		port	5	5c10	Python			
 engine.py	Engine.ask	2172		port	5	5c10	Python			
 engine.py	Engine._ask	2220		port	5	5c10	Python			
-engine.py	Engine._note_budget	2246		port	5	5c7	Python			
+engine.py	Engine._note_budget	2246		port	5	landed 5c7 (port-5c7.md)	Rust			
 engine.py	_gave_up	2270		port	5	5c10	Python			
 engine.py	_exhausted	2278		port	5	5c10	Python			
-engine.py	neighbourhood	2287	~u	port	5	5c7	Python			
+engine.py	neighbourhood	2287	~u	port	5	5c9 (from 5c7, move ruling 8 Nov: with _NEIGH, a registry memo)	Python			
 engine.py	_split	2311		port	5	5c2	Python			
 engine.py	want_of	2340		port	5	5c2	Python			
 knowledge/compile.py	basis_formula	17		port	5	landed 5a 8bab767	Rust			
@@ -811,3 +811,10 @@ theories/transfer.py	TransferTheory.decide	471		port	3	landed 3 0d3f392	Rust
 theories/transfer.py	TransferTheory.push_level	526		port	3	landed 3 0d3f392	Rust			
 theories/transfer.py	TransferTheory.pop_level	530		port	3	landed 3 0d3f392	Rust			
 theories/transfer.py	TransferTheory.__repr__	545	~u	port	3	landed 3 0d3f392	Rust			
+engine.py	state: Engine._kids	1374		state	5	5c9	Python	readers past 5c7: Engine.__init__, engine_memos (5c9); test writes it (test_writeback_provenance :453)		
+engine.py	state: Engine._qcones	1376		state	5	5c9	Python	readers past 5c7: Engine.__init__, engine_memos (5c9)		
+engine.py	state: Engine._glue_adapters	1379		state	5	5c9	Python	readers past 5c7: Engine.__init__, engine_memos (5c9); relations link_objects/glue_objects take it as memo		
+engine.py	state: Engine._cones	1375		state	5	5c10	Python	readers past 5c7: Engine.is_ :2001, Engine.is_many :2049 (5c10)		
+engine.py	state: Engine._constructing	1368		state	5	5c10	Python	readers past 5c7: Engine.is_ :1998, is_many :2047 (5c10); compile_loop.rs core_visit (5c2, Rust over the Python set)		
+engine.py	state: _NEIGH	2263		state	5	5c9	Python	registry memo (state.memos PROCESS, 5c9); term_live _Mark reads it		
+engine.py	state: Engine.last_budget_limited	1410		state	5	read-only view when it moves (move ruling 8 Nov)	Python	read by sympy_api ask/_ask/_ask_general/_engine_ask (conversion); 5c10 writes it		

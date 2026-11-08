@@ -718,6 +718,38 @@ def _install_glue():
     return undo
 
 
+#: Step 5c7 part 1: the discovery budget's stateless `Engine` rows run in `budget.rs`: `_union`, `_within_budget`, `_over_budget`,
+#: `_note_budget`. The cone rows they call (`_query_cone`, `_cone_info`, `_struct`) stay Python's until sa-port-147's inventory
+#: rows for their containers exist (state ruling's guard), and Rust calls them back by name (`bud:cb_*`). SLICE_BUDGET=py puts
+#: Python's back. Python's own copies, for a budget that isn't an int.
+PY_BUDGET = {}
+_BUDGET_METHODS = {'_union': 'bud_union', '_within_budget': 'bud_within_budget', '_over_budget': 'bud_over_budget',
+                   '_note_budget': 'bud_note_budget'}
+_BUDGET_PLANTS = ('union-skip-overlap', 'within-no-link', 'over-budget-no-flag', 'note-budget-keep-flag')
+
+
+
+def _bud(name, rf):
+    """A method over the pyfunction `rf` (a builtin doesn't bind)."""
+    def f(self, *a):
+        return rf(self, *a)
+    f.__name__ = name
+    return f
+
+
+def _install_budget():
+    """Returns the undo."""
+    E = engine.Engine
+    saved = {n: E.__dict__[n] for n in _BUDGET_METHODS}
+    PY_BUDGET.update(saved)
+    for n, rn in _BUDGET_METHODS.items():
+        setattr(E, n, _bud(n, getattr(sa_solver, rn)))
+
+    def undo():
+        for n, f in saved.items():
+            setattr(E, n, f)
+    return undo
+
 def _install_relations():
     """Returns the undo."""
     import term_live
@@ -832,8 +864,11 @@ def install():
     undo_loop = _install_compile_loop() if os.environ.get('SLICE_LOOP', 'rust') == 'rust' else None
     undo_query = _install_queries() if os.environ.get('SLICE_QUERY', 'rust') == 'rust' else None
     undo_glue = _install_glue() if os.environ.get('SLICE_GLUE', 'rust') == 'rust' else None
+    undo_budget = _install_budget() if os.environ.get('SLICE_BUDGET', 'rust') == 'rust' else None
 
     def undo():
+        if undo_budget is not None:
+            undo_budget()
         if undo_glue is not None:
             undo_glue()
         if undo_query is not None:

@@ -173,6 +173,11 @@ pub(crate) const CF_LAURENT_RATIONAL: u8 = 111;
 /// `pi_laurent_elem`'s caller raises TermRefuse once (then the plant is off), or ValueError on every call.
 pub(crate) const CF_LAURENT_REFUSE: u8 = 112;
 pub(crate) const CF_LAURENT_RAISE: u8 = 113;
+/// Step 5c7, one per moved budget row (`budget.rs`). 111-113 are adapters C2's (cf-laurent-*).
+pub(crate) const UNION_SKIP_OVERLAP: u8 = 114;
+pub(crate) const WITHIN_NO_LINK: u8 = 115;
+pub(crate) const OVER_BUDGET_NO_FLAG: u8 = 116;
+pub(crate) const NOTE_BUDGET_KEEP_FLAG: u8 = 117;
 
 #[pyfunction]
 fn rel_install(term_live: Py<PyAny>, relations: Py<PyAny>, euf_adapter: Py<PyAny>, fault: Py<PyAny>) {
@@ -296,6 +301,10 @@ fn rel_plant(name: Option<&str>) -> PyResult<()> {
         Some("cf-laurent-rational") => CF_LAURENT_RATIONAL,
         Some("cf-laurent-refuse") => CF_LAURENT_REFUSE,
         Some("cf-laurent-raise") => CF_LAURENT_RAISE,
+        Some("union-skip-overlap") => UNION_SKIP_OVERLAP,
+        Some("within-no-link") => WITHIN_NO_LINK,
+        Some("over-budget-no-flag") => OVER_BUDGET_NO_FLAG,
+        Some("note-budget-keep-flag") => NOTE_BUDGET_KEEP_FLAG,
         Some(x) => return Err(PyValueError::new_err(format!("no plant {x}"))),
     };
     PLANT.store(v, Relaxed);

@@ -14,7 +14,7 @@ use pyo3::types::{PyBool, PyDict, PyList, PySet, PyTuple};
 use crate::compile::{self, block_lits, Cx, Def, Kind, Need, F, R};
 use crate::formula_py::PyP;
 
-const NAMES: [&str; 156] = [
+const NAMES: [&str; 165] = [
     "py:var", "py:dvar", "py:node", "py:compile", "py:literal", "py:table", "rs:visit", "rs:add_clause", "rs:ensure_vars",
     "rs:def_implications", "rs:neg_shared", "join", "rs:emit_callback", "refuse:depth", "refuse:convert", "refuse:object", "second:visit", "custom:own",
     "link:hit", "link:resolved", "link:none", "link:no_table", "link:second", "link:no_node",
@@ -42,6 +42,8 @@ const NAMES: [&str; 156] = [
     "ad:lra_new", "ad:euf_new", "ad:cb_factory", "ad:cb_theory_new", "ad:cb_memoized", "ad:cb_constant_bounds", "ad:cb_parse", "ad:cb_structural", "ad:cb_interned", "ad:lra_register", "ad:euf_register",
     "ad:negated_new", "ad:integral_new", "ad:eqatom_new", "ad:cb_py_payload",
     "cf:pi_laurent",
+    "bud:union", "bud:within_budget", "bud:over_budget", "bud:note_budget", "bud:cb_query_cone", "bud:cb_cone_info", "bud:cb_struct",
+    "bud:cb_global", "bud:py_fallback",
 ];
 const VAR: usize = 0;
 const DVAR: usize = 1;
@@ -209,6 +211,16 @@ pub(crate) const AD_EQATOM_NEW: usize = 153;
 pub(crate) const AD_CB_PY_PAYLOAD: usize = 154;
 /// Part C2: `pi_laurent` of an Element bound, on Rust (it was a callback, lra_cert.rs:87).
 pub(crate) const CF_PI_LAURENT: usize = 155;
+/// Step 5c7 part 1: the budget's stateless rows (`budget.rs`), and the cone rows they call back.
+pub(crate) const BUD_UNION: usize = 156;
+pub(crate) const BUD_WITHIN_BUDGET: usize = 157;
+pub(crate) const BUD_OVER_BUDGET: usize = 158;
+pub(crate) const BUD_NOTE_BUDGET: usize = 159;
+pub(crate) const BUD_CB_QUERY_CONE: usize = 160;
+pub(crate) const BUD_CB_CONE_INFO: usize = 161;
+pub(crate) const BUD_CB_STRUCT: usize = 162;
+pub(crate) const BUD_CB_GLOBAL: usize = 163;
+pub(crate) const BUD_PY_FALLBACK: usize = 164;
 
 /// Deeper formulas compile on Python, over this same table. Python's own limit depends on the caller's stack, so it isn't
 /// reproduced: its deepest shape is `Implies`, 3 frames a level (first failure at depth 330 from a bare stack, limit 1000), so
@@ -216,7 +228,7 @@ pub(crate) const CF_PI_LAURENT: usize = 155;
 const FORMULA_DEPTH: u32 = 64;
 
 thread_local! {
-    static COUNTS: [Cell<u64>; 156] = const { [const { Cell::new(0) }; 156] };
+    static COUNTS: [Cell<u64>; 165] = const { [const { Cell::new(0) }; 165] };
     /// Each session's serial, for the link's memo: a pointer could alias a dead session's.
     static SERIAL: Cell<u64> = const { Cell::new(0) };
 }
