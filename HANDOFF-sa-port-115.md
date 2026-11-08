@@ -37,7 +37,8 @@ TESTS = 5c3's ten files, DIRECT = `relations_direct.py 300 0`. Then read `sum.tx
 - **drop-lo-discover: redundant on dev.** probes/lodisc.py: 44 of 44 skips are followed in the same `literal_of` by `Relations.process`, whose
   loop starts with `discover()` (29 had work pending). Fuzz probe was running on orion, output
   `/tmp/claude-1000/-home-tilo-dev-satassume/56723487-a9d8-4141-9c07-43889348a869/scratchpad/lod-fuzz.err` (last line LODISC);
-  if gone, rerun: `$PY probes/lodisc.py fuzz py OUT --check entry` from rust-spike/slice. With relations None the discover is needed (unreached).
+  **fuzz result (00:55Z, probes/lod-fuzz.err): 1,957 of 1,957 skips followed by process (1,954 had work pending): redundant on dev and fuzz.**
+  With relations None the discover is needed (unreached on both).
 
 ## Next
 1. Read the bar; state the five items; method reach from `rel:*` counters (dev/fuzz/loop/suite). Count engine.py:1906 catches.
