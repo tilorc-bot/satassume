@@ -17,7 +17,7 @@ use std::sync::{Arc, RwLock};
 use pyo3::exceptions::{PyException, PyKeyError, PyValueError};
 use pyo3::intern;
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyDict, PyList, PySet, PyTuple};
+use pyo3::types::{PyBool, PyDict, PyList, PySet, PyString, PyTuple};
 
 use crate::session::{self, tick, SessionCore};
 use crate::term::py::PyTermTable;
@@ -113,6 +113,12 @@ const SKIP_SHARE: u8 = 68;
 /// `drop-share` with `_trichotomy` off as well, so that sharing is the only route (the re-pointed test's real-specs case). One
 /// plant is on at a time, hence one name for both. Test-only, like `skip-share`.
 const DROP_SHARE_TRI: u8 = 69;
+/// From here, 5c5's: one effect dropped or skewed in each of the five methods 5c4 left.
+const ADAPTER_FRESH: u8 = 70;
+const SELECTOR_NO_MEMO: u8 = 71;
+const ATOM_VAR_SKEW: u8 = 72;
+const DROP_NOTE_SIDES: u8 = 73;
+const DROP_EQ_LINKS_ZERO: u8 = 74;
 
 #[pyfunction]
 fn rel_install(term_live: Py<PyAny>, relations: Py<PyAny>, euf_adapter: Py<PyAny>, fault: Py<PyAny>) {
@@ -192,6 +198,11 @@ fn rel_plant(name: Option<&str>) -> PyResult<()> {
         Some("drop-share") => DROP_SHARE,
         Some("skip-share") => SKIP_SHARE,
         Some("drop-share-tri") => DROP_SHARE_TRI,
+        Some("adapter-fresh") => ADAPTER_FRESH,
+        Some("selector-no-memo") => SELECTOR_NO_MEMO,
+        Some("atom-var-skew") => ATOM_VAR_SKEW,
+        Some("drop-note-sides") => DROP_NOTE_SIDES,
+        Some("drop-eq-links-zero") => DROP_EQ_LINKS_ZERO,
         Some(x) => return Err(PyValueError::new_err(format!("no plant {x}"))),
     };
     PLANT.store(v, Relaxed);
@@ -1869,6 +1880,133 @@ fn rel_process<'py>(rel: &Bound<'py, PyAny>, user_atoms: Option<&Bound<'py, PyAn
     Ok(())
 }
 
+// -- step 5c5: the five methods 5c4 left -------------------------------------------------------------------------------------------
+//
+// `_adapter`, `_atom_selector`, `_atom_var`, `_note_sides`, `_eq_links` (relations.py:992, 1317, 1325, 1475, 1654). Containers stay
+// Python's, read and written in Python's order; other methods (`_fresh`) and the session's `table.var` are called by name, so a patch
+// is honoured. `_eq_links` builds `p - q` with SymPy's `-`, and calls Python's `_termwise` (counted, `rel:cb_termwise`): it reads SymPy's
+// `Add.make_args`, negation and `is_finite`, and the module-function step decides it.
+
+/// `_adapter`.
+#[pyfunction]
+fn rel_adapter<'py>(rel: &Bound<'py, PyAny>, spec: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    let p = rel.py();
+    tick(session::REL_ADAPTER);
+    let adapters = rel.getattr(intern!(p, "adapters"))?;
+    let name = spec.getattr(intern!(p, "name"))?;
+    let ad = adapters.call_method1(intern!(p, "get"), (&name,))?;
+    if !ad.is_none() {
+        return Ok(ad);
+    }
+    let ad = spec.getattr(intern!(p, "factory"))?.call0()?;
+    if plant_on(ADAPTER_FRESH) {
+        return Ok(ad);
+    }
+    adapters.set_item(&name, &ad)?;
+    Ok(ad)
+}
+
+/// `_atom_selector`.
+#[pyfunction]
+fn rel_atom_selector<'py>(rel: &Bound<'py, PyAny>, atom: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    let p = rel.py();
+    tick(session::REL_ATOM_SELECTOR);
+    let sels = rel.getattr(intern!(p, "atom_sel"))?;
+    let sel = sels.call_method1(intern!(p, "get"), (atom,))?;
+    if !sel.is_none() {
+        return Ok(sel);
+    }
+    let kw = PyDict::new(p);
+    kw.set_item(intern!(p, "inert"), true)?;
+    let sel = rel.call_method(intern!(p, "_fresh"), (), Some(&kw))?;
+    if plant_on(SELECTOR_NO_MEMO) {
+        return Ok(sel);
+    }
+    sels.set_item(atom, &sel)?;
+    Ok(sel)
+}
+
+/// `_atom_var`.
+#[pyfunction]
+fn rel_atom_var<'py>(rel: &Bound<'py, PyAny>, f: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    let p = rel.py();
+    tick(session::REL_ATOM_VAR);
+    let table = rel.getattr(intern!(p, "session"))?.getattr(intern!(p, "table"))?;
+    let v = table.call_method1(intern!(p, "var"), (f,))?;
+    if plant_on(ATOM_VAR_SKEW) {
+        return v.neg();
+    }
+    Ok(v)
+}
+
+/// `_note_sides`.
+#[pyfunction]
+fn rel_note_sides<'py>(rel: &Bound<'py, PyAny>, atom: &Bound<'py, PyAny>, level: i64) -> PyResult<()> {
+    let p = rel.py();
+    tick(session::REL_NOTE_SIDES);
+    let h = hooks()?;
+    let xs = rel.getattr(intern!(p, "_xside"))?;
+    for e in atom.getattr(intern!(p, "expr"))?.try_iter()? {
+        let e = e?;
+        let lv: i64 = if number(rel, &h, &e)? { 2 } else { level };
+        let had: i64 = xs.call_method1(intern!(p, "get"), (&e, 0))?.extract()?;
+        if had < lv {
+            if plant_on(DROP_NOTE_SIDES) {
+                continue;
+            }
+            xs.set_item(&e, lv)?;
+            let k = intern!(p, "_xsides_n");
+            rel.setattr(k, rel.getattr(k)?.add(1)?)?;
+        }
+    }
+    Ok(())
+}
+
+/// `_eq_links`.
+#[pyfunction]
+fn rel_eq_links<'py>(rel: &Bound<'py, PyAny>, var: i32, atom: &Bound<'py, PyAny>) -> PyResult<()> {
+    let p = rel.py();
+    tick(session::REL_EQ_LINKS);
+    let h = hooks()?;
+    let (a, b) = two(&atom.getattr(intern!(p, "expr"))?)?;
+    if number(rel, &h, &a)? || number(rel, &h, &b)? {
+        return Ok(());
+    }
+    let (s, core) = session_of(p, &h, rel)?;
+    tick(session::REL_CB_ATOM_SELECTOR);
+    let g: i32 = -rel.call_method1(intern!(p, "_atom_selector"), (atom,))?.extract::<i32>()?;
+    const INF: [&str; 2] = ["positive_infinite", "negative_infinite"];
+    ensure(&s, &a, &INF)?;
+    ensure(&s, &b, &INF)?;
+    for pred in INF {
+        let pr = PyString::new(p, pred);
+        let c = core.borrow();
+        let cl = [-c.var_direct(pr.as_any(), &a)?, -c.var_direct(pr.as_any(), &b)?, var, g];
+        c.emit_direct(p, &cl)?;
+    }
+    let tw = h.relations.bind(p).getattr(intern!(p, "_termwise"))?;
+    for (x, y) in [(&a, &b), (&b, &a)] {
+        let d = x.sub(y)?;
+        if number(rel, &h, &d)? {
+            continue;
+        }
+        tick(session::REL_CB_TERMWISE);
+        if !tw.call1((x, y, &d))?.is_truthy()? {
+            continue;
+        }
+        if plant_on(DROP_EQ_LINKS_ZERO) {
+            continue;
+        }
+        ensure(&s, &d, &["zero", "nonzero"])?;
+        let c = core.borrow();
+        let z = c.var_direct(intern!(p, "zero").as_any(), &d)?;
+        c.emit_direct(p, &[-z, var, g])?;
+        let nz = c.var_direct(intern!(p, "nonzero").as_any(), &d)?;
+        c.emit_direct(p, &[-nz, -var, g])?;
+    }
+    Ok(())
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("REL_KINDS", (SD, EN, MC, IE, IL))?;
     m.add_function(wrap_pyfunction!(rel_link_probe, m)?)?;
@@ -1904,5 +2042,10 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(rel_process, m)?)?;
     m.add_function(wrap_pyfunction!(rel_link_later, m)?)?;
     m.add_function(wrap_pyfunction!(rel_wants_transfer, m)?)?;
-    m.add_function(wrap_pyfunction!(rel_share, m)?)
+    m.add_function(wrap_pyfunction!(rel_share, m)?)?;
+    m.add_function(wrap_pyfunction!(rel_adapter, m)?)?;
+    m.add_function(wrap_pyfunction!(rel_atom_selector, m)?)?;
+    m.add_function(wrap_pyfunction!(rel_atom_var, m)?)?;
+    m.add_function(wrap_pyfunction!(rel_note_sides, m)?)?;
+    m.add_function(wrap_pyfunction!(rel_eq_links, m)?)
 }

@@ -439,6 +439,10 @@ _REL_METHODS = {
     '__init__': _rel_init, 'enqueue': _rel_m('enqueue', 'rel_enqueue'), 'note_formula': _rel_m('note_formula', 'rel_note_formula'),
     'process': _rel_process, '_link_later': _rel_m('_link_later', 'rel_link_later'),
     'wants_transfer': _rel_m('wants_transfer', 'rel_wants_transfer'), '_share': _rel_m('_share', 'rel_share'),
+    # Step 5c5: the five 5c4 left.
+    '_adapter': _rel_m('_adapter', 'rel_adapter'), '_atom_selector': _rel_m('_atom_selector', 'rel_atom_selector'),
+    '_atom_var': _rel_m('_atom_var', 'rel_atom_var'), '_note_sides': _rel_m('_note_sides', 'rel_note_sides'),
+    '_eq_links': _rel_m('_eq_links', 'rel_eq_links'),
 }
 #: Plants that live in `relations_core.rs`.
 _REL_PLANTS = ('link-none', 'drop-order-sides', 'drop-order-infinite', 'drop-trichotomy', 'drop-interpret', 'drop-guard',
@@ -448,7 +452,9 @@ _REL_PLANTS = ('link-none', 'drop-order-sides', 'drop-order-infinite', 'drop-tri
                'share-guard-one',
                # Step 5c4.
                'drop-init-engage', 'drop-enqueue', 'drop-note-top', 'drop-proc-eq-links', 'drop-link-later', 'wants-never',
-               'drop-share', 'skip-share', 'drop-share-tri')
+               'drop-share', 'skip-share', 'drop-share-tri',
+               # Step 5c5.
+               'adapter-fresh', 'selector-no-memo', 'atom-var-skew', 'drop-note-sides', 'drop-eq-links-zero')
 
 
 #: Step 5c1: `Session`'s discovery runs in `discovery.rs`. SLICE_DISC=py keeps Python's over the same core. Python's own copies, for a

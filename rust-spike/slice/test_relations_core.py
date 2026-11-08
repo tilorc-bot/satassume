@@ -891,7 +891,9 @@ def test_link_none_moves_nothing(py):
                                    'share-guard-one',
                                    # Step 5c4's bar plants, one in each moved method.
                                    'drop-init-engage', 'drop-enqueue', 'drop-note-top', 'drop-proc-eq-links', 'drop-link-later',
-                                   'wants-never', 'drop-share'])
+                                   'wants-never', 'drop-share',
+                                   # Step 5c5.
+                                   'adapter-fresh', 'selector-no-memo', 'atom-var-skew', 'drop-note-sides', 'drop-eq-links-zero'])
 def test_dropped_clause_is_seen(py, plant):
     got = _call('run', SLICE_SESSION_PLANT=plant)
     assert got['counts']['rel:plant_fired'] > 0

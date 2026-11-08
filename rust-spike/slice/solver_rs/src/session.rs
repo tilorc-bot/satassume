@@ -14,7 +14,7 @@ use pyo3::types::{PyBool, PyDict, PyList, PySet, PyTuple};
 use crate::compile::{self, block_lits, Cx, Def, Kind, Need, F, R};
 use crate::formula_py::PyP;
 
-const NAMES: [&str; 90] = [
+const NAMES: [&str; 96] = [
     "py:var", "py:dvar", "py:node", "py:compile", "py:literal", "py:table", "rs:visit", "rs:add_clause", "rs:ensure_vars",
     "rs:def_implications", "rs:neg_shared", "join", "rs:emit_callback", "refuse:depth", "refuse:convert", "refuse:object", "second:visit", "custom:own",
     "link:hit", "link:resolved", "link:none", "link:no_table", "link:second", "link:no_node",
@@ -30,6 +30,7 @@ const NAMES: [&str; 90] = [
     "ses:query_lit", "ses:prepare_query", "ses:emit", "ses:query_literal", "ses:query_all", "ses:literal_of", "ses:relations", "ses:ensure_atoms", "ses:ensure_twins",
     "rel:init", "rel:enqueue", "rel:note_formula", "rel:process", "rel:link_later", "rel:wants_transfer", "rel:share",
     "rel:cb_note_sides", "rel:cb_eq_links", "rel:cb_atom_selector", "rel:cb_atom_var", "rel:cb_constant_term",
+    "rel:adapter", "rel:atom_selector", "rel:atom_var", "rel:note_sides", "rel:eq_links", "rel:cb_termwise",
 ];
 const VAR: usize = 0;
 const DVAR: usize = 1;
@@ -122,6 +123,13 @@ pub(crate) const REL_CB_EQ_LINKS: usize = 86;
 pub(crate) const REL_CB_ATOM_SELECTOR: usize = 87;
 pub(crate) const REL_CB_ATOM_VAR: usize = 88;
 pub(crate) const REL_CB_CONSTANT_TERM: usize = 89;
+/// Step 5c5: the five methods 5c4 left, and `_eq_links`' callback to `_termwise`.
+pub(crate) const REL_ADAPTER: usize = 90;
+pub(crate) const REL_ATOM_SELECTOR: usize = 91;
+pub(crate) const REL_ATOM_VAR: usize = 92;
+pub(crate) const REL_NOTE_SIDES: usize = 93;
+pub(crate) const REL_EQ_LINKS: usize = 94;
+pub(crate) const REL_CB_TERMWISE: usize = 95;
 
 /// Deeper formulas compile on Python, over this same table. Python's own limit depends on the caller's stack, so it isn't
 /// reproduced: its deepest shape is `Implies`, 3 frames a level (first failure at depth 330 from a bare stack, limit 1000), so
@@ -129,7 +137,7 @@ pub(crate) const REL_CB_CONSTANT_TERM: usize = 89;
 const FORMULA_DEPTH: u32 = 64;
 
 thread_local! {
-    static COUNTS: [Cell<u64>; 90] = const { [const { Cell::new(0) }; 90] };
+    static COUNTS: [Cell<u64>; 96] = const { [const { Cell::new(0) }; 96] };
     /// Each session's serial, for the link's memo: a pointer could alias a dead session's.
     static SERIAL: Cell<u64> = const { Cell::new(0) };
 }
