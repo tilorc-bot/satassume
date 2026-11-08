@@ -178,6 +178,15 @@ pub(crate) const UNION_SKIP_OVERLAP: u8 = 114;
 pub(crate) const WITHIN_NO_LINK: u8 = 115;
 pub(crate) const OVER_BUDGET_NO_FLAG: u8 = 116;
 pub(crate) const NOTE_BUDGET_KEEP_FLAG: u8 = 117;
+/// Element._new step (term/py.rs `lra_memo`): a memo hit gives one more as a number (rhs, constant, or a side's first
+/// coefficient): a wrong value, the entry still there.
+pub(crate) const ELEM_MEMO_PLUS1: u8 = 118;
+/// Element._new step (constfield.rs `PyElem`): `==` answers the opposite; `hash` is one off; `repr` writes `Element[`;
+/// `Num::from_py` of the pyclass reads its negation.
+pub(crate) const ELEM_EQ_FLIP: u8 = 119;
+pub(crate) const ELEM_HASH_SKEW: u8 = 120;
+pub(crate) const ELEM_REPR_BRACKET: u8 = 121;
+pub(crate) const ELEM_FROM_NEG: u8 = 122;
 
 #[pyfunction]
 fn rel_install(term_live: Py<PyAny>, relations: Py<PyAny>, euf_adapter: Py<PyAny>, fault: Py<PyAny>) {
@@ -305,6 +314,11 @@ fn rel_plant(name: Option<&str>) -> PyResult<()> {
         Some("within-no-link") => WITHIN_NO_LINK,
         Some("over-budget-no-flag") => OVER_BUDGET_NO_FLAG,
         Some("note-budget-keep-flag") => NOTE_BUDGET_KEEP_FLAG,
+        Some("elem-memo-plus1") => ELEM_MEMO_PLUS1,
+        Some("elem-eq-flip") => ELEM_EQ_FLIP,
+        Some("elem-hash-skew") => ELEM_HASH_SKEW,
+        Some("elem-repr-bracket") => ELEM_REPR_BRACKET,
+        Some("elem-from-neg") => ELEM_FROM_NEG,
         Some(x) => return Err(PyValueError::new_err(format!("no plant {x}"))),
     };
     PLANT.store(v, Relaxed);

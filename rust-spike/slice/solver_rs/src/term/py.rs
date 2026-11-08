@@ -8,6 +8,7 @@ use super::offline;
 use super::rat::Rat;
 use super::table::{Kind, Read, Reads, Refuse, TermTable, READ_RAISED, V};
 use super::TermId;
+use crate::constfield::Num;
 use num_bigint::BigInt;
 use pyo3::create_exception;
 use pyo3::exceptions::{PyBaseException, PyException, PyKeyError, PyTypeError, PyValueError};
@@ -90,8 +91,50 @@ fn lra_counts<'py>(py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
     Ok(d)
 }
 
-#[pyclass(name = "TermTable")]
-pub struct PyTermTable(TermTable, HashMap<(u8, u32, u32, bool), Py<PyAny>>, HashMap<(u64, u32), (Py<PyAny>, u32)>);
+#[pyclass(name = "TermTable", unsendable)]
+pub struct PyTermTable(TermTable, HashMap<(u8, u32, u32, bool), LraMemo>, HashMap<(u64, u32), (Py<PyAny>, u32)>);
+
+/// One `lra_*` result as Rust values (Element._new step): no Python object in the memo.
+pub enum LraMemo {
+    No,
+    Interpret(Constraint, Vec<TermId>),
+    Sides((Vec<(TermId, Num)>, i8), (Vec<(TermId, Num)>, i8)),
+    Integral(Vec<(TermId, Num)>, Num, Vec<TermId>),
+}
+
+/// Plant 118: a memo hit gives a wrong number (one more), never a missing entry.
+fn plus1(x: &Num, plant: bool) -> PyResult<Num> {
+    if plant { Ok(x.add(&Num::one())?) } else { Ok(x.clone()) }
+}
+
+fn items_plant<'py>(py: Python<'py>, items: &[(TermId, Num)], plant: bool) -> PyResult<Bound<'py, PyList>> {
+    if !plant || items.is_empty() {
+        return items_py(py, items);
+    }
+    let mut v = items.to_vec();
+    v[0].1 = plus1(&v[0].1, true)?;
+    items_py(py, &v)
+}
+
+impl LraMemo {
+    fn to_py<'py>(&self, py: Python<'py>, plant: bool) -> PyResult<Bound<'py, PyAny>> {
+        let ids = |ts: &[TermId]| -> Vec<u32> { ts.iter().map(|x| x.0).collect() };
+        match self {
+            LraMemo::No => Ok(py.None().into_bound(py)),
+            LraMemo::Interpret(c, terms) => {
+                let c = match c {
+                    Constraint::Value(v) => v.into_bound_py_any(py)?,
+                    Constraint::Payload { items, rhs, strict, equality, positive } => {
+                        (items_py(py, items)?, plus1(rhs, plant)?.to_py(py)?, *strict, *equality, *positive).into_bound_py_any(py)?
+                    }
+                };
+                (c, ids(terms)).into_bound_py_any(py)
+            }
+            LraMemo::Sides(x, y) => ((items_plant(py, &x.0, plant)?, x.1), (items_py(py, &y.0)?, y.1)).into_bound_py_any(py),
+            LraMemo::Integral(items, c, keys) => (items_py(py, items)?, plus1(c, plant)?.to_py(py)?, ids(keys)).into_bound_py_any(py),
+        }
+    }
+}
 
 /// The link's memo and the row reads made after it (`relations_core.rs`). The memo sits here so it dies with the query.
 impl PyTermTable {
@@ -187,18 +230,23 @@ fn raw_ids(v: Vec<TermId>) -> Vec<u32> {
 
 impl PyTermTable {
     /// The per-query memo that takes `_INTERPRETED`'s place on this path: it dies with the table.
+    /// Element._new step: the memo holds Rust values, and each call builds its Python result from them, so no Python object
+    /// is kept for the query and the numbers cross as the Rust `Element` pyclass (constfield.rs `PyElem`).
     fn lra_memo<'py>(
         &mut self,
         py: Python<'py>,
         key: (u8, u32, u32, bool),
-        f: impl FnOnce(&mut TermTable) -> PyResult<Bound<'py, PyAny>>,
+        f: impl FnOnce(&mut TermTable) -> PyResult<LraMemo>,
     ) -> PyResult<Bound<'py, PyAny>> {
         if let Some(v) = self.1.get(&key) {
-            return Ok(v.bind(py).clone());
+            crate::session::tick(crate::session::LRA_MEMO_HIT);
+            return v.to_py(py, crate::relations_core::planted(crate::relations_core::ELEM_MEMO_PLUS1));
         }
+        crate::session::tick(crate::session::LRA_MEMO_MISS);
         let v = f(&mut self.0)?;
-        self.1.insert(key, v.clone().unbind());
-        Ok(v)
+        let out = v.to_py(py, false);
+        self.1.insert(key, v);
+        out
     }
 }
 
@@ -401,16 +449,9 @@ impl PyTermTable {
         self.lra_memo(py, (n, a, b, generic), |t| {
             let mut l = Lra { t, py, objects, generic };
             let Some((c, terms)) = l.interpret(name, TermId(a), TermId(b)).map_err(|e| lra_err(py, e))? else {
-                return Ok(py.None().into_bound(py));
+                return Ok(LraMemo::No);
             };
-            let c = match c {
-                Constraint::Value(v) => v.into_bound_py_any(py)?,
-                Constraint::Payload { items, rhs, strict, equality, positive } => {
-                    (items_py(py, &items)?, rhs.to_py(py)?, strict, equality, positive).into_bound_py_any(py)?
-                }
-            };
-            let ids: Vec<u32> = terms.iter().map(|x| x.0).collect();
-            (c, ids).into_bound_py_any(py)
+            Ok(LraMemo::Interpret(c, terms))
         })
     }
 
@@ -426,9 +467,9 @@ impl PyTermTable {
         self.lra_memo(py, (6, a, b, generic), |t| {
             let mut l = Lra { t, py, objects, generic };
             let Some((x, y)) = l.order_sides(TermId(a), TermId(b)).map_err(|e| lra_err(py, e))? else {
-                return Ok(py.None().into_bound(py));
+                return Ok(LraMemo::No);
             };
-            ((items_py(py, &x.0.items)?, x.1), (items_py(py, &y.0.items)?, y.1)).into_bound_py_any(py)
+            Ok(LraMemo::Sides((x.0.items, x.1), (y.0.items, y.1)))
         })
     }
 
@@ -443,10 +484,9 @@ impl PyTermTable {
         self.lra_memo(py, (7, e, 0, generic), |t| {
             let mut l = Lra { t, py, objects, generic };
             let Some((items, c, keys)) = l.integer_form(TermId(e)).map_err(|e| lra_err(py, e))? else {
-                return Ok(py.None().into_bound(py));
+                return Ok(LraMemo::No);
             };
-            let ids: Vec<u32> = keys.iter().map(|x| x.0).collect();
-            (items_py(py, &items)?, c.to_py(py)?, ids).into_bound_py_any(py)
+            Ok(LraMemo::Integral(items, c, keys))
         })
     }
 

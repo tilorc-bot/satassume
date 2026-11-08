@@ -1285,6 +1285,9 @@ pub struct Elem {
     order: OnceCell<Vec<u32>>,
     /// The Python object this one came from or went to: `e + 0` is `e`, also after the boundary.
     py: OnceCell<Py<PyAny>>,
+    /// Element._new step: a weak reference to the Rust `Element` pyclass this one last went to Python as, so a second crossing
+    /// gives the same object while the first is alive (`e + 0` is `e`), with no cycle through the pyclass's `Rc`.
+    pyw: RefCell<Option<Py<PyAny>>>,
 }
 
 fn elem(n: Poly, d: Poly) -> Rc<Elem> {
@@ -1297,6 +1300,7 @@ fn elem(n: Poly, d: Poly) -> Rc<Elem> {
         seq: OnceCell::new(),
         order: OnceCell::new(),
         py: OnceCell::new(),
+        pyw: RefCell::new(None),
     })
 }
 
@@ -1970,6 +1974,13 @@ impl Num {
 
     /// A Fraction (or an int, as `_coerce`) or an Element, reading `_n`, `_d` and `_sign`. It remembers the object.
     pub fn from_py(x: &Bound<'_, PyAny>) -> PyResult<Num> {
+        if let Ok(pe) = x.cast::<PyElem>() {
+            let e = pe.borrow().e.clone();
+            if crate::relations_core::planted(crate::relations_core::ELEM_FROM_NEG) {
+                return Ok(Num::E(e_neg(&e)));
+            }
+            return Ok(Num::E(e));
+        }
         let py = x.py();
         let (fr, _) = fraction_types(py)?;
         let t = x.get_type();
@@ -1995,7 +2006,8 @@ impl Num {
         Err(PyTypeError::new_err(format!("not a number of constfield: {}", x.get_type().name()?)))
     }
 
-    /// A Fraction, or the Element: the object it came from, else `Element._new(n, d)` with the `_sign` known here.
+    /// A Fraction, or the Element: the Python object it came from, else the Rust `Element` pyclass (Element._new step: no
+    /// Python Element is built; `to_py_element` is the old route, for the bridges whose callers compare Python Elements).
     pub fn to_py<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         match self {
             Num::Q(r) => rat_to_py(py, r),
@@ -2007,12 +2019,7 @@ impl Num {
                     }
                     return Ok(o);
                 }
-                let o = new_py_element(py, &e.n, &e.d)?;
-                if let Some(s) = e.sign.get() {
-                    o.setattr("_sign", s)?;
-                }
-                let _ = e.py.set(o.clone().unbind());
-                Ok(o)
+                PyElem::of(py, e)
             }
         }
     }
@@ -2060,6 +2067,23 @@ pub fn pi_laurent_elem(py: Python<'_>, e: &Elem) -> PyResult<Option<Vec<(i64, Ra
             )
         }
     })
+}
+
+impl Num {
+    /// The old `to_py`: a Python Element, `Element._new(n, d)` with the `_sign` known here, when it didn't come from one.
+    pub fn to_py_element<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        match self {
+            Num::E(e) if e.py.get().is_none() => {
+                let o = new_py_element(py, &e.n, &e.d)?;
+                if let Some(s) = e.sign.get() {
+                    o.setattr("_sign", s)?;
+                }
+                let _ = e.py.set(o.clone().unbind());
+                Ok(o)
+            }
+            _ => self.to_py(py),
+        }
+    }
 }
 
 fn new_py_element<'py>(py: Python<'py>, n: &Poly, d: &Poly) -> PyResult<Bound<'py, PyAny>> {
@@ -2155,7 +2179,7 @@ pub fn cf_num<'py>(x: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
     let py = x.py();
     let (fr, _) = fraction_types(py)?;
     let t = x.get_type();
-    if t.is(fr.bind(py)) || t.is(&module(py)?.getattr("Element")?) {
+    if t.is(fr.bind(py)) || x.is_exact_instance_of::<PyElem>() || t.is(&module(py)?.getattr("Element")?) {
         return Ok(x.clone());
     }
     if x.is_instance_of::<pyo3::types::PyFloat>() {
@@ -2188,15 +2212,20 @@ pub fn cf_op<'py>(
         Ok(n.into_pyobject(py)?.into_any())
     };
     match name {
-        "roundtrip" => x.to_py(py),
-        "add" => x.add(&num2()?)?.to_py(py),
-        "sub" => x.sub(&num2()?)?.to_py(py),
-        "mul" => x.mul(&num2()?)?.to_py(py),
-        "div" => x.div(&num2()?)?.to_py(py),
-        "neg" => x.neg().to_py(py),
-        "abs" => x.abs()?.to_py(py),
-        "inverse" => x.inverse()?.to_py(py),
-        "pow" => x.pow(int2()?)?.to_py(py),
+        "roundtrip" => x.to_py_element(py),
+        // Element._new step: the Rust `Element` pyclass of a fresh copy (no Python origin), for test_elem_pyclass.py.
+        "rust_element" => match &x {
+            Num::E(e) => PyElem::of(py, &elem(e.n.clone(), e.d.clone())),
+            Num::Q(_) => x.to_py(py),
+        },
+        "add" => x.add(&num2()?)?.to_py_element(py),
+        "sub" => x.sub(&num2()?)?.to_py_element(py),
+        "mul" => x.mul(&num2()?)?.to_py_element(py),
+        "div" => x.div(&num2()?)?.to_py_element(py),
+        "neg" => x.neg().to_py_element(py),
+        "abs" => x.abs()?.to_py_element(py),
+        "inverse" => x.inverse()?.to_py_element(py),
+        "pow" => x.pow(int2()?)?.to_py_element(py),
         "formally_zero" => Ok(py_bool(py, x.formally_zero())),
         // lra_cert.rs's `laurent` (`pi_laurent`, adapters step C2), as a list of `(j, c)` in the dict's order, or None.
         "pi_laurent" => match crate::lra_cert::laurent(&x)? {
@@ -2294,7 +2323,203 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(pyo3::wrap_pyfunction!(cf_refresh_limits, m)?)?;
     m.add_function(pyo3::wrap_pyfunction!(cf_op, m)?)?;
     m.add_function(pyo3::wrap_pyfunction!(cf_num, m)?)?;
+    m.add_class::<PyElem>()?;
     m.add_function(pyo3::wrap_pyfunction!(cf_poly_op, m)?)?;
     m.add_function(pyo3::wrap_pyfunction!(cf_native_enclose, m)?)?;
     Ok(())
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Element._new step (issue 323, planner's C2 ruling (b)): the Rust `Element` pyclass
+// ---------------------------------------------------------------------------------------------------------------------
+
+/// A number of the field as it crosses to Python: the Rust `Elem` itself, where `Element._new(n, d)` built a Python Element.
+/// It has Python Element's `==`, `hash` and `repr` in Rust, for the readers Python still has (model values, the state dump,
+/// payloads read back by a Python theory). Every other read (arithmetic, order, an attribute such as `_n` or `to_sympy`) is a
+/// named callback: it builds the Python Element once per `Elem` and asks it, counted `cf:elem_py_read`.
+#[pyclass(name = "Element", module = "sa_solver", unsendable, weakref)]
+pub struct PyElem {
+    pub e: Rc<Elem>,
+    hash: Cell<Option<isize>>,
+}
+
+impl PyElem {
+    /// The object for `e`: the live one from its last crossing, else a new one.
+    pub fn of<'py>(py: Python<'py>, e: &Rc<Elem>) -> PyResult<Bound<'py, PyAny>> {
+        if let Some(w) = &*e.pyw.borrow() {
+            if let Some(o) = w.bind(py).cast::<pyo3::types::PyWeakrefReference>()?.upgrade() {
+                return Ok(o);
+            }
+        }
+        crate::session::tick(crate::session::CF_ELEM_NEW);
+        let o = Bound::new(py, PyElem { e: e.clone(), hash: Cell::new(None) })?.into_any();
+        let w = pyo3::types::PyWeakrefReference::new(&o)?;
+        *e.pyw.borrow_mut() = Some(w.into_any().unbind());
+        Ok(o)
+    }
+
+    /// The Python Element for a read only Python answers: counted, built once per `Elem`.
+    fn element<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        crate::session::tick(crate::session::CF_ELEM_PY_READ);
+        Num::E(self.e.clone()).to_py_element(py)
+    }
+
+    fn delegate<'py>(&self, py: Python<'py>, name: &str, other: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+        let o = match other.cast::<PyElem>() {
+            Ok(pe) => pe.borrow().element(py)?,
+            Err(_) => other.clone(),
+        };
+        self.element(py)?.call_method1(name, (o,))
+    }
+}
+
+fn poly_repr(py: Python<'_>, p: &Poly) -> PyResult<String> {
+    match p {
+        PQ(r) => {
+            let (n, d) = rat_parts(r);
+            Ok(if d.is_one() { n.to_string() } else { format!("{n}/{d}") })
+        }
+        PT(v, cs) => {
+            let name: String = module(py)?.getattr("_CONSTANTS")?.get_item(*v)?.getattr("name")?.extract()?;
+            let mut parts = Vec::new();
+            for (k, c) in cs.iter().enumerate() {
+                if is_zero(c) {
+                    continue;
+                }
+                let t = match k {
+                    0 => String::new(),
+                    1 => name.clone(),
+                    _ => format!("{name}**{k}"),
+                };
+                let s = poly_repr(py, c)?;
+                if t.is_empty() {
+                    parts.push(s);
+                } else if s == "1" {
+                    parts.push(t);
+                } else if matches!(c, PT(..)) || s.contains('/') || s.starts_with('-') {
+                    parts.push(format!("({s})*{t}"));
+                } else {
+                    parts.push(format!("{s}*{t}"));
+                }
+            }
+            parts.reverse();
+            Ok(parts.join(" + "))
+        }
+    }
+}
+
+#[pymethods]
+impl PyElem {
+    fn __richcmp__<'py>(&self, py: Python<'py>, other: &Bound<'py, PyAny>, op: pyo3::basic::CompareOp) -> PyResult<Bound<'py, PyAny>> {
+        use pyo3::basic::CompareOp::*;
+        match op {
+            Eq | Ne => {
+                crate::session::tick(crate::session::CF_ELEM_EQ);
+                let o = if other.is_instance_of::<pyo3::types::PyBool>() { None } else { Num::from_py(other).ok() };
+                let Some(o) = o else {
+                    // A SymPy number, or not a number: Python Element's own `__eq__`/`__ne__` (`_coerce_foreign`).
+                    return self.delegate(py, if matches!(op, Eq) { "__eq__" } else { "__ne__" }, other);
+                };
+                let mut r = Num::E(self.e.clone()).py_eq(&o)?;
+                if crate::relations_core::planted(crate::relations_core::ELEM_EQ_FLIP) {
+                    r = !r;
+                }
+                Ok(py_bool(py, if matches!(op, Eq) { r } else { !r }))
+            }
+            Lt => self.delegate(py, "__lt__", other),
+            Le => self.delegate(py, "__le__", other),
+            Gt => self.delegate(py, "__gt__", other),
+            Ge => self.delegate(py, "__ge__", other),
+        }
+    }
+
+    /// Python Element's `hash(("constfield", n, d))`, on the Python polynomials.
+    fn __hash__(&self, py: Python<'_>) -> PyResult<isize> {
+        crate::session::tick(crate::session::CF_ELEM_HASH);
+        let h = match self.hash.get() {
+            Some(h) => h,
+            None => {
+                let t = PyTuple::new(py, [pyo3::types::PyString::new(py, "constfield").into_any(), poly_to_py(py, &self.e.n)?, poly_to_py(py, &self.e.d)?])?;
+                let h = t.hash()?;
+                self.hash.set(Some(h));
+                h
+            }
+        };
+        Ok(if crate::relations_core::planted(crate::relations_core::ELEM_HASH_SKEW) { h.wrapping_add(1) } else { h })
+    }
+
+    /// Python Element's `__repr__` (constfield.py:1293), reading the constants' names from Python's registry.
+    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+        crate::session::tick(crate::session::CF_ELEM_REPR);
+        let n = poly_repr(py, &self.e.n)?;
+        let s = if matches!(self.e.d, PQ(_)) { format!("Element({n})") } else { format!("Element(({n})/({}))", poly_repr(py, &self.e.d)?) };
+        Ok(if crate::relations_core::planted(crate::relations_core::ELEM_REPR_BRACKET) { s.replace("Element(", "Element[") } else { s })
+    }
+
+    /// `_nonzero` (Python's `__bool__`), on Rust.
+    fn __bool__(&self) -> PyResult<bool> {
+        crate::session::tick(crate::session::CF_ELEM_EQ);
+        Ok(Num::E(self.e.clone()).nonzero()?)
+    }
+
+    /// An immutable value: a copy is itself, as for Python's Element (which has no `__copy__` but copies to an equal one).
+    fn __copy__(slf: Bound<'_, Self>) -> Bound<'_, Self> {
+        slf
+    }
+
+    fn __deepcopy__<'py>(slf: Bound<'py, Self>, _memo: &Bound<'py, PyAny>) -> Bound<'py, Self> {
+        slf
+    }
+
+    /// The Python Element, for a caller that needs one (`lra_live._same_num`, the comparisons). Counted as a read.
+    fn to_python<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        self.element(py)
+    }
+
+    fn __getattr__<'py>(&self, py: Python<'py>, name: &str) -> PyResult<Bound<'py, PyAny>> {
+        self.element(py)?.getattr(name)
+    }
+
+    fn __neg__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        self.element(py)?.call_method0("__neg__")
+    }
+    fn __pos__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        self.element(py)?.call_method0("__pos__")
+    }
+    fn __abs__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        self.element(py)?.call_method0("__abs__")
+    }
+    fn __floor__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        self.element(py)?.call_method0("__floor__")
+    }
+    fn __ceil__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        self.element(py)?.call_method0("__ceil__")
+    }
+    fn __add__<'py>(&self, py: Python<'py>, o: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+        self.delegate(py, "__add__", o)
+    }
+    fn __radd__<'py>(&self, py: Python<'py>, o: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+        self.delegate(py, "__radd__", o)
+    }
+    fn __sub__<'py>(&self, py: Python<'py>, o: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+        self.delegate(py, "__sub__", o)
+    }
+    fn __rsub__<'py>(&self, py: Python<'py>, o: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+        self.delegate(py, "__rsub__", o)
+    }
+    fn __mul__<'py>(&self, py: Python<'py>, o: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+        self.delegate(py, "__mul__", o)
+    }
+    fn __rmul__<'py>(&self, py: Python<'py>, o: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+        self.delegate(py, "__rmul__", o)
+    }
+    fn __truediv__<'py>(&self, py: Python<'py>, o: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+        self.delegate(py, "__truediv__", o)
+    }
+    fn __rtruediv__<'py>(&self, py: Python<'py>, o: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+        self.delegate(py, "__rtruediv__", o)
+    }
+    fn __pow__<'py>(&self, py: Python<'py>, o: &Bound<'py, PyAny>, _m: Option<&Bound<'py, PyAny>>) -> PyResult<Bound<'py, PyAny>> {
+        self.delegate(py, "__pow__", o)
+    }
 }
