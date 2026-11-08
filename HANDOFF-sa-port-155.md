@@ -1,6 +1,19 @@
 # Handoff sa-port-155 (step 6g(c), issue 323)
 
-6g(c1) **tested 4c3356d, not landed**. Its full bar is running on pareto1 (shared lease, launched 08:00 UTC, about 50 min,
+6g(c1) **4c3356d, not landable as is**: its bar's tests phase has 2 new failures (below), so a fix and a full bar
+rerun are needed. The bar on 4c3356d keeps running for its suite, plant and workload data.
+
+## The 2 failures (pareto1 ~/sp19/sa-rust-ids-work/sa-port-155/tests.txt; 6g(b)'s run had none)
+test_knowledge_core_shapes.py::test_shape[core-bound-zero-kept] and [core-imag-two-rest]. `test_shape` (:54) asserts the
+shell's counter (`core:bound_split`, `core:imag_split`) > 0 under `K.install(shadow=True)` and no `shadow:mismatch`.
+For these two shapes the args are input terms, so the direct path answers and the shell never runs: counter 0. The
+answer check (`got == plain`) isn't what failed. Recommended fix: keep the shadow on the direct path. When
+knowledge_core_live's shadow is on (give Common a flag set by `install`), `RowsTpl::split` also calls the shell's Python
+reference (`py[name]`, or wiring_fn under a no-direct guard) and compares, counting a mismatch where the test reads it.
+Then let the test accept `rows:rust:NAME` beside the shell's counter. Adding test rows is fine; don't weaken the
+mismatch check. Rerun test_knowledge_core_shapes.py on orion, then the full bar.
+
+Original status line: Its full bar is running on pareto1 (shared lease, launched 08:00 UTC, about 50 min,
 sa-port-153's bar running beside it). Wait for pareto1 `~/sp19/sa-rust-ids-work/sa-port-155/done.txt`, read the `sum`
 phase, then land: rebase rule, `bash rust-spike/slice/p1/bar.sh land 4c3356d` without PUSH, read the incoming diff, then
 PUSH=1. If sa-port-153 (adapters C2) lands first and its diff touches the push guard, rerun the bar on the rebased head.
