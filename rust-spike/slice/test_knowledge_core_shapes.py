@@ -3,7 +3,7 @@ with an input that tells Rust and Python apart (the core plants 'off' scores `no
 twice, plain (Python) and under `knowledge_live.install(shadow=True)`, which also runs Python's function on each call and
 compares every field. A test passes when the answers agree, the shadow saw no mismatch, and the function was reached."""
 import pytest
-from sympy import Add, E, I, Mul, Pow, Q, S, Symbol, exp, pi
+from sympy import Add, E, I, Mul, Pow, Q, S, Symbol, cos, cosh, exp, pi, sin
 
 import knowledge_live as K
 import term_live
@@ -64,6 +64,14 @@ CASES = [
      lambda: Q.positive(y)),
     ('core:imag_templates', 'rows-imag-tpl-sign', lambda: Q.imaginary(a(m(I, x), m(I, y))),
      lambda: Q.positive(x) & Q.positive(y)),
+    # 6g(c6): `_pi_trig` and the plain `_unary` as rows_tpl.rs families (Family::PiTrig, Family::Unary); the shadow runs
+    # functions' template with `facts` captured and compares (key, consts, objs, node, rules); `pi_split` is direct.
+    ('core:pi_split', 'rows-pi-split-shift', lambda: Q.negative(cos(m(pi, x))), lambda: Q.odd(x)),
+    ('core:_pi_trig', 'rows-pi-trig-flip', lambda: Q.zero(sin(m(pi, x))), lambda: Q.integer(x)),
+    ('core:_pi_trig', 'pi-trig-half', lambda: Q.odd(sin(m(Rational_(1, 2), pi, x))), lambda: Q.odd(x)),
+    ('core:_pi_trig', 'pi-trig-cosh-ipi', lambda: Q.real(cosh(m(I, pi, x))), lambda: Q.real(x)),
+    ('core:_unary', 'rows-unary-key-none', lambda: Q.real(a(sin(S(2)), sin(x))), lambda: Q.complex(x)),
+    ('core:_unary', 'unary-cos-plain', lambda: Q.real(cos(x)), lambda: Q.real(x)),
 ]
 
 
@@ -74,7 +82,8 @@ DIRECT = {'core:half_split': '_half_split', 'core:bound_split': '_bound_split', 
           'core:irrational_root': 'irrational_root', 'core:_unit_power_units': '_unit_power_units',
           'core:_pi_split': 'ipi_split', 'core:ipi_rules': 'ipi_rules', 'core:constant_value': 'constant_value',
           'core:_half_templates': '_half_templates', 'core:_bound_templates': '_bound_templates',
-          'core:recip_templates': '_recip_templates', 'core:imag_templates': '_imag_templates'}
+          'core:recip_templates': '_recip_templates', 'core:imag_templates': '_imag_templates',
+          'core:pi_split': 'pi_split', 'core:_pi_trig': '_pi_trig', 'core:_unary': '_unary'}
 
 
 def Rational_(p, q):

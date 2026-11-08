@@ -78,6 +78,9 @@ def _unary(tag, gen, slots=None, units=None):
     # the module of the rules registers it (TemplateRegistry.register
     # tells a declared module's templates by their module)
     template.__module__ = gen.__module__
+    if slots is None and units is None:
+        # read by the Rust backend's dispatch (rows_tpl.rs, Family::Unary)
+        template._satassume_rows = ('unary', tag, gen, False, False)
     return template
 
 
@@ -241,6 +244,10 @@ def _pi_trig(tag, gen, cos_, split_=pi_split, plain=None):
         return facts(key, build, consts, tuple(objs), N)
     template.__name__ = tag + '_templates'
     template.__module__ = gen.__module__
+    # read by the Rust backend's dispatch (rows_tpl.rs, Family::PiTrig): the
+    # plain template is Rust's too when it is tagged, else called back
+    template._satassume_rows = ('pi_trig', tag, gen, cos_, split_ is ipi_split)
+    template._satassume_plain = plain
     return template
 
 

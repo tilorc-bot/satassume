@@ -74,12 +74,16 @@ pub const PLANTS: &[&str] = &[
     "rows-bound-tpl-neg",      // 6g(c5) direct `_bound_templates`: c1 negated in the rules
     "rows-recip-tpl-neg",      // 6g(c5) direct `_recip_templates`: c1 negated in the rules
     "rows-imag-tpl-sign",      // 6g(c5) direct `_imag_templates`: the first term's sign flipped in the rules
+    "rows-pi-split-shift",     // 6g(c6) direct `pi_split`: the coefficient c plus 1
+    "rows-pi-trig-flip",       // 6g(c6) `_pi_trig`: `_pi_trig_rules` read with cos_ flipped (sin's rules for cos)
+    "rows-unary-key-none",     // 6g(c6) plain `_unary`: the constant's key left out, so sin(2) and sin(x) share a pattern
+    "rows-unary-drop-last",    // 6g(c6) Unary/PiTrig: the last of `gen`'s rules dropped
 ];
 
 /// 6g(c3): the shells whose args `split` passes as a tuple (the others take one argument).
 const MULTI: &[&str] = &["irrational_root", "_unit_power_units"];
 /// 6g(c2)/(c3): the splits of one term (the ids come from the term itself, as a 1-tuple).
-const ONE: &[&str] = &["_mul_factor_sets", "_quotient_templates", "_exp_arg", "_unit_angle", "ipi_split", "_pow_bound_templates"];
+const ONE: &[&str] = &["_mul_factor_sets", "_quotient_templates", "_exp_arg", "_unit_angle", "ipi_split", "_pow_bound_templates", "pi_split"];
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Family {
@@ -87,6 +91,26 @@ pub enum Family {
     Product,
     Addition,
     Power,
+    /// 6g(c6): `functions._unary(tag, gen)` with neither slots nor units (`gen`'s rows, one key).
+    Unary,
+    /// 6g(c6): `functions._pi_trig(tag, gen, cos_, split_, plain)`.
+    PiTrig,
+}
+
+/// 6g(c6): what `_pi_trig` does without a split: a plain `_unary` in Rust, or an untagged template (`_cosh_shift`)
+/// called back and counted `rows:python:NAME`.
+enum Plain {
+    Rows(Arc<RowsTpl>),
+    Py(Py<PyAny>, String),
+}
+
+/// 6g(c6): the Unary and PiTrig families' data: `gen`'s rules (`gen(R, c)` adds all of them when the rows have one
+/// key), and for PiTrig `cos_`, whether the split is `ipi_split`, and the plain template.
+struct UnaryRows {
+    rules: Vec<(Py<PyAny>, Py<PyAny>)>,
+    cos_: bool,
+    ipi: bool,
+    plain: Option<Plain>,
 }
 
 /// `power(gen)`'s rows, read once: the terms of `gen.terms[2]` by kind (slots from 3), `gen.specs[2]` with the
@@ -154,6 +178,7 @@ pub struct RowsTpl {
     piecewise: bool,
     leave_out_wide: bool,
     power: Option<PowerRows>,
+    unary: Option<UnaryRows>,
     /// the Python template, for kept queries
     pub py_template: Py<PyAny>,
     wiring: Py<PyModule>,
@@ -223,17 +248,53 @@ impl RowsTpl {
             "product" => Family::Product,
             "addition" => Family::Addition,
             "power" => Family::Power,
+            "unary" => Family::Unary,
+            "pi_trig" => Family::PiTrig,
             _ => return Ok(None),
         };
         let tag = spec.get_item(1)?.unbind();
         let gen = spec.get_item(2)?;
         let piecewise: bool = spec.get_item(3)?.extract()?;
         let leave_out_wide: bool = spec.get_item(4)?.extract()?;
+        if matches!(family, Family::Unary | Family::PiTrig) {
+            // `gen(R, c)` picks `specs[c]` when the rows have several keys: those stay on Python.
+            let specs = gen.getattr("specs")?.cast_into::<PyDict>()?;
+            if specs.len() > 1 || !gen.getattr("plain")?.is_truthy()? {
+                return Ok(None);
+            }
+            let mut rules = Vec::new();
+            for (_, rs) in specs.iter() {
+                for r in rs.try_iter()? {
+                    let r = r?;
+                    rules.push((r.get_item(0)?.unbind(), r.get_item(1)?.unbind()));
+                }
+            }
+            let plain = if family == Family::PiTrig {
+                let p = t.getattr("_satassume_plain")?;
+                Some(match RowsTpl::from_template(&p, name.clone())? {
+                    Some(r) if r.family == Family::Unary => Plain::Rows(Arc::new(r)),
+                    _ => {
+                        let qn: String = p.getattr("__qualname__")?.extract()?;
+                        let n = qn.split('.').next().unwrap_or("plain").to_string();
+                        Plain::Py(p.unbind(), n)
+                    }
+                })
+            } else {
+                None
+            };
+            let wiring = py.import("satassume.knowledge.templates.wiring")?.unbind();
+            return Ok(Some(RowsTpl {
+                family, name, tag, terms: HashMap::new(), specs: HashMap::new(), schemas: Vec::new(), piecewise: false,
+                leave_out_wide: false, power: None,
+                unary: Some(UnaryRows { rules, cos_: piecewise, ipi: leave_out_wide, plain }),
+                py_template: t.clone().unbind(), wiring,
+            }));
+        }
         if family == Family::Power {
             let wiring = py.import("satassume.knowledge.templates.wiring")?.unbind();
             return Ok(Some(RowsTpl {
                 family, name, tag, terms: HashMap::new(), specs: HashMap::new(), schemas: Vec::new(), piecewise,
-                leave_out_wide, power: Some(power_rows(&gen)?), py_template: t.clone().unbind(), wiring,
+                leave_out_wide, power: Some(power_rows(&gen)?), unary: None, py_template: t.clone().unbind(), wiring,
             }));
         }
         let mut terms = HashMap::new();
@@ -307,7 +368,7 @@ impl RowsTpl {
         }
         let wiring = py.import("satassume.knowledge.templates.wiring")?.unbind();
         Ok(Some(RowsTpl {
-            family, name, tag, terms, specs, schemas, piecewise, leave_out_wide, power: None, py_template: t.clone().unbind(),
+            family, name, tag, terms, specs, schemas, piecewise, leave_out_wide, power: None, unary: None, py_template: t.clone().unbind(),
             wiring,
         }))
     }
@@ -477,6 +538,14 @@ impl RowsTpl {
             Family::Power => {
                 drop(cr);
                 self.pow_call(c, expr)
+            }
+            Family::Unary => {
+                drop(cr);
+                self.unary_call(c, expr)
+            }
+            Family::PiTrig => {
+                drop(cr);
+                self.pi_trig_call(c, expr)
             }
         }
     }
@@ -1472,8 +1541,9 @@ fn direct_pow<'py>(
             }
             Ok(Some(rational(&a)?))
         }
-        "ipi_split" => {
-            let Some((mut k, s)) = t.core_pi_split(ids[0], true).map_err(refuse)? else { return none() };
+        "ipi_split" | "pi_split" => {
+            let imag = name == "ipi_split";
+            let Some((mut k, s)) = t.core_pi_split(ids[0], imag).map_err(refuse)? else { return none() };
             let s = match &s {
                 None => py.None().into_bound(py),
                 Some(r) => match q.one(r)? {
@@ -1481,7 +1551,7 @@ fn direct_pow<'py>(
                     None => return Ok(None),
                 },
             };
-            if c.plant == "rows-ipi-split-shift" {
+            if c.plant == if imag { "rows-ipi-split-shift" } else { "rows-pi-split-shift" } {
                 c.fired();
                 k = super::rat::Rat::new(k.n.clone() + k.d.clone(), k.d.clone());
             }
@@ -1751,4 +1821,131 @@ fn rat_of(x: &Bound<'_, PyAny>) -> PyResult<super::rat::Rat> {
 
 fn sympy_one(py: Python<'_>) -> PyResult<Bound<'_, PyAny>> {
     py.import("sympy")?.getattr("S")?.getattr("One")
+}
+
+/// 6g(c6): the rules of a Unary/PiTrig template: `gen(R, c)`'s (all of `gen`'s rows, which have one key), then for a
+/// split `_pi_trig_rules(R, cos_, c, has_s)` (tf6.rs's, `rows:rust:_pi_trig_rules`).
+fn unary_rules<'py>(py: Python<'py>, c: &Common, u: &UnaryRows, pi: Option<(&super::rat::Rat, bool)>) -> PyResult<Bound<'py, PyList>> {
+    let out = PyList::empty(py);
+    let mut rules: &[(Py<PyAny>, Py<PyAny>)] = &u.rules;
+    if !rules.is_empty() && c.plant == "rows-unary-drop-last" {
+        c.fired();
+        rules = &rules[..rules.len() - 1];
+    }
+    for (prem, concl) in rules {
+        let prem = PyList::new(py, prem.bind(py).try_iter()?.collect::<PyResult<Vec<_>>>()?)?;
+        let concl = PyList::new(py, concl.bind(py).try_iter()?.collect::<PyResult<Vec<_>>>()?)?;
+        out.append((prem, concl))?;
+    }
+    if let Some((k, has_s)) = pi {
+        c.bump("rows:rust:_pi_trig_rules");
+        let mut cos_ = u.cos_;
+        if c.plant == "rows-pi-trig-flip" {
+            c.fired();
+            cos_ = !cos_;
+        }
+        for r in super::tf6::pi_trig_rules(cos_, k, has_s) {
+            out.append(r.into_pyobject(py)?)?;
+        }
+    }
+    Ok(out)
+}
+
+impl RowsTpl {
+    /// 6g(c6): `functions._unary(tag, gen)` (no slots, no units): one argument `x`, its constant at slot 0, key `(tag,
+    /// const_key(x) or None)`, objects `(x, expr)`, node 1.
+    fn unary_call<'py>(self: &Arc<Self>, c: &Bound<'py, Common>, expr: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+        let py = expr.py();
+        let cr = c.borrow();
+        let u = self.unary.as_ref().expect("unary rows");
+        let args = expr.getattr("args")?.cast_into::<PyTuple>()?;
+        if args.len() != 1 {
+            return Ok(py.None().into_bound(py));
+        }
+        cr.bump("rows:rust:_unary");
+        let x = args.get_item(0)?;
+        let consts = PyDict::new(py);
+        let mut k = py.None().into_bound(py);
+        if atom_number(&x)? {
+            consts.set_item(0, &x)?;
+            k = const_key(&x)?;
+            if cr.plant == "rows-unary-key-none" {
+                cr.fired();
+                k = py.None().into_bound(py);
+            }
+        }
+        let key = PyTuple::new(py, [self.tag.bind(py).clone(), k])?.into_any();
+        let objs = PyTuple::new(py, [x, expr.clone()])?.into_any();
+        if let Some(f) = cr.shadow_split(py)? {
+            let rules = unary_rules(py, &cr, u, None)?;
+            f.call1(("_unary", (self.py_template.bind(py), expr), (&key, &consts, &objs, 1i64, rules)))?;
+        }
+        let me = self.clone();
+        let cobj = c.clone().unbind();
+        let gen = PyCFunction::new_closure(py, None, None, move |t: &Bound<'_, PyTuple>, _kw: Option<&Bound<'_, PyDict>>| -> PyResult<Py<PyAny>> {
+            let py = t.py();
+            let c = cobj.bind(py).borrow();
+            Ok(unary_rules(py, &c, me.unary.as_ref().expect("unary rows"), None)?.into_any().unbind())
+        })?;
+        cr.facts(py, &key, gen.as_any(), consts.as_any(), &objs, 1)
+    }
+
+    /// 6g(c6): `functions._pi_trig(tag, gen, cos_, split_, plain)`: `split_` (`pi_split`, or `ipi_split` for cosh)
+    /// straight from the query's table; no split: the plain template; else objects `(arg, expr[, s])`, `s`'s constant at
+    /// slot 2, key `(tag, None, 'pi', c, has_s, const_key(s) or None)`, rules `gen`'s and `_pi_trig_rules`', node 1.
+    fn pi_trig_call<'py>(self: &Arc<Self>, c: &Bound<'py, Common>, expr: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+        let py = expr.py();
+        let u = self.unary.as_ref().expect("pi_trig rows");
+        let args = expr.getattr("args")?.cast_into::<PyTuple>()?;
+        let split = if args.len() == 1 {
+            let cr = c.borrow();
+            Some(self.split(py, &cr, if u.ipi { "ipi_split" } else { "pi_split" }, &args.get_item(0)?)?)
+        } else {
+            None
+        };
+        let split = match split {
+            Some(s) if !s.is_none() => s,
+            _ => {
+                return match u.plain.as_ref().expect("plain") {
+                    Plain::Rows(r) => r.call(c, expr),
+                    Plain::Py(f, n) => {
+                        c.borrow().bump(&format!("rows:python:{n}"));
+                        f.bind(py).call1((expr,))
+                    }
+                };
+            }
+        };
+        let cr = c.borrow();
+        cr.bump("rows:rust:_pi_trig");
+        let (cc, s_) = (split.get_item(0)?, split.get_item(1)?);
+        let has_s = !s_.is_none();
+        let consts = PyDict::new(py);
+        let mut objs = vec![args.get_item(0)?, expr.clone()];
+        let mut ck = py.None().into_bound(py);
+        if has_s {
+            objs.push(s_.clone());
+            if atom_number(&s_)? {
+                consts.set_item(2, &s_)?;
+                ck = const_key(&s_)?;
+            }
+        }
+        let key = PyTuple::new(py, [
+            self.tag.bind(py).clone(), py.None().into_bound(py), "pi".into_bound_py_any(py)?, cc.clone(),
+            has_s.into_bound_py_any(py)?, ck,
+        ])?.into_any();
+        let objs = PyTuple::new(py, objs)?.into_any();
+        let k = rat_of(&cc)?;
+        if let Some(f) = cr.shadow_split(py)? {
+            let rules = unary_rules(py, &cr, u, Some((&k, has_s)))?;
+            f.call1(("_pi_trig", (self.py_template.bind(py), expr), (&key, &consts, &objs, 1i64, rules)))?;
+        }
+        let me = self.clone();
+        let cobj = c.clone().unbind();
+        let gen = PyCFunction::new_closure(py, None, None, move |t: &Bound<'_, PyTuple>, _kw: Option<&Bound<'_, PyDict>>| -> PyResult<Py<PyAny>> {
+            let py = t.py();
+            let c = cobj.bind(py).borrow();
+            Ok(unary_rules(py, &c, me.unary.as_ref().expect("pi_trig rows"), Some((&k, has_s)))?.into_any().unbind())
+        })?;
+        cr.facts(py, &key, gen.as_any(), consts.as_any(), &objs, 1)
+    }
 }
