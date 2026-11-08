@@ -448,7 +448,7 @@ _REL_PLANTS = ('link-none', 'drop-order-sides', 'drop-order-infinite', 'drop-tri
                'share-guard-one',
                # Step 5c4.
                'drop-init-engage', 'drop-enqueue', 'drop-note-top', 'drop-proc-eq-links', 'drop-link-later', 'wants-never',
-               'drop-share', 'skip-share')
+               'drop-share', 'skip-share', 'drop-share-tri')
 
 
 #: Step 5c1: `Session`'s discovery runs in `discovery.rs`. SLICE_DISC=py keeps Python's over the same core. Python's own copies, for a

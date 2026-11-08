@@ -110,6 +110,9 @@ const DROP_LINK_LATER: u8 = 65;
 const WANTS_NEVER: u8 = 66;
 const DROP_SHARE: u8 = 67;
 const SKIP_SHARE: u8 = 68;
+/// `drop-share` with `_trichotomy` off as well, so that sharing is the only route (the re-pointed test's real-specs case). One
+/// plant is on at a time, hence one name for both. Test-only, like `skip-share`.
+const DROP_SHARE_TRI: u8 = 69;
 
 #[pyfunction]
 fn rel_install(term_live: Py<PyAny>, relations: Py<PyAny>, euf_adapter: Py<PyAny>, fault: Py<PyAny>) {
@@ -188,6 +191,7 @@ fn rel_plant(name: Option<&str>) -> PyResult<()> {
         Some("wants-never") => WANTS_NEVER,
         Some("drop-share") => DROP_SHARE,
         Some("skip-share") => SKIP_SHARE,
+        Some("drop-share-tri") => DROP_SHARE_TRI,
         Some(x) => return Err(PyValueError::new_err(format!("no plant {x}"))),
     };
     PLANT.store(v, Relaxed);
@@ -485,7 +489,7 @@ fn rel_order_infinite<'py>(rel: &Bound<'py, PyAny>, var: i32, sides: &Bound<'py,
 fn rel_trichotomy<'py>(rel: &Bound<'py, PyAny>, var: i32, atom: &Bound<'py, PyAny>) -> PyResult<()> {
     let p = rel.py();
     tick(session::REL_TRICHOTOMY);
-    if matches!(PLANT.load(Relaxed), SKIP_TRICHOTOMY | SKIP_SHARE) {
+    if matches!(PLANT.load(Relaxed), SKIP_TRICHOTOMY | SKIP_SHARE | DROP_SHARE_TRI) {
         tick(session::REL_PLANT);
         return Ok(());
     }
@@ -1713,7 +1717,7 @@ fn rel_share(rel: &Bound<'_, PyAny>) -> PyResult<bool> {
     let terms = builtins.getattr(intern!(p, "map"))?.call1((caller, adapters.call_method0(intern!(p, "values"))?))?;
     let pairs = rel.getattr(intern!(p, "sharing"))?.call_method1(intern!(p, "update"), (terms,))?;
     let r = h.relations.bind(p);
-    let zero_drop = plant_on(DROP_SHARE);
+    let zero_drop = plant_on(DROP_SHARE) || plant_on(DROP_SHARE_TRI);
     for pair in pairs.try_iter()? {
         let (a, b) = two(&pair?)?;
         if number(rel, &h, &a)? && number(rel, &h, &b)? {

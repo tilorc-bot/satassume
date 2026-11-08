@@ -648,6 +648,48 @@ def _share():
     return dict(on=repr(on), off=repr(off), fired=mod.counts()['rel:plant_fired'] if mod else 0)
 
 
+def _sharing():
+    """The replacement for `tests/test_relations.py::test_equality_sharing_is_needed_and_works` (ruled 8 Nov, report 609714d). That
+    test turns the clause off by patching `Relations._share` and `_trichotomy`, which Rust's calls go past; here only the way it is
+    turned off changes: `skip-share` on Rust, the same patches on Python. Its two assertions stay (`on`, `off`, dummy specs). The
+    real-specs case (OrderAdapter + EUFAdapter) is the one where sharing is the only route: with `_trichotomy` off the query is
+    still True, and None once sharing is off too. BREAK=share removes sharing from the start (Rust: `drop-share-tri`, the pairs
+    counted and no interface atom, with `_trichotomy` off; Python: `_share` patched), and `tri_off` must then move."""
+    sys.path.insert(0, os.path.join(HERE, '..', '..', 'tests'))
+    rust = os.environ.get('MODE', 'rust') == 'rust'
+    mod = _rust() if rust else None
+    from sympy import Q
+    from satassume.relations import AdapterSpec, Relations
+    from satassume.theories.euf.euf_adapter import EUFAdapter
+    from test_relations import ask_with, dummy_specs, f, relation_engine, x, y
+    from theory_harness import OrderAdapter
+    plant = __import__('sa_solver').rel_plant if rust and os.environ.get('SLICE_REL') != 'py' else None
+    share, tri = Relations._share, Relations._trichotomy
+    brk = os.environ.get('BREAK') == 'share'
+
+    def off(share_off, tri_off, plant_name):
+        if plant:
+            plant(plant_name)
+        else:
+            Relations._share = (lambda self: False) if share_off else share
+            Relations._trichotomy = (lambda self, var, atom: None) if tri_off else tri
+
+    def real():
+        return [AdapterSpec('order', OrderAdapter, True), AdapterSpec('euf', EUFAdapter, False)]
+    prop, assum = Q.eq(f(x), f(y)), (x <= y) & (y <= x)
+    out = {}
+    out['on'] = repr(ask_with(relation_engine(dummy_specs()), prop, assum))
+    off(True, True, 'skip-share')
+    out['off'] = repr(ask_with(relation_engine(dummy_specs()), prop, assum))
+    off(brk, True, 'drop-share-tri' if brk else 'skip-trichotomy')
+    out['tri_off'] = repr(ask_with(relation_engine(real()), prop, assum))
+    off(True, True, 'skip-share')
+    out['both_off'] = repr(ask_with(relation_engine(real()), prop, assum))
+    off(False, False, None)
+    out['fired'] = mod.counts()['rel:plant_fired'] if mod else 0
+    return out
+
+
 def _join():
     """A query's input term and the same text under another `Function('f')`, each visited first in turn."""
     from sympy import Function, Q, Symbol
@@ -846,7 +888,10 @@ def test_link_none_moves_nothing(py):
                                    'drop-link', 'drop-selector', 'drop-eq-infinity', 'fresh-skew', 'drop-add-role', 'drop-apply-role',
                                    'drop-candidacy', 'drop-tsource', 'drop-tvar', 'drop-tvar-mc', 'drop-engage', 'drop-terms', 'drop-terms-side',
                                    'drop-fixed', 'drop-sync', 'drop-sync-polar', 'drop-xswitch', 'drop-congruence', 'congruent-never',
-                                   'share-guard-one'])
+                                   'share-guard-one',
+                                   # Step 5c4's bar plants, one in each moved method.
+                                   'drop-init-engage', 'drop-enqueue', 'drop-note-top', 'drop-proc-eq-links', 'drop-link-later',
+                                   'wants-never', 'drop-share'])
 def test_dropped_clause_is_seen(py, plant):
     got = _call('run', SLICE_SESSION_PLANT=plant)
     assert got['counts']['rel:plant_fired'] > 0
@@ -869,6 +914,23 @@ def test_a_patch_on_a_moved_method_reaches_nothing():
     assert _call('share', MODE='py', PATCH='first') == dict(on='None', off='None', fired=0)
     got = _call('share', SLICE_SESSION_PLANT='skip-trichotomy')
     assert got['fired'] > 0 and (got['on'], got['off']) == ('None', 'None')
+
+
+def test_sharing_is_needed_and_works():
+    """`test_equality_sharing_is_needed_and_works`, re-pointed: its two assertions with the clause off by `skip-share`, and the
+    real-specs case where sharing is the only route. Same answers on Python, on Rust and on Rust's core with Python's methods."""
+    want = dict(on='True', off='None', tri_off='True', both_off='None')
+    assert {k: v for k, v in _call('sharing', MODE='py').items() if k != 'fired'} == want
+    got = _call('sharing')
+    assert got['fired'] > 0 and {k: v for k, v in got.items() if k != 'fired'} == want
+    assert {k: v for k, v in _call('sharing', SLICE_REL='py').items() if k != 'fired'} == want
+
+
+def test_sharing_case_fails_without_sharing():
+    """With sharing removed from the start, the real-specs case moves: the test above fails on both backends."""
+    assert _call('sharing', MODE='py', BREAK='share')['tri_off'] == 'None'
+    got = _call('sharing', BREAK='share')
+    assert got['fired'] > 0 and got['tri_off'] == 'None'
 
 
 def test_link_crossings_add_up(rust):
@@ -904,4 +966,4 @@ def _kinds():
 
 
 if __name__ == '__main__':
-    print(json.dumps({'run': _run, 'join': _join, 'direct': _direct, 'share': _share, 'kinds': _kinds}[sys.argv[1]]()))
+    print(json.dumps({'run': _run, 'join': _join, 'direct': _direct, 'share': _share, 'sharing': _sharing, 'kinds': _kinds}[sys.argv[1]]()))

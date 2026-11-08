@@ -5,6 +5,8 @@ A failure on Rust is "needs internals" only if the text of the failure itself na
   - AttributeError on the Rust solver class, for an attribute that real `Solver` has and the crate doesn't
   - a subclass's override of a private method that Rust never calls: only the node ids in SUBCLASS, each read by hand,
     and only if the failing line reads its counter
+  - a monkeypatch on a private method that Rust's calls go past: only the node ids in PATCHED, each read by hand and each
+    with its replacement test, and only if the failure is that test's assertion
 Anything else is a gate failure, including the borrow RuntimeError. Subclassing works on the crate's class, so it isn't a
 reason by itself.
 
@@ -28,6 +30,12 @@ SUBCLASS = {
     "tests/test_solver.py::test_rule_block_conflict_analysis_reads_propagator_reasons",
     "tests/test_solver.py::test_rule_block_final_conflict_reads_propagator_reasons",
     "tests/test_solver.py::test_rule_block_random_search_like_clauses",
+}
+PATCHED = {
+    # Patches Relations._share and _trichotomy, which rel_process/rel_interpret call in Rust (step 5c4); the query then still
+    # answers True. Unedited; replaced by rust-spike/slice/test_relations_core.py::test_sharing_is_needed_and_works (ruled 8 Nov).
+    "tests/test_relations.py::test_equality_sharing_is_needed_and_works":
+        "patch on moved _share/_trichotomy; replaced by test_relations_core.py::test_sharing_is_needed_and_works",
 }
 BORROW = "Already mutably borrowed", "Already borrowed"
 SOLVER_TYPES = {"Solver", "rust_plugin.Solver", "_CountingSolver", "BlockSolver", "MentionSolver"}
@@ -70,6 +78,8 @@ def classify(r, py_attrs):
     text = (f.get("crash") or "") + "\n" + (f.get("text") or "")
     if r["id"] in SUBCLASS and "assert" in (f.get("crash") or "") and ("n_rb_reasons" in text or "assert read > 0" in text):
         return "internals", "subclass override of _rb_reason"
+    if r["id"] in PATCHED and "assert" in (f.get("crash") or ""):
+        return "internals", PATCHED[r["id"]]
     if "the Rust solver has no provenance" in text:
         return "internals", "provenance"
     if any(b in text for b in BORROW):
@@ -137,7 +147,7 @@ def main():
     print("### Needs internals, by file and reason")
     by = collections.Counter((raised_in(rs[i]), d) for i, d, _ in classes["internals"])
     for (f, d), n in sorted(by.items()):
-        flag = "" if f in HANDOFF_FILES else "  **NOT in the handoff's list**"
+        flag = "" if f in HANDOFF_FILES or d in PATCHED.values() else "  **NOT in the handoff's list**"
         print(f"- `{f}`: `{d}`: {n}{flag}")
     print(f"\nHandoff files with none: {sorted(HANDOFF_FILES - {f for f, _ in by})}\n")
 
