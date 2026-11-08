@@ -38,6 +38,8 @@ def _canon(x):
         return "(" + ", ".join(_canon(y) for y in x) + ")"
     if isinstance(x, list):
         return "[" + ", ".join(_canon(y) for y in x) + "]"
+    if type(x) is object:      # a bare sentinel (`splits` keys): its repr carries an address
+        return "<object>"
     if type(x).__name__ in ("Split", "_Split"):
         return "Split" + _canon((x.whole, tuple(x.conjuncts), x.opaque, x.relational, x.keyless,
                                  [(frozenset(k), tuple(i)) for k, i in x.comps], x.consistent, x.vocab))
