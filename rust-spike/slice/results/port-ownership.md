@@ -46,7 +46,7 @@ The original: By sa-port-95, 7 Nov, by reading only (rg, git show); no runs. Bas
 | `engine.py` | 5 | 1 | `Session.emit` | 5c3 (partial: landed 5a 8bab767) | Python |
 | `engine.py` | 5 | 8 | `Session`, `Session.__init__`, `Session.assume_formula`, `Session.link_set`, `Session.assumption_lits`, `Session._set_glue`, `Session._group_sel`, `Session._glue_of` | landed 5c6 (port-5c6.md) | Rust |
 | `engine.py` | 5 | 2 | `Engine._union`, `Engine._within_budget` | landed 5c7 (port-5c7.md) | Rust |
-| `engine.py` | 5 | 1 | `Engine._query_cone` | 5c9c (from 5c7, move ruling 8 Nov: with `_qcones`) | Python |
+| `engine.py` | 5 | 1 | `Engine._query_cone` | landed 5c9c (port-5c9c.md), with `_qcones` Rust-native | Rust (budget.rs `query_cone`, called natively by `within_budget`; Python's kept for PY_BUDGET and the pure-Python default) |
 | `engine.py` | 5 | 1 | `neighbourhood~u` | landed 5c9b (port-5c9b.md), with `_NEIGH` Rust-native | Rust (procmemo.rs `pm_neighbourhood`; Python's kept for the pure-Python default; 0 per query on every workload, tests only) |
 | `engine.py` | 5 | 3 | `Engine._drop_cones`, `Engine._struct`, `Engine._cone_info` | 5c10 (from 5c7, move ruling and its follow-up 8 Nov: every container each touches is Rust-native only at 5c10) | Python |
 | `engine.py` | 5 | 2 | `Engine._over_budget~u`, `Engine._note_budget` | 5c10d (from 5c7, inventory ruling 8 Nov: they write `last_budget_limited` and `stats`; Rust code kept on port/5c7, unwired) | Python |
