@@ -531,9 +531,9 @@ impl PyOfflineData {
 
 /// The atoms family of runtime knowledge. Holds offline data only, so it can live as long as the process.
 #[pyclass(name = "Knowledge", frozen)]
-pub struct PyKnowledge(Rules);
+pub struct PyKnowledge(pub(crate) Rules);
 
-fn pattern<'py>(py: Python<'py>, k: &Rules, p: &UnitPattern) -> PyResult<Bound<'py, PyAny>> {
+pub(crate) fn pattern<'py>(py: Python<'py>, k: &Rules, p: &UnitPattern) -> PyResult<Bound<'py, PyAny>> {
     // Exactly `Pattern`'s fields, as `Pattern.__init__` and `units` build them.
     let empty = PyTuple::empty(py);
     let rules = PyList::empty(py);
@@ -554,7 +554,7 @@ fn pattern<'py>(py: Python<'py>, k: &Rules, p: &UnitPattern) -> PyResult<Bound<'
 }
 
 /// A template's rules, from any iterable of `(premises, conclusions)`.
-fn extract_rules(rules: &Bound<'_, PyAny>) -> PyResult<Vec<knowledge::Rule>> {
+pub(crate) fn extract_rules(rules: &Bound<'_, PyAny>) -> PyResult<Vec<knowledge::Rule>> {
     rules.try_iter()?.map(|r| r?.extract()).collect()
 }
 

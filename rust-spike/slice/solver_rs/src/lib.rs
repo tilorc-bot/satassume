@@ -566,6 +566,7 @@ fn lits_opt(a: Option<&Bound<'_, PyAny>>) -> PyResult<Vec<u32>> {
 fn sa_solver(m: &Bound<'_, PyModule>) -> PyResult<()> {
     term::py::register(m)?;
     term::dispatch::register(m)?;
+    term::common::register(m)?;
     m.add_class::<PySolver>()?;
     m.add_class::<lra_py::LraCore>()?;
     constfield::register(m)?;

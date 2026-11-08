@@ -39,6 +39,7 @@ from satassume.knowledge.templates import _common, atoms, registry
 from satassume.knowledge.templates._common import Compiled, Pattern, VOCAB, const_value
 
 import knowledge_core_live
+import knowledge_common_live
 import knowledge_f6_live
 import term_live
 
@@ -66,7 +67,7 @@ RAISED = term_live.RAISED
 #: are term/dispatch.rs's.
 PLANTS = ('knowledge-rows-kept-raise', 'knowledge-pattern-drop', 'knowledge-value-multigamma-drop',
           'dispatch-ignores-epoch', 'dispatch-opaque-off', 'dispatch-redefines-off', 'dispatch-user-off',
-          'knowledge-no-query-drop')
+          'knowledge-no-query-drop') + knowledge_common_live.PLANTS
 PLANT = [None]
 _UNDO = [None]
 
@@ -521,11 +522,14 @@ def install(shadow=False, data=None):
     undo_term = term_live.install()
     # Step 6g(a): the engine calls Rust's dispatch directly (term/dispatch.rs), not registry.clauses_for.
     undo_dispatch = install_dispatch()
+    # Step 6d: `_common`'s per-query rows (knowledge_common_live.py, term/common.rs).
+    undo_common = knowledge_common_live.install(kn, COUNTS, KnowledgeFault, CONTRADICTION, PLANT[0], DISPATCH[0])
 
     def undo():
         _UNDO[0] = None
         active[0] = False
         wiring.generator, wiring.constant_value = py_generator, py_constant_value
+        undo_common()
         undo_dispatch()
         undo_term()
         undo_f6()

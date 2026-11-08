@@ -46,6 +46,8 @@ pub struct Dispatch {
     entries: Vec<Arc<ClassEntry>>,
     counts: HashMap<String, u64>,
     plant: String,
+    /// 6d's `Common`, for `wide_formulas`; None: Python's method, called back.
+    common: Option<Py<super::common::Common>>,
 }
 
 fn bump(c: &mut HashMap<String, u64>, k: &str) {
@@ -130,8 +132,18 @@ fn split(
     if r.get_type().is(ct.bind(py)) {
         compiled.append(r)?;
         if r.getattr("pattern")?.getattr("wide")?.is_truthy()? {
-            bump(&mut slf.borrow_mut().counts, "registry:python:wide_formulas");
-            for f in r.call_method0("wide_formulas")?.try_iter()? {
+            let common = slf.borrow().common.as_ref().map(|c| c.clone_ref(py));
+            let fs: Bound<'_, PyAny> = match common {
+                Some(c) => {
+                    bump(&mut slf.borrow_mut().counts, "registry:rust:wide_formulas");
+                    c.bind(py).borrow().wide_formulas(py, r)?.into_any()
+                }
+                None => {
+                    bump(&mut slf.borrow_mut().counts, "registry:python:wide_formulas");
+                    r.call_method0("wide_formulas")?
+                }
+            };
+            for f in fs.try_iter()? {
                 formulas.append(f?)?;
             }
         }
@@ -251,7 +263,13 @@ impl Dispatch {
             registry, py_clauses_for, epoch, compiled_t, p_t, formula_t, application_t, basic_t, nan, specials, vocab,
             builtin, seen_epoch, memo: PyDict::new(py).unbind(), classes: PyDict::new(py).unbind(), entries: Vec::new(), counts: HashMap::new(),
             plant: String::new(),
+            common: None,
         })
+    }
+
+    /// 6d: `Compiled.wide_formulas` on Rust's `Common`, or Python's (None).
+    fn set_common(&mut self, c: Option<Py<super::common::Common>>) {
+        self.common = c;
     }
 
     fn set_plant(&mut self, p: String) {
