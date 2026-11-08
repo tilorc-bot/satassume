@@ -505,15 +505,17 @@ Generated from an AST walk plus the dev and fuzz census. The class column follow
 
 **`knowledge/templates/rootof.py`**
 
-- port: `_coefficients:22`~u, `_facts:31`~u, `crootof_units:45`~u
+- port: `_facts:31`~u, `crootof_units:45`~u
+- conversion (planner's 6f reclassification ruling, 7 Nov; was port): `_coefficients:22`~u (reads `expr.poly`, its domain and `rep.to_list()` from the input term; builds no SymPy object)
 
 **`knowledge/templates/special.py`**
 
-- port: `_register:38`~u, `_doubled:56`~u, `_multigamma_rules:66`~u, `multigamma_templates:88`~u
+- port: `_doubled:56`~u, `_multigamma_rules:66`~u, `multigamma_templates:88`~u
+- not port (planner's 6f reclassification ruling, 7 Nov; was port): `_register:38`~u, dead code (no caller in satassume/, tests/ or rust-spike/); a candidate for removal beside `_bound` in a separate held Python PR
 
 **`knowledge/templates/stats.py`**
 
-- port: `randomsymbol_units:22`~u
+- port: `randomsymbol_units:22`~u (6f: conversion supplies its reads of declared facts, as for `symbol_units`; the template work left, `_random_units`, is on Rust)
 
 **`knowledge/templates/table.py`**
 
