@@ -25,8 +25,8 @@ PLANTS = ('common-facts-drop', 'common-units-drop', 'common-max-cache-off', 'com
           'common-ge2-drop', 'common-consts-of-skip', 'common-pattern-key-type', 'common-const-key-type')
 #: 6g(b): wiring's rows families on Rust (term/rows_tpl.rs `PLANTS`), set on `Common`, which the rows templates read.
 PLANTS += ('rows-block-key-n', 'rows-rules-for-shape', 'rows-of-constant-skip', 'rows-matches-constant',
-           'rows-expand-drop-last', 'rows-placements-first', 'rows-allowed-coefficient', 'rows-instances-others',
-           'rows-count-flip', 'rows-clauses-one', 'rows-wide-drop', 'rows-piecewise-last', 'rows-mul-sets-first',
+           'rows-expand-drop-last', 'rows-placements-first', 'rows-matches-coefficient', 'rows-instances-others',
+           'rows-count-flip', 'rows-clauses-concl-only', 'rows-wide-drop', 'rows-piecewise-last', 'rows-mul-sets-first',
            'rows-add-bound-skip', 'rows-pow-key-same', 'rows-pow-times-skip', 'rows-pow-head-any',
            'rows-pow-irrational-skip', 'rows-pow-ipi-skip', 'rows-pow-unit-drop', 'rows-pow-of-constant-skip')
 COMMON = [None]

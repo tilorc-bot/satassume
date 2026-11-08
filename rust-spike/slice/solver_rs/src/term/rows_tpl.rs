@@ -26,16 +26,20 @@ use std::sync::Arc;
 pub const SOME_PER_ARGUMENT: usize = 32;
 
 pub const PLANTS: &[&str] = &[
-    "rows-block-key-n",        // rows_block: keyed with n + 1, so nodes of n and n + 1 arguments share patterns
+    "rows-block-key-n",        // rows_block: keyed with n rounded down to even, so nodes of 2k and 2k + 1 arguments share
+                               // patterns (sa-port-144's n + 1 shifted every key alike, so no two could meet: void)
     "rows-rules-for-shape",    // rules_for: a rule's shape not checked
     "rows-of-constant-skip",   // rules_for: no terms of the constant
     "rows-matches-constant",   // matches: 'constant' always met
     "rows-expand-drop-last",   // expand: the last rule of each node dropped
     "rows-placements-first",   // _placements: only the first placement
-    "rows-allowed-coefficient",// _allowed: 'coefficient' allowed without a Number at 0
+    "rows-matches-coefficient",// matches: 'coefficient' met without a Number at 0 (was rows-allowed-coefficient, on
+                               // `_allowed`'s 'coefficient' pick, which no compiled row has: void by construction)
     "rows-instances-others",   // _instances: `others` left out of the premises
     "rows-count-flip",         // _instances: `count` decided the other way
-    "rows-clauses-one",        // _clauses: conclusions not counted
+    "rows-clauses-concl-only", // _clauses: premises not counted (was rows-clauses-one, conclusions not counted: a
+                               // conclusion has at most 2 clauses and no Max/Min/Piecewise rule of 1-32 arguments crosses
+                               // MAX_EXPAND by that, so it could not change a decision: void by the rows' data)
     "rows-wide-drop",          // wide_formulas: the last formula dropped
     "rows-piecewise-last",     // piecewise_values: the final True not required
     "rows-mul-sets-first",     // product: only the first factor tuple
@@ -389,9 +393,9 @@ impl RowsTpl {
         }
         let objs = PyTuple::new(py, objs)?;
         let mut kn = n;
-        if cr.plant == "rows-block-key-n" {
+        if cr.plant == "rows-block-key-n" && n % 2 == 1 {
             cr.fired();
-            kn = n + 1;
+            kn = n - 1;
         }
         let key = cr.pattern_key(py, self.tag.bind(py), &kn.into_pyobject(py)?.into_any(), &consts)?;
         let me = self.clone();
@@ -561,7 +565,15 @@ fn matches(&self, py: Python<'_>, c: &Common, shape: &[Option<ShapeItem>], args:
                     m
                 }
             }
-            ShapeItem::Coefficient => i == 0 && is_number_at(consts, 0)?,
+            ShapeItem::Coefficient => {
+                let m = i == 0 && is_number_at(consts, 0)?;
+                if !m && c.plant == "rows-matches-coefficient" {
+                    c.fired();
+                    true
+                } else {
+                    m
+                }
+            }
             ShapeItem::Constant => {
                 let m = consts.contains(i)?;
                 if !m && c.plant == "rows-matches-constant" {
@@ -822,10 +834,7 @@ fn allowed(c: &Common, kind: &Pick, n: usize, consts: &Bound<'_, PyDict>) -> PyR
         Pick::Any => (0..n).collect(),
         Pick::Coefficient => {
             let num = is_number_at(consts, 0)?;
-            if 0 < n && consts.contains(0)? && !num && c.plant == "rows-allowed-coefficient" {
-                c.fired();
-                vec![0]
-            } else if 0 < n && num {
+            if 0 < n && num {
                 vec![0]
             } else {
                 vec![]
@@ -975,9 +984,9 @@ fn clauses(c: &Common, r: &(Vec<Lit>, Vec<Lit>)) -> PyResult<u128> {
     for (_, p, s) in &r.0 {
         k = k.saturating_mul(kn.cnf(p, !*s).map_err(pyo3::exceptions::PyKeyError::new_err)?.len() as u128);
     }
-    if c.plant == "rows-clauses-one" && !r.1.is_empty() {
+    if c.plant == "rows-clauses-concl-only" && !r.0.is_empty() {
         c.fired();
-        return Ok(k);
+        k = 1;
     }
     for (_, p, s) in &r.1 {
         k = k.saturating_mul(kn.cnf(p, *s).map_err(pyo3::exceptions::PyKeyError::new_err)?.len() as u128);
