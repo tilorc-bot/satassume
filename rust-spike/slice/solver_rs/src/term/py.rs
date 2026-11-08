@@ -794,7 +794,7 @@ fn core_rest<'py>(py: Python<'py>, r: &tcore::Rest) -> PyResult<Bound<'py, PyAny
     core_ct(py, &(None, r.clone())).map(|x| x.1)
 }
 
-fn core_pq(r: &Rat) -> (BigInt, BigInt) {
+pub(crate) fn core_pq(r: &Rat) -> (BigInt, BigInt) {
     (r.n.clone(), r.d.clone())
 }
 

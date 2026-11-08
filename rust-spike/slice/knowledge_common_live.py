@@ -32,6 +32,7 @@ PLANTS += ('rows-block-key-n', 'rows-rules-for-shape', 'rows-of-constant-skip', 
            'rows-pow-irrational-skip', 'rows-pow-ipi-skip', 'rows-pow-unit-drop', 'rows-pow-of-constant-skip')
 #: 6g(c): the direct core splits in rows_tpl.rs.
 PLANTS += ('rows-half-parity', 'rows-bound-coeff-one', 'rows-imag-drop-last')
+PLANTS += ('rows-mul-ipi-drop', 'rows-quot-swap')
 COMMON = [None]
 
 
