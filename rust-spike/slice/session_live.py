@@ -454,7 +454,28 @@ _REL_PLANTS = ('link-none', 'drop-order-sides', 'drop-order-infinite', 'drop-tri
                'drop-init-engage', 'drop-enqueue', 'drop-note-top', 'drop-proc-eq-links', 'drop-link-later', 'wants-never',
                'drop-share', 'skip-share', 'drop-share-tri',
                # Step 5c5.
-               'adapter-fresh', 'selector-no-memo', 'atom-var-skew', 'drop-note-sides', 'drop-eq-links-zero')
+               'adapter-fresh', 'selector-no-memo', 'atom-var-skew', 'drop-note-sides', 'drop-eq-links-zero',
+               # Step 5c5, second part: relations.py's module functions.
+               'own-term-false', 'constant-term-never', 'basis-all', 'sympy-atom-swap', 'zero-args-empty', 'under-of-empty',
+               'zero-twins-first', 'glue-no-twins', 'guarded-none', 'terms-of-no-order', 'link-objects-bare', 'closed-units-none',
+               'with-closed-skip', 'specs-no-euf', 'relname-swap')
+
+#: Step 5c5, second part: relations.py's module functions that run in `relations_core.rs`, by module attribute -> pyfunction.
+#: `_constant_term` has no pyfunction: Rust's callers use its own copy, and Python's few callers keep Python's.
+_REL_FUNCS = {
+    'zero_args': 'rel_zero_args', 'under_of': 'rel_under_of', 'zero_twins': 'rel_zero_twins', 'glue_atoms': 'rel_glue_atoms',
+    'sympy_atom': 'rel_sympy_atom', '_own_term': 'rel_own_term', '_number_basis': 'rel_number_basis',
+    '_number_facts': 'rel_number_facts', '_guarded_adapters': 'rel_guarded_adapters', '_terms_of': 'rel_terms_of',
+    'link_objects': 'rel_link_objects', 'closed_units': 'rel_closed_units', 'with_closed_units': 'rel_with_closed_units',
+    'default_specs': 'rel_default_specs', '_missing': 'rel_missing', 'relational_name': 'rel_relational_name',
+}
+#: Modules that import some of them by name, and so are patched too. ref.py (the reference engine) is left Python's on purpose;
+#: its call-time imports of `closed_units` and `default_specs` (ref.py:299, :544) read the module and so get Rust's.
+_REL_FUNC_IMPORTERS = (('satassume.engine', ('zero_args', 'under_of', 'glue_atoms', 'link_objects')),
+                       ('satassume.scope', ('glue_atoms',)),
+                       ('satassume.sympy_api', ('relational_name',)))
+#: Python's module functions, saved at install.
+PY_REL_FUNCS = {}
 
 
 #: Step 5c1: `Session`'s discovery runs in `discovery.rs`. SLICE_DISC=py keeps Python's over the same core. Python's own copies, for a
@@ -650,10 +671,19 @@ def _install_relations():
     sa_solver.rel_install(term_live, relations, euf_adapter, _fault)
     for n, f in _REL_METHODS.items():
         setattr(R, n, f)
+    import importlib
+    mods = [(relations, tuple(_REL_FUNCS))] + [(importlib.import_module(m), ns) for m, ns in _REL_FUNC_IMPORTERS]
+    saved_f = [(m, n, getattr(m, n)) for m, ns in mods for n in ns]
+    PY_REL_FUNCS.update({n: getattr(relations, n) for n in _REL_FUNCS})
+    for m, ns in mods:
+        for n in ns:
+            setattr(m, n, getattr(sa_solver, _REL_FUNCS[n]))
 
     def undo():
         for n, f in saved.items():
             setattr(R, n, f)
+        for m, n, f in saved_f:
+            setattr(m, n, f)
     return undo
 
 

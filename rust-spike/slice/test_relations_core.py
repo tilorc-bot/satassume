@@ -893,11 +893,44 @@ def test_link_none_moves_nothing(py):
                                    'drop-init-engage', 'drop-enqueue', 'drop-note-top', 'drop-proc-eq-links', 'drop-link-later',
                                    'wants-never', 'drop-share',
                                    # Step 5c5.
-                                   'adapter-fresh', 'selector-no-memo', 'atom-var-skew', 'drop-note-sides', 'drop-eq-links-zero'])
+                                   'adapter-fresh', 'selector-no-memo', 'atom-var-skew', 'drop-note-sides', 'drop-eq-links-zero',
+                                   # Step 5c5, second part: the module functions this run's comparison catches.
+                                   'own-term-false', 'sympy-atom-swap', 'closed-units-none', 'with-closed-skip', 'specs-no-euf'])
 def test_dropped_clause_is_seen(py, plant):
     got = _call('run', SLICE_SESSION_PLANT=plant)
     assert got['counts']['rel:plant_fired'] > 0
     assert _differ(py, got) != []
+
+
+@pytest.fixture(scope='module')
+def funcs():
+    return _call('funcs')
+
+
+def test_module_functions_match_python(funcs):
+    """Step 5c5, second part: every wired module function, Rust's against Python's on the same arguments, call by call."""
+    assert funcs['bad'] == {}, funcs['seen']
+    called = set(funcs['calls'])
+    assert called >= {'zero_args', 'under_of', 'zero_twins', 'glue_atoms', 'sympy_atom', '_guarded_adapters', '_terms_of',
+                      'link_objects', 'default_specs', 'relational_name', '_number_basis', '_number_facts'}, called
+
+
+@pytest.mark.parametrize('plant, fn', [('basis-all', '_number_basis'), ('zero-args-empty', 'zero_args'), ('under-of-empty', 'under_of'),
+                                       ('zero-twins-first', 'zero_twins'), ('glue-no-twins', 'glue_atoms'),
+                                       ('guarded-none', '_guarded_adapters'), ('terms-of-no-order', '_terms_of'),
+                                       ('link-objects-bare', 'link_objects'), ('relname-swap', 'relational_name')])
+def test_module_function_plant_is_seen(plant, fn):
+    got = _call('funcs', SLICE_SESSION_PLANT=plant)
+    assert got['counts']['rel:plant_fired'] > 0
+    assert got['bad'].get(fn, 0) > 0, got['bad']
+
+
+def test_constant_term_answers_match():
+    """`_share`'s `_constant_term` skip, on `_sharing`'s specs with a constant in `y`'s place. No pair here holds a closed constant
+    (the dummy and order adapters don't share one, and LRA never does), so `constant-term-never` doesn't fire: it is void here."""
+    py, rust = _call('constant', MODE='py'), _call('constant')
+    assert {k: v for k, v in py.items() if ' ' in k} == {k: v for k, v in rust.items() if ' ' in k}
+    assert rust['constant_term'] > 0
 
 
 def test_fresh_not_inert_fires():
@@ -967,5 +1000,130 @@ def _kinds():
     return dict(rust=list(sa_solver.REL_KINDS), py=[r._SD, r._EN, r._MC, r._IE, r._IL])
 
 
+def _constant():
+    """`_constant_term` in `_share`: a pair with a closed non-rational constant (`pi`, `sqrt(2)`) is left out of equality sharing.
+    `_sharing`'s real specs (OrderAdapter + EUFAdapter), where sharing is the only route, with `y` replaced by such a constant."""
+    sys.path.insert(0, os.path.join(HERE, '..', '..', 'tests'))
+    rust = os.environ.get('MODE', 'rust') == 'rust'
+    mod = _rust() if rust else None
+    from sympy import Q, Rational, pi, sqrt
+    from satassume.relations import AdapterSpec
+    from satassume.theories.euf.euf_adapter import EUFAdapter
+    from test_relations import ask_with, dummy_specs, f, relation_engine, x, y
+    from theory_harness import OrderAdapter
+
+    def real():
+        return [AdapterSpec('order', OrderAdapter, True), AdapterSpec('euf', EUFAdapter, False)]
+    out = {}
+    for name, specs in (('real', real), ('dummy', dummy_specs)):
+        for c in (pi, sqrt(2), Rational(1, 2), y):
+            out[f'{name} {c}'] = repr(ask_with(relation_engine(specs()), Q.eq(f(x), f(c)), (x <= c) & (c <= x)))
+    out['fired'] = mod.counts()['rel:plant_fired'] if mod else 0
+    out['constant_term'] = mod.counts()['rel:constant_term'] if mod else 0
+    return out
+
+
+def _norm(v):
+    """A result in a form both sides can be compared by: sets sorted, adapters by type, the rest by `str`."""
+    if isinstance(v, (set, frozenset)):
+        return sorted(str(_norm(x)) for x in v)
+    if isinstance(v, (list, tuple)):
+        return [_norm(x) for x in v]
+    if (type(v).__module__ or '').startswith('satassume.theories') or 'Adapter' in type(v).__name__:
+        return type(v).__name__
+    if hasattr(v, 'factory') and hasattr(v, 'guarded'):
+        return [v.name, bool(v.guarded)]
+    return str(v)
+
+
+def _funcs():
+    """Step 5c5, second part: relations.py's module functions, Rust's against Python's, on every call the queries make.
+
+    Each wired module attribute is wrapped: it runs Python's and then Rust's on the same arguments, notes whether they agree, and
+    returns Rust's. Memos the two share are emptied for that key before each side runs, so neither reads the other's answer.
+    `with_closed_units` isn't compared here (it returns a closure); the run comparison catches its plants."""
+    import importlib
+    from sympy import Eq, Function, Q, Symbol, pi, sin, sqrt, exp
+    from satassume import engine, relations
+    from satassume.sympy_api import ask
+    mod = _rust()
+    PYF = mod.PY_REL_FUNCS
+    seen, bad, calls = {}, {}, {}
+    MISSING = object()
+
+    def memo_of(n, a):
+        if n == 'sympy_atom':
+            return relations._SYMPY_ATOMS, a[0]
+        if n == 'closed_units':
+            return relations._CLOSED, a[0]
+        if n == '_number_basis':
+            return a[0]._xbasis, a[1]
+        return None, None
+
+    def wrap(n):
+        rs = getattr(mod.sa_solver, mod._REL_FUNCS[n])
+
+        def w(*a, **k):
+            m, key = memo_of(n, a)
+            if m is not None:
+                old = m.get(key, MISSING)
+                m.pop(key, None) if hasattr(m, 'pop') else None
+            want = PYF[n](*a, **k)
+            if m is not None and hasattr(m, 'pop'):
+                m.pop(key, None)
+            got = rs(*a, **k)
+            calls[n] = calls.get(n, 0) + 1
+            if _norm(want) != _norm(got):
+                bad[n] = bad.get(n, 0) + 1
+                seen.setdefault(n, [repr(a)[:200], repr(want)[:200], repr(got)[:200]])
+            return got
+        return w
+    names = [n for n in mod._REL_FUNCS if n != 'with_closed_units']
+    mods = [(relations, names)] + [(importlib.import_module(m), [n for n in ns if n in names]) for m, ns in mod._REL_FUNC_IMPORTERS]
+    for m, ns in mods:
+        for n in ns:
+            setattr(m, n, wrap(n))
+    x, y, t = Symbol('x'), Symbol('y'), Symbol('t')
+    f = Function('f')
+    extra = [(Q.zero(x * y), Q.zero(x)), (Q.positive(x - y), x > y), (Q.negative(x), x < 0), (Q.zero(f(x)), Q.zero(f(y)) & Q.zero(x - y)),
+             (Q.nonzero(x * y), Q.nonzero(x) & Q.nonzero(y)), (Q.positive(x), Eq(x, pi)), (Q.positive(sin(x) + 2), True),
+             (Q.zero(x ** 2 + y ** 2), Q.zero(x) & Q.zero(y)), (Q.positive(exp(x) - 1), x > 0), (Q.lt(x, sqrt(2)), x < 1),
+             (Q.real(f(x)), Q.zero(f(x) - 1)), (Q.zero(t * f(x)), Q.zero(f(x))), (Q.positive(x * pi), x > 0), (Q.zero(x - y), Q.zero(x) & Q.zero(y)),
+             (Q.zero(f(x) - f(y)), Q.zero(x) & Q.zero(y)), (Q.positive(f(x) * f(y)), Q.zero(x - 1) & Q.zero(y)),
+             (Q.zero(f(x) - f(pi)), Q.zero(x - pi)), (Q.positive(f(x)), Q.positive(f(pi)) & Q.zero(x - pi)),
+             (Q.positive(f(x)), Q.positive(f(sqrt(2))) & Q.zero(x - sqrt(2))), (Q.zero(f(x - pi)), Q.zero(f(y)) & Q.zero(y - x + pi))]
+    for p, a in list(_queries().values()) + extra:
+        try:
+            ask(p, a, engine=engine.Engine())
+        except BaseException:
+            pass
+    # Twins: hand-built atoms with two zero atoms under applications, as atoms alone and split into atoms and context.
+    from satassume.sat.formula import atoms_of
+    from satassume.sympy_api import to_formula
+    g = Function('g')
+    for e in (Q.zero(x) & Q.zero(y) & Q.positive(f(x) + g(y)), Q.zero(x - y) & Q.zero(t) & Q.zero(f(x - y, t)),
+              Q.zero(x) & Q.positive(f(x)) & Q.zero(y)):
+        a = tuple(atoms_of(to_formula(e)))
+        for cut in range(len(a) + 1):
+            relations.zero_twins(a[:cut], a[cut:])
+            relations.glue_atoms(a[:cut], a[cut:])
+            relations.glue_atoms(a[:cut], a[cut:], (relations.zero_args(a[cut:]), relations.under_of(a[cut:])))
+    # Only Rust's transfer code calls these now, so no module attribute sees them: called here on fresh engines, both sides.
+    from sympy import E, I, Rational, oo, zoo
+    for c in (pi, sqrt(2), pi * sqrt(2), E, sqrt(2) - 1, Rational(1, 3), -pi, oo, I, zoo, exp(2) - 7, sqrt(3) - sqrt(2)):
+        for n, facts in (('_number_basis', False), ('_number_basis', True), ('_number_facts', None)):
+            eng = engine.Engine()
+            a = (eng, c) if facts is None else (eng, c, facts)
+            want = PYF[n](*a)
+            eng._xbasis.clear()
+            got = getattr(mod.sa_solver, mod._REL_FUNCS[n])(*a)
+            calls[n] = calls.get(n, 0) + 1
+            if _norm(want) != _norm(got):
+                bad[n] = bad.get(n, 0) + 1
+                seen.setdefault(n, [str(c), repr(want)[:200], repr(got)[:200]])
+    return dict(calls=calls, bad=bad, seen=seen, counts=mod.counts())
+
+
 if __name__ == '__main__':
-    print(json.dumps({'run': _run, 'join': _join, 'direct': _direct, 'share': _share, 'sharing': _sharing, 'kinds': _kinds}[sys.argv[1]]()))
+    print(json.dumps({'run': _run, 'join': _join, 'direct': _direct, 'share': _share, 'sharing': _sharing, 'kinds': _kinds,
+                      'funcs': _funcs, 'constant': _constant}[sys.argv[1]]()))
