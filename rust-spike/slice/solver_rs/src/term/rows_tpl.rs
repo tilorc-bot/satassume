@@ -61,8 +61,10 @@ pub const PLANTS: &[&str] = &[
     "rows-mul-ipi-drop",       // 6g(c2) direct `_mul_factor_sets`: the (c, I, pi, s) set dropped
     "rows-quot-swap",          // 6g(c2) direct `_quotient_templates`: slots a and v swapped
     "rows-exp-arg-none",       // 6g(c3) direct `_exp_arg`: None for exp(u) and E**u
-    "rows-unit-angle-neg",     // 6g(c3) direct `_unit_angle`: the angle negated
-    "rows-ipi-split-neg",      // 6g(c3) direct `ipi_split`: the coefficient c negated
+    "rows-unit-angle-shift",   // 6g(c3) direct `_unit_angle`: the angle plus 1 (negating it was void: the units read only
+                               // its parity and denominator, which negation keeps)
+    "rows-ipi-split-shift",    // 6g(c3) direct `ipi_split`: the coefficient c plus 1 (negating it was void: IPI_GUARDS read
+                               // only integer/even/odd/half-odd, which negation keeps)
     "rows-irrational-false",   // 6g(c3) direct `irrational_root`: False where it is True
     "rows-unit-power-drop-last",// 6g(c3) direct `_unit_power_units`: the last fact dropped
     "rows-pow-bound-drop-last",// 6g(c3) direct `_pow_bound_templates`: the last bound premise dropped (none left: no split)
@@ -1430,9 +1432,9 @@ fn direct_pow<'py>(
         }
         "_unit_angle" => {
             let Some(mut a) = t.core_unit_angle(ids[0]).map_err(refuse)? else { return none() };
-            if c.plant == "rows-unit-angle-neg" {
+            if c.plant == "rows-unit-angle-shift" {
                 c.fired();
-                a = super::rat::Rat::new(-a.n.clone(), a.d.clone());
+                a = super::rat::Rat::new(a.n.clone() + a.d.clone(), a.d.clone());
             }
             Ok(Some(rational(&a)?))
         }
@@ -1445,9 +1447,9 @@ fn direct_pow<'py>(
                     None => return Ok(None),
                 },
             };
-            if c.plant == "rows-ipi-split-neg" {
+            if c.plant == "rows-ipi-split-shift" {
                 c.fired();
-                k = super::rat::Rat::new(-k.n.clone(), k.d.clone());
+                k = super::rat::Rat::new(k.n.clone() + k.d.clone(), k.d.clone());
             }
             Ok(Some((rational(&k)?, s).into_bound_py_any(py)?))
         }
