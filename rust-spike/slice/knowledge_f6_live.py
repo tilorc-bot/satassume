@@ -20,6 +20,7 @@ The template shells (`_unary`, `nary`, `_pi_trig`, `_exp_ipi`, `_cosh_shift`, `p
 check, `const_key`/`facts`/`units` (6d's `_common`) and the rows' `gen` (6g). Conversion (planner's reclass ruling):
 `rootof._coefficients`, and `randomsymbol_units`' reads of declared facts.
 """
+import importlib.abc
 import os
 import sys
 
@@ -27,7 +28,7 @@ import sa_solver
 from sympy import Add, Mul, Rational, S
 
 from satassume.knowledge.domain import kept_product
-from satassume.knowledge.templates import functions, nodes, physics, rootof, special, stats
+from satassume.knowledge.templates._common import Rules
 from satassume.sat.formula import Not, P
 
 import term_live
@@ -58,9 +59,52 @@ def _pq(c):
     return int(c.p), int(c.q)
 
 
+PKG = 'satassume.knowledge.templates.'
+
+
+class _AfterImport(importlib.abc.MetaPathFinder):
+    """Runs `on_load(short_name, module)` right after one of `names` is executed, before its importer reads it.
+
+    The six modules are lazy (registry.lazy, templates/__init__.py:130-135): Python imports them, and sympy.stats and
+    sympy.physics.units with them, only when a query reaches their classes. Importing them here would change what a
+    run has loaded, so install swaps those already loaded and the rest as they load."""
+
+    def __init__(self, names, on_load):
+        self.names, self.on_load, self.busy = names, on_load, set()
+
+    def find_spec(self, name, path, target=None):
+        if not name.startswith(PKG) or name[len(PKG):] not in self.names or name in self.busy:
+            return None
+        self.busy.add(name)            # _compat.py's finder walks sys.meta_path too, back to this one
+        try:
+            for f in sys.meta_path:
+                if f is self or not hasattr(f, 'find_spec'):
+                    continue
+                spec = f.find_spec(name, path, target)
+                if spec is not None:
+                    break
+            else:
+                return None
+        finally:
+            self.busy.discard(name)
+        inner, hook = spec.loader, self
+
+        class Loader(importlib.abc.Loader):
+            def __getattr__(self, a):        # get_source, get_filename, ... for tracebacks and inspect
+                return getattr(inner, a)
+
+            def create_module(self, spec):
+                return inner.create_module(spec)
+
+            def exec_module(self, module):
+                inner.exec_module(module)
+                if hook in sys.meta_path:
+                    hook.on_load(name[len(PKG):], module)
+        spec.loader = Loader()
+        return spec
+
+
 def install(shadow, counts, fault_cls, mismatch):
-    mods = {'functions': functions, 'special': special, 'nodes': nodes, 'physics': physics, 'rootof': rootof,
-            'stats': stats}
     names = {
         'functions': ('_pi_trig_rules', '_cosh_shift_rules', '_parts_of_round_rules', '_genocchi_half_rules',
                       '_unit_interval_units', '_cosh_shift_split', 'shifted'),
@@ -70,7 +114,7 @@ def install(shadow, counts, fault_cls, mismatch):
         'rootof': ('_facts',),
         'stats': ('_random_units',),
     }
-    py = {n: getattr(mods[m], n) for m, ns in names.items() for n in ns}
+    py = {}     # filled per module as it is swapped; the wrappers read it only when their module is loaded
 
     def kept():
         q = term_live.current()
@@ -147,7 +191,8 @@ def install(shadow, counts, fault_cls, mismatch):
     # ---- Rule builders that append to `R`.
 
     def appending(name, plant, rs, conv):
-        f = py[name]
+        def f(*a):                  # looked up at call time: `py` is filled when the module loads
+            return py[name](*a)
 
         def g(R, *a):
             if kept():
@@ -155,7 +200,7 @@ def install(shadow, counts, fault_cls, mismatch):
             counts['f6:' + name] += 1
             r = _drop(plant, call(name, rs, *conv(*a)))
             if shadow:
-                ref = functions.Rules()
+                ref = Rules()
                 f(ref, *a)
                 check(name, a, r, lambda: ref.rules)
             R.rules.extend(r)
@@ -164,7 +209,8 @@ def install(shadow, counts, fault_cls, mismatch):
     # ---- Builders and unit facts with no arguments from the query.
 
     def pure(name, plant, rs, conv=lambda *a: a):
-        f = py[name]
+        def f(*a):                  # looked up at call time: `py` is filled when the module loads
+            return py[name](*a)
 
         def g(*a):
             if kept():
@@ -285,20 +331,40 @@ def install(shadow, counts, fault_cls, mismatch):
                                         lambda pos, integer, real: (pos, integer, bool(real)))},
     }
     saved = []
-    for m, fs in swap.items():
-        for n, f in fs.items():
+
+    def swap_module(m, mod):
+        for n in names[m]:
+            py[n] = getattr(mod, n)
+        for n, f in swap[m].items():
             f.__wrapped__ = py[n]
             f.__name__ = f.__qualname__ = n
-            saved.append((mods[m], n, getattr(mods[m], n)))
-            setattr(mods[m], n, f)
-    # `shifted` is bound by value in special and the family modules (`from .functions import shifted`).
-    for name, m in list(sys.modules.items()):
-        if (name.startswith('satassume.knowledge.') and m is not functions
-                and getattr(m, 'shifted', None) is py['shifted']):
-            saved.append((m, 'shifted', py['shifted']))
-            m.shifted = shifted
+            saved.append((mod, n, py[n]))
+            setattr(mod, n, f)
+        if m == 'functions':
+            # `shifted` is bound by value in special and the family modules (`from .functions import shifted`): those
+            # loaded already are rebound here; those loaded later import the swapped name.
+            for name, other in list(sys.modules.items()):
+                if (name.startswith('satassume.knowledge.') and other is not mod
+                        and getattr(other, 'shifted', None) is py['shifted']):
+                    saved.append((other, 'shifted', py['shifted']))
+                    other.shifted = swap['functions']['shifted']
+
+    hook = _AfterImport(set(names), swap_module)
+    sys.meta_path.insert(0, hook)
+    for m in names:
+        mod = sys.modules.get(PKG + m)
+        if mod is not None:
+            swap_module(m, mod)
 
     def undo():
+        if hook in sys.meta_path:
+            sys.meta_path.remove(hook)
+        rust_shifted = swap['functions']['shifted']
         for m, n, f in saved:
             setattr(m, n, f)
+        if 'shifted' in py:
+            # a module that imported `shifted` after functions was swapped holds Rust's by value
+            for name, other in list(sys.modules.items()):
+                if name.startswith('satassume.knowledge.') and getattr(other, 'shifted', None) is rust_shifted:
+                    other.shifted = py['shifted']
     return undo

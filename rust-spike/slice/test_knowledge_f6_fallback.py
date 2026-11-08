@@ -52,6 +52,9 @@ def test_fallback_counted(env, mod, name, key, query):
 @pytest.mark.parametrize('mod,name,key,query', CASES, ids=IDS)
 def test_fallback_raise_is_loud(env, mod, name, key, query):
     mp, undos = env
+    # As in test_fallback_counted: one ask on Python first. Cold, the Float case's `shifted` is refused (algebra: Float)
+    # and the query reruns on Python before the fallback is reached, so this test passed or failed by test order.
+    fresh_ask(query())
 
     def boom(*a):
         raise RuntimeError('planted')
