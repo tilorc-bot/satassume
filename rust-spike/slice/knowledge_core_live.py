@@ -27,6 +27,8 @@ from satassume.knowledge.templates import _rows_runtime, core, functions, wiring
 import term_live
 
 RULES = ('_half_rules', '_bound_rules', '_recip_rules', '_imag_rules', '_imag_number_rules', '_not_unit_premises')
+#: 6g(c5): the Addition template builders rows_tpl.rs computes directly (`RowsTpl::add_tpl`).
+ADD_TPL = ('_half_templates', '_bound_templates', '_recip_templates', '_imag_templates')
 SPLITS = ('_half_split', '_bound_split', '_imag_split', '_recip_templates', '_imag_templates')
 #: The Mul and Pow families. `ipi_split`/`pi_split` stay Python's one-line calls of `_pi_split`, which is swapped in core, so
 #: `functions._pi_trig`'s default `split_=pi_split` and the closures built before install reach Rust too.
@@ -438,6 +440,27 @@ def install(shadow, counts, fault_cls, mismatch):
         '_unit_angle': unit_angle, '_pi_split': pi_split_, 'ipi_rules': ipi_rules, 'irrational_root': irrational_root,
         '_unit_power_units': unit_power_units, '_exp_arg': exp_arg, '_pow_bound_templates': pow_bound_templates,
     }
+    def _add_tpl_py(name, expr, split):
+        # 6g(c5): Python's template builder with `facts` captured: (key, consts, objs, node, gen()), Python's rules
+        # (the originals, not the Rust swap), or None when it builds no template.
+        got = []
+        names = ('facts',) + RULES
+        saved = {n: core.__dict__[n] for n in names}
+        saved_tpl = core.__dict__[name]             # _half_templates/_bound_templates: core's own (not swapped)
+
+        def capture(key, gen, consts, objs, node):
+            got.append((key, dict(consts), tuple(objs), node, gen()))
+            return got[-1]
+        try:
+            core.facts = capture
+            for n in RULES:
+                setattr(core, n, py[n])
+            r = py.get(name, saved_tpl)(expr, split)
+        finally:
+            for n, f in saved.items():
+                setattr(core, n, f)
+        return None if r is None else got[-1]
+
     def shadow_split(name, args, ours):
         counts['shadow:core'] += 1
         counts['shadow:direct:' + name] += 1
@@ -460,6 +483,8 @@ def install(shadow, counts, fault_cls, mismatch):
             py['ipi_rules'](lambda p, k: theirs.append((p, k)), *args)
         elif name == 'constant_value':
             theirs = _rows_runtime.constant_value(*args)
+        elif name in ADD_TPL:
+            theirs = _add_tpl_py(name, *args)
         elif name in ('irrational_root', '_unit_power_units'):
             theirs = py[name](*args)
         else:

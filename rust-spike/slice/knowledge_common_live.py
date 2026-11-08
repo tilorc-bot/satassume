@@ -36,6 +36,7 @@ PLANTS += ('rows-mul-ipi-drop', 'rows-quot-swap')
 PLANTS += ('rows-exp-arg-none', 'rows-unit-angle-shift', 'rows-ipi-split-shift', 'rows-irrational-false',
            'rows-unit-power-drop-last', 'rows-pow-bound-drop-last', 'rows-ipi-rules-drop-last')
 PLANTS += ('rows-constant-value-neg',)
+PLANTS += ('rows-half-tpl-flip', 'rows-bound-tpl-neg', 'rows-recip-tpl-neg', 'rows-imag-tpl-sign')
 COMMON = [None]
 
 
