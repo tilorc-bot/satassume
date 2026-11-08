@@ -33,9 +33,10 @@ HANDLERS = [
     ('relations.py:1989', R, '_guarded_adapters', SUM),
     ('relations.py:2011', R, '_termwise', (Q.eq(n, k), Q.integer(n) & Q.nonnegative(n) & Q.gt(k, n))),
     ('relations.py:2018', R, '_terms_of', SUM),
-    # On Rust's solver the core runs the certificate and `LRATheory._certify` is never called: the handler is `lra.rs:935`,
-    # and the call inside it that reaches Python is `pi_laurent` (`lra_cert.rs:87`).
-    ('lra.rs:935', CF, 'pi_laurent', CERT) if RUST else ('lra.py:461', LR.LRATheory, '_certify', CERT),
+    # On Rust's solver the core runs the certificate and `LRATheory._certify` is never called: the handler is `lra.rs:935`.
+    # Nothing inside it calls Python since `pi_laurent` moved to Rust (adapters step, part C2), so the raise is Rust's own:
+    # `rel_plant('cf-laurent-refuse')`, at lra_cert.rs's `laurent`, reached as the count `cf:pi_laurent`.
+    ('lra.rs:935', None, 'cf-laurent-refuse', CERT) if RUST else ('lra.py:461', LR.LRATheory, '_certify', CERT),
     ('lra_bounds.py:249', B, '_loose', (Q.positive(sin(1)), True)),
 ]
 
@@ -52,11 +53,26 @@ def live():
     del term_live.REFUSALS[:]
     fresh()
     yield
+    if RUST:
+        sa_solver.rel_plant(None)
     undo()
     fresh()
 
 
+class LaurentCalls:
+    """`calls[0]` for a Rust fault: `cf:pi_laurent`'s count since it was made."""
+    def __init__(self):
+        self.base = sa_solver.session_counts()['cf:pi_laurent']
+
+    def __getitem__(self, i):
+        return sa_solver.session_counts()['cf:pi_laurent'] - self.base
+
+
 def plant(monkeypatch, owner, attr, once=True, text='planted'):
+    if owner is None:                   # a Rust fault by name (`rel_plant`); `live` turns it off
+        calls = LaurentCalls()
+        sa_solver.rel_plant(attr)
+        return calls
     real = next(c.__dict__[attr] for c in owner.__mro__ if attr in c.__dict__) if isinstance(owner, type) else getattr(owner, attr)
     is_static = isinstance(real, staticmethod)
     f = real.__func__ if is_static else real
@@ -86,17 +102,12 @@ def test_a_refusal_goes_past_the_handler(live, monkeypatch, site, owner, attr, q
 @pytest.mark.skipif(not RUST, reason="the core's handler")
 def test_the_core_certificate_handler_is_quiet_on_an_exception(live, monkeypatch):
     """The plant above is inside `lra.rs:935`'s handler: an `Exception` from the same call doesn't come out. `handler_count`
-    doesn't see this one."""
-    real, calls = CF.pi_laurent, [0]
-
-    def raising(*a, **kw):
-        calls[0] += 1
-        raise ValueError('planted')
-    monkeypatch.setattr(CF, 'pi_laurent', raising)
+    doesn't see this one. Since `pi_laurent` moved to Rust (adapters step, part C2) the raise is Rust's: a ValueError from
+    lra_cert.rs's `laurent` on each call (`rel_plant('cf-laurent-raise')`)."""
+    calls = plant(monkeypatch, None, 'cf-laurent-raise')
     A.ask(*CERT)
     assert calls[0] > 0
     assert term_live.COUNTS['refused'] == 0
-    assert real is not raising
 
 
 def test_a_constant_index_a_discard_frees_can_go_to_another(live):

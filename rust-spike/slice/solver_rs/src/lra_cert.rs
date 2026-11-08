@@ -11,10 +11,12 @@
 //! `_certificate`'s memo and its `except Exception -> (False, None)` are the caller's: this returns `Result`. The memo
 //! key takes `limits()`; call `constfield::refresh_limits()` before it.
 //!
-//! `pi_laurent` stays Python, as constfield's list says: an Element bound is converted and asked there.
+//! `pi_laurent` of an Element bound is constfield.rs's `pi_laurent_elem` (adapters step, part C2); it was a callback here.
 #![allow(dead_code)]
 
-use crate::constfield::{lim, module, rat_of, rat_parts, refresh_limits, Num, R};
+use crate::constfield::{lim, pi_laurent_elem, CfErr, rat_of, rat_parts, refresh_limits, Num, R};
+use crate::relations_core::{planted, unplant, CF_LAURENT_RAISE, CF_LAURENT_REFUSE, CF_LAURENT_RATIONAL};
+use crate::session::{self, tick};
 use crate::rat::Rat;
 use num_bigint::BigInt;
 use num_integer::Integer;
@@ -79,22 +81,28 @@ fn limits_suffice() -> bool {
     l.max_degree >= 2 * CERT_DEGREE && l.max_terms >= 2 * t - 1 && l.max_work >= t * t && l.prec_start <= l.prec_cap
 }
 
-/// `pi_laurent` of a number, `{j: c}` as pairs in the dict's order. Python's own function for an Element.
-fn laurent(x: &Num) -> R<Option<Vec<(i64, Rat)>>> {
+/// `pi_laurent` of a number, `{j: c}` as pairs in the dict's order. For an Element, constfield.rs's port of it
+/// (adapters step, part C2): no Python call and no `Element._new` at this boundary.
+pub(crate) fn laurent(x: &Num) -> R<Option<Vec<(i64, Rat)>>> {
     match x {
         Num::Q(q) => Ok(Some(if q.is_zero() { vec![] } else { vec![(0, q.clone())] })),
-        Num::E(_) => Ok(Python::attach(|py| -> PyResult<Option<Vec<(i64, Rat)>>> {
-            let r = module(py)?.getattr("pi_laurent")?.call1((x.to_py(py)?,))?;
-            if r.is_none() {
-                return Ok(None);
+        Num::E(e) => {
+            tick(session::CF_PI_LAURENT);
+            if planted(CF_LAURENT_REFUSE) {
+                unplant();
+                return Err(CfErr::Py(crate::term::py::TermRefuse::new_err("planted")));
             }
-            let d = r.cast::<PyDict>().map_err(PyErr::from)?;
-            let mut out = Vec::with_capacity(d.len());
-            for (k, v) in d.iter() {
-                out.push((k.extract()?, rat_of(&v)?));
+            if planted(CF_LAURENT_RAISE) {
+                return Err(CfErr::Py(pyo3::exceptions::PyValueError::new_err("planted")));
             }
-            Ok(Some(out))
-        })?),
+            let mut r = Python::attach(|py| pi_laurent_elem(py, e))?;
+            if planted(CF_LAURENT_RATIONAL) {
+                if let Some(v) = r.as_mut() {
+                    v.retain(|p| p.0 == 0);
+                }
+            }
+            Ok(r)
+        }
     }
 }
 

@@ -2018,6 +2018,50 @@ impl Num {
     }
 }
 
+/// pi's indeterminate, `_PI_INDEX` (:1322): a module constant set at import, read once.
+static PI_INDEX: PyOnceLock<u32> = PyOnceLock::new();
+
+/// `pi_laurent` (:1325) of an Element, exact and with no call into Python past `_PI_INDEX`'s one read: `{j: c}` as
+/// pairs in the dict's order (`j` ascending), for an Element in pi alone whose denominator is a rational or a power of
+/// pi; None for any other Element. Adapters step, part C2.
+pub fn pi_laurent_elem(py: Python<'_>, e: &Elem) -> PyResult<Option<Vec<(i64, Rat)>>> {
+    let pi = *PI_INDEX.get_or_try_init(py, || module(py)?.getattr("_PI_INDEX")?.extract::<u32>())?;
+    let (j0, d) = match &e.d {
+        PQ(r) => (0i64, r.clone()),
+        PT(v, cs) => {
+            let Some((last, init)) = cs.split_last() else { return Ok(None) };
+            if *v != pi || !matches!(last, PQ(r) if r_is_one(r)) || init.iter().any(|c| !is_zero(c)) {
+                return Ok(None);
+            }
+            ((cs.len() - 1) as i64, Rat::ONE)
+        }
+    };
+    let scaled;
+    let n = if r_is_one(&d) {
+        &e.n
+    } else {
+        scaled = scale(&e.n, &d.inv());
+        &scaled
+    };
+    Ok(match n {
+        PQ(c) => Some(vec![(-j0, c.clone())]),
+        PT(v, cs) => {
+            if *v != pi || cs.iter().any(|c| !matches!(c, PQ(_))) {
+                return Ok(None);
+            }
+            Some(
+                cs.iter()
+                    .enumerate()
+                    .filter_map(|(i, c)| match c {
+                        PQ(r) if !r.is_zero() => Some((i as i64 - j0, r.clone())),
+                        _ => None,
+                    })
+                    .collect(),
+            )
+        }
+    })
+}
+
 fn new_py_element<'py>(py: Python<'py>, n: &Poly, d: &Poly) -> PyResult<Bound<'py, PyAny>> {
     module(py)?.getattr("Element")?.call_method1("_new", (poly_to_py(py, n)?, poly_to_py(py, d)?))
 }
@@ -2154,6 +2198,17 @@ pub fn cf_op<'py>(
         "inverse" => x.inverse()?.to_py(py),
         "pow" => x.pow(int2()?)?.to_py(py),
         "formally_zero" => Ok(py_bool(py, x.formally_zero())),
+        // lra_cert.rs's `laurent` (`pi_laurent`, adapters step C2), as a list of `(j, c)` in the dict's order, or None.
+        "pi_laurent" => match crate::lra_cert::laurent(&x)? {
+            None => Ok(py.None().into_bound(py)),
+            Some(v) => {
+                let items: Vec<Bound<'_, PyAny>> = v
+                    .iter()
+                    .map(|(j, c)| Ok(PyTuple::new(py, [j.into_pyobject(py)?.into_any(), rat_to_py(py, c)?])?.into_any()))
+                    .collect::<PyResult<_>>()?;
+                Ok(pyo3::types::PyList::new(py, items)?.into_any())
+            }
+        },
         "sign" => Ok(x.sign()?.into_pyobject(py)?.into_any()),
         "nonzero" => boolean(x.nonzero()),
         "py_eq" => boolean(x.py_eq(&num2()?)),

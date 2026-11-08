@@ -166,6 +166,13 @@ pub(crate) const PAY_NEG_TWICE: u8 = 108;
 pub(crate) const PAY_INT_OFFSET: u8 = 109;
 /// Adapters step, part C: Rust `EqAtom` stores the opposite polarity.
 pub(crate) const PAY_EQ_FLIP: u8 = 110;
+/// Adapters step, part C2 (constfield.rs `pi_laurent_elem`, read by lra_cert.rs): an Element bound reads as its rational
+/// part, its pi terms dropped (a wrong value, not None).
+pub(crate) const CF_LAURENT_RATIONAL: u8 = 111;
+/// Not plants: test_term_live.py's handler tests, at lra.rs's certificate handler, now that no Python is called inside it.
+/// `pi_laurent_elem`'s caller raises TermRefuse once (then the plant is off), or ValueError on every call.
+pub(crate) const CF_LAURENT_REFUSE: u8 = 112;
+pub(crate) const CF_LAURENT_RAISE: u8 = 113;
 
 #[pyfunction]
 fn rel_install(term_live: Py<PyAny>, relations: Py<PyAny>, euf_adapter: Py<PyAny>, fault: Py<PyAny>) {
@@ -286,6 +293,9 @@ fn rel_plant(name: Option<&str>) -> PyResult<()> {
         Some("pay-neg-twice") => PAY_NEG_TWICE,
         Some("pay-int-offset") => PAY_INT_OFFSET,
         Some("pay-eq-flip") => PAY_EQ_FLIP,
+        Some("cf-laurent-rational") => CF_LAURENT_RATIONAL,
+        Some("cf-laurent-refuse") => CF_LAURENT_REFUSE,
+        Some("cf-laurent-raise") => CF_LAURENT_RAISE,
         Some(x) => return Err(PyValueError::new_err(format!("no plant {x}"))),
     };
     PLANT.store(v, Relaxed);
@@ -1025,6 +1035,11 @@ const EN: usize = 1;
 const MC: usize = 2;
 const IE: usize = 3;
 const IL: usize = 4;
+
+/// Turns the plant off: for a fault that fires once.
+pub(crate) fn unplant() {
+    PLANT.store(0, Relaxed);
+}
 
 pub(crate) fn planted(x: u8) -> bool {
     let on = PLANT.load(Relaxed) == x;

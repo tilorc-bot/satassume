@@ -462,7 +462,9 @@ _REL_PLANTS = ('link-none', 'drop-order-sides', 'drop-order-infinite', 'drop-tri
                # Adapters step, part A: the specs converted once.
                'spec-row-flip', 'ad-lra-shared', 'ad-euf-node', 'ad-kind-swap', 'ad-euf-shared',
                # Adapters step, part C: the payload classes.
-               'pay-neg-twice', 'pay-int-offset', 'pay-eq-flip')
+               'pay-neg-twice', 'pay-int-offset', 'pay-eq-flip',
+               # Adapters step, part C2: constfield's `pi_laurent` on Rust.
+               'cf-laurent-rational')
 
 #: Step 5c5, second part: relations.py's module functions that run in `relations_core.rs`, by module attribute -> pyfunction.
 #: `_constant_term` has no pyfunction: Rust's callers use its own copy, and Python's few callers keep Python's.
