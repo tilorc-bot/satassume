@@ -48,6 +48,12 @@ CASES = [
     ('core:_pi_split', 'core-ipi-split-pow', lambda: Q.real(Pow(S.Exp1, m(I, pi, x), evaluate=False)), lambda: Q.integer(x)),
     ('core:_exp_arg', 'core-exp-arg-inner', lambda: Q.positive(Pow(Pow(E, x, evaluate=False), 2, evaluate=False)), lambda: Q.real(x)),
     ('core:ipi_rules', 'core-ipi-rules-pow', lambda: Q.complex(Pow(S.Exp1, m(S(2), I, pi, y), evaluate=False)), lambda: Q.real(y)),
+    # 6g(c4): the compiled power rows' constants of a Rational exponent (number/2, 2*number, number - 2, 1/number) and of a
+    # Rational base (Abs(number) - 1, Abs(number) - 2), computed in Rust; the shadow compares _rows_runtime.constant_value.
+    ('core:constant_value', 'rows-constant-value-exp', lambda: Q.positive(Pow(x, Rational_(3, 2), evaluate=False)),
+     lambda: Q.positive(x)),
+    ('core:constant_value', 'rows-constant-value-base', lambda: Q.positive(Pow(Rational_(-1, 3), x, evaluate=False)),
+     lambda: Q.even(x)),
 ]
 
 
@@ -56,7 +62,7 @@ DIRECT = {'core:half_split': '_half_split', 'core:bound_split': '_bound_split', 
           'core:_mul_factor_sets': '_mul_factor_sets', 'core:_quotient_templates': '_quotient_templates',
           'core:_unit_angle': '_unit_angle', 'core:_exp_arg': '_exp_arg', 'core:_pow_bound_templates': '_pow_bound_templates',
           'core:irrational_root': 'irrational_root', 'core:_unit_power_units': '_unit_power_units',
-          'core:_pi_split': 'ipi_split', 'core:ipi_rules': 'ipi_rules'}
+          'core:_pi_split': 'ipi_split', 'core:ipi_rules': 'ipi_rules', 'core:constant_value': 'constant_value'}
 
 
 def Rational_(p, q):
