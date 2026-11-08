@@ -70,6 +70,10 @@ pub const PLANTS: &[&str] = &[
     "rows-pow-bound-drop-last",// 6g(c3) direct `_pow_bound_templates`: the last bound premise dropped (none left: no split)
     "rows-ipi-rules-drop-last",// 6g(c3) direct `ipi_rules`: the last rule dropped
     "rows-constant-value-neg", // 6g(c4) direct `constant_value`: the term of the constant negated
+    "rows-half-tpl-flip",      // 6g(c5) direct `_half_templates`: a0's parity flipped in the rules
+    "rows-bound-tpl-neg",      // 6g(c5) direct `_bound_templates`: c1 negated in the rules
+    "rows-recip-tpl-neg",      // 6g(c5) direct `_recip_templates`: c1 negated in the rules
+    "rows-imag-tpl-sign",      // 6g(c5) direct `_imag_templates`: the first term's sign flipped in the rules
 ];
 
 /// 6g(c3): the shells whose args `split` passes as a tuple (the others take one argument).
@@ -353,6 +357,36 @@ impl RowsTpl {
         self.wiring_fn(py, c, "constant_value")?.call1((text, cv))
     }
 
+    /// 6g(c5): the Addition family's template builders straight in Rust: `core._half_templates`, `_bound_templates`,
+    /// `_recip_templates` and `_imag_templates` build the same key, consts, objects and node slot, and hand `facts` a Rust
+    /// `gen` (tcore's `half_rules`, `bound_rules`, `recip_rules`, `imag_rules`). Kept on Python, each counted: a kept query
+    /// (`rows:python:NAME`) and `_imag_templates` with every `x` a number, which builds an Add with SymPy's arithmetic
+    /// (`rows:kept:_imag_templates:number`, then `rows:python:_imag_templates`). The shadow sees `(key, consts, objs, node,
+    /// rules)`, or None when there is no template.
+    fn add_tpl<'py>(&self, py: Python<'py>, c: &Common, name: &str, expr: &Bound<'py, PyAny>, split: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+        if c.kept(py)? {
+            return self.wiring_fn(py, c, name)?.call1((expr, split));
+        }
+        let Some(built) = add_tpl_parts(py, c, name, expr, split)? else {
+            c.bump("rows:kept:_imag_templates:number");
+            return self.wiring_fn(py, c, name)?.call1((expr, split));
+        };
+        c.bump(&format!("rows:rust:{name}"));
+        let Some((key, consts, objs, node, rules)) = built else {
+            if let Some(f) = c.shadow_split(py)? {
+                f.call1((name, (expr, split), py.None()))?;
+            }
+            return Ok(py.None().into_bound(py));
+        };
+        if let Some(f) = c.shadow_split(py)? {
+            f.call1((name, (expr, split), (&key, &consts, &objs, node, rules.clone())))?;
+        }
+        let gen = PyCFunction::new_closure(py, None, None, move |t: &Bound<'_, PyTuple>, _kw: Option<&Bound<'_, PyDict>>| -> PyResult<Py<PyAny>> {
+            Ok(rules.clone().into_pyobject(t.py())?.into_any().unbind())
+        })?;
+        c.facts(py, &key, gen.as_any(), consts.as_any(), objs.as_any(), node)
+    }
+
     fn wiring_fn<'py>(&self, py: Python<'py>, c: &Common, name: &str) -> PyResult<Bound<'py, PyAny>> {
         c.bump(&format!("rows:python:{name}"));
         self.wiring.bind(py).getattr(name)
@@ -417,15 +451,15 @@ impl RowsTpl {
                 }
                 let split = self.split(py, &cr, "_half_split", &args)?;
                 if !split.is_none() {
-                    out.append(self.wiring_fn(py, &cr, "_half_templates")?.call1((expr, split))?)?;
+                    out.append(self.add_tpl(py, &cr, "_half_templates", expr, &split)?)?;
                 }
                 let split = self.split(py, &cr, "_bound_split", &args)?;
                 if !split.is_none() {
                     if cr.plant == "rows-add-bound-skip" {
                         cr.fired();
                     } else {
-                        out.append(self.wiring_fn(py, &cr, "_bound_templates")?.call1((expr, &split))?)?;
-                        let recip = self.wiring_fn(py, &cr, "_recip_templates")?.call1((expr, &split))?;
+                        out.append(self.add_tpl(py, &cr, "_bound_templates", expr, &split)?)?;
+                        let recip = self.add_tpl(py, &cr, "_recip_templates", expr, &split)?;
                         if !recip.is_none() {
                             out.append(recip)?;
                         }
@@ -433,7 +467,7 @@ impl RowsTpl {
                 }
                 let terms = self.split(py, &cr, "_imag_split", &args)?;
                 if !terms.is_none() {
-                    let imag = self.wiring_fn(py, &cr, "_imag_templates")?.call1((expr, terms))?;
+                    let imag = self.add_tpl(py, &cr, "_imag_templates", expr, &terms)?;
                     if !imag.is_none() {
                         out.append(imag)?;
                     }
@@ -1557,6 +1591,136 @@ fn direct_add<'py>(
         _ => Ok(None),
     }
 }
+
+/// The facts' arguments of one Addition template builder (`RowsTpl::add_tpl`): `None` for the kept number case of
+/// `_imag_templates`, `Some(None)` for no template, else `(key, consts, objs, node, rules)`.
+#[allow(clippy::type_complexity)]
+fn add_tpl_parts<'py>(
+    py: Python<'py>,
+    c: &Common,
+    name: &str,
+    expr: &Bound<'py, PyAny>,
+    split: &Bound<'py, PyAny>,
+) -> PyResult<Option<Option<(Bound<'py, PyAny>, Bound<'py, PyDict>, Bound<'py, PyTuple>, i64, Vec<super::tcore::Rule>)>>> {
+    use super::tcore;
+    let truthy = |x: &Bound<'py, PyAny>, a: &str| -> PyResult<bool> { x.getattr(a)?.is_truthy() };
+    let constant = |x: &Bound<'py, PyAny>| -> PyResult<bool> { Ok(truthy(x, "is_Atom")? && truthy(x, "is_number")?) };
+    let consts = PyDict::new(py);
+    match name {
+        "_half_templates" => {
+            // `a0, terms = split`; odd = the a's; objs = the terms' t, then expr; consts_of(the t's);
+            // key ('add_half', a0, odd, ((k, type(c), c), ...)); node m.
+            let a0o = split.get_item(0)?;
+            let terms: Vec<Bound<'py, PyAny>> = split.get_item(1)?.try_iter()?.collect::<PyResult<_>>()?;
+            let m = terms.len();
+            let (mut odd_o, mut odd, mut objs, mut kc) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+            for (k, at) in terms.iter().enumerate() {
+                let (a, t) = (at.get_item(0)?, at.get_item(1)?);
+                odd.push(a.is_truthy()?);
+                odd_o.push(a);
+                if constant(&t)? {
+                    consts.set_item(k, &t)?;
+                    kc.push((k, t.get_type(), t.clone()).into_bound_py_any(py)?);
+                }
+                objs.push(t);
+            }
+            objs.push(expr.clone());
+            let mut a0 = a0o.extract::<i64>()?.rem_euclid(2) as u8;
+            if c.plant == "rows-half-tpl-flip" {
+                c.fired();
+                a0 ^= 1;
+            }
+            let key = ("add_half", &a0o, PyTuple::new(py, odd_o)?, PyTuple::new(py, kc)?).into_bound_py_any(py)?;
+            Ok(Some(Some((key, consts, PyTuple::new(py, objs)?, m as i64, tcore::half_rules(a0, &odd, m)))))
+        }
+        "_bound_templates" | "_recip_templates" => {
+            // `c0, c1, u = split`; key (tag, c0, c1), no consts, objs (u, expr) or (v, expr) for u = 1/v, node 1.
+            let (c0, c1, u) = (split.get_item(0)?, split.get_item(1)?, split.get_item(2)?);
+            let (r0, mut r1) = (rat_of(&c0)?, rat_of(&c1)?);
+            let bound = name == "_bound_templates";
+            let x = if bound {
+                u
+            } else {
+                // `if not (u.is_Pow and u.args[1] is S.NegativeOne) or u.args[0].is_number: return None`
+                if !truthy(&u, "is_Pow")? {
+                    return Ok(Some(None));
+                }
+                let ua = u.getattr("args")?;
+                let minus1 = py.import("sympy")?.getattr("S")?.getattr("NegativeOne")?;
+                if !ua.get_item(1)?.is(&minus1) || truthy(&ua.get_item(0)?, "is_number")? {
+                    return Ok(Some(None));
+                }
+                ua.get_item(0)?
+            };
+            let plant = if bound { "rows-bound-tpl-neg" } else { "rows-recip-tpl-neg" };
+            if c.plant == plant {
+                c.fired();
+                r1 = super::rat::Rat::new(-r1.n.clone(), r1.d.clone());
+            }
+            let tag = if bound { "add_bound" } else { "add_recip" };
+            let key = (tag, &c0, &c1).into_bound_py_any(py)?;
+            let rules = if bound { tcore::bound_rules(&r0, &r1) } else { tcore::recip_rules(&r0, &r1) };
+            Ok(Some(Some((key, consts, PyTuple::new(py, [x, expr.clone()])?, 1, rules))))
+        }
+        "_imag_templates" => {
+            // terms (c, x): xs the x's that are not None; all numbers -> Python (an Add of numbers); more than MAX_ONEOUT
+            // -> None; signs of the c's with an x, csign of those without; consts the atomic numbers among xs; key
+            // ('add_imag', signs, frozenset(csign), ((k, (type(x), x)), ...)); node len(xs).
+            let terms: Vec<Bound<'py, PyAny>> = split.try_iter()?.collect::<PyResult<_>>()?;
+            let (mut xs, mut signs, mut c_pos, mut c_neg) = (Vec::new(), Vec::new(), false, false);
+            for cx in &terms {
+                let (cc, x) = (cx.get_item(0)?, cx.get_item(1)?);
+                let pos = rat_of(&cc)?.n > num_bigint::BigInt::from(0);
+                if x.is_none() {
+                    if pos { c_pos = true } else { c_neg = true }
+                } else {
+                    signs.push(if pos { 1i8 } else { -1 });
+                    xs.push(x);
+                }
+            }
+            let mut all_num = true;
+            for x in &xs {
+                if !truthy(x, "is_number")? {
+                    all_num = false;
+                    break;
+                }
+            }
+            if all_num {
+                return Ok(None);
+            }
+            if xs.len() > MAX_ONEOUT {
+                return Ok(Some(None));
+            }
+            let mut kc = Vec::new();
+            for (k, x) in xs.iter().enumerate() {
+                if constant(x)? {
+                    consts.set_item(k, x)?;
+                    kc.push((k, (x.get_type(), x.clone())).into_bound_py_any(py)?);
+                }
+            }
+            let key_signs = PyTuple::new(py, signs.iter().map(|&s| s as i64))?;
+            let mut cs = Vec::new();
+            if c_pos {
+                cs.push(1i64);
+            }
+            if c_neg {
+                cs.push(-1i64);
+            }
+            let key = ("add_imag", key_signs, pyo3::types::PyFrozenSet::new(py, &cs)?, PyTuple::new(py, kc)?).into_bound_py_any(py)?;
+            if c.plant == "rows-imag-tpl-sign" && !signs.is_empty() {
+                c.fired();
+                signs[0] = -signs[0];
+            }
+            let node = xs.len() as i64;
+            xs.push(expr.clone());
+            Ok(Some(Some((key, consts, PyTuple::new(py, xs)?, node, tcore::imag_rules(&signs, c_pos, c_neg)))))
+        }
+        _ => Err(PyValueError::new_err(format!("add_tpl: no builder {name}"))),
+    }
+}
+
+/// `MAX_ONEOUT` in core.py.
+const MAX_ONEOUT: usize = 6;
 
 /// `constant_value(text, c)` for a Rational `c` and the compiled rows' texts of the constant, else None.
 fn direct_constant_value(text: &Bound<'_, PyAny>, cv: &Bound<'_, PyAny>) -> PyResult<Option<super::rat::Rat>> {
