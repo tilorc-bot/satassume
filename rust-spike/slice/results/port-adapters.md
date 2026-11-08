@@ -72,3 +72,21 @@ Other notes:
 - The `_n_conflicts` view in rust_plugin.py is a test-plugin shim, not a port (64 tests).
 - The public-API `test_incremental_matches_fresh` family is still owed: a test-only step before 5c7.
 - `tests/test_relations.py::test_equality_sharing_is_needed_and_works` is unedited and still named needs-internals.
+
+## Addendum (sa-port-129, 8 Nov): part A's bar on the landed SHA d91ee15 (bar-A2)
+**The slip:** sa-port-125 tested f2e70ba and pushed d91ee15 with PUSH=1, though the rebase had brought in 6g(a)'s source
+(convert.py, knowledge_live.py, live.py, term/dispatch.rs, term/mod.rs, lib.rs, dispatch_direct.py,
+knowledge_opaque_wl.py, test_knowledge_value_units.py), which the run executes. The full rerun ran after the push:
+pareto1 `~/sp19/sa-rust-ids-work/sa-port-125/bar-A2/sum.txt`, tested source **d91ee15**, .so sha256 86b1c307….
+Per the planner's ruling (03:24 UTC), it matches, so **d91ee15 stands**. bar.sh's push guard (landing with part B) now
+refuses such a push.
+1. Suite by id against sa-port-122's bar-5c5: 5,958 passed / 126 failed / 23 skipped / 18 xfailed, new 0, gone 0, changed 0.
+   Passed: 5,957 with no firing, 1 with a firing (`test_ci_stream_reports_only_what_replays`, the named one).
+2. Dev 31cd0945c07f02a6 and fuzz 173502b6ef285ad6 MATCH (answers, traced end states); loop 09238b2537e54383 MATCH;
+   seed 1 dev and fuzz MATCH.
+3. Plants: spec-row-flip and adapter-fresh caught on dev and fuzz; guarded-none fires but MATCH (as in bar-A); all three
+   fire 0 on loop.
+4. Handler rows 39 in 2 tests, multiset same as base (34 + 4 `_consistent` AttributeError in the named test, 1
+   `_build_context` "Already mutably borrowed" in test_protocol_on_fuzz, the 46-stub cause). TermFault 0.
+5. No known difference in answers or read state.
+Tests phase 503 passed. Same as bar-A on every item.
