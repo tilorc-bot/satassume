@@ -22,7 +22,7 @@ from sympy import Add, Mul, Rational, S
 
 from satassume.knowledge.domain import kept_product
 from satassume.sat.formula import Not, P
-from satassume.knowledge.templates import core, functions, wiring
+from satassume.knowledge.templates import _rows_runtime, core, functions, wiring
 
 import term_live
 
@@ -458,6 +458,8 @@ def install(shadow, counts, fault_cls, mismatch):
         elif name == 'ipi_rules':
             theirs = []
             py['ipi_rules'](lambda p, k: theirs.append((p, k)), *args)
+        elif name == 'constant_value':
+            theirs = _rows_runtime.constant_value(*args)
         elif name in ('irrational_root', '_unit_power_units'):
             theirs = py[name](*args)
         else:
