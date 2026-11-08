@@ -718,15 +718,17 @@ def _install_glue():
     return undo
 
 
-#: Step 5c7 part 1: the discovery budget's stateless `Engine` rows run in `budget.rs`: `_union`, `_within_budget`, `_over_budget`,
-#: `_note_budget`. The cone rows they call (`_query_cone`, `_cone_info`, `_struct`) stay Python's until sa-port-147's inventory
-#: rows for their containers exist (state ruling's guard), and Rust calls them back by name (`bud:cb_*`). SLICE_BUDGET=py puts
-#: Python's back. Python's own copies, for a budget that isn't an int.
+#: Step 5c7: the discovery budget's stateless `Engine` rows `_union` and `_within_budget` run in `budget.rs`. The cone rows they
+#: call (`_query_cone`, `_cone_info`, `_struct`) stay Python's until the step that moves their containers (5c9/5c10), and Rust
+#: calls them back by name (`bud:cb_*`). SLICE_BUDGET=py puts Python's back. Python's own copies, for a budget that isn't an int.
+#: `_over_budget` and `_note_budget` write `last_budget_limited` and `stats` (5c10 containers), so by the planner's inventory
+#: ruling (8 Nov ~06:22) they go to 5c10d: their Rust code (`bud_over_budget`, `bud_note_budget`) stays in budget.rs, unwired
+#: unless SLICE_BUDGET_FLAGS=rust (not a landing configuration).
 PY_BUDGET = {}
-_BUDGET_METHODS = {'_union': 'bud_union', '_within_budget': 'bud_within_budget', '_over_budget': 'bud_over_budget',
-                   '_note_budget': 'bud_note_budget'}
+_BUDGET_METHODS = {'_union': 'bud_union', '_within_budget': 'bud_within_budget'}
+if os.environ.get('SLICE_BUDGET_FLAGS') == 'rust':
+    _BUDGET_METHODS.update(_over_budget='bud_over_budget', _note_budget='bud_note_budget')
 _BUDGET_PLANTS = ('union-skip-overlap', 'within-no-link', 'over-budget-no-flag', 'note-budget-keep-flag')
-
 
 
 def _bud(name, rf):

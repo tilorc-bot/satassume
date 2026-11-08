@@ -76,13 +76,13 @@ engine.py	Engine._settings_changed	1528	~u	port	5	5c9	Python
 engine.py	Engine._check_version	1556		port	5	5c9	Python			
 engine.py	Engine._settings_fingerprint	1582		port	5	5c9	Python			
 engine.py	Engine._drop_set_memos	1589	~u	port	5	5c9	Python			
-engine.py	Engine._drop_cones	1603		port	5	5c9 (from 5c7, move ruling 8 Nov: with _kids, _qcones, _glue_adapters)	Python			
-engine.py	Engine._struct	1609		port	5	5c9 (from 5c7, move ruling 8 Nov: with _kids)	Python			
+engine.py	Engine._drop_cones	1603		port	5	5c10 (from 5c7; move ruling and planner follow-up 8 Nov: every container it touches is Rust-native only at 5c10; reads _kids/_qcones/_glue_adapters through their Rust views after 5c9, one counted crossing)	Python			
+engine.py	Engine._struct	1609		port	5	5c10 (from 5c7; move ruling and planner follow-up 8 Nov: touches _kids (5c9), _constructing and _cones (5c10); reads _kids through its Rust view after 5c9, one counted crossing)	Python			
 engine.py	Engine._cone_info	1676		port	5	5c10 (from 5c7, move ruling 8 Nov: with _cones)	Python			
 engine.py	Engine._query_cone	1726		port	5	5c9 (from 5c7, move ruling 8 Nov: with _qcones)	Python			
 engine.py	Engine._union	1759		port	5	landed 5c7 (port-5c7.md)	Rust			
 engine.py	Engine._within_budget	1783		port	5	landed 5c7 (port-5c7.md)	Rust			
-engine.py	Engine._over_budget	1829	~u	port	5	landed 5c7 (port-5c7.md)	Rust			
+engine.py	Engine._over_budget	1829	~u	port	5	5c10d (from 5c7, inventory ruling 8 Nov: writes last_budget_limited and stats; Rust code bud_over_budget kept on port/5c7, unwired)	Python			
 engine.py	Engine._context_session	1835		port	5	5c10	Python			
 engine.py	Engine._build_context_memoized	1854		port	5	5c10	Python			
 engine.py	Engine._build_context	1878		port	5	5c10	Python			
@@ -95,7 +95,7 @@ engine.py	Engine._put_result	2119		port	5	5c10	Python
 engine.py	Engine._is_custom	2152		port	5	5c10	Python			
 engine.py	Engine.ask	2172		port	5	5c10	Python			
 engine.py	Engine._ask	2220		port	5	5c10	Python			
-engine.py	Engine._note_budget	2246		port	5	landed 5c7 (port-5c7.md)	Rust			
+engine.py	Engine._note_budget	2246		port	5	5c10d (from 5c7, inventory ruling 8 Nov: writes last_budget_limited and stats; Rust code bud_note_budget kept on port/5c7, unwired)	Python			
 engine.py	_gave_up	2270		port	5	5c10	Python			
 engine.py	_exhausted	2278		port	5	5c10	Python			
 engine.py	neighbourhood	2287	~u	port	5	5c9 (from 5c7, move ruling 8 Nov: with _NEIGH, a registry memo)	Python			

@@ -14,7 +14,7 @@ use pyo3::types::{PyDict, PyFrozenSet, PyInt, PyList, PySet, PyTuple};
 use crate::relations_core::{planted, NOTE_BUDGET_KEEP_FLAG, OVER_BUDGET_NO_FLAG, UNION_SKIP_OVERLAP, WITHIN_NO_LINK};
 use crate::session::{
     tick, BUD_CB_CONE_INFO, BUD_CB_GLOBAL, BUD_CB_QUERY_CONE, BUD_CB_STRUCT, BUD_NOTE_BUDGET, BUD_OVER_BUDGET, BUD_PY_FALLBACK,
-    BUD_UNION, BUD_WITHIN_BUDGET,
+    BUD_UNION, BUD_UNION_CONE_NONE, BUD_UNION_OVER, BUD_UNION_PARTIAL, BUD_WITHIN_BUDGET, BUD_WITHIN_FALSE, BUD_WITHIN_PARTIAL,
 };
 
 fn engine_mod(p: Python<'_>) -> PyResult<Bound<'_, PyModule>> {
@@ -56,6 +56,7 @@ pub(crate) fn union<'py>(eng: &Bound<'py, PyAny>, objs: &Bound<'py, PyAny>, budg
         let ci = eng.call_method1(intern!(p, "_cone_info"), (&o,))?;
         let (c, w, r) = (ci.get_item(0)?, ci.get_item(1)?, ci.get_item(2)?);
         if c.is_none() {
+            tick(BUD_UNION_CONE_NONE);
             return PyTuple::new(p, [p.None().into_bound(p), w, r]);
         }
         rel = rel || r.is_truthy()?;
@@ -70,11 +71,13 @@ pub(crate) fn union<'py>(eng: &Bound<'py, PyAny>, objs: &Bound<'py, PyAny>, budg
             if new.len() == c.len() || planted(UNION_SKIP_OVERLAP) {
                 weight += w.extract::<i64>()?;
             } else {
+                tick(BUD_UNION_PARTIAL);
                 for x in new.iter() {
                     weight += struct_weight(eng, &x)?;
                 }
             }
             if weight > budget {
+                tick(BUD_UNION_OVER);
                 return PyTuple::new(p, [p.None().into_bound(p), weight.into_pyobject(p)?.into_any(), rel_obj(p, rel)]);
             }
             cone = cone.call_method1(intern!(p, "__or__"), (&new,))?.cast_into::<PyFrozenSet>()?;
@@ -171,6 +174,7 @@ fn within_budget(eng: &Bound<'_, PyAny>, prop: &Bound<'_, PyAny>, assumptions: O
     if wp + wa <= budget {
         return Ok(true);
     }
+    tick(BUD_WITHIN_PARTIAL);
     let mut total = wp;
     for x in ca.try_iter()? {
         let x = x?;
@@ -196,7 +200,13 @@ fn bud_within_budget<'py>(eng: &Bound<'py, PyAny>, proposition: &Bound<'py, PyAn
     tick(BUD_WITHIN_BUDGET);
     let p = eng.py();
     match budget_of(eng)? {
-        Some(b) => Ok(pyo3::types::PyBool::new(p, within_budget(eng, proposition, assumptions.filter(|a| !a.is_none()), b)?).to_owned().into_any()),
+        Some(b) => {
+            let ok = within_budget(eng, proposition, assumptions.filter(|a| !a.is_none()), b)?;
+            if !ok {
+                tick(BUD_WITHIN_FALSE);
+            }
+            Ok(pyo3::types::PyBool::new(p, ok).to_owned().into_any())
+        }
         None => py_method(eng, "_within_budget")?.call1((eng, proposition, assumptions)),
     }
 }
