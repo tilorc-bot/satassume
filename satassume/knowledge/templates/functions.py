@@ -361,6 +361,9 @@ def _cosh_shift(gen):
         return facts(key, build, consts, tuple(objs), N)
     template.__name__ = 'cosh_templates'
     template.__module__ = gen.__module__
+    # read by the Rust backend's dispatch (rows_tpl.rs, Family::CoshShift)
+    template._satassume_rows = ('cosh_shift', 'cosh', gen, False, False)
+    template._satassume_plain = plain
     return template
 
 

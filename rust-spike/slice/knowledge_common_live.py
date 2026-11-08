@@ -38,6 +38,7 @@ PLANTS += ('rows-exp-arg-none', 'rows-unit-angle-shift', 'rows-ipi-split-shift',
 PLANTS += ('rows-constant-value-neg',)
 PLANTS += ('rows-half-tpl-flip', 'rows-bound-tpl-neg', 'rows-recip-tpl-neg', 'rows-imag-tpl-sign')
 PLANTS += ('rows-pi-split-shift', 'rows-pi-trig-flip', 'rows-unary-key-none', 'rows-unary-drop-last')
+PLANTS += ('rows-cosh-shift-parity', 'rows-cosh-plain-none')
 COMMON = [None]
 
 

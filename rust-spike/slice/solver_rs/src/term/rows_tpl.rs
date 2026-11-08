@@ -78,6 +78,8 @@ pub const PLANTS: &[&str] = &[
     "rows-pi-trig-flip",       // 6g(c6) `_pi_trig`: `_pi_trig_rules` read with cos_ flipped (sin's rules for cos)
     "rows-unary-key-none",     // 6g(c6) plain `_unary`: the constant's key left out, so sin(2) and sin(x) share a pattern
     "rows-unary-drop-last",    // 6g(c6) Unary/PiTrig: the last of `gen`'s rules dropped
+    "rows-cosh-shift-parity",  // 6g(c7) CoshShift: `c + 1` in `_cosh_shift_rules` (the parity flipped)
+    "rows-cosh-plain-none",    // 6g(c7) CoshShift: no split -> no template (instead of the plain `_unary`)
 ];
 
 /// 6g(c3): the shells whose args `split` passes as a tuple (the others take one argument).
@@ -95,6 +97,8 @@ pub enum Family {
     Unary,
     /// 6g(c6): `functions._pi_trig(tag, gen, cos_, split_, plain)`.
     PiTrig,
+    /// 6g(c7): `functions._cosh_shift(gen)`.
+    CoshShift,
 }
 
 /// 6g(c6): what `_pi_trig` does without a split: a plain `_unary` in Rust, or an untagged template (`_cosh_shift`)
@@ -250,13 +254,14 @@ impl RowsTpl {
             "power" => Family::Power,
             "unary" => Family::Unary,
             "pi_trig" => Family::PiTrig,
+            "cosh_shift" => Family::CoshShift,
             _ => return Ok(None),
         };
         let tag = spec.get_item(1)?.unbind();
         let gen = spec.get_item(2)?;
         let piecewise: bool = spec.get_item(3)?.extract()?;
         let leave_out_wide: bool = spec.get_item(4)?.extract()?;
-        if matches!(family, Family::Unary | Family::PiTrig) {
+        if matches!(family, Family::Unary | Family::PiTrig | Family::CoshShift) {
             // `gen(R, c)` picks `specs[c]` when the rows have several keys: those stay on Python.
             let specs = gen.getattr("specs")?.cast_into::<PyDict>()?;
             if specs.len() > 1 || !gen.getattr("plain")?.is_truthy()? {
@@ -269,10 +274,10 @@ impl RowsTpl {
                     rules.push((r.get_item(0)?.unbind(), r.get_item(1)?.unbind()));
                 }
             }
-            let plain = if family == Family::PiTrig {
+            let plain = if matches!(family, Family::PiTrig | Family::CoshShift) {
                 let p = t.getattr("_satassume_plain")?;
                 Some(match RowsTpl::from_template(&p, name.clone())? {
-                    Some(r) if r.family == Family::Unary => Plain::Rows(Arc::new(r)),
+                    Some(r) if matches!(r.family, Family::Unary | Family::CoshShift) => Plain::Rows(Arc::new(r)),
                     _ => {
                         let qn: String = p.getattr("__qualname__")?.extract()?;
                         let n = qn.split('.').next().unwrap_or("plain").to_string();
@@ -546,6 +551,10 @@ impl RowsTpl {
             Family::PiTrig => {
                 drop(cr);
                 self.pi_trig_call(c, expr)
+            }
+            Family::CoshShift => {
+                drop(cr);
+                self.cosh_shift_call(c, expr)
             }
         }
     }
@@ -1945,6 +1954,113 @@ impl RowsTpl {
             let py = t.py();
             let c = cobj.bind(py).borrow();
             Ok(unary_rules(py, &c, me.unary.as_ref().expect("pi_trig rows"), Some((&k, has_s)))?.into_any().unbind())
+        })?;
+        cr.facts(py, &key, gen.as_any(), consts.as_any(), &objs, 1)
+    }
+
+    /// 6g(c7): `functions._cosh_shift(gen)`: `_cosh_shift_split(arg)` straight from the query's table (tf6.rs's
+    /// `f6_cosh_shift_split`); no split: the plain template; a split with every object an input term: objects
+    /// `(arg, expr, r[, s])`, the constants of `r` and `s` at slots 2 and 3, key `('cosh', None, 'shift', c, has_s,
+    /// const_key(r) or None, const_key(s) or None)`, rules `gen`'s and `_cosh_shift_rules`', node 1. No query, a kept
+    /// one, an argument that isn't an input term, a derived `r` or a product or derived `s` go to Python's template
+    /// (`rows:python:_cosh_shift`, the reason counted).
+    fn cosh_shift_call<'py>(self: &Arc<Self>, c: &Bound<'py, Common>, expr: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+        let py = expr.py();
+        let u = self.unary.as_ref().expect("cosh_shift rows");
+        let args = expr.getattr("args")?.cast_into::<PyTuple>()?;
+        let to_py = |why: &str| -> PyResult<Bound<'py, PyAny>> {
+            let cr = c.borrow();
+            cr.bump("rows:python:_cosh_shift");
+            cr.bump(&format!("rows:python:_cosh_shift:{why}"));
+            drop(cr);
+            self.py_template.bind(py).call1((expr,))
+        };
+        let split = if args.len() == 1 {
+            let arg = args.get_item(0)?;
+            let cr = c.borrow();
+            let Some(q) = QIds::of(py, &cr)? else { drop(cr); return to_py("no-query") };
+            let Some(ids) = q.ids(PyTuple::new(py, [&arg])?.as_any())? else { drop(cr); return to_py("not-input") };
+            let r = q.table.borrow_mut().tt_mut().f6_cosh_shift_split(ids[0]).map_err(refuse)?;
+            cr.bump("rows:rust:_cosh_shift_split");
+            match r {
+                None => None,
+                Some((r, k, s)) => {
+                    let Some(r) = q.obj(r)? else { drop(cr); return to_py("derived") };
+                    let s = match &s {
+                        None => None,
+                        Some(rest) => match q.one(rest)? {
+                            Some(o) => Some(o),
+                            None => { drop(cr); return to_py("derived") }
+                        },
+                    };
+                    Some((arg, r, k, s))
+                }
+            }
+        } else {
+            None
+        };
+        let Some((arg, r, k, s_)) = split else {
+            let cr = c.borrow();
+            if cr.plant == "rows-cosh-plain-none" {
+                cr.fired();
+                return Ok(py.None().into_bound(py));
+            }
+            drop(cr);
+            return match u.plain.as_ref().expect("plain") {
+                Plain::Rows(p) => p.call(c, expr),
+                Plain::Py(f, n) => {
+                    c.borrow().bump(&format!("rows:python:{n}"));
+                    f.bind(py).call1((expr,))
+                }
+            };
+        };
+        let cr = c.borrow();
+        cr.bump("rows:rust:_cosh_shift");
+        let has_s = s_.is_some();
+        let consts = PyDict::new(py);
+        let mut objs = vec![arg, expr.clone(), r];
+        if let Some(s) = s_ {
+            objs.push(s);
+        }
+        let mut cks = vec![py.None().into_bound(py), py.None().into_bound(py)];
+        for (i, o) in objs.iter().enumerate().skip(2) {
+            if atom_number(o)? {
+                consts.set_item(i, o)?;
+                cks[i - 2] = const_key(o)?;
+            }
+        }
+        let (p, d) = super::py::core_pq(&k);
+        let cc = py.import("sympy")?.getattr("Rational")?.call1((p, d))?;
+        let mut key = vec![
+            "cosh".into_bound_py_any(py)?, py.None().into_bound(py), "shift".into_bound_py_any(py)?, cc,
+            has_s.into_bound_py_any(py)?,
+        ];
+        key.extend(cks);
+        let key = PyTuple::new(py, key)?.into_any();
+        let objs = PyTuple::new(py, objs)?.into_any();
+        let rules_of = move |py: Python<'_>, c: &Common, u: &UnaryRows| -> PyResult<Py<PyAny>> {
+            let out = unary_rules(py, c, u, None)?;
+            c.bump("rows:rust:_cosh_shift_rules");
+            let mut k = k.clone();
+            if c.plant == "rows-cosh-shift-parity" {
+                c.fired();
+                k = super::rat::Rat::new(k.n.clone() + k.d.clone(), k.d.clone());
+            }
+            for r in super::tf6::cosh_shift_rules(&k, has_s) {
+                out.append(r.into_pyobject(py)?)?;
+            }
+            Ok(out.into_any().unbind())
+        };
+        if let Some(f) = cr.shadow_split(py)? {
+            let rules = rules_of(py, &cr, u)?;
+            f.call1(("_cosh_shift", (self.py_template.bind(py), expr), (&key, &consts, &objs, 1i64, rules)))?;
+        }
+        let me = self.clone();
+        let cobj = c.clone().unbind();
+        let gen = PyCFunction::new_closure(py, None, None, move |t: &Bound<'_, PyTuple>, _kw: Option<&Bound<'_, PyDict>>| -> PyResult<Py<PyAny>> {
+            let py = t.py();
+            let c = cobj.bind(py).borrow();
+            rules_of(py, &c, me.unary.as_ref().expect("cosh_shift rows"))
         })?;
         cr.facts(py, &key, gen.as_any(), consts.as_any(), &objs, 1)
     }

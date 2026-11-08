@@ -143,6 +143,11 @@ impl PyTermTable {
         &self.0
     }
 
+    /// 6g(c7): the table for rows_tpl.rs's `_cosh_shift_split`, which adds `r`'s sum as `knowledge_f6_live`'s shell does.
+    pub(crate) fn tt_mut(&mut self) -> &mut TermTable {
+        &mut self.0
+    }
+
     /// The id for `(session, node)` if the memo holds `x` itself; `Err(())` if it holds another object for that node.
     pub(crate) fn link_get(&self, session: u64, nid: u32, x: &Bound<'_, PyAny>) -> Result<Option<u32>, ()> {
         match self.2.get(&(session, nid)) {

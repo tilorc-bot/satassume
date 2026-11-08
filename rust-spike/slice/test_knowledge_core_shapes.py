@@ -72,6 +72,14 @@ CASES = [
     ('core:_pi_trig', 'pi-trig-cosh-ipi', lambda: Q.real(cosh(m(I, pi, x))), lambda: Q.real(x)),
     ('core:_unary', 'rows-unary-key-none', lambda: Q.real(a(sin(S(2)), sin(x))), lambda: Q.complex(x)),
     ('core:_unary', 'unary-cos-plain', lambda: Q.real(cos(x)), lambda: Q.real(x)),
+    # 6g(c7): `_cosh_shift` as a rows_tpl.rs family (Family::CoshShift), `_cosh_shift_split` from the query's table; the
+    # shadow runs functions' template with `facts` captured; no split: the plain `_unary` (cosh(x)).
+    ('core:_cosh_shift', 'rows-cosh-shift-parity', lambda: Q.positive(cosh(a(y, m(2, I, pi, x)))),
+     lambda: Q.real(y) & Q.integer(x)),
+    ('core:_cosh_shift', 'cosh-shift-odd', lambda: Q.negative(cosh(a(y, m(I, pi)))), lambda: Q.real(y)),
+    ('core:_cosh_shift', 'cosh-shift-odd-s', lambda: Q.negative(cosh(a(y, m(3, I, pi, x)))),
+     lambda: Q.real(y) & Q.odd(x)),
+    ('core:_unary', 'rows-cosh-plain-none', lambda: Q.real(cosh(x)), lambda: Q.real(x)),
 ]
 
 
@@ -83,7 +91,8 @@ DIRECT = {'core:half_split': '_half_split', 'core:bound_split': '_bound_split', 
           'core:_pi_split': 'ipi_split', 'core:ipi_rules': 'ipi_rules', 'core:constant_value': 'constant_value',
           'core:_half_templates': '_half_templates', 'core:_bound_templates': '_bound_templates',
           'core:recip_templates': '_recip_templates', 'core:imag_templates': '_imag_templates',
-          'core:pi_split': 'pi_split', 'core:_pi_trig': '_pi_trig', 'core:_unary': '_unary'}
+          'core:pi_split': 'pi_split', 'core:_pi_trig': '_pi_trig', 'core:_unary': '_unary',
+          'core:_cosh_shift': '_cosh_shift'}
 
 
 def Rational_(p, q):
