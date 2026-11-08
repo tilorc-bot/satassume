@@ -536,22 +536,22 @@ state/memos.py	module_locations	222	~u	port	5	5c9	Python
 state/memos.py	owner_memos	234		port	5	5c9	Python			
 sympy_api.py	_ask	560		conversion	5	not port (conversion, ownership ruling)	Python			
 sympy_api.py	_ask_general	576		conversion	5	not port (conversion, ownership ruling)	Python			
-sympy_api.py	_const_base	693		port	5	5c8	Python			
-sympy_api.py	_const_free	705		port	5	5c8	Python			
-sympy_api.py	_closed_keys	724		port	5	5c8	Python			
-sympy_api.py	_expr_keys	745		port	5	5c8	Python			
-sympy_api.py	_arg_keys	768		port	5	5c8	Python			
-sympy_api.py	_keys	779	~u	port	5	5c8	Python			
-sympy_api.py	_keys_rel	784		port	5	5c8	Python			
-sympy_api.py	_bool_keys	807		port	5	5c8	Python			
-sympy_api.py	_sides_keys	844		port	5	5c8	Python			
-sympy_api.py	_Split	864		port	5	5c8	Python			
-sympy_api.py	_Split.__init__	869		port	5	5c8	Python			
-sympy_api.py	_Split.part	912		port	5	5c8	Python			
-sympy_api.py	_relevant	929		port	5	5c8	Python			
-sympy_api.py	_vocab_blocks	1009	~u	port	5	5c8	Python			
-sympy_api.py	_part_consistent	1076		port	5	5c8	Python			
-sympy_api.py	_consistent	1088		port	5	5c8	Python			
+sympy_api.py	_const_base	693		port	5	landed 5c8 (port-5c8.md)	Rust	reads of input terms are lazy conversion reads	Rust: via keys_rel (dev 1180, fuzz 7222 keys_rel calls)	
+sympy_api.py	_const_free	705		port	5	landed 5c8 (port-5c8.md)	Rust	reads of input terms are lazy conversion reads	Rust: const_free_miss dev 10, fuzz 1, cert 26	
+sympy_api.py	_closed_keys	724		port	5	landed 5c8 (port-5c8.md)	Rust	reads of input terms are lazy conversion reads	Rust: via keys_rel misses (dev 454, fuzz 3431)	
+sympy_api.py	_expr_keys	745		port	5	landed 5c8 (port-5c8.md)	Rust	reads of input terms are lazy conversion reads	Rust: via keys_rel misses (dev 454, fuzz 3431)	
+sympy_api.py	_arg_keys	768		port	5	landed 5c8 (port-5c8.md)	Rust	reads of input terms are lazy conversion reads	Rust: via keys_rel misses (dev 454, fuzz 3431)	
+sympy_api.py	_keys	779	~u	port	5	landed 5c8 (port-5c8.md)	Rust	callers are tests only	Rust: tests only (test_memos.py:137/:143, test_relevance.py:312, test_relevance_core.py)	
+sympy_api.py	_keys_rel	784		port	5	landed 5c8 (port-5c8.md)	Rust	Python _keys_rel kept as the deep fallback (rv:py_deep, 0 on every workload)	Rust: keys_rel dev 1180, fuzz 7222	
+sympy_api.py	_bool_keys	807		port	5	landed 5c8 (port-5c8.md)	Rust	reads of input terms are lazy conversion reads	Rust: via keys_rel misses (dev 454, fuzz 3431)	
+sympy_api.py	_sides_keys	844		port	5	landed 5c8 (port-5c8.md)	Rust	reads of input terms are lazy conversion reads	Rust: via keys_rel misses (dev 454, fuzz 3431)	
+sympy_api.py	_Split	864		port	5	landed 5c8 (port-5c8.md)	Rust	reads of input terms are lazy conversion reads	Rust: split_new dev 83, fuzz 1766	
+sympy_api.py	_Split.__init__	869		port	5	landed 5c8 (port-5c8.md)	Rust	reads of input terms are lazy conversion reads	Rust: split_new dev 83, fuzz 1766	
+sympy_api.py	_Split.part	912		port	5	landed 5c8 (port-5c8.md)	Rust	reads of input terms are lazy conversion reads	Rust: via relevant (dev 989, fuzz 2938)	
+sympy_api.py	_relevant	929		port	5	landed 5c8 (port-5c8.md)	Rust	called by _ask_general (conversion); reads input terms lazily (conversion reads)	Rust: relevant dev 989, fuzz 2938	
+sympy_api.py	_vocab_blocks	1009	~u	port	5	landed 5c8 (port-5c8.md)	Rust	calls back _applied_category/_is_matrix_predicate (conversion)	Rust: dev 0, fuzz 0, loop 10	
+sympy_api.py	_part_consistent	1076		port	5	landed 5c8 (port-5c8.md)	Rust	calls back theory_scope (Rust) and _formula (conversion)	Rust: dev 104, fuzz 0, zero 25	
+sympy_api.py	_consistent	1088		port	5	landed 5c8 (port-5c8.md)	Rust	catches Exception from callbacks as Python does (rv:consistent_caught); TermFault/KnowledgeFault stay loud; calls back Engine.verdict (5c10)	Rust: dev 64, fuzz 315, zero 25; consistent_caught 0 on both	
 sympy_api.py	_engine_ask	1111		conversion	5	not port (conversion, ownership ruling)	Python			
 theories/euf/euf.py	EqAtom	75		port	2	landed adapters B+C1 4dd2ed9	Rust			
 theories/euf/euf.py	EqAtom.__new__	84		port	2	landed adapters B+C1 4dd2ed9	Rust			
@@ -818,3 +818,7 @@ engine.py	state: Engine._cones	1375		state	5	5c10	Python	readers past 5c7: Engin
 engine.py	state: Engine._constructing	1368		state	5	5c10	Python	readers past 5c7: Engine.is_ :1998, is_many :2047 (5c10); compile_loop.rs core_visit (5c2, Rust over the Python set)		
 engine.py	state: _NEIGH	2263		state	5	5c9	Python	registry memo (state.memos PROCESS, 5c9); term_live _Mark reads it		
 engine.py	state: Engine.last_budget_limited	1410		state	5	read-only view when it moves (move ruling 8 Nov)	Python	read by sympy_api ask/_ask/_ask_general/_engine_ask (conversion); 5c10 writes it		
+engine.py	state: Engine.splits	1364		state	5	5c9 (not moved in 5c8; INVENTORY-state.md :193)	Python	readers past 5c8: relevance.rs through its methods (5c8, Rust over the Python memo), _drop_set_memos/_settings_changed (5c9), term_live _Mark		
+engine.py	state: Engine.stats	1402		state	5	never by a planned step (INVENTORY-state.md :199; sympy_api _ask_general and public ask write it)	Python	relevance.rs _consistent increments it as Python does; view plus a write path, or moves with the conversion pass		
+sympy_api.py	state: _KEYS	683		state	5	stays (INVENTORY-state.md :169, no Rust worker before 5c8; PROCESS registry 5c9)	Python	readers: relevance.rs keys_rel through its table methods, Python _keys_rel deep fallback, state/memos PROCESS registry (5c9), term_live _Mark; tests test_memos.py:136-143, test_relevance.py:35, test_term_live.py:324, tools/relevance_fuzz.py:181		
+sympy_api.py	state: _CONST	684		state	5	stays (as _KEYS)	Python	readers: relevance.rs const_free through its table methods, Python deep fallback, PROCESS registry (5c9), term_live _Mark		
