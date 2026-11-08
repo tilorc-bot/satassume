@@ -632,10 +632,10 @@ theories/lra/constfield.py	_checked	642		port	1b	landed 1b 60493d6	Rust
 theories/lra/constfield.py	_vars	652		port	1b	landed 1b 60493d6	Rust			
 theories/lra/constfield.py	_qenc	664		port	1b	landed 1b 60493d6	Rust			
 theories/lra/constfield.py	_ieval	671		port	1b	landed 1b 60493d6	Rust			
-theories/lra/constfield.py	Constant	694		port	1b	adapters (after 5c4)	Python			
+theories/lra/constfield.py	Constant	694		port	1b	not port (output/display conversion, C2 ruling)	Python	output and display only: 0 calls from the engine on all 12 workloads (Element.__repr__ only from the harness, state.py/live.py)	0 from the engine on all 12 workloads (cf_trace, sa-port-156)	none: registry entry and enclose receiver, stays Python by ruling
 theories/lra/constfield.py	Constant.__init__	709	~i	port	1b	landed D db697fc (partial)	called back	reached through _generic's callback; the constant registry stays Python	not measured	adapters (after 5c4), with constfield's other rows
 theories/lra/constfield.py	Constant.enclose	718		port	1b	landed 1b 60493d6 (partial)	called back	R9 enclose, a permanent callback for constants Rust has no native enclosure for (constfield.rs:1232)	not measured	none: permanent callback by ruling (kept on Python with reason)
-theories/lra/constfield.py	Constant.__repr__	727	~u	port	1b	adapters (after 5c4)	Python			
+theories/lra/constfield.py	Constant.__repr__	727	~u	port	1b	not port (output/display conversion, C2 ruling)	Python	output and display only: 0 calls from the engine on all 12 workloads (Element.__repr__ only from the harness, state.py/live.py)	0 from the engine on all 12 workloads (cf_trace, sa-port-156)	none: not port by ruling
 theories/lra/constfield.py	constant	735	~i	port	1b	landed D db697fc (partial)	called back	reached through _generic's callback; the constant registry stays Python	not measured	adapters (after 5c4), with constfield's other rows
 theories/lra/constfield.py	_scaled_down	749		port	1b	landed 1b 60493d6	Rust			
 theories/lra/constfield.py	_atan_inv	754		port	1b	landed 1b 60493d6	Rust			
@@ -648,9 +648,9 @@ theories/lra/constfield.py	formally_zero	840		port	1b	landed 1b 60493d6	Rust
 theories/lra/constfield.py	sign	847		port	1b	landed 1b 60493d6	Rust			
 theories/lra/constfield.py	_make	854		port	1b	landed 1b 60493d6	Rust			
 theories/lra/constfield.py	_coerce	872		port	1b	landed 1b 60493d6	Rust			
-theories/lra/constfield.py	_coerce_foreign	885	~u	port	1b	adapters (after 5c4)	Python			
+theories/lra/constfield.py	_coerce_foreign	885	~u	port	1b	not port (output/display conversion, C2 ruling)	Python	Element.__eq__ with a non-constfield operand only (constfield.py:1214); 0 on every workload; removal candidate next to _bound	0 from the engine on all 12 workloads (cf_trace, sa-port-156)	none: not port by ruling
 theories/lra/constfield.py	Element	906		port	1b	landed 1b 60493d6	Rust			
-theories/lra/constfield.py	Element._new	914		port	1b	landed 1b 60493d6 (partial)	called back	called back to build a Python Element for an Undecided's message (constfield.rs:2022)	not measured	adapters (after 5c4), with constfield's other rows
+theories/lra/constfield.py	Element._new	914		port	1b	landed 1b 60493d6 (partial)	called back	called back to build a Python Element for an Undecided's message (constfield.rs:2022)	dev 703, fuzz 1,552, cert 163, f6 30, core 24, wiring 3, opaque 2 per pass, before and after C2 (lra_live _rust, lra_backend check and _state)	Element._new step after C2 (planner C2 ruling (b))
 theories/lra/constfield.py	Element.__init__	925	~u	port	1b	landed 1b 60493d6	Rust			
 theories/lra/constfield.py	Element.numerator	931	~u	port	1b	landed 1b 60493d6	Rust			
 theories/lra/constfield.py	Element.denominator	935	~u	port	1b	landed 1b 60493d6	Rust			
@@ -688,14 +688,14 @@ theories/lra/constfield.py	Element.__bool__	1246		port	1b	landed 1b 60493d6	Rust
 theories/lra/constfield.py	Element.__floor__	1249		port	1b	landed 1b 60493d6	Rust			
 theories/lra/constfield.py	Element.__ceil__	1258		port	1b	landed 1b 60493d6	Rust			
 theories/lra/constfield.py	Element.is_integer	1261		port	1b	landed 1b 60493d6	Rust			
-theories/lra/constfield.py	Element.to_sympy	1281	~u	port	1b	adapters (after 5c4)	Python			
-theories/lra/constfield.py	Element.__repr__	1293	~u	port	1b	adapters (after 5c4)	Python			
-theories/lra/constfield.py	pi_laurent	1325		port	1b	landed 1b 60493d6 (partial)	called back	Rust's lra_cert calls Python's pi_laurent for an Element bound (lra_cert.rs:87)	not measured	adapters (after 5c4), with constfield's other rows
+theories/lra/constfield.py	Element.to_sympy	1281	~u	port	1b	not port (output/display conversion, C2 ruling)	Python	output and display only: 0 calls from the engine on all 12 workloads (Element.__repr__ only from the harness, state.py/live.py)	0 from the engine on all 12 workloads (cf_trace, sa-port-156)	none: not port by ruling
+theories/lra/constfield.py	Element.__repr__	1293	~u	port	1b	not port (output/display conversion, C2 ruling)	Python	output and display only: 0 calls from the engine on all 12 workloads (Element.__repr__ only from the harness, state.py/live.py)	0 from the engine on all 12 workloads (cf_trace, sa-port-156)	none: not port by ruling
+theories/lra/constfield.py	pi_laurent	1325		port	1b	landed adapters C2 29ee93e	Rust	constfield.rs pi_laurent_elem; lra_cert.rs laurent calls it, no Python call (was lra_cert.rs:87)	Python calls dev 121, fuzz 200, cert 115 before, 0 elsewhere; 0 after (Rust cf:pi_laurent dev 121, fuzz 200, cert 115)	
 theories/lra/constfield.py	from_sympy	1353		port	1b	landed D db697fc	Rust			
 theories/lra/constfield.py	_Unread	1367		port	1b	landed D db697fc	Rust			
 theories/lra/constfield.py	_from_sympy	1375		port	1b	landed D db697fc	Rust			
 theories/lra/constfield.py	_generic	1415		port	1b	landed D db697fc (partial)	called back	called back from lra_read.rs:446 for any other constant; calls constant and Constant.__init__ (registry _CONSTANTS stays Python)	not measured	adapters (after 5c4), with constfield's other rows
-theories/lra/constfield.py	_sympy_constant	1439	~u	port	1b	adapters (after 5c4)	Python			
+theories/lra/constfield.py	_sympy_constant	1439	~u	port	1b	not port (output/display conversion, C2 ruling)	Python	output and display only: 0 calls from the engine on all 12 workloads (Element.__repr__ only from the harness, state.py/live.py)	0 from the engine on all 12 workloads (cf_trace, sa-port-156)	none: not port by ruling
 theories/lra/lra.py	Negated	230		port	1a	landed adapters B+C1 4dd2ed9	Rust			
 theories/lra/lra.py	Negated.__new__	235	~u	port	1a	landed adapters B+C1 4dd2ed9	Rust			
 theories/lra/lra.py	Negated.__getnewargs__	238	~u	port	1a	landed adapters B+C1 4dd2ed9	Rust			

@@ -244,3 +244,182 @@ Other notes:
   here because the incoming diff was docs only.
 - Owed list (for the architect to append): a workload reaching `EUFAdapter.node_term` (`ad-euf-node` void on every workload,
   suite fires without a catch); `Negated` reached only through the adapter API.
+
+# Adapters step, part C2: pi_laurent on Rust, constfield's six output rows classed (issue 323)
+
+Per the planner's C2 ruling (about 06:40 UTC 8 Nov): (a) the six rows are output/display conversion, (b) `Element._new` is
+its own step after C2 and isn't here, and (c) `pi_laurent` moves if it's exact arithmetic. It is (Fractions and `_scale`,
+with no SymPy evaluation), so it moved, and it isn't a named callback.
+
+## What moved
+- **`pi_laurent` (constfield.py:1325) on Rust** (c62f25d, sa-port-152; was e12e622 before the rebase over 6g(b)):
+  constfield.rs `pi_laurent_elem` ports it for an Element; pi's index is read once from `_PI_INDEX`. lra_cert.rs `laurent`
+  (~:82, now `pub(crate)`) calls it, so the certificate makes no Python call and no `Element._new` at that boundary (it
+  was `module.pi_laurent(x.to_py())` at lra_cert.rs:87). Counter **155 `cf:pi_laurent`** (Element bounds only).
+- **Plant 111 `cf-laurent-rational`**: an Element bound reads as its rational part, with its pi terms dropped (a wrong
+  value, not None). **112 `cf-laurent-refuse`** and **113 `cf-laurent-raise`** aren't plants. They replace the Python hook
+  (`pi_laurent`) that test_term_live.py's two handler tests at lra.rs:935 used, because nothing in that handler calls
+  Python now.
+- **`cert` workload** (3a34da4, sa-port-153; was f296ed1): `cert_wl.py`, `live.py cert`, 61 queries. Built from
+  `LRATheory._branch`'s Y skip (lra.py :930-960) and lra_cert's magnitude of `pi_laurent` (lra_cert.py :145-158), not
+  from any eval set. It exists because the plant is void on dev and fuzz (see Plants).
+- **(a), the six rows** (`Constant`, `Constant.__repr__`, `_coerce_foreign`, `Element.to_sympy`, `Element.__repr__`,
+  `_sympy_constant`): not port, output/display conversion. `Constant` stays Python as the registry entry and the
+  `enclose` receiver. Evidence (cf_trace, Rust mode, 12 workloads, table below): `Element.__repr__` is called only from the
+  harness (state.py `f`/`lra_text`/genexpr/`fast`, live.py `show`): dev 2,870, fuzz 37,501, cert 533, the same before
+  and after. The other five are 0 on all 12 workloads. Positive control (sa-port-153 `trace/control.py` ->
+  `control.txt`): every wrapper counts when it's called, so the zeros aren't false. Rust reaches Python constfield only by
+  call-time lookups (constfield.rs:1232 `call_method1("enclose")`, :2066 `_new`), which the wrappers see.
+  **`_coerce_foreign`'s path:** its only caller is `Element.__eq__` (constfield.py:1214) with a non-constfield operand,
+  for example a SymPy number. The suite reaches it at tests/test_constfield.py:845 (`PI == sympy.pi`). No engine path
+  reaches it on any workload, so it's a Python removal candidate, next to `_bound`.
+- **Shared-file changes:** test_term_live.py (its two lra.rs:935 handler tests now use plants 112/113 instead of a
+  Python `pi_laurent` hook); session_live.py (plant list + `cf-laurent-rational`); `cf_op` (constfield.rs, a new
+  `pi_laurent` op for test_cf_laurent.py); live.py (the `cert` entry); cert_wl.py (new); relations_core.rs (plants
+  111-113, `unplant`); session.rs (counter 155). New step test: test_cf_laurent.py (2 tests: matches Python on more than
+  100 Laurent and 30 None cases, more than 200 of them Elements; counter and plant fire).
+- **Numbers C2 holds:** counter 155, plants 111-113. 5c7 (sa-port-154) takes numbers after them.
+
+## SHAs and incoming diff
+Tested **3a34da4** (port/adapters on rust-slice b838d3f, 6g(b)'s landing). Landed **29ee93e** on rust-slice by
+`PUSH=1 bar.sh land 3a34da4` (08:10 UTC 8 Nov). **Incoming diff: none** (rust-slice was still b838d3f, the tested base).
+tested..landed is HANDOFF-sa-port-153.md only: docs, which no run executes, so the guard passed. Rows: pareto1
+`~/sp19/sa-rust-ids-work/sa-port-153/bar-C2b/` (`sum.txt`, `commands.txt`, `config.txt`), `.so` sha256 637f2f0b….
+PLANTS `cf-laurent-rational` (C2), `pay-int-offset` (C1), `ad-kind-swap` (B), controls `theory-no-assume` (scope) and
+`al-drop-delta` (5c6); DIRECT as BC2, with `common_direct.py common-facts-drop` (6d). WLS `f6 value rootof core opaque
+scope loop zero wiring cert`; SEED1=1; SUITE_PLANTS=`zero` (it picked none: every plant fires on dev or fuzz).
+
+**Base caveat:** the suite base is BC2's rows (`sa-port-140/bar-BC2/suite`, before 6g(b)). 6g(b)'s own bar ran against
+the same BC2 rows and found new 0, gone 0, changed 0, handler multiset equal (results/port-6g.md, 6g(b) section, in
+b838d3f; the architect cites its report as f2ffeff). So BC2 stands as C2b's suite base with b838d3f in the tree, and no
+new base run was needed. The kept-reasons base is BC2's too. `wiring` has no BC2 row, so it's checked against 6g(b)'s bar.
+
+## The bar (sa-port-153/bar-C2b)
+1. **Suite by id against BC2's rows:** 5,992 passed, 126 failed, 23 skipped, 18 xfailed, 6,159 ids. New 0, gone 0,
+   changed outcome 0. Passed: 5,991 with no firing, and 1 with a firing (`test_ci_stream_reports_only_what_replays`).
+   S's standing: S's gate is met except for the 46 named stub failures, one cause.
+2. **Fresh dev and fuzz:** answers and state MATCH, with every control MATCHing. Dev 31cd0945c07f02a6 (1,985 q), fuzz
+   173502b6ef285ad6 (3,000 q); traced end states MATCH on both. Seed1 dev and fuzz MATCH. The ten extra workloads MATCH,
+   each with a Python control: f6 fc0c2f738a1f6dbf, value 3ce3797a267d71a6, rootof b4cc56a71a21baeb, core
+   692dacf1cc791419, opaque c7e1a7ca3a110ebb, scope 12e06b0586faee40, loop 09238b2537e54383, zero d9ed3534a2093027,
+   wiring a0df9fd43e5180c1, **cert 6a09c059eb266747** (new). Rust runs made 0 Python solvers.
+3. **Plants:** C2's `cf-laurent-rational` is caught on cert (2 answers, below), void on dev and fuzz for a stated reason,
+   and also caught by the suite (separate run). B's and C1's controls and the scope/5c6 controls are caught (table).
+4. **Quiet handlers, suite:** 39 rows in 2 tests, the same multiset as base: `_consistent` AttributeError, 34 on `_ok`
+   and 4 on `_rb_clauses` (the named needs-internals case), and `Engine._build_context` "Already mutably borrowed" 1 in
+   `test_protocol_on_fuzz` (the 46-stub cause). `caught` rows per id match base (0 differ). **Quiet catches at
+   engine.py:1906: 1**, in the suite, as on base. There are 0 on dev, fuzz, seed1 and the ten extra workloads (their
+   handler files have 0 rows). The plant runs' handler files have rows (`ad-kind-swap`: dev 2, fuzz 315), which shows
+   the counter fires. TermFault 0.
+5. **Known differences:** none. Tests phase: 627 passed (BC2's 18 files + test_cf_laurent.py). DIRECT:
+   `relations_direct.py 300 0`, `dispatch_direct.py` and `common_direct.py` exit 0; `common_direct.py common-facts-drop`
+   fired 8 with 6 DIFFERENCES (the control plant, caught).
+
+## Plants (fired; D = DIFFER)
+| part | plant | item | dev | fuzz | cert | other workloads | caught by |
+|---|---|---|---|---|---|---|---|
+| C2 | cf-laurent-rational | `pi_laurent_elem` (constfield.rs), read by lra_cert.rs `laurent` | 121 MATCH | 200 MATCH | **119 D** | 0 on the other 9 | **cert** (q53, q59: True -> None; 34 end/stream/lra states); **suite** (2 tests, separate run) |
+| C1 | pay-int-offset | Rust `Integral` (payloads.rs:141) | 556 D | 18,488 D | 250 D | scope 230 D, value 319 MATCH, zero 1,316 D | dev, fuzz, cert, scope, zero |
+| B | ad-kind-swap | `make_adapter`'s kind (relations_core.rs) | 254 D | 4,191 D | 62 D | scope 147 D, value 396 D, zero 1,439 D | dev, fuzz, cert, scope, value, zero |
+| control | theory-no-assume | scope | 1,087 D | 5,918 D | 122 D | scope 299 D, zero 1,263 D; core 243, f6 10, loop 244, opaque 32, rootof 369, value 322, wiring 5,016 MATCH | dev, fuzz, cert, scope, zero |
+| control | al-drop-delta | 5c6 | 197 D | 2,631 D | 61 D | scope 36 D, value 197 D, zero 542 D | dev, fuzz, cert, scope, value, zero |
+| control | common-facts-drop | 6d | | | | common_direct.py: fired 8, 6 DIFFERENCES | direct |
+
+**cf-laurent-rational is void on dev and fuzz, with the reason:** the certificate's `Y` (lra.py :930-960) is
+`(nt+1)*had*(X+1)*2**16`, far above every split there, so dropping the pi terms of a bound never changes a decision
+(cert_wl.py's docstring). On `cert` (pi bounds near Y), the two-term `t + y` form at c = 10**8 loses its answer.
+Single-variable bounds are decided by `assert_lit`'s rounding, with no split. **Suite catch** on the tested source 3a34da4
+(sa-port-156, orion, `~/sa-rust-ids-work/sa-port-156/sp/`; 8 LRA test files under `rust_plugin`, -n 3): without the plant
+44 failed (all failing on BC2's base too: the stub cause and theory-level tests), with it 46: +
+`tests/test_lra_exhaustion.py::test_certificate_rational_rows_and_pi_bounds` and
+`::test_certificate_reads_the_constfield_limits`. The same as sa-port-153's run on e12e622.
+
+## Reached (moved item, Rust run)
+`cf:pi_laurent` (session.json of the bar's Rust runs): dev 121, fuzz 200, seed1 dev 121 and fuzz 200, **cert 115**, and 0
+on f6, value, rootof, core, opaque, scope, loop, zero and wiring. They equal Python's former `pi_laurent` calls on the
+base (table below), so every call moved. Reached by dev, fuzz and cert. Only cert's reach is caught.
+
+## Constfield callbacks per workload, before and after
+cf_trace.py (sa-port-140/152), Rust mode, one pass; before = rust-slice b838d3f, after = 3a34da4 (sa-port-156, orion,
+`~/sa-rust-ids-work/sa-port-156/trace/`; the base tree ran with 3a34da4's harness live.py/cert_wl.py, which only adds
+the cert entry). Answers' digests are identical between the two trees on every workload, with 0 Python solvers. Rows not
+shown (`Element.to_sympy`, `_coerce_foreign`, `_sympy_constant`, `Constant.__repr__`, `_short`, the gcd trio) are 0 on
+every workload, before and after.
+
+| workload | Element._new | pi_laurent | Constant.enclose | Element.__repr__ (harness) | _generic | constant | Constant.__init__ |
+|---|---|---|---|---|---|---|---|
+| dev | 703 | **121 -> 0** | 100 | 2,870 | 1 | 0 | 0 |
+| fuzz | 1,552 | **200 -> 0** | 0 | 37,501 | 0 | 0 | 0 |
+| cert | 163 | **115 -> 0** | 0 | 533 | 0 | 0 | 0 |
+| f6 | 30 | 0 | 84 | 0 | 66 | 30 | 30 |
+| core | 24 | 0 | 0 | 0 | 68 | 24 | 12 |
+| wiring | 3 | 0 | 0 | 0 | 11 | 2 | 2 |
+| opaque | 2 | 0 | 2 | 0 | 5 | 2 | 2 |
+| value | 0 | 0 | 0 | 0 | 984 | 0 | 0 |
+| rootof | 0 | 0 | 0 | 0 | 368 | 0 | 0 |
+| zero | 0 | 0 | 0 | 0 | 1,478 | 0 | 0 |
+| scope, loop | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+
+`Element._new`'s total doesn't change, but its callers do. On dev, lra_live `_rust` 460 and constfield `_env` 100 are
+unchanged, lra_backend `check` goes 121 -> 69, and `_state` 117 -> 174. On cert, `check` goes 38 -> 8 and `_state` 4 -> 34.
+The Elements that `check` stopped building are built by `_state` later, so C2 removes none. That's step (b)'s work.
+`enclose` (R9) is unchanged.
+
+## Module count
+**13 of 32, unchanged** (count rule; checked against ~/dev/architect/STATUS.md's "Counted modules" list, not recounted):
+solver, euf, lra, transfer, lra_cert; realroots.py, templates/atoms.py; registry.py, templates/__init__.py; scope.py;
+table.py, _common.py; relations.py. Footnotes: table.py, kept paths only; `_common.py`, `const_value`; realroots and
+atoms' `value_units` are wired, and neither dev nor fuzz reaches them (the suite reaches realroots). **constfield.py is
+still not whole:** `Element._new`, `enclose` (R9, permanent), the gcd trio (`_to_dmp`, `_from_dmp`,
+`_sympy_inner_gcd`), `_short`, `radical`, `_generic`, `constant` and `Constant.__init__` are still called back.
+`pi_laurent` left the list. The six output rows are not port by ruling.
+
+## Kept reasons (Rust run, share of queries, against base)
+| workload | out-of-scope | refused | named exceptions |
+|---|---|---|---|
+| dev | 24/1,985 (1.21%), base 1.21% | 0, base 0 | |
+| fuzz | 0, base 0 | 0, base 0 | |
+| seed1 dev / fuzz | 1.21% / 0, base the same | 0, base 0 | |
+| f6 | 0, base 0 | 13/2,902 (0.45%), base 0.45% | algebra Float 10, lra callback on a derived term 1, scaffold rebuilt form differs 2; all equal to base |
+| value | 0, base 0 | 15/3,742 (0.40%), base 0.40% | algebra Float 15, equal |
+| opaque | 0, base 0 | 7/2,546 (0.27%), base 0.27% | algebra infinity/nan/Float 2, infinity or nan 5, equal |
+| core, rootof, scope, loop, zero | 0, base 0 | 0, base 0 | |
+| wiring | 0 | 1/6,512 (0.02%) | lra callback on a derived term 1; no BC2 row, equal to 6g(b)'s bar (1/6,512) |
+| cert | 0/61 | 0/61 | new workload, no base |
+
+No share rose.
+
+## Not run
+Moved to "before any backend PR", and none quoted as met:
+- the mutant 2, 5, 6, 7, 9 rerun and mutlive's control;
+- the boundary rescore and suite column;
+- the final drop score and its lost rows;
+- the suite split with Python's counter;
+- `order:_rows`' evidence (not caught meanwhile);
+- the `_forms` guard test;
+- history reruns (seed1 was run, above);
+- forced moves;
+- the native path;
+- timing.
+
+Also not run: the suite under a plant inside the bar (SUITE_PLANTS=`zero` picked none). The suite catch of
+cf-laurent-rational comes from the separate 8-file run above. Bar C2 (f296ed1, before 6g(b)) was stopped at its plants
+phase as superseded; it isn't a landing bar.
+
+Other notes:
+- Mutants 2, 5, 6, 7, 9 still rest on the API fuzzer alone. 10 of the 25 boundary mutants have no real-engine catch, and
+  the boundary suite column wasn't run.
+- **Speed not measured.**
+- The `_n_conflicts` view in rust_plugin.py is a test-plugin shim, not a port (64 tests).
+- `test_incremental_matches_fresh`: its public-API family landed with 5c7-tests as `tests/test_public_incremental.py` (34
+  tests), beside `tests/test_solver_incremental.py`, whose internals-based family is untouched. All 34 passed on Rust here.
+- `tests/test_relations.py::test_equality_sharing_is_needed_and_works` is unedited and still named needs-internals.
+- Docs: port-ownership.md :101-105 and :132, and the TSV's constfield rows (pi_laurent landed 29ee93e Rust; the six not
+  port; `Element._new`'s finisher "its own step after C2"). The md's summary count table (385/17/9 landed, 0/11/320 named)
+  was already stale against the TSV before C2: the TSV has 524 `port` rows on Rust after C2, 523 before. It isn't recounted
+  here.
+- Owed list (carried from B+C1, for the architect): a workload reaching `EUFAdapter.node_term` (`ad-euf-node` void on every
+  workload; the suite fires it without a catch); `Negated` is reached only through the adapter API, not the engine. New from
+  C2: `_coerce_foreign` is a Python removal candidate next to `_bound` (no engine path).
+- `Element._new` stays out of C2: its own step after C2 (ruling (b)), with the LRA-heavy workloads and a memo plant caught
+  as a wrong value.
