@@ -151,30 +151,30 @@ knowledge/rules.py	_basis_models	219	~u	port?	6	6h	Python	whole body Python; que
 knowledge/rules.py	def_implications	243	~u	port?	6	landed 5a 8bab767 (partial)	called back	Rust calls Python's def_implications (engine.py:502), which calls _basis_models	rs:def_implications dev 0, fuzz 0 (5a); suite not measured (825 in 49 tests of test_session_limits.py)	6h
 knowledge/templates/__init__.py	_may_be_nan	142		conversion	6	not port (conversion, ownership ruling)	Python			
 knowledge/templates/__init__.py	_applied_to_nan	162		port	6	6g	Python	whole body Python; runtime reader registry.opaque (registry.py:220, :236)	not measured	6g
-knowledge/templates/_common.py	const_key	50		port	6	6d	Python			
-knowledge/templates/_common.py	lits	55		port	6	6d	Python			
-knowledge/templates/_common.py	Rules	59		port	6	6d	Python			
-knowledge/templates/_common.py	Rules.__init__	63		port	6	6d	Python			
-knowledge/templates/_common.py	Rules.rule	66		port	6	6d	Python			
-knowledge/templates/_common.py	Rules.equiv	71	~u	port	6	6d	Python			
-knowledge/templates/_common.py	ge2_alternatives	77	~u	port	6	6d	Python			
-knowledge/templates/_common.py	const_value	83		port	6	landed 6c 4b2f12b (partial)	called back	called back by Rust's resolve to read a constant's facts in Python's order	not measured (at most common:resolve dev 81, fuzz 60, suite 41,253)	6d
-knowledge/templates/_common.py	_resolve_lit	104		port	6	landed 6c 4b2f12b (partial)	Rust	Python body on kept queries and SLICE_KNOWLEDGE=py	common:kept dev 1, fuzz 0, suite 212	6d (kept path stays Python by ruling)
-knowledge/templates/_common.py	resolve	121		port	6	landed 6c 4b2f12b (partial)	Rust	Python body on kept queries and SLICE_KNOWLEDGE=py	common:kept dev 1, fuzz 0, suite 212	6d (kept path stays Python by ruling)
-knowledge/templates/_common.py	instantiate	162	~u	port	6	6d	Python			
-knowledge/templates/_common.py	_unsubsumed	185		port	6	landed 6c 4b2f12b (partial)	Rust	Python body on kept queries and SLICE_KNOWLEDGE=py	common:kept dev 1, fuzz 0, suite 212	6d (kept path stays Python by ruling)
-knowledge/templates/_common.py	Pattern	224		port	6	landed 6c 4b2f12b (partial)	Rust	Python body on kept queries and SLICE_KNOWLEDGE=py	common:kept dev 1, fuzz 0, suite 212	6d (kept path stays Python by ruling)
-knowledge/templates/_common.py	Pattern.__init__	236		port	6	landed 6c 4b2f12b (partial)	Rust	Python body on kept queries and SLICE_KNOWLEDGE=py	common:kept dev 1, fuzz 0, suite 212	6d (kept path stays Python by ruling)
-knowledge/templates/_common.py	TemplateKeyError	280		port	6	6d	Python			
-knowledge/templates/_common.py	Compiled	287		port	6	6d	Python			
-knowledge/templates/_common.py	Compiled.__init__	292		port	6	6d	Python			
-knowledge/templates/_common.py	Compiled.formulas	296	~u	port	6	6d	Python			
-knowledge/templates/_common.py	Compiled.wide_formulas	299	~u	port	6	6d	Python			
-knowledge/templates/_common.py	facts	325		port	6	6d	Python			
-knowledge/templates/_common.py	units	340		port	6	landed 6 dc3f15d (partial)	Python	cache and Python closing path; Rust closes for atoms only	not measured (py:kept dev 2, suite 202; py:no-query suite 1,083)	6d
-knowledge/templates/_common.py	_signed	394		port	6	6d	Python			
-knowledge/templates/_common.py	consts_of	399		port	6	6d	Python			
-knowledge/templates/_common.py	pattern_key	407		port	6	6d	Python			
+knowledge/templates/_common.py	const_key	50		port	6	landed 6d (port-6d.md)	Rust	Python body on kept queries only (named kept reasons)	kept: dev out-of-scope 48 queries; f6/value/opaque refused reruns	
+knowledge/templates/_common.py	lits	55		port	6	landed 6d (port-6d.md)	Rust	Python body on kept queries only (named kept reasons)	kept: dev out-of-scope 48 queries; f6/value/opaque refused reruns	
+knowledge/templates/_common.py	Rules	59		port	6	landed 6d (port-6d.md)	Rust	Python body on kept queries only (named kept reasons)	kept: dev out-of-scope 48 queries; f6/value/opaque refused reruns	
+knowledge/templates/_common.py	Rules.__init__	63		port	6	landed 6d (port-6d.md)	Rust	Python body on kept queries only (named kept reasons)	kept: dev out-of-scope 48 queries; f6/value/opaque refused reruns	
+knowledge/templates/_common.py	Rules.rule	66		port	6	landed 6d (port-6d.md)	Rust	Python body on kept queries only (named kept reasons)	kept: dev out-of-scope 48 queries; f6/value/opaque refused reruns	
+knowledge/templates/_common.py	Rules.equiv	71	~u	port	6	landed 6d (port-6d.md)	Rust	Python body on kept queries only (named kept reasons)	kept: dev out-of-scope 48 queries; f6/value/opaque refused reruns	
+knowledge/templates/_common.py	ge2_alternatives	77	~u	port	6	landed 6d (port-6d.md)	Rust	Python body on kept queries only (named kept reasons)	kept: dev out-of-scope 48 queries; f6/value/opaque refused reruns	
+knowledge/templates/_common.py	const_value	83		port	6	landed 6c 4b2f12b (partial)	called back	named SymPy callback (planner 03:42 8 Nov): Rust calls it on a _CACHE miss; direct calls from wiring/functions/convert/core/knowledge_live not memoized	dev 4,605 (Rust) / 5,089 (all); fire counts per workload in port-6d.md	after 5c: constfield decides what its enclosures can
+knowledge/templates/_common.py	_resolve_lit	104		port	6	landed 6c 4b2f12b (partial)	Rust	Python body on kept queries and SLICE_KNOWLEDGE=py	common:kept dev 1, fuzz 0, suite 212	done (6d: kept path only, by ruling)
+knowledge/templates/_common.py	resolve	121		port	6	landed 6c 4b2f12b (partial)	Rust	Python body on kept queries and SLICE_KNOWLEDGE=py	common:kept dev 1, fuzz 0, suite 212	done (6d: kept path only, by ruling)
+knowledge/templates/_common.py	instantiate	162	~u	port	6	landed 6d (port-6d.md)	Rust	Python body on kept queries only (named kept reasons)	kept: dev out-of-scope 48 queries; f6/value/opaque refused reruns	
+knowledge/templates/_common.py	_unsubsumed	185		port	6	landed 6c 4b2f12b (partial)	Rust	Python body on kept queries and SLICE_KNOWLEDGE=py	common:kept dev 1, fuzz 0, suite 212	done (6d: kept path only, by ruling)
+knowledge/templates/_common.py	Pattern	224		port	6	landed 6c 4b2f12b (partial)	Rust	Python body on kept queries and SLICE_KNOWLEDGE=py	common:kept dev 1, fuzz 0, suite 212	done (6d: kept path only, by ruling)
+knowledge/templates/_common.py	Pattern.__init__	236		port	6	landed 6c 4b2f12b (partial)	Rust	Python body on kept queries and SLICE_KNOWLEDGE=py	common:kept dev 1, fuzz 0, suite 212	done (6d: kept path only, by ruling)
+knowledge/templates/_common.py	TemplateKeyError	280		port	6	landed 6d (port-6d.md)	Rust	Python body on kept queries only (named kept reasons)	kept: dev out-of-scope 48 queries; f6/value/opaque refused reruns	
+knowledge/templates/_common.py	Compiled	287		port	6	landed 6d (port-6d.md)	Rust	Python body on kept queries only (named kept reasons)	kept: dev out-of-scope 48 queries; f6/value/opaque refused reruns	
+knowledge/templates/_common.py	Compiled.__init__	292		port	6	landed 6d (port-6d.md)	Rust	Python body on kept queries only (named kept reasons)	kept: dev out-of-scope 48 queries; f6/value/opaque refused reruns	
+knowledge/templates/_common.py	Compiled.formulas	296	~u	port	6	landed 6d (port-6d.md)	Rust	Python body on kept queries only (named kept reasons)	kept: dev out-of-scope 48 queries; f6/value/opaque refused reruns	
+knowledge/templates/_common.py	Compiled.wide_formulas	299	~u	port	6	landed 6d (port-6d.md)	Rust	Python body on kept queries only (named kept reasons)	kept: dev out-of-scope 48 queries; f6/value/opaque refused reruns	
+knowledge/templates/_common.py	facts	325		port	6	landed 6d (port-6d.md)	Rust	Python body on kept queries only (named kept reasons)	kept: dev out-of-scope 48 queries; f6/value/opaque refused reruns	
+knowledge/templates/_common.py	units	340		port	6	landed 6d (port-6d.md)	Rust	Python body on kept queries only (named kept reasons)	kept: dev out-of-scope 48 queries; f6/value/opaque refused reruns	
+knowledge/templates/_common.py	_signed	394		port	6	landed 6d (port-6d.md)	Rust	Python body on kept queries only (named kept reasons)	kept: dev out-of-scope 48 queries; f6/value/opaque refused reruns	
+knowledge/templates/_common.py	consts_of	399		port	6	landed 6d (port-6d.md)	Rust	Python body on kept queries only (named kept reasons)	kept: dev out-of-scope 48 queries; f6/value/opaque refused reruns	
+knowledge/templates/_common.py	pattern_key	407		port	6	landed 6d (port-6d.md)	Rust	Python body on kept queries only (named kept reasons)	kept: dev out-of-scope 48 queries; f6/value/opaque refused reruns	
 knowledge/templates/_rows_runtime.py	from_text	32		port	6	landed rows-runtime 3236be4 (partial)	Rust	I and -I row values (rows:value:python); constant_value for Float, oo, -oo, nan and zoo; attrs and kept route in the knowledge_live shim; every value goes back to wiring.py as SymPy (rows.rs to_sympy)	rows:value:python dev 2, fuzz 2, suite 16; rows:kept suite 50 (dev, fuzz 0); constant_value by class not measured	6g (wiring.py, the only consumer); I/-I and Float-class values need a ruling: kept with reason, or a field that covers them
 knowledge/templates/_rows_runtime.py	constant_value	47		port	6	landed rows-runtime 3236be4 (partial)	Rust	I and -I row values (rows:value:python); constant_value for Float, oo, -oo, nan and zoo; attrs and kept route in the knowledge_live shim; every value goes back to wiring.py as SymPy (rows.rs to_sympy)	rows:value:python dev 2, fuzz 2, suite 16; rows:kept suite 50 (dev, fuzz 0); constant_value by class not measured	6g (wiring.py, the only consumer); I/-I and Float-class values need a ruling: kept with reason, or a field that covers them
 knowledge/templates/_rows_runtime.py	_read	60		port	6	landed rows-runtime 3236be4 (partial)	Rust	I and -I row values (rows:value:python); constant_value for Float, oo, -oo, nan and zoo; attrs and kept route in the knowledge_live shim; every value goes back to wiring.py as SymPy (rows.rs to_sympy)	rows:value:python dev 2, fuzz 2, suite 16; rows:kept suite 50 (dev, fuzz 0); constant_value by class not measured	6g (wiring.py, the only consumer); I/-I and Float-class values need a ruling: kept with reason, or a field that covers them
@@ -264,24 +264,24 @@ knowledge/templates/special.py	_doubled	56	~u	port	6	landed 6f f76af99	Rust	swap
 knowledge/templates/special.py	_multigamma_rules	66	~u	port	6	landed 6f f76af99	Rust	swapped (tf6.rs, knowledge_f6_live.py)	Rust: dev 0, fuzz 0, suite 11; value wl 15	
 knowledge/templates/special.py	multigamma_templates	88	~u	port	6	landed 6f f76af99 (partial)	Python	Python shell: arity check, 6d's facts/_common, 6g's rows generation; inner work on Rust (_multigamma_rules); named SymPy-semantics callback for multigamma's value (SymPy evaluation), f6:multigamma_value:python dev 0, fuzz 0, suite 9, value wl 21; candidate permanent like enclose	via its callees	6d/6g
 knowledge/templates/stats.py	randomsymbol_units	22	~u	port	6	landed 6f f76af99 (partial)	Rust	conversion supplies its reads of declared facts (reclass ruling, as symbol_units); the template work, _random_units, is swapped (Rust)	Rust: dev 0, fuzz 0, suite 12; f6 wl 4	
-knowledge/templates/table.py	Row	44		port	6	6d	Python			
-knowledge/templates/table.py	Row.__init__	49	~u	port	6	6d	Python			
-knowledge/templates/table.py	Row._compile	64	~u	port	6	6d	Python			
-knowledge/templates/table.py	Row.__repr__	72	~u	port	6	6d	Python			
-knowledge/templates/table.py	Row.text	75	~u	port	6	6d	Python			
-knowledge/templates/table.py	Section	90		port	6	6d	Python			
-knowledge/templates/table.py	Section.__init__	94	~u	port	6	6d	Python			
-knowledge/templates/table.py	_holds	102	~u	port	6	6d	Python			
-knowledge/templates/table.py	_norm	109	~u	port	6	6d	Python			
-knowledge/templates/table.py	_lits	116	~u	port	6	6d	Python			
-knowledge/templates/table.py	_premise_alternatives	128	~u	port	6	6d	Python			
-knowledge/templates/table.py	_row_specs	148	~u	port	6	6d	Python			
-knowledge/templates/table.py	_rows	164	~u	port	6	6d	Python			
-knowledge/templates/table.py	_bindings	175	~u	port	6	6d	Python			
-knowledge/templates/table.py	expand	193	~u	port	6	6d	Python			
-knowledge/templates/table.py	rules_of	209	~u	port	6	6d	Python			
-knowledge/templates/table.py	iter_rows	218	~u	port	6	6d	Python			
-knowledge/templates/table.py	count_rows	227	~u	port	6	6d	Python			
+knowledge/templates/table.py	Row	44		port	6	counted whole 6d (port-6d.md) (kept paths only)	Python (kept paths only)	only runtime caller core.ipi_rules, Rust except on a kept query	0 calls on dev, core, f6, value, rootof, opaque, fuzz	
+knowledge/templates/table.py	Row.__init__	49	~u	port	6	counted whole 6d (port-6d.md) (kept paths only)	Python (kept paths only)	only runtime caller core.ipi_rules, Rust except on a kept query	0 calls on dev, core, f6, value, rootof, opaque, fuzz	
+knowledge/templates/table.py	Row._compile	64	~u	port	6	counted whole 6d (port-6d.md) (kept paths only)	Python (kept paths only)	only runtime caller core.ipi_rules, Rust except on a kept query	0 calls on dev, core, f6, value, rootof, opaque, fuzz	
+knowledge/templates/table.py	Row.__repr__	72	~u	port	6	counted whole 6d (port-6d.md) (kept paths only)	Python (kept paths only)	only runtime caller core.ipi_rules, Rust except on a kept query	0 calls on dev, core, f6, value, rootof, opaque, fuzz	
+knowledge/templates/table.py	Row.text	75	~u	port	6	counted whole 6d (port-6d.md) (kept paths only)	Python (kept paths only)	only runtime caller core.ipi_rules, Rust except on a kept query	0 calls on dev, core, f6, value, rootof, opaque, fuzz	
+knowledge/templates/table.py	Section	90		port	6	counted whole 6d (port-6d.md) (kept paths only)	Python (kept paths only)	only runtime caller core.ipi_rules, Rust except on a kept query	0 calls on dev, core, f6, value, rootof, opaque, fuzz	
+knowledge/templates/table.py	Section.__init__	94	~u	port	6	counted whole 6d (port-6d.md) (kept paths only)	Python (kept paths only)	only runtime caller core.ipi_rules, Rust except on a kept query	0 calls on dev, core, f6, value, rootof, opaque, fuzz	
+knowledge/templates/table.py	_holds	102	~u	port	6	counted whole 6d (port-6d.md) (kept paths only)	Python (kept paths only)	only runtime caller core.ipi_rules, Rust except on a kept query	0 calls on dev, core, f6, value, rootof, opaque, fuzz	
+knowledge/templates/table.py	_norm	109	~u	port	6	counted whole 6d (port-6d.md) (kept paths only)	Python (kept paths only)	only runtime caller core.ipi_rules, Rust except on a kept query	0 calls on dev, core, f6, value, rootof, opaque, fuzz	
+knowledge/templates/table.py	_lits	116	~u	port	6	counted whole 6d (port-6d.md) (kept paths only)	Python (kept paths only)	only runtime caller core.ipi_rules, Rust except on a kept query	0 calls on dev, core, f6, value, rootof, opaque, fuzz	
+knowledge/templates/table.py	_premise_alternatives	128	~u	port	6	counted whole 6d (port-6d.md) (kept paths only)	Python (kept paths only)	only runtime caller core.ipi_rules, Rust except on a kept query	0 calls on dev, core, f6, value, rootof, opaque, fuzz	
+knowledge/templates/table.py	_row_specs	148	~u	port	6	counted whole 6d (port-6d.md) (kept paths only)	Python (kept paths only)	only runtime caller core.ipi_rules, Rust except on a kept query	0 calls on dev, core, f6, value, rootof, opaque, fuzz	
+knowledge/templates/table.py	_rows	164	~u	port	6	counted whole 6d (port-6d.md) (kept paths only)	Python (kept paths only)	only runtime caller core.ipi_rules, Rust except on a kept query	0 calls on dev, core, f6, value, rootof, opaque, fuzz	
+knowledge/templates/table.py	_bindings	175	~u	port	6	counted whole 6d (port-6d.md) (kept paths only)	Python (kept paths only)	only runtime caller core.ipi_rules, Rust except on a kept query	0 calls on dev, core, f6, value, rootof, opaque, fuzz	
+knowledge/templates/table.py	expand	193	~u	port	6	counted whole 6d (port-6d.md) (kept paths only)	Python (kept paths only)	only runtime caller core.ipi_rules, Rust except on a kept query	0 calls on dev, core, f6, value, rootof, opaque, fuzz	
+knowledge/templates/table.py	rules_of	209	~u	port	6	counted whole 6d (port-6d.md) (kept paths only)	Python (kept paths only)	only runtime caller core.ipi_rules, Rust except on a kept query	0 calls on dev, core, f6, value, rootof, opaque, fuzz	
+knowledge/templates/table.py	iter_rows	218	~u	port	6	counted whole 6d (port-6d.md) (kept paths only)	Python (kept paths only)	only runtime caller core.ipi_rules, Rust except on a kept query	0 calls on dev, core, f6, value, rootof, opaque, fuzz	
+knowledge/templates/table.py	count_rows	227	~u	port	6	counted whole 6d (port-6d.md) (kept paths only)	Python (kept paths only)	only runtime caller core.ipi_rules, Rust except on a kept query	0 calls on dev, core, f6, value, rootof, opaque, fuzz	
 knowledge/templates/wiring.py	template	94		offline	6	not port (offline, ownership ruling)	Python			
 knowledge/templates/wiring.py	load	151		offline	6	not port (offline, ownership ruling)	Python			
 knowledge/templates/wiring.py	_declared	176		port	6	6g	Python			

@@ -1,5 +1,7 @@
 # Port ownership: inventory "port" items against the step that owns them (issue 323)
 
+**Updated by sa-port-137 (step 6d), 8 Nov:** `_common.py`'s 17 rows and `units` landed 6d (Rust); `const_value` a named SymPy callback; table.py's 18 counted whole with 6d, kept paths only (0 calls on non-kept queries on all seven workloads); the partials `_common.py` row done. TSV: 42 rows changed (own_tsv.py). Module count **11 of 32** (7 + registry.py + templates/__init__.py + table.py + `_common.py`; relations.py pending on adapters part B), footnotes table.py kept paths only, `_common.py` const_value, realroots/`value_units` not reached by dev or fuzz. Kept-reason shares: dev out-of-scope 1.97%; refused f6 0.45%, value 0.40%, opaque 0.27%; fuzz, core, rootof, scope 0; all equal to base (port-6d.md). The summary table below is sa-port-99's and isn't redone; the TSV's port items now: landed 488 Rust, 17 called back, 18 Python (kept paths only), 17 Python, 2 kept as type; named steps 196 Python, 2 called back.
+
 **Updated by sa-port-125 (adapters, part A), 8 Nov:** no row moves. Step 0 found that Rust read `AdapterSpec`'s fields per query (port-adapters.md). Part A converts each spec once (`spec_row`), but `spec.factory()` is still called once per spec for each Relations object. So relations.py (rows :70-79) doesn't count whole until part B ports the adapters (planner ruling (1)). The TSV is unchanged.
 
 **Updated by sa-port-99 (port-wire), 7 Nov, doc only:** the planner's ownership ruling (forward-chain-3b, 7 Nov 22:12) applied. 70 items reclassed out of port (TSV owner "not port (...)", and `PORT-INVENTORY.md` Appendix A): 812 port items become 742 over 34 modules. Owners as ruled or proposed and accepted: scope, 5c9 for `state/`, 5c2 for `_Lit`, 5c8 for sympy_api's five key helpers, "adapters (after 5c4)" for the adapters and payload classes, 6d-6g by family, 5c10 and 5c5 for engine.py's and relations.py's two. Only `rules._basis_models` and `templates._applied_to_nan` have no owner. 5c1's five landed at 653d932 (Rust). The 31 component 6 rows that were "Rust opt-in only" now run on the default Rust backend, because port-wire installs `knowledge_live` there (`rust_plugin.py`, `live.py`). The "Questionable" rows below are unchanged.
@@ -51,10 +53,10 @@ The original: By sa-port-95, 7 Nov, by reading only (rg, git show); no runs. Bas
 | `knowledge/rules.py` | 6 | 7 | `cnf_of`, `lit_bit`, `lits_mask`, `mask_lits`, `_masks`, `closure_mask`, `unit_propagate` | landed 6 dc3f15d (partial) | Python |
 | `knowledge/rules.py` | 6 | 1 | `expand_clause` | landed 6c 4b2f12b (partial) | Python |
 | `knowledge/templates/__init__.py` | 6 | 1 | `_applied_to_nan` | UNOWNED | Python |
-| `knowledge/templates/_common.py` | 6 | 1 | `units` | landed 6 dc3f15d (partial) | Python |
+| `knowledge/templates/_common.py` | 6 | 1 | `units` | landed 6d (port-6d.md) | Rust |
 | `knowledge/templates/_common.py` | 6 | 5 | `_resolve_lit`, `resolve`, `_unsubsumed`, `Pattern`, `Pattern.__init__` | landed 6c 4b2f12b (partial) | Rust |
-| `knowledge/templates/_common.py` | 6 | 1 | `const_value` | landed 6c 4b2f12b (partial) | called back |
-| `knowledge/templates/_common.py` | 6 | 17 | `const_key`, `lits`, `Rules`, `Rules.__init__`, `Rules.rule`, `Rules.equiv~u`, `ge2_alternatives~u`, `instantiate~u`, `TemplateKeyError`, `Compiled`, `Compiled.__init__`, `Compiled.formulas~u`, `Compiled.wide_formulas~u`, `facts`, `_signed`, `consts_of`, `pattern_key` | 6d | Python |
+| `knowledge/templates/_common.py` | 6 | 1 | `const_value` | landed 6c 4b2f12b, named SymPy callback (port-6d.md) | called back |
+| `knowledge/templates/_common.py` | 6 | 17 | `const_key`, `lits`, `Rules`, `Rules.__init__`, `Rules.rule`, `Rules.equiv~u`, `ge2_alternatives~u`, `instantiate~u`, `TemplateKeyError`, `Compiled`, `Compiled.__init__`, `Compiled.formulas~u`, `Compiled.wide_formulas~u`, `facts`, `_signed`, `consts_of`, `pattern_key` | landed 6d (port-6d.md) | Rust |
 | `knowledge/templates/_rows_runtime.py` | 6 | 6 | `from_text`, `constant_value`, `_read`, `_shape_object`, `_term_object`, `generator` | landed rows-runtime 3236be4 (partial) | Rust |
 | `knowledge/templates/atoms.py` | 6 | 2 | `symbol_units`, `constant_units` | landed 6 dc3f15d (partial) | Rust |
 | `knowledge/templates/atoms.py` | 6 | 1 | `value_units` | landed 6b dfa7b45 (partial) | Rust |
@@ -66,7 +68,7 @@ The original: By sa-port-95, 7 Nov, by reading only (rg, git show); no runs. Bas
 | `knowledge/templates/rootof.py` | 6 | 3 | `_coefficients~u`, `_facts~u`, `crootof_units~u` | 6f | Python |
 | `knowledge/templates/special.py` | 6 | 4 | `_register~u`, `_doubled~u`, `_multigamma_rules~u`, `multigamma_templates~u` | 6f | Python |
 | `knowledge/templates/stats.py` | 6 | 1 | `randomsymbol_units~u` | 6f | Python |
-| `knowledge/templates/table.py` | 6 | 18 | `Row`, `Row.__init__~u`, `Row._compile~u`, `Row.__repr__~u`, `Row.text~u`, `Section`, `Section.__init__~u`, `_holds~u`, `_norm~u`, `_lits~u`, `_premise_alternatives~u`, `_row_specs~u`, `_rows~u`, `_bindings~u`, `expand~u`, `rules_of~u`, `iter_rows~u`, `count_rows~u` | 6d | Python |
+| `knowledge/templates/table.py` | 6 | 18 | `Row`, `Row.__init__~u`, `Row._compile~u`, `Row.__repr__~u`, `Row.text~u`, `Section`, `Section.__init__~u`, `_holds~u`, `_norm~u`, `_lits~u`, `_premise_alternatives~u`, `_row_specs~u`, `_rows~u`, `_bindings~u`, `expand~u`, `rules_of~u`, `iter_rows~u`, `count_rows~u` | counted whole 6d (port-6d.md), kept paths only | Python (kept paths only) |
 | `knowledge/templates/wiring.py` | 6 | 19 | `_declared`, `_attributed`, `matches`, `power`, `expand`, `_placements`, `_allowed`, `_instances`, `_wide_of`, `rows_block`, `rules_for`, `product`, `addition`, `piecewise_values~u`, `_clauses~u`, `wide_formulas~u`, `_wide~u`, `_atom~u`, `any_arity~u` | 6g | Python |
 | `relations.py` | 4 | 6 | `Relations._mention_number`, `Relations._link_integer`, `Relations._trichotomy`, `Relations._closed_extended_real`, `Relations._order_sides`, `Relations._order_infinite` | landed 5b/C2a 3f9ae3a | Rust |
 | `relations.py` | 4 | 3 | `_key`, `_affine_strip`, `_termwise` | landed B b45b72f | Rust |
@@ -116,7 +118,7 @@ sa-port-105, doc only, on 67106e8. The TSV gains `left`, `runs` and `finisher` f
 | `Session.emit`, `Session._visit` | called back (emit callback; `core.visit`) | 5c3, 5c2 |
 | realroots, 16 | kept-query copy; `rootof.py:22-28` reads `expr.poly.rep` in Python | 6f (kept path stays by ruling) |
 | rules.py, 8 + `def_implications` + `_basis_models` | Python bodies still called from `relations._number_basis`, `wiring._clauses`, `_common`'s kept path; `def_implications` called back | 6h |
-| `_common.py`, 7 | `const_value` called back; `units`' cache and closing; kept path | 6d |
+| `_common.py`, 7 | `const_value` called back (named callback); kept path (named kept reasons) | done: landed 6d (port-6d.md) |
 | `_rows_runtime.py`, 6 | `I`/`-I` values, Float-class `constant_value`, shim attrs, SymPy hand-back to `wiring.py` | 6g (I/-I/Float need a ruling) |
 | atoms.py, 3 | derived facts by callback, no-query and kept paths; `value_units` unexercised | no-query path fits none, proposed 6g; 6f for `value_units` |
 | `Relations._eq_links` | clauses via `session.var` on SymPy, scaffolding | 5c4 |
