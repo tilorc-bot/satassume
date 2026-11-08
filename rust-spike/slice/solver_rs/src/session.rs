@@ -14,7 +14,7 @@ use pyo3::types::{PyBool, PyDict, PyList, PySet, PyTuple};
 use crate::compile::{self, block_lits, Cx, Def, Kind, Need, F, R};
 use crate::formula_py::PyP;
 
-const NAMES: [&str; 133] = [
+const NAMES: [&str; 140] = [
     "py:var", "py:dvar", "py:node", "py:compile", "py:literal", "py:table", "rs:visit", "rs:add_clause", "rs:ensure_vars",
     "rs:def_implications", "rs:neg_shared", "join", "rs:emit_callback", "refuse:depth", "refuse:convert", "refuse:object", "second:visit", "custom:own",
     "link:hit", "link:resolved", "link:none", "link:no_table", "link:second", "link:no_node",
@@ -38,6 +38,7 @@ const NAMES: [&str; 133] = [
     "rel:cb_clause_templates", "rel:py_is_number", "rel:cb_spec_read",
     "scope:new", "scope:linked_terms", "scope:scope_of_atoms", "scope:theory_scope", "scope:custom_pred", "scope:extension_atoms",
     "scope:cb_atoms_of", "scope:cb_affine_pair", "scope:cb_transfer_wanted", "scope:cb_facts_for",
+    "ses:init", "ses:assume_formula", "ses:link_set", "ses:assumption_lits", "ses:set_glue", "ses:group_sel", "ses:glue_of",
 ];
 const VAR: usize = 0;
 const DVAR: usize = 1;
@@ -177,6 +178,14 @@ pub(crate) const SCOPE_CB_ATOMS_OF: usize = 129;
 pub(crate) const SCOPE_CB_AFFINE_PAIR: usize = 130;
 pub(crate) const SCOPE_CB_TRANSFER_WANTED: usize = 131;
 pub(crate) const SCOPE_CB_FACTS_FOR: usize = 132;
+/// Step 5c6: the rest of `Session` (`session_glue.rs`).
+pub(crate) const SES_INIT: usize = 133;
+pub(crate) const SES_ASSUME_FORMULA: usize = 134;
+pub(crate) const SES_LINK_SET: usize = 135;
+pub(crate) const SES_ASSUMPTION_LITS: usize = 136;
+pub(crate) const SES_SET_GLUE: usize = 137;
+pub(crate) const SES_GROUP_SEL: usize = 138;
+pub(crate) const SES_GLUE_OF: usize = 139;
 
 /// Deeper formulas compile on Python, over this same table. Python's own limit depends on the caller's stack, so it isn't
 /// reproduced: its deepest shape is `Implies`, 3 frames a level (first failure at depth 330 from a bare stack, limit 1000), so
@@ -184,7 +193,7 @@ pub(crate) const SCOPE_CB_FACTS_FOR: usize = 132;
 const FORMULA_DEPTH: u32 = 64;
 
 thread_local! {
-    static COUNTS: [Cell<u64>; 133] = const { [const { Cell::new(0) }; 133] };
+    static COUNTS: [Cell<u64>; 140] = const { [const { Cell::new(0) }; 140] };
     /// Each session's serial, for the link's memo: a pointer could alias a dead session's.
     static SERIAL: Cell<u64> = const { Cell::new(0) };
 }

@@ -144,6 +144,14 @@ pub(crate) const SCOPE_NO_AFFINE: u8 = 93;
 pub(crate) const THEORY_NO_ASSUME: u8 = 94;
 pub(crate) const CUSTOM_NEVER: u8 = 95;
 pub(crate) const EXT_SHALLOW: u8 = 96;
+/// Step 5c6, one per moved `Session` method (`session_glue.rs`).
+pub(crate) const INIT_NO_RELATIONS: u8 = 97;
+pub(crate) const AF_DROP_RELATIONS: u8 = 98;
+pub(crate) const LINK_SET_SKIP: u8 = 99;
+pub(crate) const AL_DROP_DELTA: u8 = 100;
+pub(crate) const SET_GLUE_NO_EMIT: u8 = 101;
+pub(crate) const GROUP_SEL_NO_IMPL: u8 = 102;
+pub(crate) const GLUE_OF_PLAIN: u8 = 103;
 
 #[pyfunction]
 fn rel_install(term_live: Py<PyAny>, relations: Py<PyAny>, euf_adapter: Py<PyAny>, fault: Py<PyAny>) {
@@ -250,6 +258,13 @@ fn rel_plant(name: Option<&str>) -> PyResult<()> {
         Some("theory-no-assume") => THEORY_NO_ASSUME,
         Some("custom-never") => CUSTOM_NEVER,
         Some("ext-shallow") => EXT_SHALLOW,
+        Some("init-no-relations") => INIT_NO_RELATIONS,
+        Some("af-drop-relations") => AF_DROP_RELATIONS,
+        Some("link-set-skip") => LINK_SET_SKIP,
+        Some("al-drop-delta") => AL_DROP_DELTA,
+        Some("set-glue-no-emit") => SET_GLUE_NO_EMIT,
+        Some("group-sel-no-impl") => GROUP_SEL_NO_IMPL,
+        Some("glue-of-plain") => GLUE_OF_PLAIN,
         Some(x) => return Err(PyValueError::new_err(format!("no plant {x}"))),
     };
     PLANT.store(v, Relaxed);

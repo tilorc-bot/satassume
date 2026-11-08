@@ -3,9 +3,10 @@
 //! session's containers (`literals`, `relations`, the solver) stay Python objects that Python reads later, so state is
 //! Python's by construction; every read and call Python makes, Rust makes in the same order. Methods of the session and its
 //! solver are called by name, as Python calls them, so a subclass, a tracing wrapper or an instance patch is honoured.
-//! Still Python, called back: `basis_lits`, `atoms_of`, `formula_literal` (the module globals), `Session._glue_of`, and the
+//! Still Python, called back: `basis_lits`, `atoms_of`, `formula_literal` (the module globals), and the
 //! `Relations` object's `note_formula` and `process` (5c4). Formula objects are read as Python reads them (`.pred`,
-//! `.expr`, `isinstance(_, P)`, dict keys), counted callbacks until the formula step after 5c.
+//! `.expr`, `isinstance(_, P)`, dict keys), counted callbacks until the formula step after 5c. `Session._glue_of` is Rust
+//! since 5c6 (`session_glue.rs`), called directly.
 use pyo3::exceptions::PyValueError;
 use pyo3::intern;
 use pyo3::prelude::*;
@@ -270,7 +271,7 @@ pub(crate) fn relations(s: &Bound<'_, PyAny>, f: &Bound<'_, PyAny>) -> PyResult<
     let atoms = engine_mod(p)?.getattr(intern!(p, "atoms_of"))?.call1((f,))?;
     rel.call_method1(intern!(p, "note_formula"), (&atoms,))?;
     if rel.getattr(intern!(p, "active"))?.is_truthy()? || rel.getattr(intern!(p, "queue"))?.is_truthy()? {
-        let g = s.call_method1(intern!(p, "_glue_of"), (&atoms,))?;
+        let g = crate::session_glue::glue_of(s, &atoms)?;
         if !planted(DROP_REL_PROCESS) {
             rel.call_method1(intern!(p, "process"), (g,))?;
         }
@@ -304,7 +305,7 @@ pub(crate) fn ensure_twins(s: &Bound<'_, PyAny>, atoms: &Bound<'_, PyAny>) -> Py
     if !s.getattr(intern!(p, "engine"))?.getattr(intern!(p, "_relation_specs"))?.is_truthy()? {
         return Ok(false);
     }
-    let g = s.call_method1(intern!(p, "_glue_of"), (atoms,))?;
+    let g = crate::session_glue::glue_of(s, atoms)?;
     if g.is(atoms) {
         return Ok(false);
     }

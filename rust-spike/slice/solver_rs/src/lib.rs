@@ -9,6 +9,7 @@ mod compile;
 mod constfield;
 mod compile_loop;
 mod query;
+mod session_glue;
 mod discovery;
 mod euf;
 mod euf_py;
@@ -579,5 +580,6 @@ fn sa_solver(m: &Bound<'_, PyModule>) -> PyResult<()> {
     discovery::register(m)?;
     compile_loop::register(m)?;
     query::register(m)?;
+    session_glue::register(m)?;
     transfer_py::register(m)
 }

@@ -662,6 +662,58 @@ def _install_queries():
     return undo
 
 
+#: Step 5c6: the rest of `Session` runs in `session_glue.rs`: `__init__`, `assume_formula`, `link_set`, `assumption_lits`, `_set_glue`,
+#: `_group_sel`, `_glue_of`. `query.rs` calls `_glue_of` directly, and these call each other directly. SLICE_GLUE=py puts Python's
+#: methods back. Python's own copies, for a session with no core (`__init__`: when `engine.VarTable` isn't `TableView`).
+PY_GLUE = {}
+
+
+def _ses_init(self, engine_, scope):
+    if engine.VarTable is not TableView:
+        return PY_GLUE['__init__'](self, engine_, scope)
+    return sa_solver.ses_init(self, engine_, scope)
+
+
+def _ses_assumption_lits(self, prop=None):
+    if not isinstance(self.table, TableView):
+        return PY_GLUE['assumption_lits'](self, prop)
+    return sa_solver.ses_assumption_lits(self, prop)
+
+
+def _g(name, rname):
+    rf = getattr(sa_solver, rname)
+
+    def f(self, *a):
+        if not isinstance(self.table, TableView):
+            return PY_GLUE[name](self, *a)
+        return rf(self, *a)
+    f.__name__ = name
+    return f
+
+
+_GLUE_METHODS = {'__init__': _ses_init, 'assume_formula': _g('assume_formula', 'ses_assume_formula'),
+                 'link_set': _g('link_set', 'ses_link_set'), 'assumption_lits': _ses_assumption_lits,
+                 '_set_glue': _g('_set_glue', 'ses_set_glue'), '_group_sel': _g('_group_sel', 'ses_group_sel'),
+                 '_glue_of': _g('_glue_of', 'ses_glue_of')}
+_GLUE_PLANTS = ('init-no-relations', 'af-drop-relations', 'link-set-skip', 'al-drop-delta', 'set-glue-no-emit', 'group-sel-no-impl',
+                'glue-of-plain')
+
+
+def _install_glue():
+    """Returns the undo. `__init__`'s `scope=EMPTY` default is the one `_install_scope` left on Python's."""
+    S = engine.Session
+    saved = {n: S.__dict__[n] for n in _GLUE_METHODS}
+    PY_GLUE.update(saved)
+    _ses_init.__defaults__ = saved['__init__'].__defaults__
+    for n, f in _GLUE_METHODS.items():
+        setattr(S, n, f)
+
+    def undo():
+        for n, f in saved.items():
+            setattr(S, n, f)
+    return undo
+
+
 def _install_relations():
     """Returns the undo."""
     import term_live
@@ -775,8 +827,11 @@ def install():
     undo_disc = _install_discovery() if os.environ.get('SLICE_DISC', 'rust') == 'rust' else None
     undo_loop = _install_compile_loop() if os.environ.get('SLICE_LOOP', 'rust') == 'rust' else None
     undo_query = _install_queries() if os.environ.get('SLICE_QUERY', 'rust') == 'rust' else None
+    undo_glue = _install_glue() if os.environ.get('SLICE_GLUE', 'rust') == 'rust' else None
 
     def undo():
+        if undo_glue is not None:
+            undo_glue()
         if undo_query is not None:
             undo_query()
         if undo_loop is not None:
@@ -811,7 +866,7 @@ def from_env():
         if os.environ.get('SLICE_SESSION_PLANT'):
             PLANT[0] = os.environ['SLICE_SESSION_PLANT']
             if PLANT[0] in _REL_PLANTS or PLANT[0] in _DISC_PLANTS or PLANT[0] in _LOOP_PLANTS or PLANT[0] in _QUERY_PLANTS \
-                    or PLANT[0] in _SCOPE_PLANTS:
+                    or PLANT[0] in _SCOPE_PLANTS or PLANT[0] in _GLUE_PLANTS:
                 sa_solver.rel_plant(PLANT[0])
         return install()
     return None
