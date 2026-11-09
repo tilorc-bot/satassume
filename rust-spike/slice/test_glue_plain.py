@@ -22,8 +22,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 def _child():
     from test_relations_core import _rust
-    _rust()
-    from sympy import Function, Rational, Symbol, sin
+    mod = _rust()
+    from sympy import Function, Rational, Symbol, oo, sin
     from satassume import relations
     from satassume.engine import Engine
     import sa_solver
@@ -32,7 +32,9 @@ def _child():
     x, y, z = Symbol('x', real=True), Symbol('y', real=True), Symbol('z', integer=True)
     f = Function('f')
     sides = [(x, y), (x + y, z), (2 * x * y, Rational(1, 3)), (Rational(0), x - 3 * z), (sin(x) + f(y), x * y + 1),
-             (f(x + 1), f(y)), (x ** 2 + y, 0)]
+             (f(x + 1), f(y)), (x ** 2 + y, 0),
+             # an `oo` summand: order_sides reads the side, terms doesn't (lra_adapter.py:382)
+             (x + oo, y), (f(x) - oo, x * y)]
     specs = Engine()._relation_specs
     out = {}
     for name, sp in (('default', specs), ('none', [])):
@@ -41,6 +43,14 @@ def _child():
             want = py(atom, sp, {})
             got = sa_solver.rel_glue_objects_plain(atom, sp, {})
             out[f'{name}-{i}'] = [want == got, sorted(map(str, got))]
+            # the adapters' terms of each `lt` glue_objects_plain and link_objects read (order on), Python's `_terms_of` against
+            # relations_core's terms_of: `terms-of-no-order` is void on the glue sets (order_sides' forms are sides already)
+            if sp:
+                for j, at in enumerate((atom, relations.relation_atom('lt', 0, a - b), relations.relation_atom('lt', a - b, 0))):
+                    sat = relations.sympy_atom(at)
+                    for n, ad in enumerate(relations._guarded_adapters(sp, {})):
+                        w, g = mod.PY_REL_FUNCS['_terms_of'](ad, sat, True), sa_solver.rel_terms_of(ad, sat, True)
+                        out[f'terms-{i}-{j}-{n}'] = [w == g, sorted(map(str, g))]
     c = sa_solver.session_counts()
     out['counts'] = {'gl:plain': c['gl:plain']}
     print(json.dumps(out))
@@ -83,9 +93,14 @@ def test_clean(clean):
             assert v[0], (k, v)
 
 
-def test_plant_moves_a_case(clean):
-    got = _run('gl-plain-no-link')
-    moved = [k for k in clean if k != 'counts' and got[k][0] != clean[k][0]]
+# `terms-of-no-order` (the adapters' terms of an `lt` read without order) is caught here since (iii)'s first part: Python's
+# glue_objects was the only `_terms_of(..., True)` caller the module-function comparison in test_relations_core.py saw, and
+# glue_objects_plain calls relations_core's terms_of directly. Python's glue_objects here runs on the same installed
+# `_terms_of`, so this plant is seen as Rust's answer moving off the clean run's (which test_clean holds equal to Python's).
+@pytest.mark.parametrize('plant', ['gl-plain-no-link', 'terms-of-no-order'])
+def test_plant_moves_a_case(clean, plant):
+    got = _run(plant)
+    moved = [k for k in clean if k != 'counts' and got[k] != clean[k]]
     assert moved
 
 

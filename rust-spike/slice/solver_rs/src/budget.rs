@@ -97,7 +97,8 @@ pub(crate) fn struct_<'py>(eng: &Bound<'py, PyAny>, o: &Bound<'py, PyAny>, budge
         if em.getattr(intern!(p, "RELATION_ATOMS"))?.contains(o.getattr(intern!(p, "pred"))?)? && specs.is_truthy()? {
             // a two-sided `eq` keeps term_live's `glue_objects` (its difference on ids); any other relation atom is Rust's
             let two = o.getattr(intern!(p, "expr"))?.try_iter()?.count() == 2;
-            let g = if two && o.getattr(intern!(p, "pred"))?.eq(intern!(p, "eq"))? {
+            // relations on Python (SLICE_REL=py: rel_install hasn't run) keep Python's `glue_objects` for every relation atom
+            let g = if !crate::relations_core::installed() || two && o.getattr(intern!(p, "pred"))?.eq(intern!(p, "eq"))? {
                 tick(BUD_CB_GLOBAL);
                 em.getattr(intern!(p, "glue_objects"))?.call1((o, &specs, eng.getattr(intern!(p, "_glue_adapters"))?))?
             } else {

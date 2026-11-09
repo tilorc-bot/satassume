@@ -643,6 +643,11 @@ pub(crate) fn relations_package(p: Python<'_>) -> Option<String> {
     h.relations.bind(p).getattr(intern!(p, "__package__")).ok()?.extract().ok()
 }
 
+/// Whether `rel_install` has run (relations on Rust); budget.rs keeps Python's `glue_objects` before it (SLICE_REL=py).
+pub(crate) fn installed() -> bool {
+    HOOKS.read().unwrap().is_some()
+}
+
 pub(crate) fn hooks() -> PyResult<Arc<Hooks>> {
     HOOKS.read().unwrap().clone().ok_or_else(|| PyException::new_err("relations_core: rel_install hasn't run"))
 }

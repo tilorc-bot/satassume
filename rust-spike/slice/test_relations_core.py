@@ -917,7 +917,9 @@ def test_module_functions_match_python(funcs):
 
 @pytest.mark.parametrize('plant, fn', [('basis-all', '_number_basis'), ('zero-args-empty', 'zero_args'), ('under-of-empty', 'under_of'),
                                        ('zero-twins-first', 'zero_twins'), ('glue-no-twins', 'glue_atoms'),
-                                       ('guarded-none', '_guarded_adapters'), ('terms-of-no-order', '_terms_of'),
+                                       # terms-of-no-order: its only ordered caller here was glue_objects of an `lt`, which is
+                                       # Rust's glue_objects_plain since state step part 2 (iii); test_glue_plain.py catches it
+                                       ('guarded-none', '_guarded_adapters'),
                                        ('link-objects-bare', 'link_objects'), ('relname-swap', 'relational_name')])
 def test_module_function_plant_is_seen(plant, fn):
     got = _call('funcs', SLICE_SESSION_PLANT=plant)
