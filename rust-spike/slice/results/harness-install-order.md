@@ -1,6 +1,7 @@
 # Harness: live.py installs the backend before any workload builds its engine (issue 323)
 
-sa-port-206, branch harness/install-order from rust-slice c3d0999. The planner's count-audit ruling (~12:30 9 Nov), item 1
+sa-port-206, branch harness/install-order from rust-slice c3d0999; continued by sa-port-209 (rebased on 80665b5,
+plus the planner's Q2 handler plant, d77d3db). The planner's count-audit ruling (~12:30 9 Nov), item 1
 only: a harness-only change. Item 2, install() refreshing an engine built before it or refusing loudly, is owed to state
 part 3 and isn't touched here (no change under satassume/ or solver_rs/).
 
@@ -69,7 +70,48 @@ The Python (reference) side is unchanged byte for byte. Rust-side quiet handler 
 0 on scope, and `complete_check` gives 0 on dev too, where this change alters nothing. Since 5c10b, `_build_context`,
 `verdict` and `_complete_check` run in Rust (session_live.py:894), so live.py's plants, which patch the Python methods,
 are never reached on Rust. live.py's Rust-side handler count is therefore a zero that cannot fire at those sites on any
-workload. The suite's handler count is a separate install and isn't affected.
+workload. The suite's handler count is a separate install and isn't affected. Fixed in this landing: see the next section.
+
+## Rust-side handler plant (planner forward-chain-3b ~14:55 9 Nov, Q2), sa-port-209, d77d3db
+
+The ruling puts this in the same landing as the fix: bar item 4 (quiet handler firings) had no live control on Rust at the
+ported `_build_context`/complete-check and verdict sites since 5c10b, so **every Rust-side "0 handler rows" from live.py
+since 5c10b, up to this run, was void at those sites.** Earlier bars aren't rerun; the head run below covers the current code.
+
+Cause: live.py set `SLICE_PLANT_HANDLER` before `backend.install()`, and session_live's `_install_context` then replaced
+the patched rows with context.rs's (keeping the plant as "Python's" in `PY_CONTEXT`). The fix moves the plant to after
+every install, next to `load()`. Then context.rs calls the patch by name (its `ctx:cb_patched` route) and relevance.rs calls
+`Engine.verdict` by name (`rv:cb_verdict`), so the raise reaches Rust's own handlers, context.rs `build_context`
+(engine.py:1906's) and relevance.rs `_consistent`, which write handler_count's rows through `rust_handled`. The Rust-side
+plant inside context.rs's complete check already existed (`SLICE_SESSION_PLANT=ctx-check-raise`, plant 221), so no
+Rust source changed.
+
+Head run (rebased head, orion, `--check entry`, `~/sa-rust-ids-work/sa-port-209/plant/`): handler rows per plant, Python
+against Rust. The rows (site, type, text, query) are identical between backends as sorted lists wherever both are listed.
+
+| plant | site | scope Python | scope Rust | dev Python | dev Rust |
+|---|---|---|---|---|---|
+| none | — | 0 | 0 | 0 | 0 |
+| `complete_check` (live.py) | `Engine._build_context` | 166 | **166** (`ctx:cb_patched` 166, `ctx:caught` 166) | 833 | **833** |
+| `assumption_lits` (live.py) | `Engine._build_context` | — | 166 | — | — |
+| `verdict` (live.py) | `_consistent` | 0 | 0 | 46 | **46** (`rv:consistent_caught` 46) |
+| `ctx-check-raise` (Rust, plant 221) | `Engine._build_context` | n/a | 166 | n/a | 833 |
+| `formula` (live.py) | `_consistent` | — | 0 | — | — |
+
+- Scope never reaches `_consistent` (`rv:consistent` 0 unplanted), so its verdict zero is no evidence; dev reaches it 64 times.
+- The planted dev runs MATCH Python against Rust (answers_sha 31cd0945c07f02a6, every diff 0).
+- `formula` stays void on Rust: its guard raises only when the caller frame is `_consistent`, which is relevance.rs on
+  Rust (no Python frame). Not needed for the ruling (the `_consistent` site is covered by `verdict`); left as is.
+- `test_live_handler_plant.py` (in the bar's TESTS): the three live.py plants and ctx-check-raise reach Rust's handler with
+  rows equal to Python's, and unplanted rows are empty on both, on scope `--limit 12` and five dev queries. On the previous
+  live.py (plant before install) it fails 4 of 6, so it guards this order.
+- The bar adds `ctx-check-raise` to PLANTS, so its handler rows are recorded on dev, fuzz and all 11 workloads.
+
+## Rebase and short check at the new head (sa-port-209)
+
+Rebased on rust-slice 80665b5 (S2 landed fd367ce, on (iii) part 1 cac82a9), no conflicts; rebuilt on orion. scope MATCH
+12e06b0586faee40, every diff 0, Python solvers made by Rust 0. Probe (audit.py, scope, entry): registry `clauses_for` 0 and
+`with_closed_units` closure 0 on converted queries, `_covers` 22, `_load` 1: the same as at 2b5c763.
 
 ## Bars whose scope MATCH rested on the old order
 
@@ -101,6 +143,15 @@ c3d0999; it doesn't re-run any earlier landing.
 | 2742b66 (6g(c6)-(c9)) | port-6g.md:775-778 | "All 11 WLS MATCH with controls: … scope 169 …" |
 | a8a4bae (state part 1) | port-state-memoized.md:53-56 | "Fresh dev and fuzz, plus loop, zero, cert, scope and budget: answers and state MATCH, lra_diff 0 and stats_diff 0 everywhere" |
 | c3d0999 (state part 2 (i)) | port-state-relations.md:44 | "loop, zero, cert, scope and budget all MATCH." |
+| 693fef9 (6i(a), tested b11b5a2) | port-6i-a.md:55 | "All 11 extra workloads MATCH, Rust against Python." (added by sa-port-209) |
+| 9e10f0d (state part 2 (ii), tested 997a54f) | port-state-relations.md:207 | "loop, zero, cert, scope and budget all MATCH." (added by sa-port-209) |
+
+After those, (iii) part 1 (cac82a9, tested ce1092c, port-state-relations.md:283) and S2 (fd367ce, tested bb92b07,
+port-s2.md:150) still ran scope with the old live.py, but ce1092c's session_live install rewraps a default engine built
+before it on Rust's `with_closed_units`, so their scope runs compared Rust's path product-side (518 -> 0, sa-port-206's
+probe). They rested on that rewrap rather than on Python's path. From this landing on, no bar workload builds its engine
+before the install, so no bar exercises that rewrap: it needs its own "build first, then install" test, owed to state part 3
+with item 2 of the install-order ruling.
 
 Two rows name the path scope didn't take on Rust. 6g(c3)-(c5) (port-6g.md:421-422) and 6g(c6) (:644-645) say
 "lra-on path MATCH (with_closed_units, …), with with-closed-skip caught on dev, fuzz, cert, core, f6, opaque and wiring".
