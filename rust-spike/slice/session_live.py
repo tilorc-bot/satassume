@@ -915,7 +915,7 @@ _REL_STATE_PLANTS = ('ad-lra-not-expr',
                      # (iii) (relations_core.rs glue_objects_plain, 263)
                      'gl-plain-no-link',
                      # (iii)(b) (session.rs SessionCore.relc, 266-267)
-                     'rc-xterm-stale', 'rc-hseen-stale')
+                     'rc-xterm-stale', 'rc-hseen-stale', 'rc-xslot-skip')
 #: S2 (block.rs rule_tables, relations_core.rs 320-323): see test_rule_tables.py
 _RULE_BLOCK_PLANTS = ('rb-gen-model-flip', 'rb-built-model-drop', 'rb-gen-any', 'rb-check-skip')
 

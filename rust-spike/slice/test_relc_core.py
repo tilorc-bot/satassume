@@ -19,7 +19,7 @@ import pytest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 NAMES = ('_xtcur', '_xhn', '_xhseen', '_xslot', '_xterm', '_xnsides', '_xsides_n')
-PLANTS = ('rc-xterm-stale', 'rc-hseen-stale')
+PLANTS = ('rc-xterm-stale', 'rc-hseen-stale', 'rc-xslot-skip')
 WLS = ('transfer:7:60', 'transfer2:3:40', 'fuzz:200', 'scope')
 
 

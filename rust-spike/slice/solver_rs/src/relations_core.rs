@@ -397,6 +397,8 @@ pub(crate) const GL_PLAIN_NO_LINK: u16 = 263;
 pub(crate) const RC_XTERM_STALE: u16 = 266;
 /// ... `_xhseen`'s write is dropped, so sync_transfer never takes its early return.
 pub(crate) const RC_HSEEN_STALE: u16 = 267;
+/// ... sync_transfer writes `_xslot` one past the slots it scanned, so the next scan skips a slot.
+pub(crate) const RC_XSLOT_SKIP: u16 = 268;
 /// S2 (block.rs): a non-model in the generated table; another block's built models short by one; the generated table for
 /// any block with nvars = NPRED; the clean-clause check skipped.
 pub(crate) const RB_GEN_MODEL_FLIP: u16 = 320;
@@ -643,6 +645,7 @@ fn rel_plant(name: Option<&str>) -> PyResult<()> {
         Some("gl-plain-no-link") => GL_PLAIN_NO_LINK,
         Some("rc-xterm-stale") => RC_XTERM_STALE,
         Some("rc-hseen-stale") => RC_HSEEN_STALE,
+        Some("rc-xslot-skip") => RC_XSLOT_SKIP,
         Some("rb-gen-model-flip") => RB_GEN_MODEL_FLIP,
         Some("rb-built-model-drop") => RB_BUILT_MODEL_DROP,
         Some("rb-gen-any") => RB_GEN_ANY,
@@ -1838,7 +1841,7 @@ impl<'py> Cx<'_, 'py> {
                 i += 1;
             }
         }
-        self.c.relc_put(rel, session::XSLOT, n as i64);
+        self.c.relc_put(rel, session::XSLOT, n as i64 + planted(RC_XSLOT_SKIP) as i64);
         self.c.relc_put(rel, session::XNSIDES, nside);
         self.c.relc_put(rel, session::XHSEEN, hn);
         let cand = rel.getattr(intern!(p, "_xcand"))?;
