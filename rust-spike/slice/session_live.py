@@ -127,6 +127,7 @@ class TableView:
         import weakref
         self.core = sa_solver.SessionCore(_core_rules(), weakref.ref(session))
         c = self.core
+        c.set_solver(session.solver)    # state step, part 2 (ii): the transfer sites read the core's copy
         self.custom, self.base_of, self.slots = _Custom(c), _BaseOf(c), _Slots(c)
         self.var, self.aux, self.node_base = c.table_var_py, c.aux, c.node_base
         self.atom = c.atom
@@ -190,6 +191,39 @@ def _base_get(self):
 
 def _base_set(self, value):
     assert not value    # `Session.__init__`'s `{}`
+
+
+def _xfer_get(self):
+    """State step, part 2 (ii): `Session.xfer`, a read-only view of the core's transfer record."""
+    return self.__dict__['_table_view'].core.xfer_rel()
+
+
+def _xfer_set(self, rel):
+    # The record method: `Session.__init__`'s None, and Python's own `_engage_transfer` (SLICE_REL=py).
+    self.__dict__['_table_view'].core.set_xfer_rel(rel)
+
+
+def _rel_xview(name, k):
+    """State step, part 2 (ii): `Relations.xfer` (0), `xfer_sel` (1), `_xadapter` (2), views of the core's record. Writes go
+    through the core's record method (Python's own `__init__`/`_engage_transfer` under SLICE_REL=py, tests that drive a method).
+    A `Relations` over a session with no core (`satassume/ref.py`) keeps Python's own attribute."""
+    def get(self):
+        d = self.__dict__
+        if name in d:
+            return d[name]
+        return self.session.table.core.xfer_field(self, k)
+
+    def put(self, v):
+        t = self.session.table
+        if isinstance(t, TableView):
+            t.core.set_xfer_field(self, k, v)
+        else:
+            self.__dict__[name] = v
+    return property(get, put)
+
+
+#: The views, by attribute.
+_REL_XVIEWS = {'xfer': 0, 'xfer_sel': 1, '_xadapter': 2}
 
 
 def _node(self, node, demanded=None):
@@ -852,7 +886,9 @@ _ENTRY_PLANTS = ('ent-is-no-hit-count', 'ent-is-many-queries-short', 'ent-decide
 #: State step, part 1 (adapters.rs LraQuery, relations_core.rs 251-255): lra_live `_memoized` on the Rust adapter.
 _LRA_SLOT_PLANTS = ('ad-lra-kind-key', 'ad-lra-slot-stale', 'ad-lra-flag-key', 'ad-lra-patch-guard', 'ad-lra-pair-swap')
 #: State step, part 2 (relations_core.rs 256-279): (i) `Reader.integer_form`'s not-an-Expr answer; (ii)/(iii) Relations' state.
-_REL_STATE_PLANTS = ('ad-lra-not-expr',)
+_REL_STATE_PLANTS = ('ad-lra-not-expr',
+                     # (ii) (session.rs SessionCore.solver/xfer, 257-262)
+                     'xf-session-none', 'xf-sel-none', 'xf-rel-any', 'xf-solver-fresh', 'xf-rel-view-none', 'xf-traverse-skip')
 
 
 def entry_native():
@@ -1119,11 +1155,17 @@ def _formula_literal(f, table, emit, dv=None):
 def install():
     """Returns the undo."""
     S = engine.Session
-    saved = {n: S.__dict__.get(n) for n in ('table', 'base', 'node', 'var', 'dvar', '_dvar')}
+    saved = {n: S.__dict__.get(n) for n in ('table', 'base', 'xfer', 'node', 'var', 'dvar', '_dvar')}
     g = (engine.VarTable, engine.compile_formula, engine.formula_literal)
     PY_COMPILE[:] = g[1:]
     S.table = property(_table_get, _table_set)
     S.base = property(_base_get, _base_set)
+    S.xfer = property(_xfer_get, _xfer_set)
+    from satassume import relations
+    R = relations.Relations
+    saved_v = {n: R.__dict__.get(n) for n in _REL_XVIEWS}
+    for n, k in _REL_XVIEWS.items():
+        setattr(R, n, _rel_xview(n, k))
     S.node, S.var, S.dvar, S._dvar = _node, _var, _dvar_public, _dvar_raw
     engine.VarTable, engine.compile_formula, engine.formula_literal = TableView, _compile_formula, _formula_literal
     undo_rel = _install_relations() if os.environ.get('SLICE_REL', 'rust') == 'rust' else None
@@ -1166,6 +1208,11 @@ def install():
                 delattr(S, n)
             else:
                 setattr(S, n, v)
+        for n, v in saved_v.items():
+            if v is None:
+                delattr(R, n)
+            else:
+                setattr(R, n, v)
         engine.VarTable, engine.compile_formula, engine.formula_literal = g
     return undo
 

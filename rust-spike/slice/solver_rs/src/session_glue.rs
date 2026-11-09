@@ -65,7 +65,7 @@ pub(crate) fn init(s: &Bound<'_, PyAny>, engine: &Bound<'_, PyAny>, scope: &Boun
     s.setattr(intern!(p, "_a_atoms"), PyFrozenSet::empty(p)?)?;
     s.setattr(intern!(p, "relations"), p.None())?;
     s.setattr(intern!(p, "_link_pending"), false)?;
-    s.setattr(intern!(p, "xfer"), p.None())?;
+    // `s.xfer`: the core's, None from the start (state step, part 2 (ii)); `Session.xfer` is its view.
     s.setattr(intern!(p, "truncated"), false)?;
     if scope.getattr(intern!(p, "glue"))?.is_truthy()? && !planted(INIT_NO_RELATIONS) {
         let specs = engine.getattr(intern!(p, "_relation_specs"))?;
@@ -227,7 +227,7 @@ pub(crate) fn assumption_lits<'py>(s: &Bound<'py, PyAny>, prop: &Bound<'py, PyAn
                 lits.append(x)?;
             }
         }
-        let xs = rel.getattr(intern!(p, "xfer_sel"))?;
+        let xs = crate::session::core_of(s)?.borrow().xfer_obj(&rel, crate::session::XSEL);
         if !xs.is_none() && p_rel && !a_x.is_truthy()? {
             let u = a_atoms.call_method1(intern!(p, "union"), (&p_atoms,))?;
             if rel.call_method1(intern!(p, "wants_transfer"), (u,))?.is_truthy()? {
@@ -265,14 +265,14 @@ pub(crate) fn set_glue<'py>(s: &Bound<'py, PyAny>, a_all: &Bound<'py, PyAny>, xf
     let m1 = (-1i64).into_pyobject(p)?.into_any();
     let s0 = if g.get_item(2)?.is_truthy()? { (len(&link_sel)? + len(&num_sel)?).into_pyobject(p)?.into_any() } else { m1.clone() };
     let s1 = if g.get_item(3)?.is_truthy()? { len(&atom_sel)?.into_pyobject(p)?.into_any() } else { m1.clone() };
-    let s2 = if xf { rel.getattr(intern!(p, "xfer_sel"))? } else { p.None().into_bound(p) };
+    let s2 = if xf { crate::session::core_of(s)?.borrow().xfer_obj(&rel, crate::session::XSEL) } else { p.None().into_bound(p) };
     let stamp = PyTuple::new(p, [s0, s1, s2])?;
     if stamp.as_any().eq(g.get_item(1)?)? {
         return Ok(have);
     }
     let want = PySet::new(p, rel.call_method1(intern!(p, "selectors_of"), (a_all,))?.try_iter()?.collect::<PyResult<Vec<_>>>()?)?;
     if xf {
-        let xs = rel.getattr(intern!(p, "xfer_sel"))?;
+        let xs = crate::session::core_of(s)?.borrow().xfer_obj(&rel, crate::session::XSEL);
         if !xs.is_none() {
             want.add(xs)?;
         }
@@ -321,7 +321,7 @@ pub(crate) fn set_glue<'py>(s: &Bound<'py, PyAny>, a_all: &Bound<'py, PyAny>, xf
     g.set_item(3, ap)?;
     let s0 = if tp { (lsel.len()? + nsel.len()?).into_pyobject(p)?.into_any() } else { m1.clone() };
     let s1 = if ap { asel.len()?.into_pyobject(p)?.into_any() } else { m1.clone() };
-    let s2 = if xf { rel.getattr(intern!(p, "xfer_sel"))? } else { p.None().into_bound(p) };
+    let s2 = if xf { crate::session::core_of(s)?.borrow().xfer_obj(&rel, crate::session::XSEL) } else { p.None().into_bound(p) };
     g.set_item(1, PyTuple::new(p, [s0, s1, s2])?)?;
     Ok(have)
 }
@@ -339,7 +339,7 @@ pub(crate) fn group_sel<'py>(s: &Bound<'py, PyAny>, key: &Bound<'py, PyAny>, ato
             rel.getattr(intern!(p, "link_sel"))?.len()?.into_pyobject(p)?.into_any(),
             rel.getattr(intern!(p, "atom_sel"))?.len()?.into_pyobject(p)?.into_any(),
             rel.getattr(intern!(p, "num_sel"))?.len()?.into_pyobject(p)?.into_any(),
-            rel.getattr(intern!(p, "xfer_sel"))?,
+            crate::session::core_of(s)?.borrow().xfer_obj(&rel, crate::session::XSEL),
         ],
     )?;
     if !g.is_none() && g.get_item(2)?.eq(&stamp)? {
