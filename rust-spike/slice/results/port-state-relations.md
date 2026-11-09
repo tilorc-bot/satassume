@@ -178,3 +178,79 @@ Other notes:
 - Mutants 2, 5, 6, 7, 9 still rest on the API fuzzer alone. 10 of the 25 boundary mutants have no real-engine catch, and the
   boundary suite column wasn't run.
 - **Speed not measured.**
+
+# State step, part 2, sub-part (ii): the transfer sites (issue 323), barred, NOT YET LANDED
+
+Work by sa-port-202 (code) and sa-port-205 (checks, bar). The planner said to stack it with 6i(a), so (ii) is barred on top of
+sa-port-204's tested b11b5a2 (no shared files). It lands after 204 lands b11b5a2 unchanged.
+
+## What moved
+session.rs `SessionCore` holds `solver` (copied at TableView.bind), `session_xfer` (Session.xfer) and a per-Relations record of
+`xfer`/`xfer_sel`/`_xadapter`. relations_core.rs's transfer sites (engage_transfer, transfer_terms, xswitch, sync_transfer,
+congruent, rel_process, every `Cx::solver` user), query.rs/context.rs's s.xfer and session_glue.rs's five xfer_sel reads all
+use the core. Python reads go through views (session_live.py `_xfer_get`, `_rel_xview`), and its writes go to the counted
+record methods (`set_xfer_rel`, `set_xfer_field`). Session.solver still has a Python copy for its other 13 Rust sites and its
+Python readers (part 3). Counters 338-343 xf:*, plants 257-262 xf-*, test_xfer_core.py (new).
+
+## SHAs
+Tested **997a54f** (port/state-relations-stack: b38add7 = 19d5d04's code + 202's handoff, on 6i(a) b11b5a2, on rust-slice
+c3d0999). Landed: not yet. Incoming diff: to be read at landing; it is empty if rust-slice = b11b5a2's tree.
+
+## The bar (pareto1 `~/sp19/sa-rust-ids-work/sa-port-205/bar-state-relations-ii`, 12:05Z-13:27Z, every phase exit 0, seed1 not run)
+.so sha256 8255530b…. Base rows: sa-port-200's bar-state-relations-i/suite.
+1. **Suite by id:** 5,991 passed (5,990 with no firing, 1 with a firing: test_ci_stream_reports_only_what_replays, the named
+   case), 127 failed, 23 skipped, 18 xfailed, over 6,159 ids. **New 0, gone 0, changed 0.** Tests phase: 693 passed, 4
+   skipped.
+2. **dev and fuzz: answers and state MATCH** (traced and untraced; Python-Python control MATCH), dev 31cd0945c07f02a6, fuzz
+   173502b6ef285ad6. loop, zero, cert, scope and budget all MATCH.
+3. **Plants caught:** xf-solver-fresh on dev, fuzz, budget, cert, loop, scope and zero; xf-sel-none on dev, fuzz and zero;
+   ad-lra-kind-key and ad-lra-pair-swap as before; xf-rel-view-none on the suite (test_scope.py::test_glue_and_transfer_exist_
+   from_construction and test_switched_glue.py::test_set_glue_at_the_root fail under it). Void on the workloads, and caught
+   directly by test_xfer_core.py: xf-session-none, xf-rel-any, xf-traverse-skip (each fires on the workloads, but no answer or
+   state moves). ad-lra-not-expr is void as in (i), caught by test_lra_slot.py.
+4. **Handler multiset same as base** (39 rows in 2 tests: 34 + 4 `_consistent` AttributeError in
+   test_ci_stream_reports_only_what_replays, and 1 `_build_context` "Already mutably borrowed" in test_protocol_on_fuzz).
+   **ctx:caught 0 on all seven workloads.** TermFault in pytest.log 0; live and extra handler files 0 rows.
+5. Known differences: none.
+
+## Counters on the workloads (Rust run)
+xf:record 0 and xf:session_view/xf:rel_view 0 on all seven (Python reads no view on any workload). xf:read_core: dev 4,315,
+fuzz 58,027, zero 18,427, loop 1,437, scope 1,457, cert 615, budget 52. xf:engage_core equals rel:engage_transfer (dev 35, fuzz
+911, zero 550, scope 11). Reached by: dev, fuzz, zero, scope (engagement) and all seven (reads).
+**ad:cbm_noid 0 on all seven**; `integer_form` 0 outside kept paths (ad:lra_not_expr: scope 4, native).
+dispatch.rs:242 / rows_tpl.rs:413 per template: **every count equals (i)'s table above** (dev 126/625, fuzz 38/378, zero
+43/119, loop 31/161, cert 24/208, scope 26/0, budget 469/80; registry:kept dev 4). Rows: bar dir fb.txt and counts.txt.
+Kept shares: out-of-scope dev 24/1,985 (1.21%), 0 elsewhere; refused 0; equal to base.
+getattr guards in the adapter slots: 0 added. session_glue's xfer_sel reads now do one `core_of` per call (s.table + .core).
+
+## State decisions
+| container | decision | inventory row |
+|---|---|---|
+| Session.xfer | Rust-native in SessionCore; Python view | INVENTORY-state.md :302-311 (relations.py:1689 writer) |
+| Relations.xfer / xfer_sel / _xadapter | Rust-native per-Relations record; Python views, counted record writes | :172-187 |
+| Session.solver | core holds a copy; Python's attribute stays for its other readers (part 3) | :302-311 |
+Snapshot digest at the switch: the live state comparison (end states, traced) MATCHes on all seven workloads. No separate
+export digest was taken for these three handles; test_xfer_core.py pins the write sequence field by field.
+
+## Group D
+BEFORE (c3d0999): relations path dev 7.0% (530/7,620), fuzz 15.3% (2,969/19,348). AFTER: **not run** (recipe in
+HANDOFF-sa-port-202.md).
+
+## Not run
+seed1; group-D AFTER; and the "before any backend PR" list as in (i) (mutants 2, 5, 6, 7, 9 and mutlive's control, boundary
+rescore and suite column, final drop score, suite split with Python's counter, order:_rows' evidence (not caught meanwhile),
+the _forms guard test, history and seed reruns, forced moves, native path, timing). S's standing: S's gate is met except for
+the 46 named stub failures, one cause. `_n_conflicts` view: test-plugin shim (64 tests). test_equality_sharing_is_needed_and_works
+is still needs-internals, unedited. test_public_comparison_catches_a_planted_history_dependence is the known id()-reuse
+failure (a28c548). Speed not measured.
+
+# Sub-part (iii), first part: relations.py's per-query Python on converted queries (barred on 83affaa, bar result pending)
+- relations_core.rs `glue_objects_plain`: relations.py:1994's glue_objects without its eq branch. budget.rs calls it for every
+  relation atom except a two-sided eq, which keeps term_live's ids path. Counter 344 gl:plain, plant 263 gl-plain-no-link
+  (void on dev: it fired 31 times and dev MATCHed; caught by test_glue_plain.py).
+- session_live install rewraps a default engine built before the install on Rust's with_closed_units (scope_wl builds one
+  while its queries load).
+- Module-wide relations.py probe (pycalls.py, every function in the file), converted queries: glue_objects cert 72→0, zero
+  2→0, scope 13→0, dev 27→0 (gl:plain 27); scope with_closed_units 518→0. Still on scope: relation_atom 397, _is_number
+  392, _under_apps 11, _key 8, _structural_subterms 4, all term_live wrappers falling back to relations.py's originals.
+  **relations.py stays off the counted list** until these are 0 on all seven workloads.
