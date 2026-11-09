@@ -160,14 +160,55 @@ reach it. The other workloads weren't affected, since none of them builds an eng
 
 ## The bar and the landing
 
-BAR: to fill.
+**NOT LANDED: week at 90%** (architect, ~16:00Z 9 Nov: no landing until the reset, 10 Nov 04:00 UTC). The bar is clean on
+the tested source; the successor lands it after the reset (rebase, `bar.sh land`, read the incoming diff, rerun only if it
+touches guarded source).
+
+Bar on pareto1, `~/sp19/sa-rust-ids-work/sa-port-209/bar-install-order`, 15:04Z-15:55Z, every phase exit 0 (seed1 not run).
+Tested source **d77d3db** (branch head after it changes only results/). .so sha256 5ee060a2…. BASE = S2's bar suite
+(`sa-port-208/bar-s2/suite`). PLANTS = the six ad-lra-* plus `ctx-check-raise`; WLS all 11; TESTS = S2's 29 files +
+test_live_handler_plant.py; DIRECT relations_direct.py 300 0; N=6.
+
+1. **Suite by id against base:** 6,159 ids, new 0, gone 0, changed outcome 1:
+   `test_public_incremental.py::test_public_comparison_catches_a_planted_history_dependence` failed -> passed. That's
+   the known id()-reuse test (sa-port-185), and it flips back in this bar's suite-plant run (passed -> failed). Passed
+   5,992: no firing 5,991, with a firing 1 (`test_ci_stream_reports_only_what_replays`, the named case); failed 126, as base.
+   Tests 752 passed, 4 skipped; DIRECT exit 0.
+2. **Fresh dev and fuzz:** answers and state MATCH (dev 31cd0945c07f02a6, fuzz 173502b6ef285ad6, every diff 0, Python
+   controls MATCH, traced and untraced). All 11 WLS MATCH with Python controls, scope now on the corrected order.
+3. **Planted bugs caught:** ad-lra-kind-key and ad-lra-pair-swap DIFFER on dev, fuzz, cert, scope and zero; scope is
+   now caught on Rust's own path. ctx-check-raise DIFFERs on all 13 workloads. ad-lra-not-expr fires only on scope (4),
+   void there as before; it fired 0 in the suite.
+4. **Quiet handler firings:** suite 39 rows in 2 tests, multiset equal to base (`_consistent` AttributeError 34+4 in
+   test_ci_stream_reports_only_what_replays; `_build_context` "Already mutably borrowed" 1 in test_protocol_on_fuzz, the
+   named cause). Live, unplanted: **0 on all 13 workloads on both backends**, and now with a live control on Rust:
+   ctx-check-raise's rows at `Engine._build_context` are dev 833, fuzz 2,980, budget 16, cert 61, core 300, f6 6, loop 244,
+   opaque 31, rootof 368, scope 166, value 636, wiring 5,004, zero 718 (each equal to the plant's fired count).
+5. **Known differences in answers or read state:** none.
+
+Kept shares: equal to base on every workload (out-of-scope dev 24/1,985 (1.21%), 0 elsewhere; refused f6 13, opaque 7,
+value 15, wiring 1, as base). Fallbacks (sa-port-204's fbcounts.py, `~/sp19/sa-rust-ids-work/sa-port-209/fb.txt` against
+`fb-base.txt` from S2's bar): equal to base on 12 workloads. **scope changes, as this fix should make it:**
+registry:python 26 -> 33 (`_load` 27, `constant_units` 2, `symbol_units` 4) and rows:python 0 -> 64 (`Integer` 32,
+`const_value` 32). scope now runs Rust's Dispatch, so its fallbacks to Python show where before they were hidden in
+Python's own path. Every template named already falls back on other workloads (budget: symbol_units 450, Integer and
+const_value 40 each), and the owners are as in port-6i-a.md. ad:cbm_noid 0 everywhere; ad:lra_not_expr scope 4 (the
+native not-an-Expr path, as before).
+
+Not landed, so no landed SHA and no incoming diff yet. At handoff, rust-slice was 80665b5, and the branch was rebased on it.
 
 ## Not run here
 
-Suite plants beyond the bar's; mutant reruns; timing; any rerun of an earlier landing's bar on its own source.
+Suite plants beyond the bar's; seed1; mutant reruns; timing; any rerun of an earlier landing's bar on its own source. Item 2
+of the install-order ruling (install() refreshing or refusing loudly) and the build-first-then-install test of (iii) part
+1's rewrap: owed to state part 3. The `formula` live.py plant stays void on Rust (see above).
 
 ## Outputs
 
 `~/sa-rust-ids-work/sa-port-206/` on orion: `old/` and `new/` (the reruns, with head.txt and tree.txt), `audit/`
 (the probe's JSON, `rowdiff-plain.txt`), `probe/load.txt` (which workloads build an engine), `plant/` (handler plants),
 `audit.py`, `audit_run.sh`, `runwl.sh`, `oldlive/live.py` (c3d0999's, for the control).
+
+sa-port-209: `~/sa-rust-ids-work/sa-port-209/` on orion (`new/` scope check, `audit/new-entry.json` probe, `plant/` the
+Q2 head run, `plant.sh`, `runwl.sh`, `audit_run.sh`, `bar.launch`); pareto1 `~/sp19/sa-rust-ids-work/sa-port-209/`
+(`bar-install-order/`, `fb.txt`, `fb-base.txt`).
