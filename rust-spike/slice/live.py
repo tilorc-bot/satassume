@@ -313,20 +313,11 @@ def main():
     import catch_count
     import state
     catch_count.install()
-    # The whole of both `try`s, by code object. SLICE_PLANT_HANDLER=NAME plants a raise so a run can show this install fires.
+    # The whole of both `try`s, by code object. SLICE_PLANT_HANDLER=NAME (below, after the installs) plants a raise so a run
+    # can show this install fires.
     import handler_count
     open(args.out + ".handlers", "w").close()      # append mode below, for forked children: a rerun starts empty
     handler_count.install(args.out + ".handlers")
-    plant = {"assumption_lits": (engine.Session, "assumption_lits"), "complete_check": (engine.Engine, "_complete_check"),
-             "formula": (sympy_api, "_formula"), "verdict": (engine.Engine, "verdict")}.get(os.environ.get("SLICE_PLANT_HANDLER"))
-    if plant:
-        real = getattr(*plant)
-
-        def _planted(*a, **k):      # `ask` calls `_formula` before `_consistent` does: raising there never reaches the handler
-            if plant[1] == "_formula" and sys._getframe(1).f_code.co_name != "_consistent":
-                return real(*a, **k)
-            raise ValueError("planted")
-        setattr(*plant, _planted)
     lra_groups = {}
     T.digest = state.digest
     if args.handlers:
@@ -395,6 +386,21 @@ def main():
     # After every install above, on both modes: a workload may build the default engine while it loads (scope_wl's
     # install() does), and an engine built before knowledge_live.from_env() and backend.install() keeps Python's
     # bindings, such as with_closed_units(registry.clauses_for) (engine.py:1330-1341), for the whole run (issue 323).
+    # SLICE_PLANT_HANDLER, after the installs (issue 323, planner ~14:55 9 Nov, Q2): planted before them, backend.install()
+    # replaced the patched rows with context.rs's, so no plant fired on Rust and its handler zeros were void. Patched after,
+    # context.rs calls the patch by name (`ctx:cb_patched`) and relevance.rs calls `Engine.verdict` by name (`rv:cb_verdict`):
+    # the raise reaches Rust's own handlers (context.rs build_context, relevance.rs `_consistent`) and their handler rows.
+    # SLICE_SESSION_PLANT=ctx-check-raise raises inside context.rs's complete check itself.
+    plant = {"assumption_lits": (engine.Session, "assumption_lits"), "complete_check": (engine.Engine, "_complete_check"),
+             "formula": (sympy_api, "_formula"), "verdict": (engine.Engine, "verdict")}.get(os.environ.get("SLICE_PLANT_HANDLER"))
+    if plant:
+        real = getattr(*plant)
+
+        def _planted(*a, **k):      # `ask` calls `_formula` before `_consistent` does: raising there never reaches the handler
+            if plant[1] == "_formula" and sys._getframe(1).f_code.co_name != "_consistent":
+                return real(*a, **k)
+            raise ValueError("planted")
+        setattr(*plant, _planted)
     pairs = load(args.wl)
 
     q_detail, f_detail = None, None
