@@ -7,7 +7,8 @@
 //!   `randomsymbol_units`' declared `is_positive`/`is_integer`/`is_real` and `pspace.is_real`, and the class attributes
 //!   `is_Integer`, `is_Atom`, `is_number`;
 //! - `multigamma`'s value at a constant `x` (`expr.func(x, p)`, SymPy's evaluation: `outer:multigamma_value:sympy`, the
-//!   unruled callback that was `f6:multigamma_value:python`) and the value's `const_value` reads (6d's named callback);
+//!   unruled callback that was `f6:multigamma_value:python`), and its `value_units` through the name special.py bound
+//!   (knowledge_live's `rust_value_units` shell on the Rust backend, 6b's);
 //! - `term_live.scaffold` for `multigamma`'s derived slots `2*x` and `2*x - p + 1` (temporary construction, counted as
 //!   `scaffold:rebuilt:f6` there, as 6f's shells did);
 //! - a whole template on Python where the node can't be read here (`outer:python:NAME:REASON`): no query, or an `x`
@@ -200,7 +201,7 @@ fn crootof<'py>(c: &Common, expr: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyA
         at += 1;
     }
     if coeffs.is_some() {
-        c.bump("outer:realroots:root_facts");
+        c.bump("realroots:root_facts"); // realroots.rs's root_facts, as kf6 counted it
     }
     let facts = tf6::rootof_facts(coeffs.as_deref(), &at);
     let gen = units_gen(py, facts)?;
@@ -292,6 +293,10 @@ fn multigamma<'py>(c: &Common, expr: &Bound<'py, PyAny>) -> PyResult<Option<Boun
                 let caught = [b.getattr("ValueError")?, b.getattr("TypeError")?, b.getattr("ArithmeticError")?];
                 if caught.iter().any(|t| e.is_instance(py, t)) {
                     None
+                } else if e.is_instance_of::<pyo3::exceptions::PyException>(py) {
+                    // loud, as kf6's `fallback`: a KnowledgeFault (a BaseException) can't come back from engine.py:1906's
+                    // quiet handler as "unknown"
+                    return Err(c.fault(py, "outer:multigamma_value:sympy", e));
                 } else {
                     return Err(e);
                 }
@@ -315,27 +320,11 @@ fn multigamma<'py>(c: &Common, expr: &Bound<'py, PyAny>) -> PyResult<Option<Boun
 /// `special.MAX_MULTIGAMMA_P`.
 const MAX_MULTIGAMMA_P: i64 = 50;
 
-/// `atoms.value_units(value, obj)`: `units(('const', const_key(value)), gen, obj)`, `gen` reading `const_value` (6d's named
-/// callback) over `atoms._CONST_BASIS`.
+/// `value_units(v, expr)` as special.py calls it: the name special.py bound at import, which knowledge_live rebinds to its Rust
+/// `rust_value_units` (6b; `value:*` counters, the `knowledge-value-multigamma-drop` plant) and the pure-Python path leaves as
+/// atoms.py's. A module attribute read; no special.py code runs.
 fn value_units<'py>(c: &Common, value: &Bound<'py, PyAny>, obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
     let py = obj.py();
-    c.bump("outer:rust:value_units");
-    let basis: Vec<String> = py.import("satassume.knowledge.templates.atoms")?.getattr("_CONST_BASIS")?.extract()?;
-    let cv = c.const_value.clone_ref(py);
-    let val = value.clone().unbind();
-    // read only when `units` builds the pattern (a cache miss), as Python's `gen` (6d's named
-    // `const_value` callback; not counted here, as atoms.py's own gen isn't)
-    let gen = PyCFunction::new_closure(py, None, None, move |t: &Bound<'_, PyTuple>, _kw: Option<&Bound<'_, PyDict>>| -> PyResult<Py<PyAny>> {
-        let py = t.py();
-        let out = PyList::empty(py);
-        for pred in &basis {
-            let v = cv.bind(py).call1((val.bind(py), pred.as_str()))?;
-            if !v.is_none() {
-                out.append((pred.as_str(), v))?;
-            }
-        }
-        Ok(out.into_any().unbind())
-    })?;
-    let key = PyTuple::new(py, [PyString(py, "const"), c.const_key(py, value)?])?;
-    c.units(py, key.as_any(), gen.as_any(), obj)
+    c.bump("outer:value_units");
+    py.import(SPECIAL)?.getattr("value_units")?.call1((value, obj))
 }

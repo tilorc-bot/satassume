@@ -9,13 +9,15 @@ import knowledge_live as K
 from harness.state import reset_module_state
 import term_live
 from satassume import engine as E, sympy_api
-from satassume.knowledge.templates import functions, special
+from satassume.knowledge.templates import functions
 
 #: (module, function install wraps, counter, query builder). Queries are built per call, so no run reuses another's objects.
 CASES = [(functions, '_unit_interval_units', 'f6:unit_interval:float', lambda: Q.real(acos(Float('0.5'), evaluate=False))),
          (functions, '_unit_interval_units', 'f6:unit_interval:float', lambda: Q.real(asin(Float('2.0'), evaluate=False))),
-         (special, '_multigamma_value', 'f6:multigamma_value:python', lambda: Q.positive(multigamma(Integer(3), 2,
-                                                                                                    evaluate=False)))]
+         # 6i(a): multigamma's template is Rust's (outer_tpl.rs), which evaluates `expr.func(x, p)` itself; the raise is planted
+         # in SymPy's `multigamma.eval`
+         (multigamma, 'eval', 'outer:multigamma_value:sympy', lambda: Q.positive(multigamma(Integer(3), 2,
+                                                                                             evaluate=False)))]
 IDS = ['acos-float', 'asin-float-out', 'multigamma-3-2']
 
 
@@ -33,6 +35,13 @@ def env(monkeypatch):
     K.COUNTS.clear()
 
 
+def count(key):
+    """`key` in knowledge_live's COUNTS plus 6d's Common counts not yet flushed (outer_tpl.rs counts there)."""
+    import knowledge_common_live
+    c = knowledge_common_live.COMMON[0]
+    return K.COUNTS[key] + (c.counts().get(key, 0) if c is not None else 0)
+
+
 def fresh_ask(q):
     reset_module_state()                   # the engine's memos and its answer memo would answer a repeat without the template
     sympy_api.set_default_engine(E.Engine())
@@ -46,7 +55,7 @@ def test_fallback_counted(env, mod, name, key, query):
     undos.append(K.from_env())
     K.COUNTS.clear()
     assert fresh_ask(query()) is want
-    assert K.COUNTS[key] >= 1 and K.COUNTS['fault'] == 0
+    assert count(key) >= 1 and count('fault') == 0
 
 
 @pytest.mark.parametrize('mod,name,key,query', CASES, ids=IDS)
@@ -63,4 +72,4 @@ def test_fallback_raise_is_loud(env, mod, name, key, query):
     K.COUNTS.clear()
     with pytest.raises(K.KnowledgeFault, match=f'{key}: RuntimeError: planted'):
         fresh_ask(query())
-    assert K.COUNTS[key] == 1 and K.COUNTS['fault'] == 1
+    assert count(key) == 1 and count('fault') == 1

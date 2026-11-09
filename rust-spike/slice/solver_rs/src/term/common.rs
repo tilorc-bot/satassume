@@ -98,7 +98,7 @@ impl Common {
         bump(&mut self.counts.lock().unwrap(), k);
     }
 
-    fn fault(&self, py: Python<'_>, what: &str, e: PyErr) -> PyErr {
+    pub(crate) fn fault(&self, py: Python<'_>, what: &str, e: PyErr) -> PyErr {
         self.bump("fault");
         match self.fault_t.bind(py).call1((format!("{what}: {e}"),)) {
             Ok(v) => PyErr::from_value(v),
