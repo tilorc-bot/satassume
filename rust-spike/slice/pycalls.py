@@ -6,6 +6,11 @@ copies in session_live.PY_RELEVANCE included, since their code objects come from
 under its outermost function (`_relevant.<locals>.<genexpr>` under `_relevant`), and each outermost name is classed by
 PORT-INVENTORY.md's sympy_api lists: conversion, port, or unlisted. OUT gets the counts by name and class, and the
 query count from live.py's totals line.
+
+`PYCALLS_FILE=satassume/theories/lra/lra_adapter.py` (any path under the clone) counts that file instead, every name
+"unlisted" (the state step, part 1: the lra_adapter count ruling). Each call is also filed by the query it ran under, read
+from term_live's stack top as adapters.rs `top_query` reads it: `kept:<reason>` (the query runs on Python), `noquery` (no
+query on the stack) or `converted` (a Rust query): `by_state` and `by_name_state`.
 """
 import json
 import os
@@ -27,7 +32,22 @@ PORT = {
 
 def main():
     out, rest = sys.argv[1], sys.argv[2:]
-    target = os.path.realpath(os.path.join(os.path.dirname(__file__), "..", "..", "satassume", "sympy_api.py"))
+    root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
+    target = os.path.realpath(os.path.join(root, os.environ.get("PYCALLS_FILE", "satassume/sympy_api.py")))
+    tl = []
+    states = Counter()
+
+    def state():
+        if not tl:
+            m = getattr(sys.modules.get("term_live"), "_local", None)    # never imported from here
+            if m is None:
+                return "noquery"
+            tl.append(m)
+        st = getattr(tl[0], "stack", None)
+        if not st:
+            return "noquery"
+        k = st[-1].kept
+        return "converted" if k is None else "kept:" + str(k)
     mon = sys.monitoring
     tool = mon.PROFILER_ID
     mon.use_tool_id(tool, "pycalls")
@@ -40,6 +60,7 @@ def main():
             r = mine[code] = os.path.realpath(code.co_filename) == target
         if r:
             calls[code.co_qualname] += 1
+            states[(code.co_qualname.split(".")[0], state())] += 1
         else:
             return mon.DISABLE
 
@@ -57,7 +78,11 @@ def main():
     for q, n in calls.items():
         top = q.split(".")[0]
         by[top] += n
-        cls["conversion" if top in CONVERSION else "port" if top in PORT else "unlisted"] += n
+        cls["conversion" if top in CONVERSION and "PYCALLS_FILE" not in os.environ else
+            "port" if top in PORT and "PYCALLS_FILE" not in os.environ else "unlisted"] += n
+    by_state = Counter()
+    for (top, stt), n in states.items():
+        by_state[stt] += n
     queries = None
     try:
         with open(rest[2]) as f:
@@ -67,8 +92,9 @@ def main():
     except Exception:
         pass
     json.dump({"argv": rest, "queries": queries, "by_class": cls, "by_name": dict(by.most_common()),
+               "by_state": dict(by_state), "by_name_state": {f"{a} {b}": n for (a, b), n in states.most_common()},
                "by_qualname": dict(calls.most_common())}, open(out, "w"), indent=1)
-    print(json.dumps({"queries": queries, "by_class": cls}))
+    print(json.dumps({"queries": queries, "by_class": cls, "by_state": by_state}))
 
 
 if __name__ == "__main__":
