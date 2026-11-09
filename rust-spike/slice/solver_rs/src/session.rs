@@ -79,7 +79,9 @@ const NAMES: [&str; 423] = [
     // state step, part 2 (iii): `glue_objects` of a relation atom other than a two-sided `eq`, natively (budget.rs's cone kids)
     "gl:plain",
     // 345-419 reserved (state part 2's numbering runs to 369; 6i(a)'s 370-419 are Common counts)
-    "reserved:345", "reserved:346", "reserved:347", "reserved:348", "reserved:349", "reserved:350", "reserved:351", "reserved:352", "reserved:353", "reserved:354", "reserved:355", "reserved:356", "reserved:357", "reserved:358", "reserved:359", "reserved:360", "reserved:361", "reserved:362", "reserved:363", "reserved:364", "reserved:365", "reserved:366", "reserved:367", "reserved:368", "reserved:369", "reserved:370", "reserved:371", "reserved:372", "reserved:373", "reserved:374", "reserved:375", "reserved:376", "reserved:377", "reserved:378", "reserved:379", "reserved:380", "reserved:381", "reserved:382", "reserved:383", "reserved:384", "reserved:385", "reserved:386", "reserved:387", "reserved:388", "reserved:389", "reserved:390", "reserved:391", "reserved:392", "reserved:393", "reserved:394", "reserved:395", "reserved:396", "reserved:397", "reserved:398", "reserved:399", "reserved:400", "reserved:401", "reserved:402", "reserved:403", "reserved:404", "reserved:405", "reserved:406", "reserved:407", "reserved:408", "reserved:409", "reserved:410", "reserved:411", "reserved:412", "reserved:413", "reserved:414", "reserved:415", "reserved:416", "reserved:417", "reserved:418", "reserved:419",
+    "reserved:345", "reserved:346",
+    // state step, part 2 (iii)(b): Relations' scalar cursors held in the core (`_xtcur`.. `_xsides_n`)
+    "rc:core", "rc:view", "rc:record", "reserved:350", "reserved:351", "reserved:352", "reserved:353", "reserved:354", "reserved:355", "reserved:356", "reserved:357", "reserved:358", "reserved:359", "reserved:360", "reserved:361", "reserved:362", "reserved:363", "reserved:364", "reserved:365", "reserved:366", "reserved:367", "reserved:368", "reserved:369", "reserved:370", "reserved:371", "reserved:372", "reserved:373", "reserved:374", "reserved:375", "reserved:376", "reserved:377", "reserved:378", "reserved:379", "reserved:380", "reserved:381", "reserved:382", "reserved:383", "reserved:384", "reserved:385", "reserved:386", "reserved:387", "reserved:388", "reserved:389", "reserved:390", "reserved:391", "reserved:392", "reserved:393", "reserved:394", "reserved:395", "reserved:396", "reserved:397", "reserved:398", "reserved:399", "reserved:400", "reserved:401", "reserved:402", "reserved:403", "reserved:404", "reserved:405", "reserved:406", "reserved:407", "reserved:408", "reserved:409", "reserved:410", "reserved:411", "reserved:412", "reserved:413", "reserved:414", "reserved:415", "reserved:416", "reserved:417", "reserved:418", "reserved:419",
     // S2 (block.rs rule_tables): the engine's block from the generated tables, another block built in Rust, a failed check
     "rb:generated", "rb:built", "rb:check_error",
 ];
@@ -466,6 +468,9 @@ pub(crate) const XF_SESSION_VIEW: usize = 341;
 pub(crate) const XF_REL_VIEW: usize = 342;
 pub(crate) const XF_RECORD: usize = 343;
 pub(crate) const GL_PLAIN: usize = 344;
+pub(crate) const RC_CORE: usize = 347;
+pub(crate) const RC_VIEW: usize = 348;
+pub(crate) const RC_RECORD: usize = 349;
 pub(crate) const RB_GENERATED: usize = 420;
 pub(crate) const RB_BUILT: usize = 421;
 pub(crate) const RB_CHECK_ERROR: usize = 422;
@@ -621,6 +626,8 @@ pub struct SessionCore {
     session_xfer: RefCell<Option<Py<PyAny>>>,
     /// ... each `Relations`' `xfer`, `xfer_sel` and `_xadapter` (four independent attributes on Python, so independent here).
     xfer: RefCell<Vec<RelX>>,
+    /// State step, part 2 (iii)(b): each `Relations`' scalar cursors (`RC_NAMES`), Rust-native.
+    relc: RefCell<Vec<RelC>>,
 }
 
 /// `s.table.core`.
@@ -639,6 +646,23 @@ pub(crate) struct RelX {
     rel: Py<PyAny>,
     f: [Option<Py<PyAny>>; 3],
 }
+
+/// State step, part 2 (iii)(b): one `Relations`' scalar cursors, by index into `RC_NAMES`.
+pub(crate) struct RelC {
+    rel: Py<PyAny>,
+    c: [i64; 7],
+}
+
+/// The cursors, as Python named them; `RC_INIT` is `Relations.__init__`'s values.
+pub(crate) const RC_NAMES: [&str; 7] = ["_xtcur", "_xhn", "_xhseen", "_xslot", "_xterm", "_xnsides", "_xsides_n"];
+pub(crate) const RC_INIT: [i64; 7] = [0, 0, -1, 1, 0, -1, 0];
+pub(crate) const XTCUR: usize = 0;
+pub(crate) const XHN: usize = 1;
+pub(crate) const XHSEEN: usize = 2;
+pub(crate) const XSLOT: usize = 3;
+pub(crate) const XTERM: usize = 4;
+pub(crate) const XNSIDES: usize = 5;
+pub(crate) const XSIDES_N: usize = 6;
 
 /// `rel.xfer` (the transfer theory), `rel.xfer_sel`, `rel._xadapter`.
 pub(crate) const XTH: usize = 0;
@@ -673,6 +697,42 @@ impl SessionCore {
                 let mut f = [None, None, None];
                 f[k] = v;
                 xs.push(RelX { rel: rel.clone().unbind(), f });
+            }
+        }
+    }
+
+    /// State step, part 2 (iii)(b): `Relations.__init__`'s cursor writes (rel_init, or the record method for Python's own).
+    pub(crate) fn relc_init(&self, rel: &Bound<'_, PyAny>) {
+        tick(RC_CORE);
+        let mut v = self.relc.borrow_mut();
+        match v.iter_mut().find(|x| x.rel.is(rel)) {
+            Some(x) => x.c = RC_INIT,
+            None => v.push(RelC { rel: rel.clone().unbind(), c: RC_INIT }),
+        }
+    }
+
+    /// Cursor `k` of `rel`; `RC_INIT`'s value for a `Relations` the core hasn't seen.
+    pub(crate) fn relc_get(&self, rel: &Bound<'_, PyAny>, k: usize) -> i64 {
+        tick(RC_CORE);
+        let v = self.relc.borrow();
+        v.iter().find(|x| x.rel.is(rel)).map_or(RC_INIT[k], |x| x.c[k])
+    }
+
+    /// Cursor `k` of `rel` = `val`.
+    pub(crate) fn relc_put(&self, rel: &Bound<'_, PyAny>, k: usize, val: i64) {
+        tick(RC_CORE);
+        if (k == XTERM && crate::relations_core::planted(crate::relations_core::RC_XTERM_STALE))
+            || (k == XHSEEN && crate::relations_core::planted(crate::relations_core::RC_HSEEN_STALE))
+        {
+            return;
+        }
+        let mut v = self.relc.borrow_mut();
+        match v.iter_mut().find(|x| x.rel.is(rel)) {
+            Some(x) => x.c[k] = val,
+            None => {
+                let mut c = RC_INIT;
+                c[k] = val;
+                v.push(RelC { rel: rel.clone().unbind(), c });
             }
         }
     }
@@ -1314,6 +1374,7 @@ impl SessionCore {
             solver: RefCell::new(None),
             session_xfer: RefCell::new(None),
             xfer: RefCell::new(vec![]),
+            relc: RefCell::new(vec![]),
         })
     }
 
@@ -1361,6 +1422,39 @@ impl SessionCore {
         Ok(())
     }
 
+    /// State step, part 2 (iii)(b): the views `Relations._xtcur` .. `_xsides_n` (index into `RC_NAMES`).
+    fn relc_field(&self, rel: &Bound<'_, PyAny>, k: usize) -> PyResult<i64> {
+        tick(RC_VIEW);
+        if k >= RC_NAMES.len() {
+            return Err(PyValueError::new_err("no such cursor"));
+        }
+        Ok(self.relc_get(rel, k))
+    }
+
+    /// The record method for `rel._xtcur` .. `_xsides_n = v`: Python's own `__init__` and methods (SLICE_REL=py over this
+    /// core), and tests that set one to drive a method. `k = None` is `__init__`'s seven writes at once.
+    #[pyo3(signature = (rel, k, v))]
+    fn set_relc_field(&self, rel: &Bound<'_, PyAny>, k: Option<usize>, v: i64) -> PyResult<()> {
+        tick(RC_RECORD);
+        match k {
+            None => self.relc_init(rel),
+            Some(k) if k < RC_NAMES.len() => self.relc_put(rel, k, v),
+            Some(_) => return Err(PyValueError::new_err("no such cursor")),
+        }
+        Ok(())
+    }
+
+    /// Test-only snapshot export: every `Relations`' cursors the core holds, as (rel, {name: value}), in first-seen order.
+    fn relc_snapshot<'py>(&self, p: Python<'py>) -> PyResult<Vec<(Bound<'py, PyAny>, Bound<'py, PyDict>)>> {
+        self.relc.borrow().iter().map(|x| {
+            let d = PyDict::new(p);
+            for (n, v) in RC_NAMES.iter().zip(x.c) {
+                d.set_item(n, v)?;
+            }
+            Ok((x.rel.bind(p).clone(), d))
+        }).collect()
+    }
+
     /// The solver and the transfer records reach back to the shell through the theories.
     fn __traverse__(&self, visit: pyo3::PyVisit<'_>) -> Result<(), pyo3::PyTraverseError> {
         if crate::relations_core::planted(crate::relations_core::XF_TRAVERSE_SKIP) {
@@ -1384,6 +1478,11 @@ impl SessionCore {
                 }
             }
         }
+        if let Ok(v) = self.relc.try_borrow() {
+            for x in v.iter() {
+                visit.call(&x.rel)?;
+            }
+        }
         Ok(())
     }
 
@@ -1395,6 +1494,9 @@ impl SessionCore {
             *x = None;
         }
         if let Ok(mut v) = self.xfer.try_borrow_mut() {
+            v.clear();
+        }
+        if let Ok(mut v) = self.relc.try_borrow_mut() {
             v.clear();
         }
     }

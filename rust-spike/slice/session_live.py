@@ -226,6 +226,29 @@ def _rel_xview(name, k):
 _REL_XVIEWS = {'xfer': 0, 'xfer_sel': 1, '_xadapter': 2}
 
 
+def _rel_cview(name, k):
+    """State step, part 2 (iii)(b): `Relations._xtcur` .. `_xsides_n`, read-only views of the core's cursor record
+    (session.rs `relc`, `RC_NAMES`). Writes go through the core's record method (Python's own `__init__` and methods under
+    SLICE_REL=py, tests that set a cursor to drive a method). A `Relations` over a session with no core keeps Python's own."""
+    def get(self):
+        d = self.__dict__
+        if name in d:
+            return d[name]
+        return self.session.table.core.relc_field(self, k)
+
+    def put(self, v):
+        t = self.session.table
+        if isinstance(t, TableView):
+            t.core.set_relc_field(self, k, v)
+        else:
+            self.__dict__[name] = v
+    return property(get, put)
+
+
+#: The cursor views, by attribute (the order of session.rs `RC_NAMES`).
+_REL_CVIEWS = {n: k for k, n in enumerate(('_xtcur', '_xhn', '_xhseen', '_xslot', '_xterm', '_xnsides', '_xsides_n'))}
+
+
 def _node(self, node, demanded=None):
     c = self.table.core
     b = c.base_get(node)
@@ -890,7 +913,9 @@ _REL_STATE_PLANTS = ('ad-lra-not-expr',
                      # (ii) (session.rs SessionCore.solver/xfer, 257-262)
                      'xf-session-none', 'xf-sel-none', 'xf-rel-any', 'xf-solver-fresh', 'xf-rel-view-none', 'xf-traverse-skip',
                      # (iii) (relations_core.rs glue_objects_plain, 263)
-                     'gl-plain-no-link')
+                     'gl-plain-no-link',
+                     # (iii)(b) (session.rs SessionCore.relc, 266-267)
+                     'rc-xterm-stale', 'rc-hseen-stale')
 #: S2 (block.rs rule_tables, relations_core.rs 320-323): see test_rule_tables.py
 _RULE_BLOCK_PLANTS = ('rb-gen-model-flip', 'rb-built-model-drop', 'rb-gen-any', 'rb-check-skip')
 
@@ -1180,9 +1205,11 @@ def install():
     S.xfer = property(_xfer_get, _xfer_set)
     from satassume import relations
     R = relations.Relations
-    saved_v = {n: R.__dict__.get(n) for n in _REL_XVIEWS}
+    saved_v = {n: R.__dict__.get(n) for n in (*_REL_XVIEWS, *_REL_CVIEWS)}
     for n, k in _REL_XVIEWS.items():
         setattr(R, n, _rel_xview(n, k))
+    for n, k in _REL_CVIEWS.items():
+        setattr(R, n, _rel_cview(n, k))
     S.node, S.var, S.dvar, S._dvar = _node, _var, _dvar_public, _dvar_raw
     engine.VarTable, engine.compile_formula, engine.formula_literal = TableView, _compile_formula, _formula_literal
     undo_rel = _install_relations() if os.environ.get('SLICE_REL', 'rust') == 'rust' else None

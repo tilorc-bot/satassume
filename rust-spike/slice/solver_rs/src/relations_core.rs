@@ -393,6 +393,10 @@ pub(crate) const XF_REL_VIEW_NONE: u16 = 261;
 pub(crate) const XF_TRAVERSE_SKIP: u16 = 262;
 /// State step part 2 (iii): `glue_objects_plain` leaves out `link_objects` of the sides (each side itself stays).
 pub(crate) const GL_PLAIN_NO_LINK: u16 = 263;
+/// State step part 2 (iii)(b) (session.rs `SessionCore.relc`): `_xterm`'s write is dropped, so transfer_terms walks every side again.
+pub(crate) const RC_XTERM_STALE: u16 = 266;
+/// ... `_xhseen`'s write is dropped, so sync_transfer never takes its early return.
+pub(crate) const RC_HSEEN_STALE: u16 = 267;
 /// S2 (block.rs): a non-model in the generated table; another block's built models short by one; the generated table for
 /// any block with nvars = NPRED; the clean-clause check skipped.
 pub(crate) const RB_GEN_MODEL_FLIP: u16 = 320;
@@ -637,6 +641,8 @@ fn rel_plant(name: Option<&str>) -> PyResult<()> {
         Some("xf-rel-view-none") => XF_REL_VIEW_NONE,
         Some("xf-traverse-skip") => XF_TRAVERSE_SKIP,
         Some("gl-plain-no-link") => GL_PLAIN_NO_LINK,
+        Some("rc-xterm-stale") => RC_XTERM_STALE,
+        Some("rc-hseen-stale") => RC_HSEEN_STALE,
         Some("rb-gen-model-flip") => RB_GEN_MODEL_FLIP,
         Some("rb-built-model-drop") => RB_BUILT_MODEL_DROP,
         Some("rb-gen-any") => RB_GEN_ANY,
@@ -1718,10 +1724,10 @@ impl<'py> Cx<'_, 'py> {
         let mut visited = false;
         let sides = rel.getattr(intern!(p, "_xside"))?;
         let n = sides.len()?;
-        let from: usize = rel.getattr(intern!(p, "_xterm"))?.extract()?;
+        let from = self.c.relc_get(rel, session::XTERM) as usize;
         if from < n {
             let new = sides.try_iter()?.skip(from).take(n - from).collect::<PyResult<Vec<_>>>()?;
-            rel.setattr(intern!(p, "_xterm"), n)?;
+            self.c.relc_put(rel, session::XTERM, n as i64);
             for e in &new {
                 if e.is_instance(&rational)? {
                     let t = ad.call_method1(intern!(p, "term_of"), (e,))?;
@@ -1740,11 +1746,11 @@ impl<'py> Cx<'_, 'py> {
                 }
             }
         }
-        let new = ad.call_method1(intern!(p, "terms_since"), (rel.getattr(intern!(p, "_xtcur"))?,))?;
+        let new = ad.call_method1(intern!(p, "terms_since"), (self.c.relc_get(rel, session::XTCUR),))?;
         let extra = rel.getattr(intern!(p, "_xextra"))?;
         if new.is_truthy()? || extra.is_truthy()? {
-            let cur: usize = rel.getattr(intern!(p, "_xtcur"))?.extract()?;
-            rel.setattr(intern!(p, "_xtcur"), cur + new.len()?)?;
+            let cur = self.c.relc_get(rel, session::XTCUR);
+            self.c.relc_put(rel, session::XTCUR, cur + new.len()? as i64);
             if extra.is_truthy()? {
                 new.call_method1(intern!(p, "extend"), (&extra,))?;
                 extra.call_method0(intern!(p, "clear"))?;
@@ -1768,8 +1774,8 @@ impl<'py> Cx<'_, 'py> {
                 }
             }
             if !grown.is_empty() {
-                let hn: i64 = rel.getattr(intern!(p, "_xhn"))?.extract()?;
-                rel.setattr(intern!(p, "_xhn"), hn + 1)?;
+                let hn = self.c.relc_get(rel, session::XHN);
+                self.c.relc_put(rel, session::XHN, hn + 1);
                 for k in grown.as_any().try_iter()? {
                     for e in heads.as_any().get_item(k?)?.try_iter()? {
                         let e = e?;
@@ -1810,10 +1816,11 @@ impl<'py> Cx<'_, 'py> {
         let p = self.rel.py();
         let rel = self.rel;
         tick(session::REL_SYNC_TRANSFER);
-        let mut i: usize = rel.getattr(intern!(p, "_xslot"))?.extract()?;
+        let mut i = self.c.relc_get(rel, session::XSLOT).max(0) as usize;
         let n = self.c.n_slots_direct();
-        let nside = rel.getattr(intern!(p, "_xsides_n"))?;
-        if i >= n && nside.eq(rel.getattr(intern!(p, "_xnsides"))?)? && rel.getattr(intern!(p, "_xhn"))?.eq(rel.getattr(intern!(p, "_xhseen"))?)? {
+        let nside = self.c.relc_get(rel, session::XSIDES_N);
+        let hn = self.c.relc_get(rel, session::XHN);
+        if i >= n && nside == self.c.relc_get(rel, session::XNSIDES) && hn == self.c.relc_get(rel, session::XHSEEN) {
             return Ok(());
         }
         let r = self.h.relations.bind(p);
@@ -1831,9 +1838,9 @@ impl<'py> Cx<'_, 'py> {
                 i += 1;
             }
         }
-        rel.setattr(intern!(p, "_xslot"), n)?;
-        rel.setattr(intern!(p, "_xnsides"), &nside)?;
-        rel.setattr(intern!(p, "_xhseen"), rel.getattr(intern!(p, "_xhn"))?)?;
+        self.c.relc_put(rel, session::XSLOT, n as i64);
+        self.c.relc_put(rel, session::XNSIDES, nside);
+        self.c.relc_put(rel, session::XHSEEN, hn);
         let cand = rel.getattr(intern!(p, "_xcand"))?;
         let part = rel.getattr(intern!(p, "_xpart"))?;
         let xside = self.dict(intern!(p, "_xside"))?;
@@ -2076,16 +2083,19 @@ fn rel_init<'py>(rel: &Bound<'py, PyAny>, session: &Bound<'py, PyAny>, specs: &B
     set("_tv", PyDict::new(p).into_any())?;
     set("_tsrc", PyDict::new(p).into_any())?;
     set("_xpairs", PySet::empty(p)?.into_any())?;
-    set("_xtcur", 0i32.into_pyobject(p)?.into_any())?;
-    set("_xhn", 0i32.into_pyobject(p)?.into_any())?;
-    set("_xhseen", (-1i32).into_pyobject(p)?.into_any())?;
     set("_aux_eq", PySet::empty(p)?.into_any())?;
     set("_link_eq", PySet::empty(p)?.into_any())?;
     set("_xside", PyDict::new(p).into_any())?;
-    set("_xslot", 1i32.into_pyobject(p)?.into_any())?;
-    set("_xterm", 0i32.into_pyobject(p)?.into_any())?;
-    set("_xnsides", (-1i32).into_pyobject(p)?.into_any())?;
-    set("_xsides_n", 0i32.into_pyobject(p)?.into_any())?;
+    // state step, part 2 (iii)(b): the scalar cursors are the core's (session.rs `relc`); a session with no core keeps
+    // Python's attributes
+    match session::core_of(session) {
+        Ok(c) => c.borrow().relc_init(rel),
+        Err(_) => {
+            for (n, v) in session::RC_NAMES.iter().zip(session::RC_INIT) {
+                set(n, v.into_pyobject(p)?.into_any())?;
+            }
+        }
+    }
     set("_xpart", PySet::empty(p)?.into_any())?;
     set("_xheads", PyDict::new(p).into_any())?;
     set("_xcounted", PySet::empty(p)?.into_any())?;
@@ -2411,8 +2421,17 @@ fn rel_note_sides<'py>(rel: &Bound<'py, PyAny>, atom: &Bound<'py, PyAny>, level:
                 continue;
             }
             xs.set_item(&e, lv)?;
-            let k = intern!(p, "_xsides_n");
-            rel.setattr(k, rel.getattr(k)?.add(1)?)?;
+            match session::core_of(&rel.getattr(intern!(p, "session"))?) {
+                Ok(c) => {
+                    let c = c.borrow();
+                    let k = c.relc_get(rel, session::XSIDES_N);
+                    c.relc_put(rel, session::XSIDES_N, k + 1);
+                }
+                Err(_) => {
+                    let k = intern!(p, "_xsides_n");
+                    rel.setattr(k, rel.getattr(k)?.add(1)?)?;
+                }
+            }
         }
     }
     Ok(())
