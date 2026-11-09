@@ -13,6 +13,8 @@ Runs WL once (MODE py: Python's backend; MODE rust: installed as `live.py WL rus
   `em_view_bad`, the maps whose view differs from `sa_solver.em_snapshot` (test-only).
 - step 5c10a: the fact caches' stores (`cache.store`, `custom_cache.store`) join `em_sizes`, `em_content` and `em_order` (each
   node's facts in their insertion order), and on Rust `fc_view_bad`, the caches whose view differs from `sa_solver.fc_snapshot`.
+- step 5c10d: `stats`, the default engine's `list(stats.items())` and `last_budget_limited` after the pass (Rust-owned on
+  Rust), and on Rust `st_view_bad`, whether the view differs from `sa_solver.st_snapshot` (test-only).
 `memo_check.py --cmp PY.json RUST.json` prints MATCH or each difference, and exits 1 on any.
 """
 import hashlib
@@ -130,7 +132,7 @@ def main():
     if sys.argv[1] == "--cmp":
         a, b = (json.load(open(f)) for f in sys.argv[2:4])
         bad = []
-        for k in ("answers", "digest", "rerun_same", "em_sizes", "em_content") + (
+        for k in ("answers", "digest", "rerun_same", "em_sizes", "em_content", "stats") + (
                 ("em_order",) if a.get("hash_seed") is not None and a.get("hash_seed") == b.get("hash_seed") else ()):
             if a.get(k) != b.get(k):
                 bad.append(f"{k}: {a.get(k)} != {b.get(k)}")
@@ -145,6 +147,8 @@ def main():
                 bad.append(f"{f}: view != snapshot: {d['native']} vs {d['snapshot']}")
             if d.get("fc_view_bad"):
                 bad.append(f"{f}: fact cache view != store: {d['fc_view_bad']}")
+            if d.get("st_view_bad"):
+                bad.append(f"{f}: stats view != EngineStats: {d['st_view_bad']}")
             if d.get("em_view_bad"):
                 bad.append(f"{f}: engine memo view != map: {d['em_view_bad']}")
             if d.get("cleared"):
@@ -188,6 +192,11 @@ def main():
     r["em_content"] = {n: _h(sorted(v)) for n, v in em}
     r["em_order"] = {n: _h(v) for n, v in em}
     r["hash_seed"] = os.environ.get("PYTHONHASHSEED")
+    r["stats"] = [list(eng.stats.items()), eng.last_budget_limited]
+    if mode == "rust" and hasattr(__import__("sa_solver"), "st_snapshot"):
+        snap = __import__("sa_solver").st_snapshot(eng)
+        r["st_view_bad"] = [] if snap is not None and list(snap[0].items()) == r["stats"][0] and snap[1] == r["stats"][1] \
+            else [repr(snap)[:300]]
     if mode == "rust" and hasattr(__import__("sa_solver"), "em_snapshot") and type(eng.splits).__name__ == "EngineMemo":
         r["em_view_bad"] = engmemo_view_ok(eng)
     if mode == "rust" and hasattr(__import__("sa_solver"), "fc_snapshot"):
@@ -211,7 +220,7 @@ def main():
     r["cleared"] = left
     if mode == "rust":      # step 5c10a: the fact caches' counters, the plant's firings, the refusals `_Mark` rolled back
         c = session_live.counts()
-        r["counts"] = {k: v for k, v in c.items() if v and k.startswith(("fc:", "em:", "bud:"))}
+        r["counts"] = {k: v for k, v in c.items() if v and k.startswith(("fc:", "em:", "bud:", "ent:", "st:"))}
         r["fired"] = c.get("rel:plant_fired", 0)
         r["refused"] = term_live.COUNTS["refused"]
     r["rerun_same"] = run(pairs[:200]) == ans[:200]

@@ -441,6 +441,10 @@ def main():
                 r, msg = "raise " + type(e).__name__, str(e)
             answers[key] = r
             rec = dict(q=key, ans=r, msg=ADDR.sub("0xX", msg))
+            # step 5c10d: the default engine's read-only stats view and last_budget_limited after each query
+            # (Rust-owned on Rust), compared by livecmp.py (stats_diff)
+            eng = sympy_api.default_engine()
+            rec["eng"] = [list(eng.stats.items()), eng.last_budget_limited]
             caught = catch_count.take()
             if caught:
                 rec["caught"] = caught

@@ -22,7 +22,7 @@ def main():
     first = {}
     end_only = "--end-only" in sys.argv
     n = dict(queries_a=len(a), queries_b=len(b), both=0, answer_diff=0, msg_diff=0, session_count_diff=0, sessions=0,
-             end_diff=0, stream_diff=0, lra_diff=0, group_counts={})
+             end_diff=0, stream_diff=0, lra_diff=0, stats_diff=0, group_counts={})
     for q in sorted(set(a) & set(b)):
         x, y = a[q], b[q]
         n["both"] += 1
@@ -32,6 +32,10 @@ def main():
         if x["msg"] != y["msg"]:
             n["msg_diff"] += 1
             first.setdefault("msg", (q, x["msg"][:200], y["msg"][:200]))
+        # step 5c10d: the engine's stats view and last_budget_limited after the query (absent in older rows)
+        if x.get("eng") != y.get("eng"):
+            n["stats_diff"] += 1
+            first.setdefault("stats", (q, x.get("eng"), y.get("eng")))
         sx, sy = x.get("sessions", []), y.get("sessions", [])
         if len(sx) != len(sy):
             n["session_count_diff"] += 1

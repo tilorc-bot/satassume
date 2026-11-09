@@ -30,7 +30,8 @@ PLANTS = ('ent-is-no-hit-count', 'ent-is-many-queries-short', 'ent-decide-no-esc
           'ent-settings-no-clear', 'ent-drop-memos-keep-answers', 'ent-fresh-no-count', 'st-cache-hit-drop',
           'st-relevant-drop', 'st-consistency-drop', 'st-scope-miss-double', 'st-clear-flag-skip', 'st-keep-flag-drop',
           'st-view-order', 'st-flag-view-stale', 'note-budget-count', 'over-budget-no-flag')
-#: plants this file doesn't reach or doesn't move, with where they're caught (filled from the runs; see port-5c10d.md)
+#: plants this file doesn't reach or doesn't move, with where they're caught (none since `split`, `custom`, `gave_up`,
+#: `shared` and `flag` were added; see port-5c10d.md)
 ELSEWHERE = {}
 
 
@@ -100,6 +101,41 @@ def _main(mode):
     out += run(e, [(Q.nonnegative(z ** 2), Q.real(z)), (Q.positive(x + 1), True)])
     out.append(state(e) + [len(e.answers), len(e.cache.store)])
     cases['epoch'] = out
+
+    # a split set (`_consistent` per part, and the whole set's verdict under a relation): consistency_checks
+    w = Symbol('w')
+    e = Engine()
+    cases['split'] = run(e, [(Q.positive(z), Q.positive(z) & Q.negative(w)),
+                             (Q.real(w), Q.positive(z) & Q.negative(w) & Q.gt(z, w)),
+                             (Q.positive(z + 1), Q.positive(z) & Q.real(w))])
+    # a custom predicate (`_is_custom`, custom_cache hits), as test_extensibility's first test
+    from satassume import DictCache, Extensions, P
+    from sympy import Function, sqrt
+    ext = Extensions()
+
+    @ext.register('mine', str)
+    def _(node):
+        return True if node == 'x' else None
+    e = Engine(templates=lambda n: [], cache=DictCache(), extensions=ext)
+    cases['custom'] = [[repr(e.is_(n, 'mine'))] + state(e) for n in ('x', 'y', 'x', 'y')]
+    # a contextual query whose LRA gives up (theory_gave_up), as test_lra_constant_coefficients' hidden equality
+    f = Function('f')
+    a = Q.eq(z, (1 + sqrt(2)) ** 2) & Q.eq(z, 3 + 2 * sqrt(2)) & Q.positive(f(3 + 2 * sqrt(2)))
+    e = Engine(cache=DictCache())
+    cases['gave_up'] = run(e, [(Q.positive(f((1 + sqrt(2)) ** 2)), a), (Q.real(z), a)])
+    # one DictCache shared by two engines with different settings (`_check_version`'s sync empties it)
+    c = DictCache()
+    e1, e2 = Engine(cache=c), Engine(cache=c, transfer=False)
+    cases['shared'] = [[repr(e.is_(x + y, 'positive')), repr(e.is_(x, 'real')), len(c.store)] + state(e)
+                       for e in (e1, e2, e1, e2)]
+    # `Engine.ask` called directly: over the budget, then a non-commutative atom (the early return before
+    # `_note_budget`; sympy_api clears the flag itself, so only a direct call shows `ask`'s own clear)
+    from satassume.sympy_api import _formula
+    e = Engine()
+    e.discovery_budget = 1
+    out = [[repr(e.ask(_formula(Q.positive(x * y + z ** 2 + 1), False, True)))] + state(e)]
+    out += [[repr(e.ask(P(p, A_)))] + state(e) for p in ('positive', 'real')]
+    cases['flag'] = out
 
     e = Engine()
     rnd = random.Random(5)
