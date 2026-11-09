@@ -950,7 +950,10 @@ def _install(keys, terms):
     if keys:
         relations._key = _key_consumer('relations._key', py_key)
         lra_adapter.default_sort_key = _key_consumer('lra_adapter', py_sort)
-    py_atom, py_wise, py_links = relations.relation_atom, relations._termwise, relations.Relations._eq_links
+    # relations.relation_atom dispatches through RELATION_ATOM_IMPL at call time (planner, 9 Nov, Q1), so a name imported before
+    # this install reaches the wrapper too; the module attribute is still replaced, for `__wrapped__`.
+    py_disp, py_atom = relations.relation_atom, relations._relation_atom_py
+    py_wise, py_links = relations._termwise, relations.Relations._eq_links
     py_glue = relations.glue_objects
     py_ext, py_num, py_affine = relations._ext_atoms, relations._is_number, scope.affine_pair
     py_linked, py_under, py_twin = scope.linked_terms, relations._under_apps, relations.zero_twin
@@ -958,7 +961,7 @@ def _install(keys, terms):
     if terms:
         relations._key = _key_match('relations._key', py_key)
         lra_adapter.default_sort_key = _key_match('lra_adapter', py_sort)
-        relations.relation_atom = sympy_api.relation_atom = _relation_atom(py_atom)
+        relations.relation_atom = sympy_api.relation_atom = relations.RELATION_ATOM_IMPL[0] = _relation_atom(py_atom)
         relations._termwise = _termwise(py_wise)
         relations.Relations._eq_links = _eq_links(py_links)
         relations.glue_objects = engine.glue_objects = _glue_objects(py_glue)
@@ -976,7 +979,8 @@ def _install(keys, terms):
         sympy_api._ask = py_ask
         engine.DictCache.put = _put
         relations._key, lra_adapter.default_sort_key = py_key, py_sort
-        relations.relation_atom = sympy_api.relation_atom = py_atom
+        relations.relation_atom = sympy_api.relation_atom = py_disp
+        relations.RELATION_ATOM_IMPL[0] = None
         relations._termwise = py_wise
         relations.Relations._eq_links = py_links
         relations.glue_objects = engine.glue_objects = py_glue

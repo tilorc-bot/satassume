@@ -508,8 +508,23 @@ def _affine_strip(lhs, rhs):
         return lhs, rhs
 
 
+# A backend's ``install()`` puts its ``relation_atom`` here.  The public
+# function reads the slot at call time, so a name imported before the
+# install (``from satassume.relations import relation_atom``) still reaches
+# it.  ``None``: Python's own, ``_relation_atom_py``.
+RELATION_ATOM_IMPL = [None]
+
+
 def relation_atom(name: str, lhs, rhs):
     """The formula for relation ``name`` (``eq ne lt le gt ge``)."""
+    impl = RELATION_ATOM_IMPL[0]
+    if impl is not None:
+        return impl(name, lhs, rhs)
+    return _relation_atom_py(name, lhs, rhs)
+
+
+def _relation_atom_py(name: str, lhs, rhs):
+    """Python's ``relation_atom``."""
     if name in ("eq", "ne"):
         from sympy import S
         if not (_is_number(lhs) or _is_number(rhs)):

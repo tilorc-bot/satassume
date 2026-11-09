@@ -209,6 +209,34 @@ def test_an_unknown_term_stays_on_python_for_that_call(live, monkeypatch):
     assert c['term:py:relation_atom'] == 1 and c['term:unknown:relation_atom:Symbol'] == 1
 
 
+def test_a_name_imported_before_install_dispatches(monkeypatch):
+    """Planner, 9 Nov (Q1): `relation_atom` reads its slot at call time, so a name taken by `from satassume.relations import
+    relation_atom` before `install()` (as scope_wl.py's extension does) reaches the installed one."""
+    from satassume.relations import _relation_atom_py, relation_atom as early      # imported first
+    undo = term_live.install(terms=True)                                             # installed after
+    clear()
+    fresh()
+    try:
+        for name in ('eq', 'lt'):
+            seen = inside_the_run(monkeypatch, lambda: (term_live.COUNTS['relation_atom:' + name],
+                                                        early(name, x + 1, y + 1), term_live.COUNTS['relation_atom:' + name]))
+            A.ask(Q.eq(x + 1, y + 1), Q.positive(x))
+            before, atom, after = seen[0]
+            assert after == before + 1, (name, before, after)
+            assert atom == _relation_atom_py(name, x + 1, y + 1)
+            fresh()
+    finally:
+        undo()
+        fresh()
+
+
+def test_relation_atom_slot_is_empty_after_undo():
+    undo = term_live.install(terms=True)
+    assert R.RELATION_ATOM_IMPL[0] is not None
+    undo()
+    assert R.RELATION_ATOM_IMPL[0] is None or term_live.installed()
+
+
 def test_an_exception_in_the_layer_is_a_fault_not_quiet(live, monkeypatch):
     def boom(*a):
         raise RuntimeError('planted')
