@@ -592,3 +592,136 @@ the boundary rescore and suite column; the final drop score and its lost rows; t
 the native path; timing. The rows plants on the suite. **Speed not measured.** Mutants 2, 5, 6, 7, 9 still rest on the
 API fuzzer alone; 10 of the 25 boundary mutants have no real-engine catch, and the boundary suite column wasn't run. The
 `_n_conflicts` view in rust_plugin.py is a test-plugin shim (64 tests). No evaluator asked for.
+
+
+## 6g(c6): `_pi_trig` and the plain `_unary` as rows_tpl.rs families, `pi_split` direct (issue 323)
+
+Built by sa-port-190 (64df0db/82c833f), rebased and barred by sa-port-191, landed by sa-port-194.
+
+**Tested source: 7890bf3** = rust-slice b384ec1 (5c10c) + 1f0d3bc (c6 source, was 64df0db) + 7890bf3 (results/ only:
+the predecessor's handoff). Rebase of 82c833f onto b384ec1 clean. **Landed** by `PUSH=1 bar.sh land 7890bf3` with this
+report (results/ only on top); incoming diff at landing: none (origin/rust-slice was still b384ec1, the tested base; the landing source differs from 7890bf3 only in results/).
+
+Incoming diff at the rebase (eac4537..b384ec1, 5c10c): engmemo.rs, relations_core.rs, session.rs, test_cones_core.py,
+budget.rs, compile_loop.rs, session_live.py and memo_check.py (649 insertions, 35 deletions in guarded source). The bar ran on the rebased source, so it covers them.
+
+Orion checks on 7890bf3 before the bar: build OK; the bar's TESTS list plus 5c10c's test_cones_core.py, `-n 4`: **759
+passed, 3 skipped** (`~/sa-rust-ids-work/sa-port-191/tests.txt`; 749 + test_cones_core's 10 = 759). plantshape
+(`plantshape.txt`): rows-pi-split-shift, rows-pi-trig-flip and rows-unary-key-none each pass plain and FAIL planted
+(shadow mismatch on `core:pi_split`/`core:_pi_trig`, `core:_pi_trig`, `core:_unary`). rows-unary-drop-last has no shapes
+case (it is a workload plant, caught on f6 and core).
+
+**Code** (1f0d3bc). rows_tpl.rs `Family::Unary` (`functions._unary(tag, gen)` with neither slots nor units: key `(tag,
+const_key(x) or None)`, objects `(x, expr)`, node 1, `gen`'s rules) and `Family::PiTrig` (`_pi_trig(tag, gen, cos_,
+split_, plain)`: `pi_split`/`ipi_split` straight from the query's table; no split: the plain template, in Rust when it
+is a tagged `_unary`, else the untagged plain `_cosh_shift` called back and counted `rows:python:_cosh_shift`; a split:
+key `(tag, None, 'pi', c, has_s, const_key(s) or None)`, rules `gen`'s plus tf6's `pi_trig_rules`). `pi_split` joins
+ONE and direct_pow's ipi_split arm. functions.py tags `_satassume_rows`/`_satassume_plain`; wiring.py imports
+`pi_split`; offline_data.json regenerated. knowledge_core_live: `shadow_split` branches for `pi_split` and
+`_unary`/`_pi_trig` (`_functions_tpl_py`: Python's template with `functions.facts` captured). Six shapes cases (29 total).
+
+### The bar (on 7890bf3)
+Full bar on 7890bf3: pareto1 `~/sp19/sa-rust-ids-work/sa-port-191/bar-6g-c6/` (end.txt `exit 0 2026-11-09T03:02:39Z`,
+written by the job; .so 7a11eb3a…), config = bar-6g-c3c5r3's plus the four c6 plants and 5c10c's test_cones_core.py,
+base suite rows 5c10c's (`sa-port-189/bar-5c10c/suite`), kept-share base (KEPT_BASE) bar-6g-c3c5r3. Phases build, tests,
+suite, live, plants, seed1, extra, suiteplants, all exit 0; not run: none.
+
+Completeness (checked on the bar's files before reading it): suite rows for all 6,159 ids; 13 workload comparisons (dev,
+fuzz and 11 WLS), each with its Python control, plus seed1 on dev and fuzz; 60 plants x 13 workloads = 780 plant rows;
+7 suite-plant runs; handler rows for the suite, live, extra and plant runs; direct.txt (dispatch_direct and common_direct
+plain exit 0, the 13 common plants exit 1); every phase exit 0.
+
+1. **Suite by id against 5c10c's rows: 5,991 passed, 127 failed, 23 skipped, 18 xfailed, 6,159 ids; new 0, gone 0,
+   changed outcome 0.** Passed split by firing: 5,990 with no handler firing, 1 with a firing
+   (`tests/test_invariants.py::test_ci_stream_reports_only_what_replays`, the named needs-internals case). The known
+   id()-reuse failure `tests/test_public_incremental.py::test_public_comparison_catches_a_planted_history_dependence` is
+   failed here and in the base rows (below). S's standing: S's gate is met except for the 46 named stub failures, one cause.
+2. **Fresh dev and fuzz: answers and state MATCH** (answers_sha dev 31cd0945c07f02a6, fuzz 173502b6ef285ad6; end, stream
+   and lra diffs 0; Rust made 0 Python solvers), Python-vs-Python controls MATCH, traced-vs-untraced end states MATCH,
+   seed1 MATCH. All 11 WLS MATCH with controls: f6 2,902, value 3,742, rootof 5,187, core 1,636, opaque 2,546, scope
+   169, loop 420, zero 854, wiring 6,512, cert 61, budget 28 queries. The **lra-on path MATCH**, with **with-closed-skip
+   caught** on dev, fuzz, cert, core, f6, opaque and wiring.
+3. **Plants:** the 56 plants of the c3-c5 stack bar fire and are caught on exactly the same workloads (plantagg.awk over
+   sum.txt, pareto1 `sa-port-194/plantagg-bar-6g-c6.txt`, minus the four c6 rows, equal line for line to
+   `sa-port-187/plantagg-bar-6g-c3c5r3.txt`). rows_tpl.rs PLANTS still caught as before. Void on workloads, as before and
+   with what catches them: rows-recip-tpl-neg (its shapes case only); rows-mul-ipi-drop (its reach owed); rows-pow-head-any
+   (void by construction); dispatch-ignores-epoch, dispatch-user-off and dispatch-redefines-off (fires f6/value, MATCH)
+   (suite and `dispatch_direct.py`); elem-eq-flip (suite, 1 id); within-no-link (void on workloads and suite since 5c7).
+   c6's plant table:
+
+   | plant | caught on (fired) | note |
+   |---|---|---|
+   | rows-pi-split-shift | core 42, f6 92 | also its shapes case |
+   | rows-pi-trig-flip | core 21, f6 38 | also its shapes case |
+   | rows-unary-drop-last | dev 2, core 22, f6 40, loop 1, opaque 1 | no shapes case |
+   | rows-unary-key-none | **void** on all 13 workloads (fired 0) | caught by its shapes case only (plantshape.txt); no workload reaches it |
+
+4. **Quiet handler firings on Rust:** suite 39 rows in 2 tests, multiset equal to 5c10c's base: 34 `_consistent`
+   AttributeError (`'Solver' object has no attribute '_ok'`) and 4 (`... '_rb_clauses'`) in
+   `test_ci_stream_reports_only_what_replays` (the named needs-internals case); 1 `Engine._build_context` RuntimeError
+   `Already mutably borrowed` in `test_protocol_on_fuzz` (the named 46-stub cause, tests/theory_harness.py:242). No other
+   firing: live, seed1 and the 11 WLS handler files have 0 rows; plant runs fire only where the plant itself raises
+   (ad-kind-swap dev 2 / fuzz 315, rows-block-key-n 1 / 16). TermFault 0; ids whose caught rows differ from base 0.
+5. **Known differences:** none in answers or read state. Kept shares per reason equal KEPT_BASE on every workload:
+   out-of-scope dev 24/1,985 (1.21%), 0 elsewhere; refused f6 13/2,902 (Float 10), opaque 7/2,546, value 15/3,742
+   (Float), wiring 1/6,512 (a callback on a derived term). No rise.
+
+**Shadow (test_knowledge_core_shapes, 29 cases, orion on 7890bf3, `~/sa-rust-ids-work/sa-port-191/shadow.txt`):
+shadow:mismatch 0, answers equal.** shadow:direct per name: `_half_split` 11, `_bound_split` 11, `_imag_split` 11,
+`_mul_factor_sets` 21, `_quotient_templates` 24, `_exp_arg` 17, `_unit_angle` 16, `ipi_split` 3, `irrational_root` 16,
+`_unit_power_units` 2, `_pow_bound_templates` 14, `ipi_rules` 2, `constant_value` 61, `_half_templates` 1,
+`_bound_templates` 7, `_recip_templates` 7, `_imag_templates` 2; c6: `pi_split` 7, `_pi_trig` 4, `_unary` 3.
+
+**The parts ruling's three 6g(a) conditions still hold.** Direct, on orion on 7890bf3
+(`~/sa-rust-ids-work/sa-port-191/dispatch-direct.txt`): `dispatch_direct.py` plain exit 0 (user path 2, BAD 0);
+**dispatch-user-off caught** (user path 0, BAD 1, exit 1); dispatch-ignores-epoch caught (BAD 3, exit 1);
+dispatch-redefines-off caught (BAD 2, exit 1). Suite plants (against this run's suite): dispatch-ignores-epoch 15 changed ids (test_registry_versioning's
+`test_splits_are_keyed_on_the_registry` and `test_template_registration_clears` among them; the set varies with xdist
+worker order, as before), dispatch-redefines-off 1 (`test_s10_override.py::test_reproducers`), dispatch-user-off 0
+(caught directly), elem-eq-flip 1, knowledge-no-query-drop 20, union-skip-overlap 2, within-no-link 0.
+
+**Module count (count rule): 14 of 32, unchanged.** Orion retrace on 7890bf3 (`rc.sh OUT WL
+core.py,wiring.py,functions.py,registry.py`, pass 1 `[query]` lines; `~/sa-rust-ids-work/sa-port-191/rc-{dev,f6,core,wiring}.txt`,
+diffed against sa-port-187's on af63d20):
+- Gone from the per-query trace: `_pi_trig.<locals>.template` (f6 230, core 104, dev 4 before) and its build; `core.py:pi_split`
+  from functions (f6 100, core 48, dev 3 before) entirely; `ipi_split` from functions on f6 (130 before).
+- Left: `ipi_split` from functions only through `_exp_ipi` (core 55, wiring 2, dev 1) and from session_live (core 2, the
+  fallbacks); `_cosh_shift.<locals>.template` f6 130, core 1, dev 1 (the untagged plain, called back), and the plain
+  `_unary.<locals>.template` it calls (f6 50, core 1, dev 1); the slotted `_unary` from the engine (f6 86, dev 31),
+  `nary` (f6 48), `_exp_ipi` (core 56, wiring 2, dev 1), `parts_of_round_templates` + `_attributed` (f6 24, dev 6), and
+  core.py's `_bound_split`/`_half_split`/`_imag_split` (dev 3, f6 6, core 69, wiring 4), `_coeff_term`, `_imag_term`,
+  `_unit_power_units` core 15, as on af63d20. So functions.py, core.py and wiring.py still don't count; registry.py has
+  no `[query]` line, as before. (The engine.py -> session_live.py caller names in the trace come from 5c10c.)
+
+**Direct-split counts per workload** (rows:rust/rows:python from the bar's Rust knowledge.json, pareto1
+`sa-port-194/fill-c6.txt`; before = bar-6g-c3c5r3's): `pi_split` dev 3/0, core 48/0, f6 100/0, loop 4/0, opaque 1/0
+(before 0/0: it ran in Python from functions' `_pi_trig` with no counter; dev, core and f6 equal the af63d20 retrace's
+`core.py:pi_split` calls 3, 48, 100); `_pi_trig` core 97/0, f6 92/0; `_unary` dev 3/0, core 6/0, f6 8/0, loop 4/0,
+opaque 1/0; `rows:python:_cosh_shift` dev 1, core 1, f6 130 (the untagged plain called back, equal to the retrace's
+`_cosh_shift.<locals>.template` 1, 1, 130; c7 takes it); `ipi_split` core 109/2 (before 54/1: the `_pi_trig` splits now direct),
+f6 130/0 (before 0, the retrace's 130 from functions), dev 1/0 (before 0), wiring 4/0 (unchanged). `core:derived` totals
+unchanged (dev 9, fuzz 72, core 207, f6 18, loop 18, opaque 21, wiring 12; c1's Add splits and loop's 3), so no c6 name
+has a derived remainder.
+
+**Rows scaffolding, owed before any backend PR until 0:** unchanged from the c3-c5 bar: `scaffold:rebuilt` dev 29, fuzz
+305, f6 45, opaque 15, value 221, zero 28 (`scaffold:rebuilt:f6` 45); `scaffold:mismatch` f6 2; `rows:python:Mul`/`Add`/
+`Integer` core 96/96/740, dev 3/6/256, wiring 12/8/224, loop 3/6/60. Also owed: rows-mul-ipi-drop's reach,
+rows-recip-tpl-neg's reach, and the rest of the backend-PR list as c1.
+
+**Kept on Python with reason:** `_rows_runtime`'s I/-I (`rows:kept:_imag_templates:number`) and Floats
+(`rows:kept:constant_value:Float`), Floats for SymPy's precision semantics; both 0 on all 13 workloads and shown to fire in
+c4/c5 (not false zeros); queries under a non-default registry; `enclose`; `const_value` (named callback;
+`rows:python:const_value` dev 256, fuzz 136, core 740, f6 380, wiring 234, as before).
+
+**equiv-one and ge2-drop (precision ruling):** unchanged: pure Python never calls `Rules.equiv` per query and calls
+`ge2_alternatives` only from table.py:141 for an `int>=2` premise no table has, so both are Python removal candidates, not
+port items; common_direct.py catches both (exit 1).
+
+**Known id()-reuse failure, owed:** `tests/test_public_incremental.py::test_public_comparison_catches_a_planted_history_dependence`
+(sa-port-185, report a28c548): a test artifact; failed in 5c10c's base rows too, so not a changed outcome. Test not edited.
+
+**Not run:** as for c3-c5: the mutant 2, 5, 6, 7, 9 rerun and mutlive's control; the boundary rescore and suite column;
+the final drop score and its lost rows; the suite split with Python's counter; `order:_rows`' evidence (not caught
+meanwhile); the `_forms` guard test; history reruns (seed1 was run); forced moves; the native path; timing. The rows plants
+on the suite. **Speed not measured.** The `_n_conflicts` view in rust_plugin.py is a test-plugin shim (64 tests). No
+evaluator asked for.
