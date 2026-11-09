@@ -21,6 +21,8 @@ const OWN_FACTS: &str = "_satassume_own_facts";
 enum Tpl {
     Python,
     Rows(Arc<super::rows_tpl::RowsTpl>),
+    /// 6i(a): a hand-written outer template of special, rootof, nodes, physics or stats (outer_tpl.rs).
+    Outer(super::outer_tpl::Outer),
 }
 
 struct ClassEntry {
@@ -237,9 +239,15 @@ fn class_entry(slf: &Bound<'_, Dispatch>, cls: &Bound<'_, PyType>) -> PyResult<A
             } else {
                 None
             };
-            match rows {
-                Some(r) => templates.push((t.unbind(), format!("registry:rust:{name}"), Tpl::Rows(Arc::new(r)))),
-                None => templates.push((t.unbind(), format!("registry:python:{name}"), Tpl::Python)),
+            let outer = if rows.is_none() && slf.borrow().is_builtin(&t) && slf.borrow().plant != "dispatch-outer-off" {
+                super::outer_tpl::Outer::of(&t, &name)?
+            } else {
+                None
+            };
+            match (rows, outer) {
+                (Some(r), _) => templates.push((t.unbind(), format!("registry:rust:{name}"), Tpl::Rows(Arc::new(r)))),
+                (None, Some(o)) => templates.push((t.unbind(), format!("registry:rust:{name}"), Tpl::Outer(o))),
+                (None, None) => templates.push((t.unbind(), format!("registry:python:{name}"), Tpl::Python)),
             }
         }
     }
@@ -349,6 +357,14 @@ impl Dispatch {
                     }
                     (Tpl::Rows(rt), _) => {
                         bump(&mut slf.borrow_mut().counts, &format!("registry:kept:{}", rt.name));
+                        t.bind(py).call1((expr,))?
+                    }
+                    (Tpl::Outer(o), Some(c)) if !c.bind(py).borrow().kept(py)? => {
+                        bump(&mut slf.borrow_mut().counts, name);
+                        o.call(&c.bind(py).borrow(), t.bind(py), expr)?
+                    }
+                    (Tpl::Outer(o), _) => {
+                        bump(&mut slf.borrow_mut().counts, &format!("registry:kept:{}", o.name()));
                         t.bind(py).call1((expr,))?
                     }
                     (Tpl::Python, _) => {

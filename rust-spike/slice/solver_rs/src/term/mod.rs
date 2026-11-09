@@ -38,6 +38,7 @@ pub mod tf6;
 pub mod knowledge;
 pub mod lra_read;
 pub mod offline;
+pub mod outer_tpl;
 pub mod py;
 pub mod rat;
 pub mod relations;

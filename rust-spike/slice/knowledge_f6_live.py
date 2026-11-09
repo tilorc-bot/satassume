@@ -227,7 +227,7 @@ def install(shadow, counts, fault_cls, mismatch):
         def build():
             counts['f6:_multigamma_rules'] += 1
             r = _drop('f6-multigamma', call('_multigamma_rules', sa_solver.f6_multigamma_rules, int(p)))
-            return check('_multigamma_rules', p, r, py['_multigamma_rules'](p))
+            return check('_multigamma_rules', p, r, lambda: py['_multigamma_rules'](p)())   # 6i(a): lazy, read only by the shadow
         return build
 
     def unit_interval_units(kind, c, expr):

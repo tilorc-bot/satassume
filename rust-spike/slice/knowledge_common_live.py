@@ -41,6 +41,9 @@ PLANTS += ('rows-pi-split-shift', 'rows-pi-trig-flip', 'rows-unary-key-none', 'r
 PLANTS += ('rows-cosh-shift-parity', 'rows-cosh-plain-none')
 PLANTS += ('rows-exp-ipi-drop', 'rows-exp-const-key-none')
 PLANTS += ('rows-round-skip', 'rows-round-key-none')
+# 6i(a): outer_tpl.rs, plants 280-286
+PLANTS += ('outer-multigamma-p', 'outer-multigamma-value', 'outer-rootof-index', 'outer-accum-real', 'outer-idx-integer',
+           'outer-quantity-positive', 'outer-random-real')
 COMMON = [None]
 
 

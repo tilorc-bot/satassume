@@ -280,7 +280,7 @@ impl Common {
     }
 
     fn set_plant(&mut self, p: &str) -> PyResult<()> {
-        if !PLANTS.contains(&p) && !super::rows_tpl::PLANTS.contains(&p) {
+        if !PLANTS.contains(&p) && !super::rows_tpl::PLANTS.contains(&p) && !super::outer_tpl::PLANTS.contains(&p) {
             return Err(PyValueError::new_err(format!("unknown plant {p}")));
         }
         self.plant = p.to_string();
@@ -399,7 +399,7 @@ impl Common {
     }
 
     /// `_common.units(key, gen, obj)`.
-    fn units<'py>(
+    pub(crate) fn units<'py>(
         &self,
         py: Python<'py>,
         key: &Bound<'py, PyAny>,
@@ -598,7 +598,7 @@ impl Common {
         Ok(PyTuple::new(py, [tag.clone(), n.clone(), PyTuple::new(py, parts)?.into_any()])?.into_any())
     }
 
-    fn const_key<'py>(&self, py: Python<'py>, obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    pub(crate) fn const_key<'py>(&self, py: Python<'py>, obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
         if self.kept(py)? {
             self.bump("common:kept:const_key");
             return self.py_fn(py, "const_key")?.call1((obj,));
