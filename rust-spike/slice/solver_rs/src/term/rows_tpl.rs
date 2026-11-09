@@ -80,6 +80,10 @@ pub const PLANTS: &[&str] = &[
     "rows-unary-drop-last",    // 6g(c6) Unary/PiTrig: the last of `gen`'s rules dropped
     "rows-cosh-shift-parity",  // 6g(c7) CoshShift: `c + 1` in `_cosh_shift_rules` (the parity flipped)
     "rows-cosh-plain-none",    // 6g(c7) CoshShift: no split -> no template (instead of the plain `_unary`)
+    "rows-exp-ipi-drop",       // 6g(c8) ExpIpi: `ipi_rules` not added for a split
+    "rows-exp-const-key-none", // 6g(c8) ExpIpi: a constant argument keyed None
+    "rows-round-skip",         // 6g(c9) PartsOfRound: no template
+    "rows-round-key-none",     // 6g(c9) PartsOfRound: a constant `y` keyed None
 ];
 
 /// 6g(c3): the shells whose args `split` passes as a tuple (the others take one argument).
@@ -99,6 +103,10 @@ pub enum Family {
     PiTrig,
     /// 6g(c7): `functions._cosh_shift(gen)`.
     CoshShift,
+    /// 6g(c8): `functions._exp_ipi(gen)`.
+    ExpIpi,
+    /// 6g(c9): `functions.parts_of_round_templates` (registered through `wiring._attributed`).
+    PartsOfRound,
 }
 
 /// 6g(c6): what `_pi_trig` does without a split: a plain `_unary` in Rust, or an untagged template (`_cosh_shift`)
@@ -255,13 +263,23 @@ impl RowsTpl {
             "unary" => Family::Unary,
             "pi_trig" => Family::PiTrig,
             "cosh_shift" => Family::CoshShift,
+            "exp_ipi" => Family::ExpIpi,
+            "parts_of_round" => Family::PartsOfRound,
             _ => return Ok(None),
         };
+        if family == Family::PartsOfRound {
+            let wiring = py.import("satassume.knowledge.templates.wiring")?.unbind();
+            return Ok(Some(RowsTpl {
+                family, name, tag: spec.get_item(1)?.unbind(), terms: HashMap::new(), specs: HashMap::new(),
+                schemas: Vec::new(), piecewise: false, leave_out_wide: false, power: None, unary: None,
+                py_template: t.clone().unbind(), wiring,
+            }));
+        }
         let tag = spec.get_item(1)?.unbind();
         let gen = spec.get_item(2)?;
         let piecewise: bool = spec.get_item(3)?.extract()?;
         let leave_out_wide: bool = spec.get_item(4)?.extract()?;
-        if matches!(family, Family::Unary | Family::PiTrig | Family::CoshShift) {
+        if matches!(family, Family::Unary | Family::PiTrig | Family::CoshShift | Family::ExpIpi) {
             // `gen(R, c)` picks `specs[c]` when the rows have several keys: those stay on Python.
             let specs = gen.getattr("specs")?.cast_into::<PyDict>()?;
             if specs.len() > 1 || !gen.getattr("plain")?.is_truthy()? {
@@ -555,6 +573,14 @@ impl RowsTpl {
             Family::CoshShift => {
                 drop(cr);
                 self.cosh_shift_call(c, expr)
+            }
+            Family::ExpIpi => {
+                drop(cr);
+                self.exp_ipi_call(c, expr)
+            }
+            Family::PartsOfRound => {
+                drop(cr);
+                self.parts_of_round_call(c, expr)
             }
         }
     }
@@ -2063,5 +2089,129 @@ impl RowsTpl {
             rules_of(py, &c, me.unary.as_ref().expect("cosh_shift rows"))
         })?;
         cr.facts(py, &key, gen.as_any(), consts.as_any(), &objs, 1)
+    }
+
+    /// 6g(c8): `functions._exp_ipi(gen)`: objects `(x, expr)`; a constant `x` at slot 0 with key `('exp', const_key(x))`;
+    /// else `ipi_split(x)` (direct from the query's table, or Python's, as the other splits) and for a split `s` appended
+    /// (its constant at slot 2), key `('exp', None, (c, has_s) or None, const_key(s) or None)`; rules `gen`'s and, for a
+    /// split, tcore's `ipi_rules(c, 2 or None, 1)`; node 1. A kept query, or an `exp` without one argument, goes to
+    /// Python's template (`rows:python:_exp_ipi`, the reason counted).
+    fn exp_ipi_call<'py>(self: &Arc<Self>, c: &Bound<'py, Common>, expr: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+        let py = expr.py();
+        let u = self.unary.as_ref().expect("exp_ipi rows");
+        let args = expr.getattr("args")?.cast_into::<PyTuple>()?;
+        let cr = c.borrow();
+        let why = if args.len() != 1 { Some("arity") } else if cr.kept(py)? { Some("kept") } else { None };
+        if let Some(why) = why {
+            cr.bump("rows:python:_exp_ipi");
+            cr.bump(&format!("rows:python:_exp_ipi:{why}"));
+            drop(cr);
+            return self.py_template.bind(py).call1((expr,));
+        }
+        cr.bump("rows:rust:_exp_ipi");
+        let x = args.get_item(0)?;
+        let consts = PyDict::new(py);
+        let mut objs = vec![x.clone(), expr.clone()];
+        let mut ipi: Option<(super::rat::Rat, bool)> = None;
+        let key = if atom_number(&x)? {
+            consts.set_item(0, &x)?;
+            let mut k = const_key(&x)?;
+            if cr.plant == "rows-exp-const-key-none" {
+                cr.fired();
+                k = py.None().into_bound(py);
+            }
+            PyTuple::new(py, ["exp".into_bound_py_any(py)?, k])?.into_any()
+        } else {
+            let split = self.split(py, &cr, "ipi_split", &x)?;
+            let mut ipi_t = py.None().into_bound(py);
+            let mut ck = py.None().into_bound(py);
+            if !split.is_none() {
+                let (cc, s_) = (split.get_item(0)?, split.get_item(1)?);
+                let has_s = !s_.is_none();
+                ipi = Some((rat_of(&cc)?, has_s));
+                ipi_t = PyTuple::new(py, [cc, has_s.into_bound_py_any(py)?])?.into_any();
+                if has_s {
+                    objs.push(s_.clone());
+                    if atom_number(&s_)? {
+                        consts.set_item(2, &s_)?;
+                        ck = const_key(&s_)?;
+                    }
+                }
+            }
+            PyTuple::new(py, ["exp".into_bound_py_any(py)?, py.None().into_bound(py), ipi_t, ck])?.into_any()
+        };
+        let objs = PyTuple::new(py, objs)?.into_any();
+        let rules_of = move |py: Python<'_>, c: &Common, u: &UnaryRows| -> PyResult<Py<PyAny>> {
+            let out = unary_rules(py, c, u, None)?;
+            if let Some((k, has_s)) = &ipi {
+                if c.plant == "rows-exp-ipi-drop" {
+                    c.fired();
+                } else {
+                    c.bump("rows:rust:ipi_rules");
+                    for r in super::tcore::ipi_rules(k, has_s.then_some(2), 1) {
+                        out.append(r.into_pyobject(py)?)?;
+                    }
+                }
+            }
+            Ok(out.into_any().unbind())
+        };
+        if let Some(f) = cr.shadow_split(py)? {
+            let rules = rules_of(py, &cr, u)?;
+            f.call1(("_exp_ipi", (self.py_template.bind(py), expr), (&key, &consts, &objs, 1i64, rules)))?;
+        }
+        let me = self.clone();
+        let cobj = c.clone().unbind();
+        let gen = PyCFunction::new_closure(py, None, None, move |t: &Bound<'_, PyTuple>, _kw: Option<&Bound<'_, PyDict>>| -> PyResult<Py<PyAny>> {
+            let py = t.py();
+            let c = cobj.bind(py).borrow();
+            rules_of(py, &c, me.unary.as_ref().expect("exp_ipi rows"))
+        })?;
+        cr.facts(py, &key, gen.as_any(), consts.as_any(), &objs, 1)
+    }
+
+    /// 6g(c9): `functions.parts_of_round_templates(expr)`: for `re`/`im` of `floor(y)` or `ceiling(y)`, objects `(y, r,
+    /// expr)`, a constant `y` at slot 0, key `('parts_of_round', const_key(y) or None)`, rules tf6's
+    /// `parts_of_round_rules()`, node 2; else no template.
+    fn parts_of_round_call<'py>(self: &Arc<Self>, c: &Bound<'py, Common>, expr: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+        let py = expr.py();
+        let cr = c.borrow();
+        cr.bump("rows:rust:parts_of_round_templates");
+        let r = expr.getattr("args")?.get_item(0)?;
+        let sp = py.import("sympy")?;
+        if !(r.is_instance(&sp.getattr("floor")?)? || r.is_instance(&sp.getattr("ceiling")?)?) {
+            return Ok(py.None().into_bound(py));
+        }
+        if cr.plant == "rows-round-skip" {
+            cr.fired();
+            return Ok(py.None().into_bound(py));
+        }
+        let y = r.getattr("args")?.get_item(0)?;
+        let consts = PyDict::new(py);
+        let mut k = py.None().into_bound(py);
+        if atom_number(&y)? {
+            consts.set_item(0, &y)?;
+            k = const_key(&y)?;
+            if cr.plant == "rows-round-key-none" {
+                cr.fired();
+                k = py.None().into_bound(py);
+            }
+        }
+        let key = PyTuple::new(py, ["parts_of_round".into_bound_py_any(py)?, k])?.into_any();
+        let objs = PyTuple::new(py, [y, r, expr.clone()])?.into_any();
+        let rules_of = |py: Python<'_>| -> PyResult<Py<PyAny>> {
+            let out = PyList::empty(py);
+            for r in super::tf6::parts_of_round_rules() {
+                out.append(r.into_pyobject(py)?)?;
+            }
+            Ok(out.into_any().unbind())
+        };
+        if let Some(f) = cr.shadow_split(py)? {
+            let rules = rules_of(py)?;
+            f.call1(("parts_of_round_templates", (self.py_template.bind(py), expr), (&key, &consts, &objs, 2i64, rules)))?;
+        }
+        let gen = PyCFunction::new_closure(py, None, None, move |t: &Bound<'_, PyTuple>, _kw: Option<&Bound<'_, PyDict>>| -> PyResult<Py<PyAny>> {
+            rules_of(t.py())
+        })?;
+        cr.facts(py, &key, gen.as_any(), consts.as_any(), &objs, 2)
     }
 }

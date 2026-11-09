@@ -444,7 +444,8 @@ def install(shadow, counts, fault_cls, mismatch):
         # 6g(c6): (key, consts, objs, node, gen()) of the template's `facts` call, or None; `_pi_trig_rules` the
         # original (not knowledge_f6_live's shell, if installed).
         got = []
-        names = ('facts', '_pi_trig_rules', '_cosh_shift_rules', '_cosh_shift_split')
+        names = ('facts', '_pi_trig_rules', '_cosh_shift_rules', '_cosh_shift_split', 'ipi_split', 'ipi_rules',
+                 '_parts_of_round_rules')
         saved = [functions.__dict__[n] for n in names]
 
         def capture(key, gen, consts, objs, node):
@@ -452,7 +453,7 @@ def install(shadow, counts, fault_cls, mismatch):
             return got[-1]
         try:
             functions.facts = capture
-            # 6g(c7): `_cosh_shift_rules` and `_cosh_shift_split` the originals too
+            # 6g(c7)/(c8): `_cosh_shift_rules`, `_cosh_shift_split`, `ipi_split` and `ipi_rules` the originals too
             for n, f in zip(names[1:], saved[1:]):
                 setattr(functions, n, getattr(f, '__wrapped__', f))
             r = tpl(expr)
@@ -499,7 +500,7 @@ def install(shadow, counts, fault_cls, mismatch):
             theirs = _pow_bound_py(args)
         elif name in ('ipi_split', 'pi_split'):
             theirs = py['_pi_split'](args, name == 'ipi_split')
-        elif name in ('_unary', '_pi_trig', '_cosh_shift'):
+        elif name in ('_unary', '_pi_trig', '_cosh_shift', '_exp_ipi', 'parts_of_round_templates'):
             # 6g(c6): Python's template (Rust passes it with the node) with functions.facts captured
             theirs = _functions_tpl_py(*args)
         elif name == 'ipi_rules':

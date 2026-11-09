@@ -135,6 +135,8 @@ def _exp_ipi(gen):
         return facts(key, build, consts, tuple(objs), N)
     template.__name__ = 'exp_templates'
     template.__module__ = gen.__module__
+    # read by the Rust backend's dispatch (rows_tpl.rs, Family::ExpIpi)
+    template._satassume_rows = ('exp_ipi', 'exp', gen, False, False)
     return template
 
 
@@ -164,6 +166,11 @@ def parts_of_round_templates(expr):
     consts = {0: y} if y.is_Atom and y.is_number else {}
     key = ('parts_of_round', const_key(y) if consts else None)
     return facts(key, _parts_of_round_rules, consts, (y, r, expr), 2)
+
+
+# read by the Rust backend's dispatch (rows_tpl.rs, Family::PartsOfRound),
+# through wiring._attributed, which carries it
+parts_of_round_templates._satassume_rows = ('parts_of_round', 'parts_of_round', None, False, False)
 
 
 # ---------------------------------------------------------------------------

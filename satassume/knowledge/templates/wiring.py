@@ -191,6 +191,9 @@ def _attributed(t, module):
         return t(expr)
     template.__name__ = template.__qualname__ = t.__name__
     template.__module__ = module
+    if hasattr(t, '_satassume_rows'):
+        # read by the Rust backend's dispatch (rows_tpl.rs)
+        template._satassume_rows = t._satassume_rows
     return template
 
 

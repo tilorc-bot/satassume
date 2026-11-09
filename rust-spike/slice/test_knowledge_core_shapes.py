@@ -3,7 +3,7 @@ with an input that tells Rust and Python apart (the core plants 'off' scores `no
 twice, plain (Python) and under `knowledge_live.install(shadow=True)`, which also runs Python's function on each call and
 compares every field. A test passes when the answers agree, the shadow saw no mismatch, and the function was reached."""
 import pytest
-from sympy import Add, E, I, Mul, Pow, Q, S, Symbol, cos, cosh, exp, pi, sin
+from sympy import Add, E, I, Mul, Pow, Q, S, Symbol, ceiling, cos, cosh, exp, floor, im, pi, re, sin
 
 import knowledge_live as K
 import term_live
@@ -80,6 +80,16 @@ CASES = [
     ('core:_cosh_shift', 'cosh-shift-odd-s', lambda: Q.negative(cosh(a(y, m(3, I, pi, x)))),
      lambda: Q.real(y) & Q.odd(x)),
     ('core:_unary', 'rows-cosh-plain-none', lambda: Q.real(cosh(x)), lambda: Q.real(x)),
+    # 6g(c8): `_exp_ipi` as a rows_tpl.rs family (Family::ExpIpi): `ipi_split` and `ipi_rules` from Rust.
+    ('core:_exp_ipi', 'rows-exp-ipi-drop', lambda: Q.real(exp(m(I, pi, x))), lambda: Q.integer(x)),
+    ('core:_exp_ipi', 'exp-ipi-half', lambda: Q.imaginary(exp(m(Rational_(1, 2), I, pi, x))), lambda: Q.odd(x)),
+    ('core:_exp_ipi', 'exp-ipi-plain', lambda: Q.positive(exp(x)), lambda: Q.real(x)),
+    ('core:_exp_ipi', 'rows-exp-const-key-none', lambda: Q.positive(a(exp(S(2)), x)), lambda: Q.positive(x)),
+    # 6g(c9): `parts_of_round_templates` as a rows_tpl.rs family (Family::PartsOfRound; `wiring._attributed` carries the tag).
+    ('core:parts_of_round_templates', 'rows-round-skip', lambda: Q.integer(re(floor(x))), lambda: Q.finite(x)),
+    ('core:parts_of_round_templates', 'round-im-ceiling', lambda: Q.integer(im(ceiling(x))), lambda: Q.finite(x)),
+    ('core:parts_of_round_templates', 'rows-round-key-none',
+     lambda: Q.integer(a(re(ceiling(Rational_(1, 3), evaluate=False), evaluate=False), x)), lambda: Q.integer(x)),
 ]
 
 
@@ -92,7 +102,8 @@ DIRECT = {'core:half_split': '_half_split', 'core:bound_split': '_bound_split', 
           'core:_half_templates': '_half_templates', 'core:_bound_templates': '_bound_templates',
           'core:recip_templates': '_recip_templates', 'core:imag_templates': '_imag_templates',
           'core:pi_split': 'pi_split', 'core:_pi_trig': '_pi_trig', 'core:_unary': '_unary',
-          'core:_cosh_shift': '_cosh_shift'}
+          'core:_cosh_shift': '_cosh_shift', 'core:_exp_ipi': '_exp_ipi',
+          'core:parts_of_round_templates': 'parts_of_round_templates'}
 
 
 def Rational_(p, q):
