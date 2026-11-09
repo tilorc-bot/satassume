@@ -179,10 +179,11 @@ Other notes:
   boundary suite column wasn't run.
 - **Speed not measured.**
 
-# State step, part 2, sub-part (ii): the transfer sites (issue 323), barred, NOT YET LANDED
+# State step, part 2, sub-part (ii): the transfer sites (issue 323), LANDED 9e10f0d
 
 Work by sa-port-202 (code) and sa-port-205 (checks, bar). The planner said to stack it with 6i(a), so (ii) is barred on top of
-sa-port-204's tested b11b5a2 (no shared files). It lands after 204 lands b11b5a2 unchanged.
+sa-port-204's tested b11b5a2 (no shared files). 204 landed b11b5a2 unchanged (693fef9 = b11b5a2 + its results/ commit), and
+sa-port-207 landed (ii) right after, at 13:47Z 9 Nov (week 88%).
 
 ## What moved
 session.rs `SessionCore` holds `solver` (copied at TableView.bind), `session_xfer` (Session.xfer) and a per-Relations record of
@@ -194,7 +195,8 @@ Python readers (part 3). Counters 338-343 xf:*, plants 257-262 xf-*, test_xfer_c
 
 ## SHAs
 Tested **997a54f** (port/state-relations-stack: b38add7 = 19d5d04's code + 202's handoff, on 6i(a) b11b5a2, on rust-slice
-c3d0999). Landed: not yet. Incoming diff: to be read at landing; it is empty if rust-slice = b11b5a2's tree.
+c3d0999). **Landed 9e10f0d** on rust-slice (bar.sh land 997a54f, guard diff empty). Incoming diff (b11b5a2..693fef9):
+rust-spike/slice/results/port-6i-a.md only (213 lines added), no code, so no rerun (rebase rule).
 
 ## The bar (pareto1 `~/sp19/sa-rust-ids-work/sa-port-205/bar-state-relations-ii`, 12:05Z-13:27Z, every phase exit 0, seed1 not run)
 .so sha256 8255530b…. Base rows: sa-port-200's bar-state-relations-i/suite.
@@ -233,24 +235,93 @@ Snapshot digest at the switch: the live state comparison (end states, traced) MA
 export digest was taken for these three handles; test_xfer_core.py pins the write sequence field by field.
 
 ## Group D
-BEFORE (c3d0999): relations path dev 7.0% (530/7,620), fuzz 15.3% (2,969/19,348). AFTER: **not run** (recipe in
-HANDOFF-sa-port-202.md).
+Sample counts, not timings (shared lease, pareto1; sa-port-146's method, tools/sum202.py). Relations path (a)+(b)+(c)+(d):
+| tree | dev | fuzz | of which transfer sites (a'), dev / fuzz |
+|---|---|---|---|
+| BEFORE c3d0999 (sa-port-202) | 530/7,620 = 7.0% | 2,969/19,348 = 15.3% | 18 (0.2%) / 139 (0.7%) |
+| AFTER 9e10f0d, landed (ii) (sa-port-207) | 578/8,542 = 6.8% | 3,323/21,859 = 15.2% | 18 (0.2%) / 161 (0.7%) |
+Flat, as expected: (ii) moved three handles into the core, not a hot loop. The largest (b) callback on both is still term_live's
+`_relation_atom` (dev 87, fuzz 548), then `_under_apps`, `_rel_m`. dev digest 31cd0945c07f02a6 on every AFTER row. Rows:
+orion ~/sa-rust-ids-work/sa-port-207/gd/run-9e10f0d/SUMMARY-rel.md.
 
 ## Not run
-seed1; group-D AFTER; and the "before any backend PR" list as in (i) (mutants 2, 5, 6, 7, 9 and mutlive's control, boundary
+seed1; and the "before any backend PR" list as in (i) (mutants 2, 5, 6, 7, 9 and mutlive's control, boundary
 rescore and suite column, final drop score, suite split with Python's counter, order:_rows' evidence (not caught meanwhile),
 the _forms guard test, history and seed reruns, forced moves, native path, timing). S's standing: S's gate is met except for
 the 46 named stub failures, one cause. `_n_conflicts` view: test-plugin shim (64 tests). test_equality_sharing_is_needed_and_works
 is still needs-internals, unedited. test_public_comparison_catches_a_planted_history_dependence is the known id()-reuse
 failure (a28c548). Speed not measured.
 
-# Sub-part (iii), first part: relations.py's per-query Python on converted queries (barred on 83affaa, bar result pending)
-- relations_core.rs `glue_objects_plain`: relations.py:1994's glue_objects without its eq branch. budget.rs calls it for every
-  relation atom except a two-sided eq, which keeps term_live's ids path. Counter 344 gl:plain, plant 263 gl-plain-no-link
-  (void on dev: it fired 31 times and dev MATCHed; caught by test_glue_plain.py).
-- session_live install rewraps a default engine built before the install on Rust's with_closed_units (scope_wl builds one
-  while its queries load).
-- Module-wide relations.py probe (pycalls.py, every function in the file), converted queries: glue_objects cert 72→0, zero
-  2→0, scope 13→0, dev 27→0 (gl:plain 27); scope with_closed_units 518→0. Still on scope: relation_atom 397, _is_number
-  392, _under_apps 11, _key 8, _structural_subterms 4, all term_live wrappers falling back to relations.py's originals.
-  **relations.py stays off the counted list** until these are 0 on all seven workloads.
+# Sub-part (iii), first part: relations.py's per-query Python on converted queries (issue 323), LANDED (see SHAs)
+
+Work by sa-port-205 (code, first bar) and sa-port-207 (fix, second bar, landing). Stacked on (ii).
+
+## What moved
+- relations_core.rs `glue_objects_plain` (relations.py:1994's glue_objects without its eq branch). budget.rs's cone kids call
+  it for every relation atom except a two-sided eq, which keeps term_live's ids path. While relations run on Python
+  (SLICE_REL=py: rel_install hasn't run), budget.rs keeps Python's glue_objects for every relation atom (`installed()`,
+  relations_core.rs). Counter 344 gl:plain, plant 263 gl-plain-no-link.
+- session_live's install rewraps a default engine built before the install (scope_wl builds one while its queries load)
+  on Rust's `with_closed_units`; its undo puts Python's back.
+
+## SHAs
+First bar on 83affaa (pareto1 `~/sp19/sa-rust-ids-work/sa-port-205/bar-state-relations-iii1`): suite, live, plants and extra
+clean, but **its tests phase failed 4** in test_relations_core.py. Three of them were "relations_core: rel_install hasn't run":
+budget.rs called glue_objects_plain in SLICE_REL=py runs. The fourth was test_module_function_plant_is_seen[terms-of-no-order]:
+the module-function comparison had lost its only ordered `_terms_of` caller, Python's glue_objects of an `lt`. Fixed in
+ce1092c. budget.rs got the `installed()` check. terms-of-no-order is void on the glue sets, because order_sides adds terms
+only for an `oo` summand, which is a side already. So it moved from that parametrize list to test_glue_plain.py, which
+compares Python's `_terms_of` with relations_core's on `lt` atoms with an `oo` summand, and it is caught there.
+**Tested ce1092c** (port/state-relations-iii, rebased on 9e10f0d). Landed: see the landing line below. Incoming diff
+9e10f0d..rust-slice at landing: none (rust-slice was 9e10f0d).
+
+## The bar (pareto1 `~/sp19/sa-rust-ids-work/sa-port-207/bar-state-relations-iii1b`, 13:47Z-14:44Z, every phase exit 0, seed1 not run)
+.so sha256 d5c84c1d…. Base rows: the (ii) bar's suite (= landed 9e10f0d's tested source).
+1. **Suite by id:** 5,991 passed (5,990 with no firing, 1 with a firing: test_ci_stream_reports_only_what_replays, the named
+   case), 127 failed, 23 skipped, 18 xfailed, 6,159 ids. **New 0, gone 0, changed 0.** Tests phase 696 passed, 4 skipped.
+2. **dev and fuzz MATCH** (answers and state, traced and untraced, Python-Python control MATCH): dev 31cd0945c07f02a6, fuzz
+   173502b6ef285ad6; loop, zero, cert, scope (12e06b0586faee40) and budget MATCH.
+3. **Plants:** the table is identical to the 83affaa bar's (same fire counts and verdicts). Caught: xf-solver-fresh on all
+   seven, xf-sel-none (dev, fuzz, zero), ad-lra-kind-key, ad-lra-pair-swap, xf-rel-view-none (suite, 2 tests).
+   **Void on the workloads:** gl-plain-no-link (dev 31, fuzz 3,187, cert 72, scope 18, zero 2 fired; caught by
+   test_glue_plain.py), terms-of-no-order (glue sets; caught by test_glue_plain.py), xf-session-none, xf-rel-any and
+   xf-traverse-skip (caught by test_xfer_core.py), ad-lra-not-expr (caught by test_lra_slot.py).
+4. **Handler multiset same as base**: 34 + 4 `_consistent` AttributeError in test_ci_stream_reports_only_what_replays, and 1
+   `_build_context` "Already mutably borrowed" in test_protocol_on_fuzz (the named 46-stub cause). **ctx:caught 0 on all
+   seven.** TermFault 0. Live and extra handler files have 0 rows outside plant runs.
+5. Known differences: none.
+
+## Counters, fallbacks, kept shares (Rust run, bar dir counts.txt and fb.txt)
+| wl | ad:cbm_noid | integer_form outside kept (ad:lra_not_expr) | gl:plain | xf:record |
+|---|---|---|---|---|
+| dev | 0 | 0 | 27 | 0 |
+| fuzz | 0 | 0 | 1,697 | 0 |
+| zero | 0 | 0 | 2 | 0 |
+| loop | 0 | 0 | 0 | 0 |
+| cert | 0 | 0 | 72 | 0 |
+| scope | 0 | 0 (4 on the native not-an-Expr path) | 13 | 0 |
+| budget | 0 | 0 | 0 | 0 |
+dispatch.rs:242 (registry:python) / rows_tpl.rs:413 (rows:python) per template: **every count equals (ii)'s** (dev 126/625,
+fuzz 38/378, zero 43/119, loop 31/161, cert 24/208, scope 26/0, budget 469/80; registry:kept dev 4: add_rows_templates 2,
+mul_rows_templates 2). Kept shares: out-of-scope dev 24/1,985 (1.21%), 0 elsewhere; refused 0; equal to base.
+Reached: glue_objects_plain by dev, fuzz, zero, cert and scope; the rewrap by scope (the only workload that builds its
+default engine before the install). getattr guards added in the adapter slots: 0.
+Scope MATCH still rests on live.py's old install order (the default engine is built before backend.install()). sa-port-209's
+harness fix changes that.
+
+## Module-wide relations.py probe (pycalls.py, every function in the file, converted queries)
+0 on dev, fuzz, zero, loop, cert and budget. On scope (with_closed_units 518 and glue_objects 13 are now 0), what is left,
+by caller (cProfile):
+- relation_atom 385 <- scope_wl.py:29's extension lambda. scope_wl imports `relation_atom` from relations at import time,
+  before term_live's install patches the module attribute, so the user's fact builder calls Python's original directly;
+- relation_atom 12, _is_number 392, _under_apps 11, _key 8, _structural_subterms 4 <- term_live's wrappers falling back,
+  all for a plain Python `int` side (term:unknown:link:int 127, key:int 4, relation_atom:int 12; the extension's
+  `relation_atom('lt', s, 1)`). Python's semantics for an int differ from Integer's (`_is_number(1)` is False, and
+  `_under_apps` and `_structural_subterms` skip non-Basic sides), so it can't be given a number id.
+**relations.py stays off the counted list.** These two are the rest of (iii)(a).
+
+## Not run
+seed1; the "before any backend PR" list as in (i). S's standing: S's gate is met except for the 46 named stub failures, one
+cause. `_n_conflicts` view: test-plugin shim (64 tests). test_equality_sharing_is_needed_and_works is still needs-internals,
+unedited. test_public_comparison_catches_a_planted_history_dependence is the known id()-reuse failure (a28c548). Speed not
+measured. Group-D after (iii) part 1 not run.
