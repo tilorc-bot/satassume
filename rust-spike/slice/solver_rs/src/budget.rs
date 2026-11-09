@@ -95,8 +95,14 @@ pub(crate) fn struct_<'py>(eng: &Bound<'py, PyAny>, o: &Bound<'py, PyAny>, budge
         // an object of a cone that is a P is a custom or relation atom (_kid maps vocabulary atoms to their argument)
         let specs = eng.getattr(intern!(p, "_relation_specs"))?;
         if em.getattr(intern!(p, "RELATION_ATOMS"))?.contains(o.getattr(intern!(p, "pred"))?)? && specs.is_truthy()? {
-            tick(BUD_CB_GLOBAL);
-            let g = em.getattr(intern!(p, "glue_objects"))?.call1((o, &specs, eng.getattr(intern!(p, "_glue_adapters"))?))?;
+            // a two-sided `eq` keeps term_live's `glue_objects` (its difference on ids); any other relation atom is Rust's
+            let two = o.getattr(intern!(p, "expr"))?.try_iter()?.count() == 2;
+            let g = if two && o.getattr(intern!(p, "pred"))?.eq(intern!(p, "eq"))? {
+                tick(BUD_CB_GLOBAL);
+                em.getattr(intern!(p, "glue_objects"))?.call1((o, &specs, eng.getattr(intern!(p, "_glue_adapters"))?))?
+            } else {
+                crate::relations_core::glue_objects_plain(o, &specs, &eng.getattr(intern!(p, "_glue_adapters"))?)?.into_any()
+            };
             let r = PyTuple::new(p, [g, zero])?.into_any();
             store_kids(&kids, o, &r)?;
             return Ok(r);

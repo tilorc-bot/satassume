@@ -888,7 +888,9 @@ _LRA_SLOT_PLANTS = ('ad-lra-kind-key', 'ad-lra-slot-stale', 'ad-lra-flag-key', '
 #: State step, part 2 (relations_core.rs 256-279): (i) `Reader.integer_form`'s not-an-Expr answer; (ii)/(iii) Relations' state.
 _REL_STATE_PLANTS = ('ad-lra-not-expr',
                      # (ii) (session.rs SessionCore.solver/xfer, 257-262)
-                     'xf-session-none', 'xf-sel-none', 'xf-rel-any', 'xf-solver-fresh', 'xf-rel-view-none', 'xf-traverse-skip')
+                     'xf-session-none', 'xf-sel-none', 'xf-rel-any', 'xf-solver-fresh', 'xf-rel-view-none', 'xf-traverse-skip',
+                     # (iii) (relations_core.rs glue_objects_plain, 263)
+                     'gl-plain-no-link')
 
 
 def entry_native():

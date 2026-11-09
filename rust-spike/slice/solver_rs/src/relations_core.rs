@@ -391,6 +391,8 @@ pub(crate) const XF_SOLVER_FRESH: u16 = 260;
 pub(crate) const XF_REL_VIEW_NONE: u16 = 261;
 /// ... the core's GC traversal skips the solver and the transfer records.
 pub(crate) const XF_TRAVERSE_SKIP: u16 = 262;
+/// State step part 2 (iii): `glue_objects_plain` leaves out `link_objects` of the sides (each side itself stays).
+pub(crate) const GL_PLAIN_NO_LINK: u16 = 263;
 
 #[pyfunction]
 fn rel_install(term_live: Py<PyAny>, relations: Py<PyAny>, euf_adapter: Py<PyAny>, fault: Py<PyAny>) {
@@ -628,6 +630,7 @@ fn rel_plant(name: Option<&str>) -> PyResult<()> {
         Some("xf-solver-fresh") => XF_SOLVER_FRESH,
         Some("xf-rel-view-none") => XF_REL_VIEW_NONE,
         Some("xf-traverse-skip") => XF_TRAVERSE_SKIP,
+        Some("gl-plain-no-link") => GL_PLAIN_NO_LINK,
         Some(x) => return Err(PyValueError::new_err(format!("no plant {x}"))),
     };
     PLANT.store(v, Relaxed);
@@ -3014,6 +3017,49 @@ fn rel_terms_of<'py>(ad: &Bound<'py, PyAny>, sat: &Bound<'py, PyAny>, order: boo
     terms_of(ad, sat, order)
 }
 
+/// `glue_objects(atom, specs, memo)` for a relation atom that isn't a two-sided `eq` (state step part 2 (iii)): Python's
+/// relations.py:1994 without its eq branch. Each side, and `link_objects` of each side that isn't a number, then the adapters'
+/// terms of the atom (`lt` reads order), the atom itself left out. Its `except Exception` around the adapters is Python's.
+/// The two-sided `eq` keeps term_live's `glue_objects` (the difference on ids).
+pub(crate) fn glue_objects_plain<'py>(atom: &Bound<'py, PyAny>, specs: &Bound<'py, PyAny>, memo: &Bound<'py, PyAny>)
+    -> PyResult<Bound<'py, PySet>> {
+    let p = atom.py();
+    let h = hooks()?;
+    tick(session::GL_PLAIN);
+    let k = PySet::empty(p)?;
+    for e in atom.getattr(intern!(p, "expr"))?.try_iter()? {
+        let e = e?;
+        k.add(&e)?;
+        if !free_is_number(&h, &e)? && !planted(GL_PLAIN_NO_LINK) {
+            k.call_method1(intern!(p, "update"), (rel_link_objects(&e, specs, memo)?,))?;
+        }
+    }
+    if specs.is_truthy()? {
+        let body = || -> PyResult<()> {
+            let sat = sympy_atom(&h, atom)?;
+            let lt = atom.getattr(intern!(p, "pred"))?.eq(intern!(p, "lt"))?;
+            for ad in guarded_adapters(specs, memo)?.iter() {
+                k.call_method1(intern!(p, "update"), (terms_of(&ad, &sat, lt)?,))?;
+            }
+            Ok(())
+        };
+        match body() {
+            Ok(()) => {}
+            Err(x) if x.is_instance_of::<PyException>(p) => {}
+            Err(x) => return Err(x),
+        }
+    }
+    k.discard(atom)?;
+    Ok(k)
+}
+
+/// `glue_objects_plain` for tests (test_glue_plain.py compares it with Python's `glue_objects`).
+#[pyfunction]
+fn rel_glue_objects_plain<'py>(atom: &Bound<'py, PyAny>, specs: &Bound<'py, PyAny>, memo: &Bound<'py, PyAny>)
+    -> PyResult<Bound<'py, PySet>> {
+    glue_objects_plain(atom, specs, memo)
+}
+
 /// `link_objects`: the nodes `Relations._link(e)` can visit. Its `except Exception` is Python's: an ordinary exception from a side
 /// the adapters can't read ends the reading, and a `BaseException` (`TermFault`) goes on up.
 #[pyfunction]
@@ -3251,6 +3297,7 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(rel_guarded_adapters, m)?)?;
     m.add_function(wrap_pyfunction!(rel_terms_of, m)?)?;
     m.add_function(wrap_pyfunction!(rel_link_objects, m)?)?;
+    m.add_function(wrap_pyfunction!(rel_glue_objects_plain, m)?)?;
     m.add_function(wrap_pyfunction!(rel_closed_units, m)?)?;
     m.add_function(wrap_pyfunction!(rel_with_closed_units, m)?)?;
     m.add_function(wrap_pyfunction!(rel_missing, m)?)?;
