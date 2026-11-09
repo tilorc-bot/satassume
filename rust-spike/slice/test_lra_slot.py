@@ -22,8 +22,15 @@ import pytest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PLANTS = ('ad-lra-kind-key', 'ad-lra-slot-stale', 'ad-lra-flag-key', 'ad-lra-patch-guard', 'ad-lra-pair-swap')
-#: plants this file doesn't move, with where they're caught
-ELSEWHERE = {}
+#: plants this file doesn't move, with where they're caught, or why they're void (a void plant must still fire)
+ELSEWHERE = {
+    'ad-lra-slot-stale': 'void by construction: Python\'s own memo (lra_adapter.py `_INTERPRETED`, `_memoized`) is shared '
+                         'across queries and keyed by the atom and GENERIC_CONSTANTS only, so the results are a function of '
+                         '(atom, flag); a stale slot serves those same results, and a miss against the old table goes through '
+                         'term_id/ad:cbm_noid to Python. Fired 59,037 times on fuzz with answers and state MATCH '
+                         '(~/sa-rust-ids-work/sa-port-195/q2-stale). The per-query slot is the state rule\'s scoping, not an '
+                         'answer path.',
+}
 
 
 def _queries():
@@ -162,7 +169,8 @@ def test_each_plant_fires_and_is_seen(both, plant):
     got = _run('rust', SLICE_SESSION_PLANT=plant)
     fired, moved = got['counts']['rel:plant_fired'] > 0, _moved(py, got)
     if plant in ELSEWHERE:
-        assert not (fired and moved), f'{plant} is caught here now: take it out of ELSEWHERE'
+        assert fired, f'{plant} no longer fires'
+        assert not moved, f'{plant} is caught here now: take it out of ELSEWHERE'
         pytest.skip(ELSEWHERE[plant])
     assert fired
     assert moved
