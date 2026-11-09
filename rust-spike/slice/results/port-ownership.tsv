@@ -214,20 +214,20 @@ knowledge/templates/core.py	_exp_arg	524		port	6	landed 6e 714630d	Rust	Python's
 knowledge/templates/core.py	_pow_bound_templates	533		port	6	landed 6e 714630d	Rust	Python's copy on kept queries, no query on the stack and SLICE_KNOWLEDGE=py (knowledge_core_live.py)	Rust: dev 8, fuzz 0, suite 377	
 knowledge/templates/core.py	_table	575	~u	offline	6	not port (offline, ownership ruling)	Python			
 knowledge/templates/core.py	__getattr__	584		offline	6	not port (offline, ownership ruling)	Python			
-knowledge/templates/functions.py	_unary	41		port	6	landed 6f f76af99 (partial)	Python	Python shell: arity check, 6d's facts/_common, 6g's rows generation; inner work on Rust (via the swapped rules)	via its callees	6d/6g
+knowledge/templates/functions.py	_unary	41		port	6	landed 6i(b) (port/6i-b)	Rust	slotted _unary template on Rust (fn_tpl.rs, dispatch Tpl::Slotted): slots x + c and x/2 from the query table, scaffolded; facts/const_key (6d) over the rows read from gen.specs; kept queries run the Python template	see port-6i-b.md	6i(b)
 knowledge/templates/functions.py	shifted	84		port	6	landed 6f f76af99	Rust	swapped (tf6.rs, knowledge_f6_live.py)	Rust: dev 2, fuzz 0, suite 58; f6 wl 45, value wl 224	
 knowledge/templates/functions.py	_exp_ipi	100		port	6	landed 6f f76af99 (partial)	Python	Python shell: arity check, 6d's facts/_common, 6g's rows generation; inner work on Rust (core's ipi_rules)	via its callees	6d/6g
 knowledge/templates/functions.py	_parts_of_round_rules	143	~u	port	6	landed 6f f76af99	Rust	swapped (tf6.rs, knowledge_f6_live.py)	Rust: dev 0, fuzz 0, suite 7; f6 wl 3	
 knowledge/templates/functions.py	parts_of_round_templates	150		port	6	landed 6f f76af99 (partial)	Python	Python shell: arity check, 6d's facts/_common, 6g's rows generation; inner work on Rust (_parts_of_round_rules)	via its callees	6d/6g
 knowledge/templates/functions.py	_pi_trig_rules	177	~u	port	6	landed 6f f76af99	Rust	swapped (tf6.rs, knowledge_f6_live.py)	Rust: dev 0, fuzz 0, suite 283; f6 wl 38, core wl 21	
 knowledge/templates/functions.py	_pi_trig	214		port	6	landed 6f f76af99 (partial)	Python	Python shell: arity check, 6d's facts/_common, 6g's rows generation; inner work on Rust (_pi_trig_rules)	via its callees	6d/6g
-knowledge/templates/functions.py	_in_unit_interval_units	247	~u	port	6	landed 6f f76af99 (partial)	Rust	Python wrapper over the swapped _unit_interval_units (Rust); named SymPy-semantics callback for a Float argument, f6:unit_interval:float dev 0, fuzz 0, suite 2, f6 wl 0	Rust: dev 0, fuzz 0, suite 40; f6 wl 18	after 5c
+knowledge/templates/functions.py	_in_unit_interval_units	247	~u	port	6	landed 6i(b) (port/6i-b)	Rust	asin/acos unit facts of a Rational or Float constant on Rust (fn_tpl.rs unit_interval: exact comparisons, Float by its _mpf_); P/Not built as rows_tpl _unit_power_units does	see port-6i-b.md	6i(b)
 knowledge/templates/functions.py	_cosh_shift_rules	280	~u	port	6	landed 6f f76af99	Rust	swapped (tf6.rs, knowledge_f6_live.py)	Rust: dev 0, fuzz 0, suite 19; f6 wl 7	
 knowledge/templates/functions.py	_cosh_shift_split	302		port	6	landed 6f f76af99	Rust	swapped (tf6.rs, knowledge_f6_live.py)	Rust: dev 1, fuzz 0, suite 2; f6 wl 130, core wl 1	
 knowledge/templates/functions.py	_cosh_shift	322		port	6	landed 6f f76af99 (partial)	Python	Python shell: arity check, 6d's facts/_common, 6g's rows generation; inner work on Rust (_cosh_shift_split/_cosh_shift_rules)	via its callees	6d/6g
-knowledge/templates/functions.py	nary	354		port	6	landed 6f f76af99 (partial)	Python	Python shell: arity check, 6d's facts/_common, 6g's rows generation; inner work on Rust (via the swapped rules)	via its callees	6d/6g
-knowledge/templates/functions.py	_value_units	398	~u	offline	6	not port (offline, ownership ruling)	Python			
-knowledge/templates/functions.py	_genocchi_half	412	~u	port	6	landed 6f f76af99 (partial)	Rust	Python wrapper over the swapped _genocchi_half_rules (Rust)	Rust: dev 0, fuzz 0, suite 11; value wl 50	
+knowledge/templates/functions.py	nary	354		port	6	landed 6i(b) (port/6i-b)	Rust	nary template on Rust (fn_tpl.rs, dispatch Tpl::Slotted): slots args[i] + c from the query table, scaffolded; pattern_key/facts (6d) over the rows read from gen.specs; kept queries run the Python template	see port-6i-b.md	6i(b)
+knowledge/templates/functions.py	_value_units	398	~u	port	6	landed 6i(b) (port/6i-b)	Rust	on Rust (fn_tpl.rs value): expr.func(c) stays a SymPy callback (fn:value:sympy, same kind as special.py multigamma value; planner question in port-6i-b.md), value_units through the rebound name	see port-6i-b.md	6i(b)
+knowledge/templates/functions.py	_genocchi_half	412	~u	port	6	landed 6i(b) (port/6i-b)	Rust	genocchi half rules on Rust (fn_tpl.rs rules, the slot x/2 by tf6 f6_halved, scaffolded)	see port-6i-b.md	6i(b)
 knowledge/templates/limits.py	_inner	75	~u	python	6	not port (python, ownership ruling)	Python			
 knowledge/templates/limits.py	_scalar	102	~u	python	6	not port (python, ownership ruling)	Python			
 knowledge/templates/limits.py	_plain	110	~u	python	6	not port (python, ownership ruling)	Python			

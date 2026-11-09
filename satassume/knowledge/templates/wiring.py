@@ -137,16 +137,25 @@ def template(fn, gen):
     arity = getattr(gen, 'arity', 1)
     if arity != 1:
         terms = getattr(gen, 'terms', {})
-        return nary(fn.__name__, gen, arity=arity,
-                    slots=lambda args: tuple(shifted(args[i], S(c))
-                                             for i, c in terms.get(len(args), ())))
+        t = nary(fn.__name__, gen, arity=arity,
+                 slots=lambda args: tuple(shifted(args[i], S(c))
+                                          for i, c in terms.get(len(args), ())))
+        # read by the Rust backend's dispatch (fn_tpl.rs, 6i(b)): the same template from gen's rows
+        t._satassume_slotted = ('nary', fn.__name__, gen, False, None)
+        return t
     shifts = getattr(gen, 'shifts', ())
     units = (_in_unit_interval_units(fn.__name__) if fn in UNIT_INTERVAL
              else _value_units if fn in VALUE_AT_INTEGER else None)
+    kind = fn.__name__ if fn in UNIT_INTERVAL else 'value' if fn in VALUE_AT_INTEGER else None
     if fn in HALF_ARGUMENT:
-        return _unary(fn.__name__, _genocchi_half(gen, 2 + len(shifts)),
-                      lambda a: (*(shifted(a, S(c)) for c in shifts), a/2), units)
-    return _unary(fn.__name__, gen, lambda a: tuple(shifted(a, S(c)) for c in shifts), units)
+        t = _unary(fn.__name__, _genocchi_half(gen, 2 + len(shifts)),
+                   lambda a: (*(shifted(a, S(c)) for c in shifts), a/2), units)
+    else:
+        t = _unary(fn.__name__, gen, lambda a: tuple(shifted(a, S(c)) for c in shifts), units)
+    # read by the Rust backend's dispatch (fn_tpl.rs, 6i(b)): slots x + c (gen.shifts), then x/2 when the second item is
+    # true, and the unit facts of a constant argument by kind
+    t._satassume_slotted = ('unary', fn.__name__, gen, fn in HALF_ARGUMENT, kind)
+    return t
 
 
 def load(family: str) -> None:

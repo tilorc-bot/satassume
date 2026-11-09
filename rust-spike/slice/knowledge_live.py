@@ -67,7 +67,7 @@ RAISED = term_live.RAISED
 #: are term/dispatch.rs's.
 PLANTS = ('knowledge-rows-kept-raise', 'knowledge-pattern-drop', 'knowledge-value-multigamma-drop',
           'dispatch-ignores-epoch', 'dispatch-opaque-off', 'dispatch-redefines-off', 'dispatch-user-off',
-          'knowledge-no-query-drop') + knowledge_common_live.PLANTS
+          'knowledge-no-query-drop', 'dispatch-slotted-off') + knowledge_common_live.PLANTS
 PLANT = [None]
 _UNDO = [None]
 

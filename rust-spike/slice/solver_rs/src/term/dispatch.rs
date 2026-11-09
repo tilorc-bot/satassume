@@ -23,6 +23,8 @@ enum Tpl {
     Rows(Arc<super::rows_tpl::RowsTpl>),
     /// 6i(a): a hand-written outer template of special, rootof, nodes, physics or stats (outer_tpl.rs).
     Outer(super::outer_tpl::Outer),
+    /// 6i(b): functions.py's slotted `_unary` and `nary` (fn_tpl.rs).
+    Slotted(Arc<super::fn_tpl::Slotted>),
 }
 
 struct ClassEntry {
@@ -244,10 +246,20 @@ fn class_entry(slf: &Bound<'_, Dispatch>, cls: &Bound<'_, PyType>) -> PyResult<A
             } else {
                 None
             };
-            match (rows, outer) {
-                (Some(r), _) => templates.push((t.unbind(), format!("registry:rust:{name}"), Tpl::Rows(Arc::new(r)))),
-                (None, Some(o)) => templates.push((t.unbind(), format!("registry:rust:{name}"), Tpl::Outer(o))),
-                (None, None) => templates.push((t.unbind(), format!("registry:python:{name}"), Tpl::Python)),
+            let slotted = if rows.is_none() && outer.is_none() && slf.borrow().is_builtin(&t)
+                && slf.borrow().plant != "dispatch-slotted-off"
+            {
+                super::fn_tpl::Slotted::of(&t, &name)?
+            } else {
+                None
+            };
+            match (rows, outer, slotted) {
+                (Some(r), _, _) => templates.push((t.unbind(), format!("registry:rust:{name}"), Tpl::Rows(Arc::new(r)))),
+                (None, Some(o), _) => templates.push((t.unbind(), format!("registry:rust:{name}"), Tpl::Outer(o))),
+                (None, None, Some(s)) => {
+                    templates.push((t.unbind(), format!("registry:rust:{name}"), Tpl::Slotted(Arc::new(s))))
+                }
+                (None, None, None) => templates.push((t.unbind(), format!("registry:python:{name}"), Tpl::Python)),
             }
         }
     }
@@ -365,6 +377,14 @@ impl Dispatch {
                     }
                     (Tpl::Outer(o), _) => {
                         bump(&mut slf.borrow_mut().counts, &format!("registry:kept:{}", o.name()));
+                        t.bind(py).call1((expr,))?
+                    }
+                    (Tpl::Slotted(sl), Some(c)) if !c.bind(py).borrow().kept(py)? => {
+                        bump(&mut slf.borrow_mut().counts, name);
+                        sl.call(&c.bind(py).borrow(), t.bind(py), expr)?
+                    }
+                    (Tpl::Slotted(sl), _) => {
+                        bump(&mut slf.borrow_mut().counts, &format!("registry:kept:{}", sl.name()));
                         t.bind(py).call1((expr,))?
                     }
                     (Tpl::Python, _) => {

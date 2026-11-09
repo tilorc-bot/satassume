@@ -281,6 +281,13 @@ impl TermTable {
         self.add(vec![x, k])
     }
 
+    /// 6i(b): `a/2`, the slot `_genocchi_half` adds (`functions.wiring.template`): SymPy's `Mul(a, 1/2)`, which
+    /// distributes over a sum as `mul` does.
+    pub fn f6_halved(&mut self, x: TermId) -> Result<TermId, Refuse> {
+        let h = self.number(&Rat::new(1.into(), 2.into()));
+        self.mul(vec![h, x])
+    }
+
     /// `special._doubled(x)`: `2*x`, or `Mul(2, x, evaluate=False)` for a sum whose terms don't rebuild.
     pub fn f6_doubled(&mut self, x: TermId) -> Result<TermId, Refuse> {
         let two = self.number(&Rat::int(2));

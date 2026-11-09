@@ -280,7 +280,9 @@ impl Common {
     }
 
     fn set_plant(&mut self, p: &str) -> PyResult<()> {
-        if !PLANTS.contains(&p) && !super::rows_tpl::PLANTS.contains(&p) && !super::outer_tpl::PLANTS.contains(&p) {
+        if !PLANTS.contains(&p) && !super::rows_tpl::PLANTS.contains(&p) && !super::outer_tpl::PLANTS.contains(&p)
+            && !super::fn_tpl::PLANTS.contains(&p)
+        {
             return Err(PyValueError::new_err(format!("unknown plant {p}")));
         }
         self.plant = p.to_string();
