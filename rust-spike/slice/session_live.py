@@ -1074,12 +1074,25 @@ def _install_relations():
     for m, ns in mods:
         for n in ns:
             setattr(m, n, getattr(sa_solver, _REL_FUNCS[n]))
+    # State step part 2 (iii): a default engine built before this install (a workload's `default_engine()` while its queries
+    # load: scope_wl; or a user's before `backend.install()`) holds Python's `with_closed_units` closure (engine.py:1341), which
+    # then runs per query. It is rewrapped on Rust's over the same templates, as an engine built after the install has it.
+    from satassume import sympy_api
+    eng = sympy_api._engine
+    ct = getattr(eng, 'clause_templates', None)
+    rewrapped = []
+    if getattr(ct, '__qualname__', '') == 'with_closed_units.<locals>.clauses' and ct.__module__ == relations.__name__:
+        inner = ct.__closure__[ct.__code__.co_freevars.index('clause_templates')].cell_contents
+        eng.clause_templates = sa_solver.rel_with_closed_units(inner)
+        rewrapped.append((eng, ct))
 
     def undo():
         for n, f in saved.items():
             setattr(R, n, f)
         for m, n, f in saved_f:
             setattr(m, n, f)
+        for e, f in rewrapped:
+            e.clause_templates = f
     return undo
 
 
