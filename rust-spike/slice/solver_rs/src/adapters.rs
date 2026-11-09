@@ -20,8 +20,8 @@ use pyo3::types::{PyDict, PyList, PyString, PyTuple};
 use std::collections::HashMap;
 
 use crate::relations_core::{
-    planted, AD_EUF_NODE, AD_EUF_SHARED, AD_LRA_FLAG_KEY, AD_LRA_KIND_KEY, AD_LRA_PAIR_SWAP, AD_LRA_PATCH_GUARD, AD_LRA_SHARED,
-    AD_LRA_SLOT_STALE,
+    planted, AD_EUF_NODE, AD_EUF_SHARED, AD_LRA_FLAG_KEY, AD_LRA_KIND_KEY, AD_LRA_NOT_EXPR, AD_LRA_PAIR_SWAP, AD_LRA_PATCH_GUARD,
+    AD_LRA_SHARED, AD_LRA_SLOT_STALE,
 };
 use crate::term::py::PyTermTable;
 use crate::session::{self, tick};
@@ -207,6 +207,8 @@ impl LraLive {
         }
     }
 }
+
+static EXPR: pyo3::sync::PyOnceLock<Py<PyAny>> = pyo3::sync::PyOnceLock::new();
 
 type Exported = Vec<(Py<PyAny>, u8, Py<PyAny>, bool, Py<PyAny>)>;
 
@@ -424,7 +426,19 @@ impl<'py> Reader<'_, 'py> {
 
     fn integer_form(&self, e: &Bound<'py, PyAny>) -> PyResult<Option<Bound<'py, PyAny>>> {
         let p = self.p;
-        let Some(i) = self.id(e, "integer_form")? else { return Ok(None) };
+        // lra_adapter.integer_form's first line: a side that isn't an `Expr` (glue's `link_objects` on a plain int side) is
+        // None, decided by its type alone, so it needs no row (state step part 2 (i): the `ad:cbm_noid` fallback on scope).
+        let expr = EXPR.get_or_try_init(p, || -> PyResult<Py<PyAny>> { Ok(p.import("sympy.core.expr")?.getattr("Expr")?.unbind()) })?;
+        let i = if e.is_instance(expr.bind(p))? {
+            self.id(e, "integer_form")?
+        } else if planted(AD_LRA_NOT_EXPR) && e.is_instance_of::<pyo3::types::PyInt>() {
+            let n: i64 = e.extract()?;
+            Some(self.table.borrow_mut().number(n.into(), 1.into()))
+        } else {
+            tick(session::AD_LRA_NOT_EXPR);
+            return Ok(Some(p.None().into_bound(p)));
+        };
+        let Some(i) = i else { return Ok(None) };
         let got = self.table.borrow_mut().lra_integer_form(p, i, self.flag, self.objects.clone()).map_err(|e| self.fault("integer_form", e))?;
         if got.is_none() {
             return Ok(Some(got));

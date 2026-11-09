@@ -11,7 +11,7 @@
 //! borrow is held across a callback, since `Session.ensure` and discovery stay Python and come back in. A callback's exception
 //! goes on up unchanged (`Uninterpreted`, the budget's); only this file's own failures become `TermFault`, which no handler on
 //! the engine's path can turn into a quiet unknown.
-use std::sync::atomic::{AtomicU8, Ordering::Relaxed};
+use std::sync::atomic::{AtomicU16, Ordering::Relaxed};
 use std::sync::{Arc, RwLock};
 
 use pyo3::exceptions::{PyException, PyKeyError, PyValueError};
@@ -34,348 +34,351 @@ static HOOKS: RwLock<Option<Arc<Hooks>>> = RwLock::new(None);
 
 /// Test plants: 1 `link-none`, every resolve answers None; 2, 3, 4 drop one clause each in `_order_sides`, `_order_infinite`,
 /// `_trichotomy`. From 5 on, C2b's: one effect dropped in each moved method, and `fresh-skew` shifts numbering.
-static PLANT: AtomicU8 = AtomicU8::new(0);
-const LINK_NONE: u8 = 1;
-const DROP_SIDES: u8 = 2;
-const DROP_INFINITE: u8 = 3;
-const DROP_TRICHOTOMY: u8 = 4;
-const DROP_INTERPRET: u8 = 5;
-const DROP_GUARD: u8 = 6;
-const DROP_BOUND: u8 = 7;
-const DROP_LINK: u8 = 8;
-const DROP_SELECTOR: u8 = 9;
-const DROP_EQ_INFINITY: u8 = 10;
-const FRESH_NOT_INERT: u8 = 11;
-const FRESH_SKEW: u8 = 12;
+static PLANT: AtomicU16 = AtomicU16::new(0);
+const LINK_NONE: u16 = 1;
+const DROP_SIDES: u16 = 2;
+const DROP_INFINITE: u16 = 3;
+const DROP_TRICHOTOMY: u16 = 4;
+const DROP_INTERPRET: u16 = 5;
+const DROP_GUARD: u16 = 6;
+const DROP_BOUND: u16 = 7;
+const DROP_LINK: u16 = 8;
+const DROP_SELECTOR: u16 = 9;
+const DROP_EQ_INFINITY: u16 = 10;
+const FRESH_NOT_INERT: u16 = 11;
+const FRESH_SKEW: u16 = 12;
 /// All of `_trichotomy` off, as a test patching Python's method does. `DROP_TRICHOTOMY` keeps its `ensure`s, vars and roles.
-const SKIP_TRICHOTOMY: u8 = 13;
+const SKIP_TRICHOTOMY: u16 = 13;
 /// From here, C2c's: one effect dropped in each moved method.
-const DROP_ADD_ROLE: u8 = 14;
-const DROP_APPLY_ROLE: u8 = 15;
-const DROP_CANDIDACY: u8 = 16;
-const DROP_TSOURCE: u8 = 17;
-const DROP_TVAR: u8 = 18;
-const DROP_TVAR_MC: u8 = 19;
-const DROP_ENGAGE: u8 = 20;
-const DROP_TERMS: u8 = 21;
-const DROP_TERMS_SIDE: u8 = 22;
-const DROP_FIXED: u8 = 23;
-const DROP_SYNC: u8 = 24;
-const DROP_SYNC_POLAR: u8 = 25;
-const DROP_XSWITCH: u8 = 26;
-const DROP_CONGRUENCE: u8 = 27;
-const CONGRUENT_NEVER: u8 = 28;
-const SHARE_GUARD_ONE: u8 = 29;
+const DROP_ADD_ROLE: u16 = 14;
+const DROP_APPLY_ROLE: u16 = 15;
+const DROP_CANDIDACY: u16 = 16;
+const DROP_TSOURCE: u16 = 17;
+const DROP_TVAR: u16 = 18;
+const DROP_TVAR_MC: u16 = 19;
+const DROP_ENGAGE: u16 = 20;
+const DROP_TERMS: u16 = 21;
+const DROP_TERMS_SIDE: u16 = 22;
+const DROP_FIXED: u16 = 23;
+const DROP_SYNC: u16 = 24;
+const DROP_SYNC_POLAR: u16 = 25;
+const DROP_XSWITCH: u16 = 26;
+const DROP_CONGRUENCE: u16 = 27;
+const CONGRUENT_NEVER: u16 = 28;
+const SHARE_GUARD_ONE: u16 = 29;
 /// From here, 5c1's (`discovery.rs`): one effect dropped in each moved `Session` method.
-pub(crate) const DROP_ENSURE_DEMAND: u8 = 30;
-pub(crate) const DROP_DISCOVER_FLUSH: u8 = 31;
-pub(crate) const DROP_DISCOVER_VISIT: u8 = 32;
-pub(crate) const DROP_ESC_PATTERN: u8 = 33;
-pub(crate) const DROP_ESC_COMPILE: u8 = 34;
-pub(crate) const DROP_ESC_DEFERRED: u8 = 35;
-pub(crate) const TRUNCATED_NEVER: u8 = 36;
-pub(crate) const INCOMPLETE_NEVER: u8 = 37;
+pub(crate) const DROP_ENSURE_DEMAND: u16 = 30;
+pub(crate) const DROP_DISCOVER_FLUSH: u16 = 31;
+pub(crate) const DROP_DISCOVER_VISIT: u16 = 32;
+pub(crate) const DROP_ESC_PATTERN: u16 = 33;
+pub(crate) const DROP_ESC_COMPILE: u16 = 34;
+pub(crate) const DROP_ESC_DEFERRED: u16 = 35;
+pub(crate) const TRUNCATED_NEVER: u16 = 36;
+pub(crate) const INCOMPLETE_NEVER: u16 = 37;
 /// From here, 5c2's (`compile_loop.rs`).
-pub(crate) const DROP_SPLIT_LATER: u8 = 38;
-pub(crate) const DROP_EMIT_MENT: u8 = 39;
-pub(crate) const DROP_FLUSH_CUSTOM: u8 = 40;
-pub(crate) const DROP_COMPILE_DEMAND: u8 = 41;
-pub(crate) const DROP_PEND_COMPILE: u8 = 42;
-pub(crate) const WANT_EMPTY: u8 = 43;
-pub(crate) const DROP_PAT_DEMAND: u8 = 44;
-pub(crate) const DROP_CUSTOM_REL: u8 = 45;
-pub(crate) const DROP_CUSTOM_FACTS: u8 = 46;
-pub(crate) const DROP_VISIT_ITEMS: u8 = 47;
-pub(crate) const DROP_DV_LINK: u8 = 48;
-pub(crate) const DROP_PREP_TWINS: u8 = 49;
-pub(crate) const DROP_PREP_REL: u8 = 50;
-pub(crate) const QUERY_LIT_TUPLE: u8 = 51;
-pub(crate) const DROP_QL_MENTION: u8 = 52;
-pub(crate) const QL_SKIP_CONSISTENT: u8 = 53;
-pub(crate) const DROP_QA_MENTION: u8 = 54;
-pub(crate) const DROP_LO_MEMO: u8 = 55;
-pub(crate) const DROP_LO_DISCOVER: u8 = 56;
-pub(crate) const DROP_REL_PROCESS: u8 = 57;
-pub(crate) const DROP_EA_ENSURE: u8 = 58;
-pub(crate) const DROP_TWINS_VAR: u8 = 59;
-pub(crate) const DROP_EMIT: u8 = 60;
+pub(crate) const DROP_SPLIT_LATER: u16 = 38;
+pub(crate) const DROP_EMIT_MENT: u16 = 39;
+pub(crate) const DROP_FLUSH_CUSTOM: u16 = 40;
+pub(crate) const DROP_COMPILE_DEMAND: u16 = 41;
+pub(crate) const DROP_PEND_COMPILE: u16 = 42;
+pub(crate) const WANT_EMPTY: u16 = 43;
+pub(crate) const DROP_PAT_DEMAND: u16 = 44;
+pub(crate) const DROP_CUSTOM_REL: u16 = 45;
+pub(crate) const DROP_CUSTOM_FACTS: u16 = 46;
+pub(crate) const DROP_VISIT_ITEMS: u16 = 47;
+pub(crate) const DROP_DV_LINK: u16 = 48;
+pub(crate) const DROP_PREP_TWINS: u16 = 49;
+pub(crate) const DROP_PREP_REL: u16 = 50;
+pub(crate) const QUERY_LIT_TUPLE: u16 = 51;
+pub(crate) const DROP_QL_MENTION: u16 = 52;
+pub(crate) const QL_SKIP_CONSISTENT: u16 = 53;
+pub(crate) const DROP_QA_MENTION: u16 = 54;
+pub(crate) const DROP_LO_MEMO: u16 = 55;
+pub(crate) const DROP_LO_DISCOVER: u16 = 56;
+pub(crate) const DROP_REL_PROCESS: u16 = 57;
+pub(crate) const DROP_EA_ENSURE: u16 = 58;
+pub(crate) const DROP_TWINS_VAR: u16 = 59;
+pub(crate) const DROP_EMIT: u16 = 60;
 /// From here, 5c4's: one effect dropped in each moved `Relations` method. `skip-share` is the clause off as
 /// `test_equality_sharing_is_needed_and_works` turns it off (`_share` and `_trichotomy` both patched away), for its replacement in
 /// `test_relations_core.py`; `drop-share` removes sharing alone (the pairs are counted, no interface atom is made).
-const DROP_INIT_ENGAGE: u8 = 61;
-const DROP_ENQUEUE: u8 = 62;
-const DROP_NOTE_TOP: u8 = 63;
-const DROP_PROC_EQ_LINKS: u8 = 64;
-const DROP_LINK_LATER: u8 = 65;
-const WANTS_NEVER: u8 = 66;
-const DROP_SHARE: u8 = 67;
-const SKIP_SHARE: u8 = 68;
+const DROP_INIT_ENGAGE: u16 = 61;
+const DROP_ENQUEUE: u16 = 62;
+const DROP_NOTE_TOP: u16 = 63;
+const DROP_PROC_EQ_LINKS: u16 = 64;
+const DROP_LINK_LATER: u16 = 65;
+const WANTS_NEVER: u16 = 66;
+const DROP_SHARE: u16 = 67;
+const SKIP_SHARE: u16 = 68;
 /// `drop-share` with `_trichotomy` off as well, so that sharing is the only route (the re-pointed test's real-specs case). One
 /// plant is on at a time, hence one name for both. Test-only, like `skip-share`.
-const DROP_SHARE_TRI: u8 = 69;
+const DROP_SHARE_TRI: u16 = 69;
 /// From here, 5c5's: one effect dropped or skewed in each of the five methods 5c4 left.
-const ADAPTER_FRESH: u8 = 70;
-const SELECTOR_NO_MEMO: u8 = 71;
-const ATOM_VAR_SKEW: u8 = 72;
-const DROP_NOTE_SIDES: u8 = 73;
-const DROP_EQ_LINKS_ZERO: u8 = 74;
+const ADAPTER_FRESH: u16 = 70;
+const SELECTOR_NO_MEMO: u16 = 71;
+const ATOM_VAR_SKEW: u16 = 72;
+const DROP_NOTE_SIDES: u16 = 73;
+const DROP_EQ_LINKS_ZERO: u16 = 74;
 /// From here, 5c5's second part: one effect dropped or skewed in each of relations.py's module functions.
-const OWN_TERM_FALSE: u8 = 75;
-const CONSTANT_TERM_NEVER: u8 = 76;
-const BASIS_ALL: u8 = 77;
-const SYMPY_ATOM_SWAP: u8 = 78;
-const ZERO_ARGS_EMPTY: u8 = 79;
-const UNDER_OF_EMPTY: u8 = 80;
-const ZERO_TWINS_FIRST: u8 = 81;
-const GLUE_NO_TWINS: u8 = 82;
-const GUARDED_NONE: u8 = 83;
-const TERMS_OF_NO_ORDER: u8 = 84;
-const LINK_OBJECTS_BARE: u8 = 85;
-const CLOSED_UNITS_NONE: u8 = 86;
-const WITH_CLOSED_SKIP: u8 = 87;
-const SPECS_NO_EUF: u8 = 88;
-const RELNAME_SWAP: u8 = 89;
+const OWN_TERM_FALSE: u16 = 75;
+const CONSTANT_TERM_NEVER: u16 = 76;
+const BASIS_ALL: u16 = 77;
+const SYMPY_ATOM_SWAP: u16 = 78;
+const ZERO_ARGS_EMPTY: u16 = 79;
+const UNDER_OF_EMPTY: u16 = 80;
+const ZERO_TWINS_FIRST: u16 = 81;
+const GLUE_NO_TWINS: u16 = 82;
+const GUARDED_NONE: u16 = 83;
+const TERMS_OF_NO_ORDER: u16 = 84;
+const LINK_OBJECTS_BARE: u16 = 85;
+const CLOSED_UNITS_NONE: u16 = 86;
+const WITH_CLOSED_SKIP: u16 = 87;
+const SPECS_NO_EUF: u16 = 88;
+const RELNAME_SWAP: u16 = 89;
 /// Adapters step, part A: `spec_row` hands back a converted spec with `guarded` flipped on each memo hit.
-const SPEC_ROW_FLIP: u8 = 90;
+const SPEC_ROW_FLIP: u16 = 90;
 /// From here, step scope's (`scope_core.rs`): one effect dropped in each moved item of scope.py.
-pub(crate) const SCOPE_LINKED_EMPTY: u8 = 91;
-pub(crate) const LINKED_NO_REL: u8 = 92;
-pub(crate) const SCOPE_NO_AFFINE: u8 = 93;
-pub(crate) const THEORY_NO_ASSUME: u8 = 94;
-pub(crate) const CUSTOM_NEVER: u8 = 95;
-pub(crate) const EXT_SHALLOW: u8 = 96;
+pub(crate) const SCOPE_LINKED_EMPTY: u16 = 91;
+pub(crate) const LINKED_NO_REL: u16 = 92;
+pub(crate) const SCOPE_NO_AFFINE: u16 = 93;
+pub(crate) const THEORY_NO_ASSUME: u16 = 94;
+pub(crate) const CUSTOM_NEVER: u16 = 95;
+pub(crate) const EXT_SHALLOW: u16 = 96;
 /// Step 5c6, one per moved `Session` method (`session_glue.rs`).
-pub(crate) const INIT_NO_RELATIONS: u8 = 97;
-pub(crate) const AF_DROP_RELATIONS: u8 = 98;
-pub(crate) const LINK_SET_SKIP: u8 = 99;
-pub(crate) const AL_DROP_DELTA: u8 = 100;
-pub(crate) const SET_GLUE_NO_EMIT: u8 = 101;
-pub(crate) const GROUP_SEL_NO_IMPL: u8 = 102;
-pub(crate) const GLUE_OF_PLAIN: u8 = 103;
+pub(crate) const INIT_NO_RELATIONS: u16 = 97;
+pub(crate) const AF_DROP_RELATIONS: u16 = 98;
+pub(crate) const LINK_SET_SKIP: u16 = 99;
+pub(crate) const AL_DROP_DELTA: u16 = 100;
+pub(crate) const SET_GLUE_NO_EMIT: u16 = 101;
+pub(crate) const GROUP_SEL_NO_IMPL: u16 = 102;
+pub(crate) const GLUE_OF_PLAIN: u16 = 103;
 /// Adapters step, part B (adapters.rs): the Rust LRAAdapter's `register` leaves the atom's terms out of `_shared`.
-pub(crate) const AD_LRA_SHARED: u8 = 104;
+pub(crate) const AD_LRA_SHARED: u16 = 104;
 /// Adapters step, part B: the Rust EUFAdapter's `node_term` interns into `_terms`, so node terms become shared terms.
-pub(crate) const AD_EUF_NODE: u8 = 105;
+pub(crate) const AD_EUF_NODE: u16 = 105;
 /// Adapters step, part B: `make_adapter` builds the other default adapter (EUF for LRA's spec and back).
-const AD_KIND_SWAP: u8 = 106;
+const AD_KIND_SWAP: u16 = 106;
 /// Adapters step, part B: the Rust EUFAdapter's `shared_terms` leaves out the last term interned.
-pub(crate) const AD_EUF_SHARED: u8 = 107;
+pub(crate) const AD_EUF_SHARED: u16 = 107;
 /// Adapters step, part C (payloads.rs): Rust `Negated` wraps its payload in a second `Negated`, so the negation cancels.
-pub(crate) const PAY_NEG_TWICE: u8 = 108;
+pub(crate) const PAY_NEG_TWICE: u16 = 108;
 /// Adapters step, part C: Rust `Integral`'s offset is half a unit off.
-pub(crate) const PAY_INT_OFFSET: u8 = 109;
+pub(crate) const PAY_INT_OFFSET: u16 = 109;
 /// Adapters step, part C: Rust `EqAtom` stores the opposite polarity.
-pub(crate) const PAY_EQ_FLIP: u8 = 110;
+pub(crate) const PAY_EQ_FLIP: u16 = 110;
 /// Adapters step, part C2 (constfield.rs `pi_laurent_elem`, read by lra_cert.rs): an Element bound reads as its rational
 /// part, its pi terms dropped (a wrong value, not None).
-pub(crate) const CF_LAURENT_RATIONAL: u8 = 111;
+pub(crate) const CF_LAURENT_RATIONAL: u16 = 111;
 /// Not plants: test_term_live.py's handler tests, at lra.rs's certificate handler, now that no Python is called inside it.
 /// `pi_laurent_elem`'s caller raises TermRefuse once (then the plant is off), or ValueError on every call.
-pub(crate) const CF_LAURENT_REFUSE: u8 = 112;
-pub(crate) const CF_LAURENT_RAISE: u8 = 113;
+pub(crate) const CF_LAURENT_REFUSE: u16 = 112;
+pub(crate) const CF_LAURENT_RAISE: u16 = 113;
 /// Step 5c7, one per moved budget row (`budget.rs`). 111-113 are adapters C2's (cf-laurent-*).
-pub(crate) const UNION_SKIP_OVERLAP: u8 = 114;
-pub(crate) const WITHIN_NO_LINK: u8 = 115;
-pub(crate) const OVER_BUDGET_NO_FLAG: u8 = 116;
-pub(crate) const NOTE_BUDGET_KEEP_FLAG: u8 = 117;
+pub(crate) const UNION_SKIP_OVERLAP: u16 = 114;
+pub(crate) const WITHIN_NO_LINK: u16 = 115;
+pub(crate) const OVER_BUDGET_NO_FLAG: u16 = 116;
+pub(crate) const NOTE_BUDGET_KEEP_FLAG: u16 = 117;
 /// Element._new step (term/py.rs `lra_memo`): a memo hit gives one more as a number (rhs, constant, or a side's first
 /// coefficient): a wrong value, the entry still there.
-pub(crate) const ELEM_MEMO_PLUS1: u8 = 118;
+pub(crate) const ELEM_MEMO_PLUS1: u16 = 118;
 /// Element._new step (constfield.rs `PyElem`): `==` answers the opposite; `hash` is one off; `repr` writes `Element[`;
 /// `Num::from_py` of the pyclass reads its negation.
-pub(crate) const ELEM_EQ_FLIP: u8 = 119;
-pub(crate) const ELEM_HASH_SKEW: u8 = 120;
-pub(crate) const ELEM_REPR_BRACKET: u8 = 121;
-pub(crate) const ELEM_FROM_NEG: u8 = 122;
+pub(crate) const ELEM_EQ_FLIP: u16 = 119;
+pub(crate) const ELEM_HASH_SKEW: u16 = 120;
+pub(crate) const ELEM_REPR_BRACKET: u16 = 121;
+pub(crate) const ELEM_FROM_NEG: u16 = 122;
 /// Element._new step, part 2b (`_order_infinite`): a Rust Element coefficient's sign is read negated (a wrong value).
-pub(crate) const REL_ELEM_SIGN_FLIP: u8 = 123;
+pub(crate) const REL_ELEM_SIGN_FLIP: u16 = 123;
 // Step 5c8 (relevance.rs): one per moved method; `consistent-fault`
 // raises a TermFault inside `_consistent`'s body, which must come out loud.
-pub(crate) const CONST_BASE_NO_POW: u8 = 124;
-pub(crate) const CONST_FREE_NO_MUL: u8 = 125;
-pub(crate) const CLOSED_KEYS_NO_UNDEF: u8 = 126;
-pub(crate) const EXPR_KEYS_CLOSED_SKIP: u8 = 127;
-pub(crate) const ARG_KEYS_NO_CLOSED: u8 = 128;
-pub(crate) const KEYS_EMPTY: u8 = 129;
-pub(crate) const KEYS_REL_NO_FLAG: u8 = 130;
-pub(crate) const BOOL_KEYS_OPAQUE_IN: u8 = 131;
-pub(crate) const SIDES_KEYS_FIRST_ONLY: u8 = 132;
-pub(crate) const SPLIT_NO_MERGE: u8 = 133;
-pub(crate) const SPLIT_PART_FIRST: u8 = 134;
-pub(crate) const RELEVANT_ASSUME_CONSISTENT: u8 = 135;
-pub(crate) const VOCAB_NO_DERIVED: u8 = 136;
-pub(crate) const PART_CONSISTENT_TRUE: u8 = 137;
-pub(crate) const CONSISTENT_FAULT: u8 = 138;
-pub(crate) const CONSISTENT_IGNORE_VERDICT: u8 = 139;
+pub(crate) const CONST_BASE_NO_POW: u16 = 124;
+pub(crate) const CONST_FREE_NO_MUL: u16 = 125;
+pub(crate) const CLOSED_KEYS_NO_UNDEF: u16 = 126;
+pub(crate) const EXPR_KEYS_CLOSED_SKIP: u16 = 127;
+pub(crate) const ARG_KEYS_NO_CLOSED: u16 = 128;
+pub(crate) const KEYS_EMPTY: u16 = 129;
+pub(crate) const KEYS_REL_NO_FLAG: u16 = 130;
+pub(crate) const BOOL_KEYS_OPAQUE_IN: u16 = 131;
+pub(crate) const SIDES_KEYS_FIRST_ONLY: u16 = 132;
+pub(crate) const SPLIT_NO_MERGE: u16 = 133;
+pub(crate) const SPLIT_PART_FIRST: u16 = 134;
+pub(crate) const RELEVANT_ASSUME_CONSISTENT: u16 = 135;
+pub(crate) const VOCAB_NO_DERIVED: u16 = 136;
+pub(crate) const PART_CONSISTENT_TRUE: u16 = 137;
+pub(crate) const CONSISTENT_FAULT: u16 = 138;
+pub(crate) const CONSISTENT_IGNORE_VERDICT: u16 = 139;
 // Step 5c9a (memos.rs): 170-177; the 6g stack's plants sit below 170.
 /// The registry view leaves `SPEC_ROWS` out (the inventory's planted bug: a table left out of the registry view).
-pub(crate) const MEMO_VIEW_DROP: u8 = 170;
+pub(crate) const MEMO_VIEW_DROP: u16 = 170;
 /// `ENCLOSURES`' view doesn't empty the map on `clear()`.
-pub(crate) const MEMO_CLEAR_SKIP: u8 = 171;
+pub(crate) const MEMO_CLEAR_SKIP: u16 = 171;
 /// Rust's `Table.restamp` empties the table but leaves the stamp.
-pub(crate) const MEMO_RESTAMP_NO_STAMP: u8 = 172;
+pub(crate) const MEMO_RESTAMP_NO_STAMP: u16 = 172;
 /// `Engine.transfer` read by Rust gives the opposite value.
-pub(crate) const MEMO_SET_TRANSFER: u8 = 173;
+pub(crate) const MEMO_SET_TRANSFER: u16 = 173;
 /// `Engine.uninterpreted` read by Rust gives the other value.
-pub(crate) const MEMO_SET_UNINTERP: u8 = 174;
+pub(crate) const MEMO_SET_UNINTERP: u16 = 174;
 /// `Engine.relation_specs` read by Rust gives `()`.
-pub(crate) const MEMO_SET_RELSPECS: u8 = 175;
+pub(crate) const MEMO_SET_RELSPECS: u16 = 175;
 /// `Engine.extensions` read by Rust gives None.
-pub(crate) const MEMO_SET_EXT: u8 = 176;
+pub(crate) const MEMO_SET_EXT: u16 = 176;
 /// `SPEC_ROWS` is never emptied at its bound.
-pub(crate) const MEMO_SPEC_UNBOUNDED: u8 = 177;
+pub(crate) const MEMO_SPEC_UNBOUNDED: u16 = 177;
 // Step 5c9b (procmemo.rs): 180-187.
 /// `_SPLIT` isn't emptied at 100,000 (the inventory's planted bug, first half).
-pub(crate) const PM_SPLIT_NO_FULL_CLEAR: u8 = 180;
+pub(crate) const PM_SPLIT_NO_FULL_CLEAR: u16 = 180;
 /// `_SPLIT`'s view doesn't empty the map on `clear()` (the registry's clear; second half).
-pub(crate) const PM_SPLIT_CLEAR_SKIP: u8 = 181;
+pub(crate) const PM_SPLIT_CLEAR_SKIP: u16 = 181;
 /// `_WANT` answers from any entry of the same size.
-pub(crate) const PM_WANT_KEY_LEN: u8 = 182;
+pub(crate) const PM_WANT_KEY_LEN: u16 = 182;
 /// `neighbourhood` leaves the predicate itself out.
-pub(crate) const PM_NEIGH_NO_SELF: u8 = 183;
+pub(crate) const PM_NEIGH_NO_SELF: u16 = 183;
 /// `_NEIGH` answers every index with its first entry.
-pub(crate) const PM_NEIGH_MEMO_FIRST: u8 = 184;
+pub(crate) const PM_NEIGH_MEMO_FIRST: u16 = 184;
 /// A `_CLOSED` hit answers None.
-pub(crate) const PM_CLOSED_HIT_NONE: u8 = 185;
+pub(crate) const PM_CLOSED_HIT_NONE: u16 = 185;
 /// `_SYMPY_ATOMS` answers a miss from an entry with the same `expr` and any `pred`.
-pub(crate) const PM_ATOMS_KEY_EXPR: u8 = 186;
+pub(crate) const PM_ATOMS_KEY_EXPR: u16 = 186;
 /// `_SPLIT`'s view isn't put in the registry (a moved table left out of the registry view).
-pub(crate) const PM_VIEW_DROP: u8 = 187;
+pub(crate) const PM_VIEW_DROP: u16 = 187;
 // Step 5c9c (engmemo.rs, budget.rs): 190-198.
 /// `_qcones`' `clear()` leaves the map as it is (the inventory's planted bug: `_drop_cones` not clearing `_qcones` on a
 /// settings change).
-pub(crate) const EM_QCONES_CLEAR_SKIP: u8 = 190;
+pub(crate) const EM_QCONES_CLEAR_SKIP: u16 = 190;
 /// `_kids[k] = v` from Python's `_struct` is dropped.
-pub(crate) const EM_KIDS_SET_DROP: u8 = 191;
+pub(crate) const EM_KIDS_SET_DROP: u16 = 191;
 /// `guarded_adapters` doesn't store what it built in `_glue_adapters`.
-pub(crate) const EM_GLUE_NO_STORE: u8 = 192;
+pub(crate) const EM_GLUE_NO_STORE: u16 = 192;
 /// A `_xbasis` hit answers the map's first entry.
-pub(crate) const EM_XBASIS_FIRST: u8 = 193;
+pub(crate) const EM_XBASIS_FIRST: u16 = 193;
 /// `splits` isn't emptied at its `maxsize` (test only: 20,000).
-pub(crate) const EM_SPLITS_NO_BOUND: u8 = 194;
+pub(crate) const EM_SPLITS_NO_BOUND: u16 = 194;
 /// `_query_cone` gives an empty `sums`.
-pub(crate) const EM_QCONE_NO_SUMS: u8 = 195;
+pub(crate) const EM_QCONE_NO_SUMS: u16 = 195;
 /// `_qcones`' key leaves `link` out.
-pub(crate) const EM_QCONE_KEY_F: u8 = 196;
+pub(crate) const EM_QCONE_KEY_F: u16 = 196;
 /// An assigned `AnswerMemo`'s `maxsize` is dropped (test only).
-pub(crate) const EM_SLOT_NO_MAXSIZE: u8 = 197;
+pub(crate) const EM_SLOT_NO_MAXSIZE: u16 = 197;
 /// `relevant`'s `splits.put` is dropped.
-pub(crate) const EM_SPLITS_PUT_DROP: u8 = 198;
+pub(crate) const EM_SPLITS_PUT_DROP: u16 = 198;
 /// Step 5c10a (factcache.rs). The inventory's planted bug, a put lost on a shared DictCache: `sync` compares the settings by
 /// identity, so a second engine with equal settings empties what the first one put.
-pub(crate) const FC_SHARED_SYNC_IS: u8 = 200;
+pub(crate) const FC_SHARED_SYNC_IS: u16 = 200;
 /// `put` drops a new node.
-pub(crate) const FC_PUT_NEW_DROP: u8 = 201;
+pub(crate) const FC_PUT_NEW_DROP: u16 = 201;
 /// `DictCache(maxsize)` ignores `maxsize`.
-pub(crate) const FC_NEW_NO_MAXSIZE: u8 = 202;
+pub(crate) const FC_NEW_NO_MAXSIZE: u16 = 202;
 /// `sync` keeps the store on another epoch.
-pub(crate) const FC_SYNC_NO_CLEAR: u8 = 203;
+pub(crate) const FC_SYNC_NO_CLEAR: u16 = 203;
 /// `facts` gives only the node's first fact.
-pub(crate) const FC_FACTS_FIRST: u8 = 204;
+pub(crate) const FC_FACTS_FIRST: u16 = 204;
 /// `get` ignores its default.
-pub(crate) const FC_GET_NO_DEFAULT: u8 = 205;
+pub(crate) const FC_GET_NO_DEFAULT: u16 = 205;
 /// `put` never empties a full store.
-pub(crate) const FC_NO_BOUND: u8 = 206;
+pub(crate) const FC_NO_BOUND: u16 = 206;
 /// `put` drops a custom predicate's fact (the `custom_cache` container).
-pub(crate) const FC_CUSTOM_PUT_DROP: u8 = 207;
+pub(crate) const FC_CUSTOM_PUT_DROP: u16 = 207;
 /// The view leaves the last node out.
-pub(crate) const FC_VIEW_DROP_LAST: u8 = 208;
+pub(crate) const FC_VIEW_DROP_LAST: u16 = 208;
 /// The rollback keeps what the refused run added.
-pub(crate) const FC_ROLLBACK_SKIP: u8 = 209;
+pub(crate) const FC_ROLLBACK_SKIP: u16 = 209;
 /// `clear` keeps the store.
-pub(crate) const FC_CLEAR_SKIP: u8 = 210;
+pub(crate) const FC_CLEAR_SKIP: u16 = 210;
 /// `_verdict` kept across a settings change: its view's `clear` does nothing (the inventory's planted bug).
-pub(crate) const CTX_VERDICT_CLEAR_SKIP: u8 = 211;
+pub(crate) const CTX_VERDICT_CLEAR_SKIP: u16 = 211;
 /// `_failed` kept across a clear.
-pub(crate) const CTX_FAILED_CLEAR_SKIP: u8 = 212;
+pub(crate) const CTX_FAILED_CLEAR_SKIP: u16 = 212;
 /// `_build_context_memoized` records no `Uninterpreted`.
-pub(crate) const CTX_FAILED_NO_MEMO: u8 = 213;
+pub(crate) const CTX_FAILED_NO_MEMO: u16 = 213;
 /// `_verdict` never emptied at 20,000.
-pub(crate) const CTX_VERDICT_NO_BOUND: u8 = 214;
+pub(crate) const CTX_VERDICT_NO_BOUND: u16 = 214;
 /// `_context_session` returns an inconsistent set's session instead of raising.
-pub(crate) const CTX_SESSION_INCONSISTENT_PASS: u8 = 215;
+pub(crate) const CTX_SESSION_INCONSISTENT_PASS: u16 = 215;
 /// `_build_context` keeps the checked session when a theory gave up.
-pub(crate) const CTX_BUILD_NO_FALLBACK: u8 = 216;
+pub(crate) const CTX_BUILD_NO_FALLBACK: u16 = 216;
 /// `_build_context` skips `link_set`.
-pub(crate) const CTX_BUILD_NO_LINK: u8 = 217;
+pub(crate) const CTX_BUILD_NO_LINK: u16 = 217;
 /// `verdict` builds a session for a set over the discovery budget.
-pub(crate) const CTX_VERDICT_SKIP_BUDGET: u8 = 218;
+pub(crate) const CTX_VERDICT_SKIP_BUDGET: u16 = 218;
 /// `_complete_check` doesn't escalate an incomplete session.
-pub(crate) const CTX_CHECK_NO_ESCALATE: u8 = 219;
+pub(crate) const CTX_CHECK_NO_ESCALATE: u16 = 219;
 /// `_complete_check` says consistent when a theory gave up, ran out, or the session is incomplete or truncated.
-pub(crate) const CTX_CHECK_NO_TRUNCATED: u8 = 220;
+pub(crate) const CTX_CHECK_NO_TRUNCATED: u16 = 220;
 /// `_complete_check` raises a ValueError (engine.py:1906's handler count moves).
-pub(crate) const CTX_CHECK_RAISE: u8 = 221;
+pub(crate) const CTX_CHECK_RAISE: u16 = 221;
 /// `_context_session` keeps the session in `_context_sessions`.
-pub(crate) const CTX_SESSIONS_STORE: u8 = 222;
+pub(crate) const CTX_SESSIONS_STORE: u16 = 222;
 /// Step 5c10c (budget.rs cone rows, engmemo.rs slots 8-9). The inventory's planted bug: a node left in `_constructing`
 /// (its `discard`, from `core_visit` or `_struct`, keeps the node).
-pub(crate) const CN_DISCARD_SKIP: u8 = 223;
+pub(crate) const CN_DISCARD_SKIP: u16 = 223;
 /// `_struct` gives weight 1 to a node with both compiled patterns and formulas.
-pub(crate) const CONE_STRUCT_WEIGHT_ONE: u8 = 224;
+pub(crate) const CONE_STRUCT_WEIGHT_ONE: u16 = 224;
 /// `_cone_info` returns the cone of a walk that went over the budget as if it fit.
-pub(crate) const CONE_INFO_OVER_FITS: u8 = 225;
+pub(crate) const CONE_INFO_OVER_FITS: u16 = 225;
 /// `_drop_cones` leaves `_cones` as it is.
-pub(crate) const CONE_DROP_SKIP_CONES: u8 = 226;
+pub(crate) const CONE_DROP_SKIP_CONES: u16 = 226;
 /// The `_cones` map drops a store.
-pub(crate) const EM_CONES_STORE_DROP: u8 = 227;
+pub(crate) const EM_CONES_STORE_DROP: u16 = 227;
 /// `_struct` doesn't empty `_kids` at 200,000 entries (test_cones_core.py only).
-pub(crate) const CONE_KIDS_NO_BOUND: u8 = 228;
+pub(crate) const CONE_KIDS_NO_BOUND: u16 = 228;
 /// `_cone_info` doesn't empty `_cones` at 100,000 entries (test_cones_core.py only).
-pub(crate) const CONE_CONES_NO_BOUND: u8 = 229;
+pub(crate) const CONE_CONES_NO_BOUND: u16 = 229;
 /// `_struct` skips the wide-sum guard (#180 C-WIDEADD).
-pub(crate) const CONE_STRUCT_WIDE_SKIP: u8 = 230;
+pub(crate) const CONE_STRUCT_WIDE_SKIP: u16 = 230;
 /// Step 5c10d (entry.rs, query entry and counters).
 /// `is_` doesn't count a fact-cache hit in `stats`.
-pub(crate) const ENT_IS_NO_HIT_COUNT: u8 = 231;
+pub(crate) const ENT_IS_NO_HIT_COUNT: u16 = 231;
 /// `is_many` counts one query fewer than it decides in its session.
-pub(crate) const ENT_IS_MANY_QUERIES_SHORT: u8 = 232;
+pub(crate) const ENT_IS_MANY_QUERIES_SHORT: u16 = 232;
 /// `_decide` doesn't escalate an incomplete session (goes to search).
-pub(crate) const ENT_DECIDE_NO_ESCALATE: u8 = 233;
+pub(crate) const ENT_DECIDE_NO_ESCALATE: u16 = 233;
 /// `_put_result` doesn't store the answer in the fact cache.
-pub(crate) const ENT_PUT_RESULT_NO_PUT: u8 = 234;
+pub(crate) const ENT_PUT_RESULT_NO_PUT: u16 = 234;
 /// `_is_custom` ignores the custom fact cache's facts.
-pub(crate) const ENT_IS_CUSTOM_NO_HIT: u8 = 235;
+pub(crate) const ENT_IS_CUSTOM_NO_HIT: u16 = 235;
 /// `ask` doesn't clear `last_budget_limited` on entry.
-pub(crate) const ENT_ASK_NO_CLEAR_FLAG: u8 = 236;
+pub(crate) const ENT_ASK_NO_CLEAR_FLAG: u16 = 236;
 /// `_ask` doesn't count `theory_gave_up`.
-pub(crate) const ENT_ASK_NO_GAVE_UP: u8 = 237;
+pub(crate) const ENT_ASK_NO_GAVE_UP: u16 = 237;
 /// `_check_version` doesn't sync the fact caches.
-pub(crate) const ENT_CHECK_VERSION_NO_SYNC: u8 = 238;
+pub(crate) const ENT_CHECK_VERSION_NO_SYNC: u16 = 238;
 /// `_settings_changed` doesn't clear the fact caches' stores.
-pub(crate) const ENT_SETTINGS_NO_CLEAR: u8 = 239;
+pub(crate) const ENT_SETTINGS_NO_CLEAR: u16 = 239;
 /// `_drop_set_memos` doesn't clear the answer memo.
-pub(crate) const ENT_DROP_MEMOS_KEEP_ANSWERS: u8 = 240;
+pub(crate) const ENT_DROP_MEMOS_KEEP_ANSWERS: u16 = 240;
 /// `_fresh_session` doesn't count the session.
-pub(crate) const ENT_FRESH_NO_COUNT: u8 = 241;
+pub(crate) const ENT_FRESH_NO_COUNT: u16 = 241;
 /// The record method for sympy_api's cache hit is lost.
-pub(crate) const ST_CACHE_HIT_DROP: u8 = 242;
+pub(crate) const ST_CACHE_HIT_DROP: u16 = 242;
 /// The record method for sympy_api's relevant count is lost.
-pub(crate) const ST_RELEVANT_DROP: u8 = 243;
+pub(crate) const ST_RELEVANT_DROP: u16 = 243;
 /// `_consistent`'s count (relevance.rs) is lost.
-pub(crate) const ST_CONSISTENCY_DROP: u8 = 244;
+pub(crate) const ST_CONSISTENCY_DROP: u16 = 244;
 /// A scope miss is counted twice.
-pub(crate) const ST_SCOPE_MISS_DOUBLE: u8 = 245;
+pub(crate) const ST_SCOPE_MISS_DOUBLE: u16 = 245;
 /// The record method that clears `last_budget_limited` (sympy_api) doesn't.
-pub(crate) const ST_CLEAR_FLAG_SKIP: u8 = 246;
+pub(crate) const ST_CLEAR_FLAG_SKIP: u16 = 246;
 /// The record method that keeps the constant's budget flag (sympy_api `_ask`) drops it.
-pub(crate) const ST_KEEP_FLAG_DROP: u8 = 247;
+pub(crate) const ST_KEEP_FLAG_DROP: u16 = 247;
 /// The `stats` view lists `budget_limited` first (Python's order is the dict's).
-pub(crate) const ST_VIEW_ORDER: u8 = 248;
+pub(crate) const ST_VIEW_ORDER: u16 = 248;
 /// The `last_budget_limited` view reads False always.
-pub(crate) const ST_FLAG_VIEW_STALE: u8 = 249;
+pub(crate) const ST_FLAG_VIEW_STALE: u16 = 249;
 /// `_note_budget` counts `budget_limited` for an untruncated session.
-pub(crate) const NOTE_BUDGET_COUNT: u8 = 250;
+pub(crate) const NOTE_BUDGET_COUNT: u16 = 250;
 /// State step, part 1 (adapters.rs LraQuery): the slot's memo key drops the kind, so `interpret`'s result serves `order_sides`.
-pub(crate) const AD_LRA_KIND_KEY: u8 = 251;
+pub(crate) const AD_LRA_KIND_KEY: u16 = 251;
 /// ... the slot isn't replaced when the query changes: the old table, ids and memo serve the new query.
-pub(crate) const AD_LRA_SLOT_STALE: u8 = 252;
+pub(crate) const AD_LRA_SLOT_STALE: u16 = 252;
 /// ... the memo key drops `GENERIC_CONSTANTS`: a flip inside a query is served the other flag's result.
-pub(crate) const AD_LRA_FLAG_KEY: u8 = 253;
+pub(crate) const AD_LRA_FLAG_KEY: u16 = 253;
 /// ... the patch guard is skipped: a patched `_memoized`/read function is bypassed.
-pub(crate) const AD_LRA_PATCH_GUARD: u8 = 254;
+pub(crate) const AD_LRA_PATCH_GUARD: u16 = 254;
 /// ... the first two (term, coefficient) pairs of a result swap coefficients.
-pub(crate) const AD_LRA_PAIR_SWAP: u8 = 255;
+pub(crate) const AD_LRA_PAIR_SWAP: u16 = 255;
+/// State step, part 2 (i) (adapters.rs `Reader.integer_form`): a side that isn't an `Expr` is read as the number row of its
+/// value (an int as its `Integer`), not answered None as lra_adapter.integer_form's first line does.
+pub(crate) const AD_LRA_NOT_EXPR: u16 = 256;
 
 #[pyfunction]
 fn rel_install(term_live: Py<PyAny>, relations: Py<PyAny>, euf_adapter: Py<PyAny>, fault: Py<PyAny>) {
@@ -606,6 +609,7 @@ fn rel_plant(name: Option<&str>) -> PyResult<()> {
         Some("ad-lra-flag-key") => AD_LRA_FLAG_KEY,
         Some("ad-lra-patch-guard") => AD_LRA_PATCH_GUARD,
         Some("ad-lra-pair-swap") => AD_LRA_PAIR_SWAP,
+        Some("ad-lra-not-expr") => AD_LRA_NOT_EXPR,
         Some(x) => return Err(PyValueError::new_err(format!("no plant {x}"))),
     };
     PLANT.store(v, Relaxed);
@@ -1360,7 +1364,7 @@ pub(crate) fn unplant() {
     PLANT.store(0, Relaxed);
 }
 
-pub(crate) fn planted(x: u8) -> bool {
+pub(crate) fn planted(x: u16) -> bool {
     let on = PLANT.load(Relaxed) == x;
     if on {
         tick(session::REL_PLANT);
@@ -1995,7 +1999,7 @@ fn rel_link_probe(core: &Bound<'_, SessionCore>, x: &Bound<'_, PyAny>) -> PyResu
 // `_constant_term` (5c5's). `Session.discover`, `EqualitySharing` and `transfer_wanted` are read from their modules at each call:
 // `backend.install_transfer` replaces the last two with Rust's.
 
-fn plant_on(x: u8) -> bool {
+fn plant_on(x: u16) -> bool {
     planted(x)
 }
 

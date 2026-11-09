@@ -20,6 +20,7 @@ import sys
 import sa_solver
 
 from sympy.core.basic import Basic
+from sympy.core.expr import Expr
 
 from satassume.theories.lra import constfield, lra, lra_adapter
 
@@ -163,6 +164,10 @@ def _install():
         return out
 
     def integer_form(e):
+        if not isinstance(e, Expr):
+            # lra_adapter.integer_form's first line, decided by the type alone: no row needed (adapters.rs `Reader.integer_form`)
+            COUNTS['lra:integer_form:not-expr'] += 1
+            return None
         q = _query()
         i = None if q is None else _ids(q, 'integer_form', e)
         if i is None:

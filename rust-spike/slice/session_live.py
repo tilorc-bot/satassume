@@ -851,6 +851,8 @@ _ENTRY_PLANTS = ('ent-is-no-hit-count', 'ent-is-many-queries-short', 'ent-decide
                  'st-view-order', 'st-flag-view-stale', 'note-budget-count')
 #: State step, part 1 (adapters.rs LraQuery, relations_core.rs 251-255): lra_live `_memoized` on the Rust adapter.
 _LRA_SLOT_PLANTS = ('ad-lra-kind-key', 'ad-lra-slot-stale', 'ad-lra-flag-key', 'ad-lra-patch-guard', 'ad-lra-pair-swap')
+#: State step, part 2 (relations_core.rs 256-279): (i) `Reader.integer_form`'s not-an-Expr answer; (ii)/(iii) Relations' state.
+_REL_STATE_PLANTS = ('ad-lra-not-expr',)
 
 
 def entry_native():
@@ -1186,7 +1188,7 @@ def from_env():
                     or PLANT[0] in _SCOPE_PLANTS or PLANT[0] in _GLUE_PLANTS or PLANT[0] in _BUDGET_PLANTS \
                     or PLANT[0] in _RELEVANCE_PLANTS or PLANT[0] in _MEMO_PLANTS or PLANT[0] in _CTX_PLANTS \
                     or PLANT[0] in _CONE_PLANTS or PLANT[0] in _ENTRY_PLANTS \
-                    or PLANT[0] in _LRA_SLOT_PLANTS:
+                    or PLANT[0] in _LRA_SLOT_PLANTS or PLANT[0] in _REL_STATE_PLANTS:
                 sa_solver.rel_plant(PLANT[0])
         return install()
     return None

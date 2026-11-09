@@ -14,7 +14,7 @@ use pyo3::types::{PyBool, PyDict, PyList, PySet, PyTuple};
 use crate::compile::{self, block_lits, Cx, Def, Kind, Need, F, R};
 use crate::formula_py::PyP;
 
-const NAMES: [&str; 337] = [
+const NAMES: [&str; 338] = [
     "py:var", "py:dvar", "py:node", "py:compile", "py:literal", "py:table", "rs:visit", "rs:add_clause", "rs:ensure_vars",
     "rs:def_implications", "rs:neg_shared", "join", "rs:emit_callback", "refuse:depth", "refuse:convert", "refuse:object", "second:visit", "custom:own",
     "link:hit", "link:resolved", "link:none", "link:no_table", "link:second", "link:no_node",
@@ -71,6 +71,8 @@ const NAMES: [&str; 337] = [
     // state step, part 1 (adapters.rs LraQuery): lra_live `_memoized` on the Rust adapter
     "ad:lra_native", "ad:lra_hit", "ad:lra_relation", "ad:lra_term_id_py", "ad:lra_scaffold", "ad:cbm_noquery", "ad:cbm_noid",
     "ad:cbm_check", "ad:cbm_patched", "ad:cbm_off",
+    // state step, part 2 (i): `integer_form` of a side that isn't an `Expr` answers None natively (lra_adapter.integer_form :400)
+    "ad:lra_not_expr",
 ];
 const VAR: usize = 0;
 const DVAR: usize = 1;
@@ -447,6 +449,7 @@ pub(crate) const AD_CBM_CHECK: usize = 334;
 pub(crate) const AD_CBM_PATCHED: usize = 335;
 /// ... lra_live not installed (SLICE_LRA_TERM=py, SLICE_TERM=py): Python's functions throughout.
 pub(crate) const AD_CBM_OFF: usize = 336;
+pub(crate) const AD_LRA_NOT_EXPR: usize = 337;
 
 /// Deeper formulas compile on Python, over this same table. Python's own limit depends on the caller's stack, so it isn't
 /// reproduced: its deepest shape is `Implies`, 3 frames a level (first failure at depth 330 from a bare stack, limit 1000), so
@@ -454,7 +457,7 @@ pub(crate) const AD_CBM_OFF: usize = 336;
 const FORMULA_DEPTH: u32 = 64;
 
 thread_local! {
-    static COUNTS: [Cell<u64>; 337] = const { [const { Cell::new(0) }; 337] };
+    static COUNTS: [Cell<u64>; 338] = const { [const { Cell::new(0) }; 338] };
     /// Each session's serial, for the link's memo: a pointer could alias a dead session's.
     static SERIAL: Cell<u64> = const { Cell::new(0) };
 }

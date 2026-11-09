@@ -111,7 +111,7 @@ pub(crate) fn emit(s: &Bound<'_, PyAny>, clause: &Bound<'_, PyAny>) -> PyResult<
 }
 
 /// The head both `query_literal` and `_query_all` share: transfer sync, root propagation, `mention`.
-fn head<'py>(s: &Bound<'py, PyAny>, mention: Bound<'py, PyAny>, plant: u8) -> PyResult<Bound<'py, PyAny>> {
+fn head<'py>(s: &Bound<'py, PyAny>, mention: Bound<'py, PyAny>, plant: u16) -> PyResult<Bound<'py, PyAny>> {
     let p = s.py();
     let solver = s.getattr(intern!(p, "solver"))?;
     let xfer = s.getattr(intern!(p, "xfer"))?;

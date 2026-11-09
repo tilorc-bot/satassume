@@ -513,7 +513,7 @@ impl PyTermTable {
     }
 
     /// The term of a rational, by value.
-    fn number(&mut self, p: BigInt, q: BigInt) -> u32 {
+    pub(crate) fn number(&mut self, p: BigInt, q: BigInt) -> u32 {
         self.0.number(&Rat::new(p, q)).0
     }
 

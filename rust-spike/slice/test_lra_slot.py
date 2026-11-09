@@ -8,8 +8,11 @@ Here, on cert_wl's queries plus a few with integer forms, in one process per run
   so slots can't be read after the query): each entry against lra_live's own function on the same query, and the digest of
   the slot's results equal to the digest of lra_live's (the switch's digest);
 - the two guards no workload reaches, directly: a `GENERIC_CONSTANTS` flip inside a query is served that flag's result, and a
-  patched `_memoized` is called rather than bypassed.
-Each plant (relations_core.rs 251-255) must fire, and each one this file reaches must move a case; the others are named in
+  patched `_memoized` is called rather than bypassed;
+- state step part 2 (i), directly: `integer_form` of a side that isn't an `Expr` (glue's `link_objects` on a plain int side,
+  scope's 4 `ad:cbm_noid` calls at a8a4bae) is None natively, as lra_adapter.integer_form's first line decides it. Scope can't
+  see a wrong form there: an int's form has no opaque terms, so `link_objects`' set is the same (`ad-lra-not-expr` MATCHes).
+Each plant (relations_core.rs 251-256) must fire, and each one this file reaches must move a case; the others are named in
 `ELSEWHERE` with where they're caught.
 """
 import hashlib
@@ -21,7 +24,8 @@ import sys
 import pytest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-PLANTS = ('ad-lra-kind-key', 'ad-lra-slot-stale', 'ad-lra-flag-key', 'ad-lra-patch-guard', 'ad-lra-pair-swap')
+PLANTS = ('ad-lra-kind-key', 'ad-lra-slot-stale', 'ad-lra-flag-key', 'ad-lra-patch-guard', 'ad-lra-pair-swap',
+          'ad-lra-not-expr')
 #: plants this file doesn't move, with where they're caught, or why they're void (a void plant must still fire)
 ELSEWHERE = {
     'ad-lra-slot-stale': 'void by construction: Python\'s own memo (lra_adapter.py `_INTERPRETED`, `_memoized`) is shared '
@@ -95,7 +99,7 @@ def _main(mode):
         exported = sa_solver.ad_lra_export(False)
         reads = {0: 'interpret', 1: 'order_sides', 2: 'integer_form'}
         slot_d, py_d, bad = hashlib.sha256(), hashlib.sha256(), []
-        flag_case = patch_case = None
+        flag_case = patch_case = not_expr = None
         ad = sa_solver.LRAAdapter()             # the guards, on an adapter of our own over the queries' tables
         for q, k, arg, flag, r in exported:
             term_live.stack().append(q)
@@ -116,6 +120,11 @@ def _main(mode):
                         ad.interpret(arg)
                         L.GENERIC_CONSTANTS = False
                         flag_case = _typed(ad.interpret(arg)) == _typed(off)
+                if not_expr is None:
+                    # A side that isn't an Expr: None, with no row and no call into Python (state step part 2 (i)).
+                    before = live.counts().get('ad:cbm_noid', 0)
+                    not_expr = (_typed(ad.integer_form(1)) == _typed(None)
+                                and live.counts().get('ad:cbm_noid', 0) == before)
                 if patch_case is None:
                     # A patched `_memoized` is called, not bypassed.
                     calls, saved = [], L._memoized
@@ -129,7 +138,7 @@ def _main(mode):
                 term_live.stack().pop()
                 L.GENERIC_CONSTANTS = True
         cases['slot'] = dict(entries=len(exported) > 0, bad=bad[:5], same_digest=slot_d.hexdigest() == py_d.hexdigest(),
-                             flag=flag_case, patch=patch_case)
+                             flag=flag_case, patch=patch_case, not_expr=not_expr)
         out['digest'] = slot_d.hexdigest()[:16]
         out['entries'] = len(exported)
         out['counts'] = live.counts()
@@ -148,7 +157,7 @@ def both():
     return _run('py'), _run('rust')
 
 
-GOOD = dict(entries=True, bad=[], same_digest=True, flag=True, patch=True)
+GOOD = dict(entries=True, bad=[], same_digest=True, flag=True, patch=True, not_expr=True)
 
 
 def _moved(py, got):
@@ -164,7 +173,7 @@ def test_same_as_python_and_slot_matches(both):
 def test_counters_fire(both):
     _, rust = both
     c = rust['counts']
-    for k in ('ad:lra_native', 'ad:lra_hit', 'ad:lra_relation', 'ad:cbm_patched'):
+    for k in ('ad:lra_native', 'ad:lra_hit', 'ad:lra_relation', 'ad:cbm_patched', 'ad:lra_not_expr'):
         assert c.get(k, 0) > 0, k
     assert c['rel:plant_fired'] == 0
 
