@@ -329,7 +329,6 @@ def main():
         setattr(*plant, _planted)
     lra_groups = {}
     T.digest = state.digest
-    pairs = load(args.wl)
     if args.handlers:
         import handler_count
         handler_count.install(args.handlers)
@@ -392,6 +391,11 @@ def main():
         install_hooks_on_attach(base)
         cls = traced_class(base, T.dump)
         engine.Solver = ref.Solver = cls
+
+    # After every install above, on both modes: a workload may build the default engine while it loads (scope_wl's
+    # install() does), and an engine built before knowledge_live.from_env() and backend.install() keeps Python's
+    # bindings, such as with_closed_units(registry.clauses_for) (engine.py:1330-1341), for the whole run (issue 323).
+    pairs = load(args.wl)
 
     q_detail, f_detail = None, None
     if args.detail:
