@@ -237,6 +237,11 @@ impl PyTermTable {
     /// The per-query memo that takes `_INTERPRETED`'s place on this path: it dies with the table.
     /// Element._new step: the memo holds Rust values, and each call builds its Python result from them, so no Python object
     /// is kept for the query and the numbers cross as the Rust `Element` pyclass (constfield.rs `PyElem`).
+    /// `n_input` for Rust callers (adapters.rs).
+    pub(crate) fn n_input_rows(&self) -> usize {
+        self.0.n_input
+    }
+
     fn lra_memo<'py>(
         &mut self,
         py: Python<'py>,
@@ -440,7 +445,7 @@ impl PyTermTable {
     }
 
     /// `lra_adapter.interpret` after `relation`: None, or `(constraint, term ids)`.
-    fn lra_interpret<'py>(
+    pub(crate) fn lra_interpret<'py>(
         &mut self,
         py: Python<'py>,
         name: &str,
@@ -461,7 +466,7 @@ impl PyTermTable {
     }
 
     /// `lra_adapter.order_sides` after `relation`: None, or two `(items, inf)`.
-    fn lra_order_sides<'py>(
+    pub(crate) fn lra_order_sides<'py>(
         &mut self,
         py: Python<'py>,
         a: u32,
@@ -479,7 +484,7 @@ impl PyTermTable {
     }
 
     /// `lra_adapter.integer_form`: None, or `(items, constant, key ids)`.
-    fn lra_integer_form<'py>(
+    pub(crate) fn lra_integer_form<'py>(
         &mut self,
         py: Python<'py>,
         e: u32,

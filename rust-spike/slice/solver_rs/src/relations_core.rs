@@ -366,6 +366,16 @@ pub(crate) const ST_VIEW_ORDER: u8 = 248;
 pub(crate) const ST_FLAG_VIEW_STALE: u8 = 249;
 /// `_note_budget` counts `budget_limited` for an untruncated session.
 pub(crate) const NOTE_BUDGET_COUNT: u8 = 250;
+/// State step, part 1 (adapters.rs LraQuery): the slot's memo key drops the kind, so `interpret`'s result serves `order_sides`.
+pub(crate) const AD_LRA_KIND_KEY: u8 = 251;
+/// ... the slot isn't replaced when the query changes: the old table, ids and memo serve the new query.
+pub(crate) const AD_LRA_SLOT_STALE: u8 = 252;
+/// ... the memo key drops `GENERIC_CONSTANTS`: a flip inside a query is served the other flag's result.
+pub(crate) const AD_LRA_FLAG_KEY: u8 = 253;
+/// ... the patch guard is skipped: a patched `_memoized`/read function is bypassed.
+pub(crate) const AD_LRA_PATCH_GUARD: u8 = 254;
+/// ... the first two (term, coefficient) pairs of a result swap coefficients.
+pub(crate) const AD_LRA_PAIR_SWAP: u8 = 255;
 
 #[pyfunction]
 fn rel_install(term_live: Py<PyAny>, relations: Py<PyAny>, euf_adapter: Py<PyAny>, fault: Py<PyAny>) {
@@ -591,6 +601,11 @@ fn rel_plant(name: Option<&str>) -> PyResult<()> {
         Some("st-view-order") => ST_VIEW_ORDER,
         Some("st-flag-view-stale") => ST_FLAG_VIEW_STALE,
         Some("note-budget-count") => NOTE_BUDGET_COUNT,
+        Some("ad-lra-kind-key") => AD_LRA_KIND_KEY,
+        Some("ad-lra-slot-stale") => AD_LRA_SLOT_STALE,
+        Some("ad-lra-flag-key") => AD_LRA_FLAG_KEY,
+        Some("ad-lra-patch-guard") => AD_LRA_PATCH_GUARD,
+        Some("ad-lra-pair-swap") => AD_LRA_PAIR_SWAP,
         Some(x) => return Err(PyValueError::new_err(format!("no plant {x}"))),
     };
     PLANT.store(v, Relaxed);

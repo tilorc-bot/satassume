@@ -14,7 +14,7 @@ use pyo3::types::{PyBool, PyDict, PyList, PySet, PyTuple};
 use crate::compile::{self, block_lits, Cx, Def, Kind, Need, F, R};
 use crate::formula_py::PyP;
 
-const NAMES: [&str; 327] = [
+const NAMES: [&str; 337] = [
     "py:var", "py:dvar", "py:node", "py:compile", "py:literal", "py:table", "rs:visit", "rs:add_clause", "rs:ensure_vars",
     "rs:def_implications", "rs:neg_shared", "join", "rs:emit_callback", "refuse:depth", "refuse:convert", "refuse:object", "second:visit", "custom:own",
     "link:hit", "link:resolved", "link:none", "link:no_table", "link:second", "link:no_node",
@@ -68,6 +68,9 @@ const NAMES: [&str; 327] = [
     "bud:struct_wide", "bud:kids_hit", "bud:cones_hit",
     "bud:py_struct", "bud:py_cone_info", "bud:py_drop_cones",
     "ent:is", "ent:is_many", "ent:decide", "ent:put_result", "ent:is_custom", "ent:ask", "ent:ask_inner", "ent:check_version", "ent:settings_changed", "ent:drop_set_memos", "ent:fresh_session", "ent:cb_noncomm", "ent:cb_gave_up", "ent:cb_scope", "ent:cb_basis", "st:rec_cache_hit", "st:rec_relevant", "st:rec_consistency_check", "st:rec_scope_miss", "st:rec_clear_flag", "st:rec_keep_flag", "st:py_read", "st:slot_set", "st:flag_set", "st:foreign", "st:mark",
+    // state step, part 1 (adapters.rs LraQuery): lra_live `_memoized` on the Rust adapter
+    "ad:lra_native", "ad:lra_hit", "ad:lra_relation", "ad:lra_term_id_py", "ad:lra_scaffold", "ad:cbm_noquery", "ad:cbm_noid",
+    "ad:cbm_check", "ad:cbm_patched", "ad:cbm_off",
 ];
 const VAR: usize = 0;
 const DVAR: usize = 1;
@@ -424,6 +427,26 @@ pub(crate) const ST_SLOT_SET: usize = 323;
 pub(crate) const ST_FLAG_SET: usize = 324;
 pub(crate) const ST_FOREIGN: usize = 325;
 pub(crate) const ST_MARK: usize = 326;
+/// State step, part 1 (adapters.rs): an `interpret`/`order_sides`/`integer_form` the Rust adapter answered on its own query slot.
+pub(crate) const AD_LRA_NATIVE: usize = 327;
+/// ... of which served from the slot's memo (same object, same query, same flag).
+pub(crate) const AD_LRA_HIT: usize = 328;
+/// `lra_adapter.relation` called on a slot miss (conversion: it reads predicate heads).
+pub(crate) const AD_LRA_RELATION: usize = 329;
+/// `term_live.term_id` called for a term that isn't an input row of its own class (derived, a number, or no row).
+pub(crate) const AD_LRA_TERM_ID_PY: usize = 330;
+/// `term_live.scaffold` called for a derived id in a result (scaffolding, counted again by term_live).
+pub(crate) const AD_LRA_SCAFFOLD: usize = 331;
+/// `_memoized` still called back, by reason: no query or a kept one (Python's memo serves it).
+pub(crate) const AD_CBM_NOQUERY: usize = 332;
+/// ... a side with no id: Python reads it (lra_live's on_python, counted `lra:*:no-id` there).
+pub(crate) const AD_CBM_NOID: usize = 333;
+/// ... SLICE_LRA_CHECK on: lra_live compares with Python's functions.
+pub(crate) const AD_CBM_CHECK: usize = 334;
+/// ... `_memoized` or the read function isn't the one lra_live installed (a test's patch).
+pub(crate) const AD_CBM_PATCHED: usize = 335;
+/// ... lra_live not installed (SLICE_LRA_TERM=py, SLICE_TERM=py): Python's functions throughout.
+pub(crate) const AD_CBM_OFF: usize = 336;
 
 /// Deeper formulas compile on Python, over this same table. Python's own limit depends on the caller's stack, so it isn't
 /// reproduced: its deepest shape is `Implies`, 3 frames a level (first failure at depth 330 from a bare stack, limit 1000), so
@@ -431,7 +454,7 @@ pub(crate) const ST_MARK: usize = 326;
 const FORMULA_DEPTH: u32 = 64;
 
 thread_local! {
-    static COUNTS: [Cell<u64>; 327] = const { [const { Cell::new(0) }; 327] };
+    static COUNTS: [Cell<u64>; 337] = const { [const { Cell::new(0) }; 337] };
     /// Each session's serial, for the link's memo: a pointer could alias a dead session's.
     static SERIAL: Cell<u64> = const { Cell::new(0) };
 }

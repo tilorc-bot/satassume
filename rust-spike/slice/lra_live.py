@@ -50,6 +50,14 @@ def _rust(site, f, *a):
         raise term_live.TermFault(f'lra {site}: {type(x).__name__}: {x}') from x
 
 
+def _fault(site, x):
+    """`_rust`'s TermFault for an exception the Rust adapter's slot met in a table read (adapters.rs)."""
+    COUNTS['fault'] += 1
+    f = term_live.TermFault(f'lra {site}: {type(x).__name__}: {x}')
+    f.__cause__ = x
+    return f
+
+
 def _same_num(a, b):
     if type(a) is not type(b):
         return False
@@ -192,6 +200,10 @@ def _install():
     lra_adapter.interpret, lra_adapter.order_sides, lra_adapter.integer_form = interpret, order_sides, integer_form
     lra_adapter.closed_sign = closed_sign
     lra_adapter._memoized = memoized
+    # State step, part 1: the Rust adapter answers `_memoized` on a query with a table from its own slot (adapters.rs LraQuery),
+    # with these functions where Python still has a say. It calls `memoized` back only while these are the module's.
+    sa_solver.ad_lra_live((memoized, interpret, order_sides, integer_form, term_live._local, lra_adapter.relation,
+                           term_live.term_id, term_live.scaffold, _fault, CHECK[0]))
 
     # Adapters step, part C: integer_form's Rust route builds a Rust `Integral` (payloads.rs). lra_backend.py's theory reads it;
     # Python's own LRATheory, which Python's LRAAdapter can still pair with (a user factory, the Python-methods comparison),
@@ -208,6 +220,7 @@ def _install():
     py_lra._register_atom = _register_atom
 
     def undo():
+        sa_solver.ad_lra_live(None)
         (lra_adapter.interpret, lra_adapter.order_sides, lra_adapter.integer_form, lra_adapter.closed_sign,
          lra_adapter._memoized) = saved
         constfield.num, lra.num = py_num

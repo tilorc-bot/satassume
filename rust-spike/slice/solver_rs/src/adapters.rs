@@ -17,7 +17,13 @@ use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PyString, PyTuple};
 
-use crate::relations_core::{planted, AD_EUF_NODE, AD_EUF_SHARED, AD_LRA_SHARED};
+use std::collections::HashMap;
+
+use crate::relations_core::{
+    planted, AD_EUF_NODE, AD_EUF_SHARED, AD_LRA_FLAG_KEY, AD_LRA_KIND_KEY, AD_LRA_PAIR_SWAP, AD_LRA_PATCH_GUARD, AD_LRA_SHARED,
+    AD_LRA_SLOT_STALE,
+};
+use crate::term::py::PyTermTable;
 use crate::session::{self, tick};
 
 fn module<'py>(p: Python<'py>, sub: &str) -> PyResult<Bound<'py, PyModule>> {
@@ -68,6 +74,8 @@ pub(crate) struct LraAdapter {
     /// Part C: the theory reads Rust payloads (lra_backend.py's `LRATheory`, class attribute `_rust_payloads`). Python's
     /// `LRATheory` gets Python's `Negated`, counted `ad:cb_py_payload`. `theory` can't be reassigned, so it's read once here.
     rust_payloads: bool,
+    /// State step, part 1: the current query's slot (`LraQuery`), replaced when the query changes.
+    slot: std::cell::RefCell<Option<LraQuery>>,
 }
 
 impl LraAdapter {
@@ -85,13 +93,341 @@ impl LraAdapter {
             Ok(v) => v.is_truthy()?,
             Err(_) => false,
         };
-        Ok(LraAdapter { theory: theory.unbind(), _solver: None, _shared: PyDict::new(p).unbind(), module: module.unbind(), rust_payloads })
+        Ok(LraAdapter { theory: theory.unbind(), _solver: None, _shared: PyDict::new(p).unbind(), module: module.unbind(), rust_payloads, slot: std::cell::RefCell::new(None) })
     }
 
-    fn memoized<'py>(&self, p: Python<'py>, key: Bound<'py, PyAny>, read: &Bound<'py, PyString>, arg: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    /// Python's `_memoized(key, read, arg)` through the module attribute, counted `ad:cb_memoized`: only where the slot can't answer.
+    fn callback<'py>(&self, p: Python<'py>, key: Bound<'py, PyAny>, read: &Bound<'py, PyString>, arg: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
         tick(session::AD_CB_MEMOIZED);
         let m = self.module.bind(p);
         m.getattr(intern!(p, "_memoized"))?.call1((key, m.getattr(read)?, arg))
+    }
+
+    /// `_memoized(key, read, arg)` with lra_live's `memoized` and `read` (state step, part 1). On a query with a table the slot
+    /// answers: the query's table, ids and objects, the atoms' term ids and the results, all held here and dropped when the query
+    /// changes. Everything else is Python's call, counted by reason.
+    fn memoized<'py>(&self, p: Python<'py>, kind: usize, key: Bound<'py, PyAny>, read: &Bound<'py, PyString>, arg: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+        let live = LIVE.with(|l| l.borrow().as_ref().map(|x| x.clone_ref(p)));
+        let Some(live) = live else {
+            tick(session::AD_CBM_OFF);
+            return self.callback(p, key, read, arg);
+        };
+        if live.check {
+            tick(session::AD_CBM_CHECK);
+            return self.callback(p, key, read, arg);
+        }
+        let m = self.module.bind(p);
+        if !planted(AD_LRA_PATCH_GUARD)
+            && (!m.getattr(intern!(p, "_memoized"))?.is(live.memoized.bind(p)) || !m.getattr(read)?.is(live.reads[kind].bind(p)))
+        {
+            tick(session::AD_CBM_PATCHED);
+            return self.callback(p, key, read, arg);
+        }
+        let Some(q) = top_query(live.local.bind(p))? else {
+            tick(session::AD_CBM_NOQUERY);
+            return self.callback(p, key, read, arg);
+        };
+        let flag = m.getattr(intern!(p, "GENERIC_CONSTANTS"))?.is_truthy()?;
+        let fresh = match &*self.slot.borrow() {
+            Some(s) => !s.query.bind(p).is(&q) && !planted(AD_LRA_SLOT_STALE),
+            None => true,
+        };
+        if fresh {
+            let s = LraQuery::new(&q)?;
+            *self.slot.borrow_mut() = Some(s);
+        }
+        let mk = (if planted(AD_LRA_KIND_KEY) { 0 } else { kind as u8 }, arg.as_ptr() as usize, flag && !planted(AD_LRA_FLAG_KEY));
+        if let Some((_, r)) = self.slot.borrow().as_ref().unwrap().memo.get(&mk) {
+            tick(session::AD_LRA_NATIVE);
+            tick(session::AD_LRA_HIT);
+            return Ok(r.bind(p).clone());
+        }
+        // No borrow is held across Python: relation, term_id and scaffold run Python.
+        let (query, table, ids, objects, n_input) = {
+            let b = self.slot.borrow();
+            let s = b.as_ref().unwrap();
+            (s.query.clone_ref(p), s.table.clone_ref(p), s.ids.clone_ref(p), s.objects.clone_ref(p), s.n_input)
+        };
+        let r = Reader { p, live: &live, q: query.bind(p).clone(), table: table.bind(p).clone(), ids: ids.bind(p).clone(), objects: objects.bind(p).clone(), n_input, flag };
+        let got = match kind {
+            K_INTERPRET => r.interpret(arg)?,
+            K_SIDES => r.order_sides(arg)?,
+            _ => r.integer_form(arg)?,
+        };
+        let Some(out) = got else {
+            tick(session::AD_CBM_NOID);
+            return self.callback(p, key, read, arg);
+        };
+        tick(session::AD_LRA_NATIVE);
+        if let Some(s) = self.slot.borrow_mut().as_mut() {
+            if s.query.bind(p).is(&query) {
+                s.memo.insert(mk, (arg.clone().unbind(), out.clone().unbind()));
+                EXPORT.with(|x| {
+                    if let Some(v) = x.borrow_mut().as_mut() {
+                        v.push((query.clone_ref(p), mk.0, arg.clone().unbind(), mk.2, out.clone().unbind()));
+                    }
+                });
+            }
+        }
+        Ok(out)
+    }
+
+}
+
+const K_INTERPRET: usize = 0;
+const K_SIDES: usize = 1;
+const K_INTEGER: usize = 2;
+
+/// lra_live's functions and term_live's, set by `lra_live.install` and cleared by its undo (`ad_lra_live`).
+struct LraLive {
+    memoized: Py<PyAny>,
+    /// `interpret`, `order_sides`, `integer_form` as lra_live installs them, by kind.
+    reads: [Py<PyAny>; 3],
+    /// `term_live._local`: its `stack`'s last `_Query`. Read, never called.
+    local: Py<PyAny>,
+    relation: Py<PyAny>,
+    term_id: Py<PyAny>,
+    scaffold: Py<PyAny>,
+    /// `lra_live._fault(site, exc)`: counts and returns the TermFault lra_live's `_rust` raises.
+    fault: Py<PyAny>,
+    check: bool,
+}
+
+impl LraLive {
+    fn clone_ref(&self, p: Python<'_>) -> LraLive {
+        LraLive {
+            memoized: self.memoized.clone_ref(p),
+            reads: [self.reads[0].clone_ref(p), self.reads[1].clone_ref(p), self.reads[2].clone_ref(p)],
+            local: self.local.clone_ref(p),
+            relation: self.relation.clone_ref(p),
+            term_id: self.term_id.clone_ref(p),
+            scaffold: self.scaffold.clone_ref(p),
+            fault: self.fault.clone_ref(p),
+            check: self.check,
+        }
+    }
+}
+
+type Exported = Vec<(Py<PyAny>, u8, Py<PyAny>, bool, Py<PyAny>)>;
+
+thread_local! {
+    static LIVE: std::cell::RefCell<Option<LraLive>> = const { std::cell::RefCell::new(None) };
+    /// Test-only snapshot export: while on, every slot entry as it's stored, `(query, kind, arg, flag, result)`.
+    static EXPORT: std::cell::RefCell<Option<Exported>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Test-only snapshot export of the adapters' slots (test_lra_slot.py): `ad_lra_export(True)` starts recording every slot
+/// entry as it's stored; `ad_lra_export(False)` stops and returns them, `[(query, kind, arg, flag, result)]` in order.
+/// Kinds: 0 interpret, 1 order_sides, 2 integer_form. Adapters die with their sessions, so the slots can't be read later.
+#[pyfunction]
+fn ad_lra_export<'py>(p: Python<'py>, on: bool) -> PyResult<Bound<'py, PyList>> {
+    let got = EXPORT.with(|x| std::mem::replace(&mut *x.borrow_mut(), if on { Some(Vec::new()) } else { None }));
+    let out = PyList::empty(p);
+    for (q, k, a, f, r) in got.unwrap_or_default() {
+        out.append((q, k, a, f, r))?;
+    }
+    Ok(out)
+}
+
+/// `lra_live.install`'s registration: `(memoized, interpret, order_sides, integer_form, local, relation, term_id, scaffold, fault,
+/// check)`, or None to clear.
+#[pyfunction]
+#[pyo3(signature = (cfg=None))]
+fn ad_lra_live(cfg: Option<Bound<'_, PyTuple>>) -> PyResult<()> {
+    let v = match cfg {
+        None => None,
+        Some(t) => {
+            let g = |i: usize| -> PyResult<Py<PyAny>> { Ok(t.get_item(i)?.unbind()) };
+            Some(LraLive {
+                memoized: g(0)?,
+                reads: [g(1)?, g(2)?, g(3)?],
+                local: g(4)?,
+                relation: g(5)?,
+                term_id: g(6)?,
+                scaffold: g(7)?,
+                fault: g(8)?,
+                check: t.get_item(9)?.is_truthy()?,
+            })
+        }
+    };
+    LIVE.with(|l| *l.borrow_mut() = v);
+    Ok(())
+}
+
+/// term_live's `current()` when it has a table: the stack's last `_Query` with `kept` None.
+fn top_query<'py>(local: &Bound<'py, PyAny>) -> PyResult<Option<Bound<'py, PyAny>>> {
+    let p = local.py();
+    let s = match local.getattr(intern!(p, "stack")) {
+        Ok(s) => s,
+        Err(e) if e.is_instance_of::<pyo3::exceptions::PyAttributeError>(p) => return Ok(None),
+        Err(e) => return Err(e),
+    };
+    let n = s.len()?;
+    if n == 0 {
+        return Ok(None);
+    }
+    let q = s.get_item(n - 1)?;
+    Ok(if q.getattr(intern!(p, "kept"))?.is_none() { Some(q) } else { None })
+}
+
+/// One query's state on the adapter: its table, ids and objects, and what the adapter has read on it, keyed by
+/// `(kind, the argument's identity, GENERIC_CONSTANTS)`. The argument is held, so its identity can't be reused while the slot lives.
+struct LraQuery {
+    query: Py<PyAny>,
+    table: Py<PyTermTable>,
+    ids: Py<PyDict>,
+    objects: Py<PyAny>,
+    n_input: usize,
+    memo: HashMap<(u8, usize, bool), (Py<PyAny>, Py<PyAny>)>,
+}
+
+impl LraQuery {
+    fn new(q: &Bound<'_, PyAny>) -> PyResult<LraQuery> {
+        let p = q.py();
+        let table = q.getattr(intern!(p, "table"))?.cast_into::<PyTermTable>()?;
+        let n_input = table.borrow().n_input_rows();
+        Ok(LraQuery {
+            query: q.clone().unbind(),
+            table: table.unbind(),
+            ids: q.getattr(intern!(p, "ids"))?.cast_into::<PyDict>()?.unbind(),
+            objects: q.getattr(intern!(p, "objects"))?.unbind(),
+            n_input,
+            memo: HashMap::new(),
+        })
+    }
+}
+
+/// lra_live's `interpret`, `order_sides` and `integer_form` on ids, line for line. `Ok(None)`: a side has no id, so Python reads it.
+struct Reader<'a, 'py> {
+    p: Python<'py>,
+    live: &'a LraLive,
+    q: Bound<'py, PyAny>,
+    table: Bound<'py, PyTermTable>,
+    ids: Bound<'py, PyDict>,
+    objects: Bound<'py, PyAny>,
+    n_input: usize,
+    flag: bool,
+}
+
+impl<'py> Reader<'_, 'py> {
+    /// term_live's `term_id`: an input row of the term's own class here; anything else is term_live's rule, counted.
+    fn id(&self, e: &Bound<'py, PyAny>, site: &str) -> PyResult<Option<u32>> {
+        let p = self.p;
+        if let Ok(Some(i)) = self.ids.get_item(e) {
+            let i: u32 = i.extract()?;
+            let o = self.objects.get_item(i)?;
+            return Ok(if o.get_type().is(&e.get_type()) { Some(i) } else { None });
+        }
+        tick(session::AD_LRA_TERM_ID_PY);
+        let got = self.live.term_id.bind(p).call1((&self.q, e, site))?;
+        if got.is_none() { Ok(None) } else { Ok(Some(got.extract()?)) }
+    }
+
+    fn rel(&self, atom: &Bound<'py, PyAny>) -> PyResult<Option<(String, Bound<'py, PyAny>, Bound<'py, PyAny>)>> {
+        tick(session::AD_LRA_RELATION);
+        let r = self.live.relation.bind(self.p).call1((atom,))?;
+        if r.is_none() {
+            return Ok(None);
+        }
+        Ok(Some((r.get_item(0)?.extract()?, r.get_item(1)?, r.get_item(2)?)))
+    }
+
+    fn obj(&self, i: &Bound<'py, PyAny>, site: &str) -> PyResult<Bound<'py, PyAny>> {
+        let n: usize = i.extract()?;
+        if n < self.n_input {
+            return self.objects.get_item(n);
+        }
+        tick(session::AD_LRA_SCAFFOLD);
+        self.live.scaffold.bind(self.p).call1((&self.q, i, site))
+    }
+
+    fn objs(&self, ids: &Bound<'py, PyAny>, site: &str) -> PyResult<Bound<'py, PyList>> {
+        let out = PyList::empty(self.p);
+        for i in ids.try_iter()? {
+            out.append(self.obj(&i?, site)?)?;
+        }
+        Ok(out)
+    }
+
+    fn pairs(&self, items: &Bound<'py, PyAny>, site: &str) -> PyResult<Bound<'py, PyTuple>> {
+        let mut v: Vec<(Bound<'py, PyAny>, Bound<'py, PyAny>)> = Vec::new();
+        for it in items.try_iter()? {
+            let it = it?;
+            v.push((self.obj(&it.get_item(0)?, site)?, it.get_item(1)?));
+        }
+        if v.len() >= 2 && planted(AD_LRA_PAIR_SWAP) {
+            let c0 = v[0].1.clone();
+            v[0].1 = v[1].1.clone();
+            v[1].1 = c0;
+        }
+        let ts: Vec<Bound<'py, PyTuple>> = v.into_iter().map(|(a, b)| PyTuple::new(self.p, [a, b])).collect::<PyResult<_>>()?;
+        PyTuple::new(self.p, ts)
+    }
+
+    fn fault(&self, site: &str, e: PyErr) -> PyErr {
+        let p = self.p;
+        match self.live.fault.bind(p).call1((site, e.value(p))) {
+            Ok(v) => PyErr::from_value(v),
+            Err(e2) => e2,
+        }
+    }
+
+    fn interpret(&self, atom: &Bound<'py, PyAny>) -> PyResult<Option<Bound<'py, PyAny>>> {
+        let p = self.p;
+        let Some((name, l, r)) = self.rel(atom)? else { return Ok(Some(p.None().into_bound(p))) };
+        let Some(a) = self.id(&l, "interpret")? else { return Ok(None) };
+        let Some(b) = self.id(&r, "interpret")? else { return Ok(None) };
+        let got = self.table.borrow_mut().lra_interpret(p, &name, a, b, self.flag, self.objects.clone()).map_err(|e| self.fault("interpret", e))?;
+        if got.is_none() {
+            return Ok(Some(got));
+        }
+        let mut c = got.get_item(0)?;
+        let terms = got.get_item(1)?;
+        if !c.is_instance_of::<pyo3::types::PyBool>() {
+            let pairs = self.pairs(&c.get_item(0)?, "interpret")?.into_any();
+            let inner = PyTuple::new(p, [pairs, c.get_item(1)?, c.get_item(2)?, c.get_item(3)?])?.into_any();
+            c = PyTuple::new(p, [inner, c.get_item(4)?])?.into_any();
+        }
+        let objs = self.objs(&terms, "interpret")?.into_any();
+        Ok(Some(PyTuple::new(p, [c, objs])?.into_any()))
+    }
+
+    fn order_sides(&self, atom: &Bound<'py, PyAny>) -> PyResult<Option<Bound<'py, PyAny>>> {
+        let p = self.p;
+        let none = || Ok(Some(p.None().into_bound(p)));
+        let Some((name, l, r)) = self.rel(atom)? else { return none() };
+        if name != "lt" {
+            return none();
+        }
+        let Some(a) = self.id(&l, "order_sides")? else { return Ok(None) };
+        let Some(b) = self.id(&r, "order_sides")? else { return Ok(None) };
+        let got = self.table.borrow_mut().lra_order_sides(p, a, b, self.flag, self.objects.clone()).map_err(|e| self.fault("order_sides", e))?;
+        if got.is_none() {
+            return Ok(Some(got));
+        }
+        let mut out = Vec::new();
+        for side in got.try_iter()? {
+            let side = side?;
+            let d = PyDict::new(p);
+            for kv in self.pairs(&side.get_item(0)?, "order_sides")?.iter() {
+                d.set_item(kv.get_item(0)?, kv.get_item(1)?)?;
+            }
+            out.push(PyTuple::new(p, [d.into_any(), side.get_item(1)?])?);
+        }
+        Ok(Some(PyTuple::new(p, out)?.into_any()))
+    }
+
+    fn integer_form(&self, e: &Bound<'py, PyAny>) -> PyResult<Option<Bound<'py, PyAny>>> {
+        let p = self.p;
+        let Some(i) = self.id(e, "integer_form")? else { return Ok(None) };
+        let got = self.table.borrow_mut().lra_integer_form(p, i, self.flag, self.objects.clone()).map_err(|e| self.fault("integer_form", e))?;
+        if got.is_none() {
+            return Ok(Some(got));
+        }
+        let pairs = self.pairs(&got.get_item(0)?, "integer_form")?;
+        let integral = p.get_type::<crate::payloads::Integral>().call1((pairs, got.get_item(1)?))?;
+        let objs = self.objs(&got.get_item(2)?, "integer_form")?.into_any();
+        Ok(Some(PyTuple::new(p, [integral, objs])?.into_any()))
     }
 }
 
@@ -142,22 +478,34 @@ impl LraAdapter {
         Ok(true)
     }
 
+    /// Test-only snapshot export of the slot (state step, part 1): `(query, [(kind, arg, flag, result)])`, in no set order, or
+    /// None with no slot. Kinds: 0 interpret, 1 order_sides, 2 integer_form.
+    fn _slot_items<'py>(&self, p: Python<'py>) -> PyResult<Option<(Bound<'py, PyAny>, Bound<'py, PyList>)>> {
+        let b = self.slot.borrow();
+        let Some(s) = b.as_ref() else { return Ok(None) };
+        let out = PyList::empty(p);
+        for ((k, _, f), (a, r)) in s.memo.iter() {
+            out.append((*k, a.bind(p), *f, r.bind(p)))?;
+        }
+        Ok(Some((s.query.bind(p).clone(), out)))
+    }
+
     fn _attach(&mut self, p: Python<'_>, solver: &Bound<'_, PyAny>) -> PyResult<()> {
         attach_to(p, &mut self._solver, &self.theory, solver, "LRAAdapter")
     }
 
     fn interpret<'py>(&self, p: Python<'py>, atom: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
-        self.memoized(p, atom.clone(), intern!(p, "interpret"), atom)
+        self.memoized(p, K_INTERPRET, atom.clone(), intern!(p, "interpret"), atom)
     }
 
     fn order_sides<'py>(&self, p: Python<'py>, atom: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
         let key = PyTuple::new(p, [intern!(p, "sides").clone().into_any(), atom.clone()])?.into_any();
-        self.memoized(p, key, intern!(p, "order_sides"), atom)
+        self.memoized(p, K_SIDES, key, intern!(p, "order_sides"), atom)
     }
 
     fn integer_form<'py>(&self, p: Python<'py>, e: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
         let key = PyTuple::new(p, [intern!(p, "integer").clone().into_any(), e.clone()])?.into_any();
-        self.memoized(p, key, intern!(p, "integer_form"), e)
+        self.memoized(p, K_INTEGER, key, intern!(p, "integer_form"), e)
     }
 
     fn register_integer(&mut self, p: Python<'_>, solver: &Bound<'_, PyAny>, var: &Bound<'_, PyAny>, form: &Bound<'_, PyAny>) -> PyResult<()> {
@@ -415,5 +763,7 @@ impl EufAdapter {
 pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<LraAdapter>()?;
     m.add_class::<EufAdapter>()?;
+    m.add_function(wrap_pyfunction!(ad_lra_live, m)?)?;
+    m.add_function(wrap_pyfunction!(ad_lra_export, m)?)?;
     Ok(())
 }
