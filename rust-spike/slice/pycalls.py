@@ -10,7 +10,9 @@ query count from live.py's totals line.
 `PYCALLS_FILE=satassume/theories/lra/lra_adapter.py` (any path under the clone) counts that file instead, every name
 "unlisted" (the state step, part 1: the lra_adapter count ruling). Each call is also filed by the query it ran under, read
 from term_live's stack top as adapters.rs `top_query` reads it: `kept:<reason>` (the query runs on Python), `noquery` (no
-query on the stack) or `converted` (a Rust query): `by_state` and `by_name_state`.
+query on the stack) or `converted` (a Rust query): `by_state` and `by_name_state`. Several paths joined by ':' count them all,
+each name filed as `file.py:name` (the state step, part 2: relations.py, term_live.py, session_live.py and lra_adapter.py in
+one pass).
 """
 import json
 import os
@@ -33,7 +35,9 @@ PORT = {
 def main():
     out, rest = sys.argv[1], sys.argv[2:]
     root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
-    target = os.path.realpath(os.path.join(root, os.environ.get("PYCALLS_FILE", "satassume/sympy_api.py")))
+    paths = os.environ.get("PYCALLS_FILE", "satassume/sympy_api.py").split(":")
+    targets = {os.path.realpath(os.path.join(root, f)) for f in paths}
+    many = len(paths) > 1
     tl = []
     states = Counter()
 
@@ -57,10 +61,11 @@ def main():
     def start(code, offset):
         r = mine.get(code)
         if r is None:
-            r = mine[code] = os.path.realpath(code.co_filename) == target
-        if r:
-            calls[code.co_qualname] += 1
-            states[(code.co_qualname.split(".")[0], state())] += 1
+            f = os.path.realpath(code.co_filename)
+            r = mine[code] = (os.path.basename(f) + ":" if many else "") if f in targets else None
+        if r is not None:
+            calls[r + code.co_qualname] += 1
+            states[(r + code.co_qualname.split(".")[0], state())] += 1
         else:
             return mon.DISABLE
 
