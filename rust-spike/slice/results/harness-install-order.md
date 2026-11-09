@@ -1,0 +1,122 @@
+# Harness: live.py installs the backend before any workload builds its engine (issue 323)
+
+sa-port-206, branch harness/install-order from rust-slice c3d0999. The planner's count-audit ruling (~12:30 9 Nov), item 1
+only: a harness-only change. Item 2, install() refreshing an engine built before it or refusing loudly, is owed to state
+part 3 and isn't touched here (no change under satassume/ or solver_rs/).
+
+## The fix
+
+`live.py` called `load(args.wl)` (c3d0999 :332) before `knowledge_live.from_env()` (:363) and `backend.install()`
+(:368, `--check plain`). `scope_wl.queries()` runs its `install()`, which does
+`sympy_api.default_engine().extensions = _default` and so builds the default engine. That engine took Python's
+`with_closed_units(registry.clauses_for)` (engine.py:1330-1341) before knowledge_live bound `registry.clauses_for` to
+Rust's `Dispatch.clauses_for` (knowledge_live.py:221), and kept it for the whole run, on `--check entry` (the bar's mode)
+as on `--check plain`. The fix moves `pairs = load(args.wl)` to after the last install (the `engine.Solver = ... = cls`
+block), on both modes, with a comment saying why. bar.sh and the helpers don't repeat the order: bar.sh only calls
+live.py; registry_count.py and memo_trace.py install before they load; p1_fresh.sh's `live.load` only counts queries.
+
+The order has been the same at every landing since the scope step: `load` before the first `from_env()` at 803d073,
+1401d1f, 6526445, b838d3f, a2dc947, 4215655, 2742b66 and c3d0999 (323/354, 326/357, 332/363), and scope_wl's
+`install()` builds the default engine at each.
+
+**Which workloads build an engine while they load** (probe `loadprobe.py`: wraps `Engine.__init__`, then `live.load(WL)`,
+each in a fresh process): only **scope** (1 engine, the default one, from scope_wl.py:32). dev, fuzz, ground, port, lra,
+zero, cert, budget, f6, rootof, core, opaque, wiring, transfer:1:20 and transfer2:1:20 build none and bump no epoch.
+**loop** (4 epoch bumps) and **value** (2) register functions while they load but build no engine. After the fix their
+registrations come after `knowledge_live.from_env()` instead of before; Dispatch holds the shared `epoch.EPOCH` list, so
+it sees them either way. Their outputs show it (below). No workload needs its engine built first.
+
+## The probe: clauses_for on converted queries
+
+audit.py (sa-port-203's module-wide sys.monitoring probe, copied with one change: `AUDIT_LIVE` names the live.py to run, so
+c3d0999's live.py can be the control), scope on Rust, sa-port-203's 15 target files, PYTHONHASHSEED=0. Tree:
+`~/dev/sa-port-19/satassume`, .so `rust-spike/slice/sa_solver.so` sha256 9aa3e190…, both recorded by audit.py.
+
+| row (converted queries) | old order, plain | new, plain | old, entry | new, entry | twopass.py pass 1 / 2 |
+|---|---|---|---|---|---|
+| registry.py `clauses_for` (:226) | 518 | **0** | 518 | **0** | 0 / 0 |
+| relations.py `with_closed_units.<locals>.clauses` (:426) | 518 | **0** | 518 | **0** | — |
+| registry.py `_covers` (:123) | 132 | 22 | 132 | 22 | 22 / 0 |
+| `_covers` genexpr (:129) | 30 | 5 | 30 | 5 | — |
+| registry.py `_load` (:141) | 6 | 1 | 6 | 1 | 1 / 0 |
+| `templates_for` (:194), `_split` (:265), `_redefines` (:62) | 28, 53, 2+2 | 0 | same | 0 | — |
+| `__init__.py _applied_to_nan` (:162) | 28 | 0 | 28 | 0 | — |
+| import: `default_specs` (:435), `with_closed_units` (:423) | 1, 1 | 0 | 1, 1 | 0 | — |
+
+The old-order column reproduces sa-port-203's numbers exactly (518; `_covers` 132+30; `_split` 53; `templates_for` 28;
+`_load` 6; `_redefines` 2+2; `_applied_to_nan` 28), so the counter is shown to fire where Python's path runs; it isn't a
+false zero. These 12 rows are the whole difference between old and new (`audit/rowdiff-plain.txt`, both modes). What's left
+on new is the registry's lazy first loads, which equal twopass.py's pass 1 (`_covers` 22, `_load` 1). No Python
+`clauses_for` runs on a converted query.
+
+## Rerun on the corrected order
+
+`--check entry`, as bar.sh's extra phase runs it (Python, Rust with `--handlers`, livecmp.py), orion, same tree and .so:
+
+| workload | old order (c3d0999) | new order (2b5c763) | Python jsonl old vs new | Rust jsonl old vs new |
+|---|---|---|---|---|
+| scope (169 q) | MATCH 12e06b0586faee40 | **MATCH 12e06b0586faee40** | byte-identical | byte-identical |
+| loop (420 q) | MATCH 09238b2537e54383 | **MATCH 09238b2537e54383** | byte-identical | byte-identical |
+| value (3,742 q) | MATCH 3ce3797a267d71a6 | **MATCH 3ce3797a267d71a6** | byte-identical | byte-identical |
+
+All diffs 0 (answer, msg, session_count, end, stream, lra, stats), Rust made 0 Python solvers, reentry 0. So Rust's
+`Dispatch.clauses_for` path through `with_closed_units` gives scope the same answers and the same state as Python's did.
+The Python (reference) side is unchanged byte for byte. Rust-side quiet handler firings on all three: 0.
+
+**Handler plants can't fire on Rust (a finding, not caused here).** To show the Rust-side handler zero means something,
+`SLICE_PLANT_HANDLER` was planted on scope at the new order: on Python, `complete_check` gives 166 rows
+(`Engine._build_context`, ValueError planted). On Rust, `complete_check`, `formula`, `verdict` and `assumption_lits` give
+0 on scope, and `complete_check` gives 0 on dev too, where this change alters nothing. Since 5c10b, `_build_context`,
+`verdict` and `_complete_check` run in Rust (session_live.py:894), so live.py's plants, which patch the Python methods,
+are never reached on Rust. live.py's Rust-side handler count is therefore a zero that cannot fire at those sites on any
+workload. The suite's handler count is a separate install and isn't affected.
+
+## Bars whose scope MATCH rested on the old order
+
+Every landing since 6g(a) (f65cc68) with scope in its bar. f65cc68 itself predates the scope workload; 5c7 (17442af),
+5c8 (3611952) and 5c9a (e0ec542) didn't run scope. In each listed bar the scope comparison ran Python's
+`with_closed_units(registry.clauses_for)` on the Rust side too (518 calls per run at c3d0999), so its scope MATCH didn't
+exercise Rust's dispatch through that path. The rerun above shows the answers and state are the same on Rust's path at
+c3d0999; it doesn't re-run any earlier landing.
+
+| landing (report commit) | report | scope line as written |
+|---|---|---|
+| 803d073 (step scope) | port-scope.md:35-37 | "Fresh dev, fuzz, loop and scope: answers and state MATCH … The new workload's answers are scope 12e06b0586faee40 (169 q)." |
+| 1401d1f (5c6) | port-5c6.md:31-33 | "Fresh dev and fuzz, plus loop and scope: answers and state MATCH … scope 12e06b0586faee40 (169 q)." |
+| 6526445 (6d, landed 1e44a7c) | port-6d.md:53-55 | "whole engine Python against Rust: … and scope (169) MATCH, each with its Python control MATCH." |
+| 44f4762 (before 5c7, landed bb3df19, rebar after 6d) | port-5c7-tests.md:75-77 | "Fresh dev and fuzz, plus loop, scope and zero: answers and state MATCH … scope 12e06b0586faee40 (169 q), all as 5c6 and 6d" |
+| f92a360 (adapters B+C1, landed 4dd2ed9) | port-adapters.md:133-136 | "The eight extra workloads MATCH: … scope 12e06b0586faee40" |
+| b838d3f (6g(b)) | port-6g.md:155 | "f6, value, rootof, core, opaque, scope, loop, zero and wiring (new, 6,512): MATCH, each with a Python control." |
+| 9c8d981 (adapters C2, landed 29ee93e) | port-adapters.md:301-304 | "The ten extra workloads MATCH, each with a Python control: … scope 12e06b0586faee40" |
+| 30f3309 (6g(c1)) | port-6g.md:260 | "f6, value, rootof, core (1,636), opaque, scope, loop, zero, wiring and cert: MATCH, each with a Python control." |
+| a2dc947 (6g(c2)+Element._new stack, landed f1e4a74) | port-elemnew.md:63-65 | "The 11 workloads MATCH with controls" |
+| 2553a68 (5c9b) | port-5c9b.md:40-42 | "Fresh dev and fuzz, plus loop, zero, cert and scope: answers and state MATCH … scope 12e06b0586faee40 (169 q)." |
+| 2d12e81 (5c9c) | port-5c9c.md:52-54 | same wording as 5c9b, scope 12e06b0586faee40 (169 q) |
+| 67d108d (5c10a) | port-5c10a.md:50-52 | same wording, scope 12e06b0586faee40 (169 q) |
+| 4215655 (5c10b) | port-5c10b.md:43-45 | same wording, scope 12e06b0586faee40 (169 q) |
+| eac4537 (6g(c3)-(c5)) | port-6g.md:418-421 | "All 11 WLS MATCH with controls: … scope 169 … The lra-on path MATCH (with_closed_units, …" |
+| b384ec1 (5c10c; report 2f2dad7) | port-5c10c.md:53-56 | "Fresh dev and fuzz, plus loop, zero, cert and scope: answers and state MATCH … scope 12e06b0586faee40 (169 q), all equal to 5c10b's." |
+| 9529850 (5c10d; report efd33cc) | port-5c10d.md:58-60 | "Fresh dev and fuzz, plus loop, zero, cert, scope and budget: answers and state MATCH, stats_diff 0 everywhere" |
+| cec872d (6g(c6), landed in 2742b66) | port-6g.md:641-644 | "All 11 WLS MATCH with controls: … scope 169 … The lra-on path MATCH, with with-closed-skip …" |
+| 2742b66 (6g(c6)-(c9)) | port-6g.md:775-778 | "All 11 WLS MATCH with controls: … scope 169 …" |
+| a8a4bae (state part 1) | port-state-memoized.md:53-56 | "Fresh dev and fuzz, plus loop, zero, cert, scope and budget: answers and state MATCH, lra_diff 0 and stats_diff 0 everywhere" |
+| c3d0999 (state part 2 (i)) | port-state-relations.md:44 | "loop, zero, cert, scope and budget all MATCH." |
+
+Two rows name the path scope didn't take on Rust. 6g(c3)-(c5) (port-6g.md:421-422) and 6g(c6) (:644-645) say
+"lra-on path MATCH (with_closed_units, …), with with-closed-skip caught on dev, fuzz, cert, core, f6, opaque and wiring".
+scope isn't in that list, which fits: on scope `with_closed_units` was Python's closure, so a plant in Rust's couldn't
+reach it. The other workloads weren't affected, since none of them builds an engine while it loads.
+
+## The bar and the landing
+
+BAR: to fill.
+
+## Not run here
+
+Suite plants beyond the bar's; mutant reruns; timing; any rerun of an earlier landing's bar on its own source.
+
+## Outputs
+
+`~/sa-rust-ids-work/sa-port-206/` on orion: `old/` and `new/` (the reruns, with head.txt and tree.txt), `audit/`
+(the probe's JSON, `rowdiff-plain.txt`), `probe/load.txt` (which workloads build an engine), `plant/` (handler plants),
+`audit.py`, `audit_run.sh`, `runwl.sh`, `oldlive/live.py` (c3d0999's, for the control).
