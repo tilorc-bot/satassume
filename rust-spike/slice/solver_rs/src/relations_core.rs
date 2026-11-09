@@ -393,6 +393,12 @@ pub(crate) const XF_REL_VIEW_NONE: u16 = 261;
 pub(crate) const XF_TRAVERSE_SKIP: u16 = 262;
 /// State step part 2 (iii): `glue_objects_plain` leaves out `link_objects` of the sides (each side itself stays).
 pub(crate) const GL_PLAIN_NO_LINK: u16 = 263;
+/// S2 (block.rs): a non-model in the generated table; another block's built models short by one; the generated table for
+/// any block with nvars = NPRED; the clean-clause check skipped.
+pub(crate) const RB_GEN_MODEL_FLIP: u16 = 320;
+pub(crate) const RB_BUILT_MODEL_DROP: u16 = 321;
+pub(crate) const RB_GEN_ANY: u16 = 322;
+pub(crate) const RB_CHECK_SKIP: u16 = 323;
 
 #[pyfunction]
 fn rel_install(term_live: Py<PyAny>, relations: Py<PyAny>, euf_adapter: Py<PyAny>, fault: Py<PyAny>) {
@@ -631,6 +637,10 @@ fn rel_plant(name: Option<&str>) -> PyResult<()> {
         Some("xf-rel-view-none") => XF_REL_VIEW_NONE,
         Some("xf-traverse-skip") => XF_TRAVERSE_SKIP,
         Some("gl-plain-no-link") => GL_PLAIN_NO_LINK,
+        Some("rb-gen-model-flip") => RB_GEN_MODEL_FLIP,
+        Some("rb-built-model-drop") => RB_BUILT_MODEL_DROP,
+        Some("rb-gen-any") => RB_GEN_ANY,
+        Some("rb-check-skip") => RB_CHECK_SKIP,
         Some(x) => return Err(PyValueError::new_err(format!("no plant {x}"))),
     };
     PLANT.store(v, Relaxed);

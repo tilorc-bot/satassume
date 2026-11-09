@@ -891,6 +891,8 @@ _REL_STATE_PLANTS = ('ad-lra-not-expr',
                      'xf-session-none', 'xf-sel-none', 'xf-rel-any', 'xf-solver-fresh', 'xf-rel-view-none', 'xf-traverse-skip',
                      # (iii) (relations_core.rs glue_objects_plain, 263)
                      'gl-plain-no-link')
+#: S2 (block.rs rule_tables, relations_core.rs 320-323): see test_rule_tables.py
+_RULE_BLOCK_PLANTS = ('rb-gen-model-flip', 'rb-built-model-drop', 'rb-gen-any', 'rb-check-skip')
 
 
 def entry_native():
@@ -1250,7 +1252,7 @@ def from_env():
                     or PLANT[0] in _SCOPE_PLANTS or PLANT[0] in _GLUE_PLANTS or PLANT[0] in _BUDGET_PLANTS \
                     or PLANT[0] in _RELEVANCE_PLANTS or PLANT[0] in _MEMO_PLANTS or PLANT[0] in _CTX_PLANTS \
                     or PLANT[0] in _CONE_PLANTS or PLANT[0] in _ENTRY_PLANTS \
-                    or PLANT[0] in _LRA_SLOT_PLANTS or PLANT[0] in _REL_STATE_PLANTS:
+                    or PLANT[0] in _LRA_SLOT_PLANTS or PLANT[0] in _REL_STATE_PLANTS or PLANT[0] in _RULE_BLOCK_PLANTS:
                 sa_solver.rel_plant(PLANT[0])
         return install()
     return None

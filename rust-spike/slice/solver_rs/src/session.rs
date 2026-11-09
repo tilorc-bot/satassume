@@ -14,7 +14,7 @@ use pyo3::types::{PyBool, PyDict, PyList, PySet, PyTuple};
 use crate::compile::{self, block_lits, Cx, Def, Kind, Need, F, R};
 use crate::formula_py::PyP;
 
-const NAMES: [&str; 345] = [
+const NAMES: [&str; 423] = [
     "py:var", "py:dvar", "py:node", "py:compile", "py:literal", "py:table", "rs:visit", "rs:add_clause", "rs:ensure_vars",
     "rs:def_implications", "rs:neg_shared", "join", "rs:emit_callback", "refuse:depth", "refuse:convert", "refuse:object", "second:visit", "custom:own",
     "link:hit", "link:resolved", "link:none", "link:no_table", "link:second", "link:no_node",
@@ -78,6 +78,10 @@ const NAMES: [&str; 345] = [
     "xf:solver_core", "xf:engage_core", "xf:read_core", "xf:session_view", "xf:rel_view", "xf:record",
     // state step, part 2 (iii): `glue_objects` of a relation atom other than a two-sided `eq`, natively (budget.rs's cone kids)
     "gl:plain",
+    // 345-419 reserved (state part 2's numbering runs to 369; 6i(a)'s 370-419 are Common counts)
+    "reserved:345", "reserved:346", "reserved:347", "reserved:348", "reserved:349", "reserved:350", "reserved:351", "reserved:352", "reserved:353", "reserved:354", "reserved:355", "reserved:356", "reserved:357", "reserved:358", "reserved:359", "reserved:360", "reserved:361", "reserved:362", "reserved:363", "reserved:364", "reserved:365", "reserved:366", "reserved:367", "reserved:368", "reserved:369", "reserved:370", "reserved:371", "reserved:372", "reserved:373", "reserved:374", "reserved:375", "reserved:376", "reserved:377", "reserved:378", "reserved:379", "reserved:380", "reserved:381", "reserved:382", "reserved:383", "reserved:384", "reserved:385", "reserved:386", "reserved:387", "reserved:388", "reserved:389", "reserved:390", "reserved:391", "reserved:392", "reserved:393", "reserved:394", "reserved:395", "reserved:396", "reserved:397", "reserved:398", "reserved:399", "reserved:400", "reserved:401", "reserved:402", "reserved:403", "reserved:404", "reserved:405", "reserved:406", "reserved:407", "reserved:408", "reserved:409", "reserved:410", "reserved:411", "reserved:412", "reserved:413", "reserved:414", "reserved:415", "reserved:416", "reserved:417", "reserved:418", "reserved:419",
+    // S2 (block.rs rule_tables): the engine's block from the generated tables, another block built in Rust, a failed check
+    "rb:generated", "rb:built", "rb:check_error",
 ];
 const VAR: usize = 0;
 const DVAR: usize = 1;
@@ -462,6 +466,9 @@ pub(crate) const XF_SESSION_VIEW: usize = 341;
 pub(crate) const XF_REL_VIEW: usize = 342;
 pub(crate) const XF_RECORD: usize = 343;
 pub(crate) const GL_PLAIN: usize = 344;
+pub(crate) const RB_GENERATED: usize = 420;
+pub(crate) const RB_BUILT: usize = 421;
+pub(crate) const RB_CHECK_ERROR: usize = 422;
 
 /// Deeper formulas compile on Python, over this same table. Python's own limit depends on the caller's stack, so it isn't
 /// reproduced: its deepest shape is `Implies`, 3 frames a level (first failure at depth 330 from a bare stack, limit 1000), so
@@ -469,7 +476,7 @@ pub(crate) const GL_PLAIN: usize = 344;
 const FORMULA_DEPTH: u32 = 64;
 
 thread_local! {
-    static COUNTS: [Cell<u64>; 345] = const { [const { Cell::new(0) }; 345] };
+    static COUNTS: [Cell<u64>; 423] = const { [const { Cell::new(0) }; 423] };
     /// Each session's serial, for the link's memo: a pointer could alias a dead session's.
     static SERIAL: Cell<u64> = const { Cell::new(0) };
 }

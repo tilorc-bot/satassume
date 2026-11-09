@@ -35,6 +35,7 @@ mod entry;
 mod factcache;
 mod relations_core;
 mod rows;
+mod rule_tables_gen;
 mod scope_core;
 mod session;
 mod solver;
@@ -335,14 +336,8 @@ impl PySolver {
 
     #[pyo3(signature = (block, nvars=None))]
     fn set_rule_block(&mut self, block: &Bound<'_, PyAny>, nvars: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
-        let p = block.py();
-        // Python's own check and memo, unchanged; only the finished models cross.
-        let f = p.import("satassume.sat.solver")?.getattr("_rule_tables")?;
-        let r = f.call1((block, nvars))?;
-        let tables = r.get_item(0)?;
-        let n = r.get_item(1)?.extract::<usize>()?;
-        let clauses = tables.get_item(0)?.extract::<Vec<Vec<u32>>>()?;
-        let models = tables.get_item(1)?.getattr("models")?.extract::<Vec<u128>>()?;
+        // S2: checked and tabled in Rust (block.rs), the engine's block from the generated tables; no call into solver.py
+        let (clauses, n, models, _) = read_rule_block(block, nvars)?;
         let c = Rc::new(Closure::from_models(clauses, n, models));
         run(|| self.s.set_rule_block(&c))
     }
@@ -572,8 +567,60 @@ fn lits_opt(a: Option<&Bound<'_, PyAny>>) -> PyResult<Vec<u32>> {
     }
 }
 
+/// A literal or `nvars` as i64, as `_rule_tables` reads it: an int past i64 is clamped to its end (every check keeps
+/// Python's outcome); anything else gets Python's own error from `>> 1` (a literal) or `int()` (`nvars`).
+fn int_i64(x: &Bound<'_, PyAny>, lit: bool) -> PyResult<i64> {
+    if let Ok(v) = x.extract::<i64>() {
+        return Ok(v);
+    }
+    let i = if lit {
+        x.rshift(1)?;
+        x.clone()
+    } else {
+        x.py().get_type::<PyInt>().call1((x,))?
+    };
+    if let Ok(v) = i.extract::<i64>() {
+        return Ok(v);
+    }
+    Ok(if i.lt(0)? { i64::MIN } else { i64::MAX })
+}
+
+/// `set_rule_block`'s input read once, then `block::rule_tables`: `(clauses, n, models, source)`.
+fn read_rule_block(
+    block: &Bound<'_, PyAny>,
+    nvars: Option<&Bound<'_, PyAny>>,
+) -> PyResult<(Vec<Vec<u32>>, usize, Vec<u128>, block::Source)> {
+    let p = block.py();
+    let mut items: Vec<Vec<Bound<'_, PyAny>>> = Vec::new();
+    for c in block.try_iter()? {
+        items.push(c?.try_iter()?.collect::<PyResult<Vec<_>>>()?);
+    }
+    let lits = items.iter().map(|c| c.iter().map(|l| int_i64(l, true)).collect::<PyResult<Vec<i64>>>()).collect::<PyResult<Vec<_>>>()?;
+    let n = match nvars {
+        Some(x) if !x.is_none() => Some(int_i64(x, false)?),
+        _ => None,
+    };
+    block::rule_tables(&lits, n).map_err(|e| match e {
+        block::BlockError::Msg(m) => PyValueError::new_err(m),
+        block::BlockError::Clause(i) => match pyo3::types::PyTuple::new(p, &items[i]).and_then(|t| t.repr()) {
+            Ok(r) => PyValueError::new_err(format!("rule block clause {r} is not a clean clause of 2+ literals")),
+            Err(e) => e,
+        },
+    })
+}
+
+/// Tests (test_rule_tables.py): what `set_rule_block` would table for `block`, with the models' source, "generated"
+/// or "built".
+#[pyfunction]
+#[pyo3(signature = (block, nvars=None))]
+fn rule_block_tables(block: &Bound<'_, PyAny>, nvars: Option<&Bound<'_, PyAny>>) -> PyResult<(Vec<Vec<u32>>, usize, Vec<u128>, &'static str)> {
+    let (c, n, m, s) = read_rule_block(block, nvars)?;
+    Ok((c, n, m, if s == block::Source::Generated { "generated" } else { "built" }))
+}
+
 #[pymodule]
 fn sa_solver(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(rule_block_tables, m)?)?;
     term::py::register(m)?;
     term::dispatch::register(m)?;
     term::common::register(m)?;

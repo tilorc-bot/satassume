@@ -409,16 +409,16 @@ sat/solver.py	BlockOwner.__repr__	83	~u	none	S	not port (none, ownership ruling)
 sat/solver.py	_common	87		port	S	landed S 35debd6	Rust			
 sat/solver.py	_is_learnt	98		port	S	landed S 35debd6	Rust			
 sat/solver.py	_luby	102		port	S	landed S 35debd6	Rust			
-sat/solver.py	_block_models	122		port	S	landed S 35debd6 (partial)	called back	set_rule_block (lib.rs:326) calls Python's _rule_tables: block check and _BlockClosure's model enumeration (_block_models), memoized per block id	not measured (by reading: one callback per Rust solver, engine.py:317; one enumeration per process for RULE_INTERNAL)	fits no named step; proposed S2 (rule block) after 6h, or the models generated offline with rules.py's output
-sat/solver.py	_BlockClosure	200		port	S	landed S 35debd6 (partial)	called back	set_rule_block (lib.rs:326) calls Python's _rule_tables: block check and _BlockClosure's model enumeration (_block_models), memoized per block id	not measured (by reading: one callback per Rust solver, engine.py:317; one enumeration per process for RULE_INTERNAL)	fits no named step; proposed S2 (rule block) after 6h, or the models generated offline with rules.py's output
-sat/solver.py	_BlockClosure.__init__	213		port	S	landed S 35debd6 (partial)	called back	set_rule_block (lib.rs:326) calls Python's _rule_tables: block check and _BlockClosure's model enumeration (_block_models), memoized per block id	not measured (by reading: one callback per Rust solver, engine.py:317; one enumeration per process for RULE_INTERNAL)	fits no named step; proposed S2 (rule block) after 6h, or the models generated offline with rules.py's output
+sat/solver.py	_block_models	122		port	S	S2 (sa-port-208, branch port/s2; rules ruling: offline for the engine block, ported for any other)	Rust (S2): rule_tables_gen.rs for RULE_INTERNAL; block.rs checks and enumerates any other block		probe 693fef9: _rule_tables per Rust solver (dev 918, fuzz 3133); S2 candidate: see port-s2.md	S2
+sat/solver.py	_BlockClosure	200		port	S	S2 (sa-port-208, branch port/s2; rules ruling: offline for the engine block, ported for any other)	Rust (S2): rule_tables_gen.rs for RULE_INTERNAL; block.rs checks and enumerates any other block		probe 693fef9: _rule_tables per Rust solver (dev 918, fuzz 3133); S2 candidate: see port-s2.md	S2
+sat/solver.py	_BlockClosure.__init__	213		port	S	S2 (sa-port-208, branch port/s2; rules ruling: offline for the engine block, ported for any other)	Rust (S2): rule_tables_gen.rs for RULE_INTERNAL; block.rs checks and enumerates any other block		probe 693fef9: _rule_tables per Rust solver (dev 918, fuzz 3133); S2 candidate: see port-s2.md	S2
 sat/solver.py	_BlockClosure.flags	237		port	S	landed S 35debd6	Rust			
 sat/solver.py	_BlockClosure.lits_of	250		port	S	landed S 35debd6	Rust			
 sat/solver.py	_BlockClosure.values_of	265		port	S	landed S 35debd6	Rust			
 sat/solver.py	_BlockClosure.closure	279		port	S	landed S 35debd6	Rust			
 sat/solver.py	_BlockClosure.model_of	307		port	S	landed S 35debd6	Rust			
 sat/solver.py	_BlockClosure.explain	314		port	S	landed S 35debd6	Rust			
-sat/solver.py	_rule_tables	362		port	S	landed S 35debd6 (partial)	called back	set_rule_block (lib.rs:326) calls Python's _rule_tables: block check and _BlockClosure's model enumeration (_block_models), memoized per block id	not measured (by reading: one callback per Rust solver, engine.py:317; one enumeration per process for RULE_INTERNAL)	fits no named step; proposed S2 (rule block) after 6h, or the models generated offline with rules.py's output
+sat/solver.py	_rule_tables	362		port	S	S2 (sa-port-208, branch port/s2; rules ruling: offline for the engine block, ported for any other)	Rust (S2): rule_tables_gen.rs for RULE_INTERNAL; block.rs checks and enumerates any other block		probe 693fef9: _rule_tables per Rust solver (dev 918, fuzz 3133); S2 candidate: see port-s2.md	S2
 sat/solver.py	Solver	390		port	S	landed S 35debd6	Rust			
 sat/solver.py	Solver.__init__	402		port	S	landed S 35debd6	Rust			
 sat/solver.py	Solver.new_var	538	~u	port	S	landed S 35debd6	Rust			
