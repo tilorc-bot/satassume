@@ -325,3 +325,48 @@ seed1; the "before any backend PR" list as in (i). S's standing: S's gate is met
 cause. `_n_conflicts` view: test-plugin shim (64 tests). test_equality_sharing_is_needed_and_works is still needs-internals,
 unedited. test_public_comparison_catches_a_planted_history_dependence is the known id()-reuse failure (a28c548). Speed not
 measured. Group-D after (iii) part 1 not run.
+
+# Sub-part (iii)(a) and (iii)(b) first move (issue 323), UNBARRED, UNLANDED (week 90%, 9 Nov ~15:45Z)
+
+Work by sa-port-211 ((a)) and sa-port-213 (rebase, (b)'s first move). Branch port/state-relations-iii, head carries this
+section; code at 6ed06b9, rebased on rust-slice 80665b5 (S2). Incoming diff cac82a9..80665b5: S2 (block.rs rule tables,
+session.rs, test_rule_tables.py; 12 files, +773/-19), which the run executes, so the bar must be run on the rebased source.
+
+## What moved
+- (a) f7e5f24 -> a5f57ce: `relations.relation_atom` dispatches itself through `RELATION_ATOM_IMPL` at call time (planner Q1),
+  test_term_ids.py::test_a_name_imported_before_install_dispatches. e025aa5 -> f593984: a plain Python int side is a foreign
+  leaf in Rust's term table (`Kind::PyInt`), plant 265 int-as-number, counter 346 term:int:*.
+- (b), first move, 7899a6a + 6ed06b9: Relations' seven scalar cursors (`_xtcur`, `_xhn`, `_xhseen`, `_xslot`, `_xterm`,
+  `_xnsides`, `_xsides_n`) held in session.rs `SessionCore.relc` (`RelC`, `RC_NAMES`, `RC_INIT`). rel_init writes the core
+  (a session with no core keeps Python's attributes); relations_core.rs `_transfer_terms`, `sync_transfer`, `_note_sides`
+  read/write the core natively. Python reads through views (session_live `_rel_cview`); writes go to the record method
+  `set_relc_field`; test-only export `relc_snapshot`. Counters 347 rc:core, 348 rc:view, 349 rc:record; plants 266
+  rc-xterm-stale, 267 rc-hseen-stale, 268 rc-xslot-skip.
+
+## State decision for each container moved
+| container | inventory row (HANDOFF-sa-port-205 census) | decision |
+|---|---|---|
+| `_xtcur`, `_xhn`, `_xhseen`, `_xslot`, `_xterm`, `_xnsides`, `_xsides_n` | relations_core.rs 2-6 sites, relations.py only, no engine or wiring reader; tests: test_relations_core.py `_rel_state` (cursors), `rc` side writes `_xsides_n += 1` | Rust-native in the core; views for Python (relations.py under SLICE_REL=py, the tests) |
+Snapshot digest at the switch (test_relc_core.py): Rust's `relc_snapshot` export = Python's own attributes,
+995403f1a00b2735 on both, 469 queries (transfer:7:60, transfer2:3:40, fuzz[:200], scope), 445 rows with moved cursors.
+The views read the same values; no cursor is left in `rel.__dict__` on Rust. test_relations_core.py passes unedited.
+The 30 dict/set/list fields are not moved yet (see HANDOFF-sa-port-213.md).
+
+## Checks run (orion, ~/sa-rust-ids-work/sa-port-213/pl1, not the bar)
+- Unplanted Rust at 7899a6a: dev MATCH (31cd0945c07f02a6, 1,985 queries, end/stream/lra/stats 0), fuzz MATCH
+  (173502b6ef285ad6, 3,000). Python solvers made on Rust 0.
+- Plants: rc-xslot-skip caught on fuzz (end 88, stream 88, lra 8, answers same), void on dev. rc-xterm-stale and
+  rc-hseen-stale void on dev and fuzz (they only drop idempotence guards: the repeated work changes nothing visible); caught
+  by test_relc_core.py (each moves the digest). Transfer is reached on dev (35 engagements), fuzz (911), zero (550), scope (11)
+  (iii1b bar counts).
+- Tests (orion, after the rebase): test_term_ids, test_relations_core, test_glue_plain, test_scope_core, test_rule_tables
+  285 passed; with (b): test_relations_core, test_xfer_core, test_glue_plain, test_scope_core, test_term_ids, test_query_core
+  291 passed; test_relc_core.py 5 passed.
+
+## Not run
+The bar (config ready: pareto1 ~/sp19/sa-rust-ids-work/sa-port-213/run-bar-iii-ab.sh, bar.sh as bar-sa-port-213.sh); hence no
+suite numbers, handler multiset, ctx:caught, fallback rows, kept shares or ad:cbm_noid/integer_form rows for this source.
+Group-D before/after. The module-wide relations.py probe after (b) (sa-port-211's at e025aa5: 0 on six workloads, scope 385
+all the dispatch frame, which the planner ruled public entry ~15:05 9 Nov, addenda/sa-port-relations-entry-ruling.txt).
+seed1 and the "before any backend PR" list. Speed. Scope's MATCH still rests on live.py's old install order (sa-port-209's
+harness fix is unlanded). getattr guards added in adapter slots: 0.
