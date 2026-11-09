@@ -252,7 +252,7 @@ the 46 named stub failures, one cause. `_n_conflicts` view: test-plugin shim (64
 is still needs-internals, unedited. test_public_comparison_catches_a_planted_history_dependence is the known id()-reuse
 failure (a28c548). Speed not measured.
 
-# Sub-part (iii), first part: relations.py's per-query Python on converted queries (issue 323), LANDED (see SHAs)
+# Sub-part (iii), first part: relations.py's per-query Python on converted queries (issue 323), LANDED cac82a9
 
 Work by sa-port-205 (code, first bar) and sa-port-207 (fix, second bar, landing). Stacked on (ii).
 
@@ -272,7 +272,7 @@ the module-function comparison had lost its only ordered `_terms_of` caller, Pyt
 ce1092c. budget.rs got the `installed()` check. terms-of-no-order is void on the glue sets, because order_sides adds terms
 only for an `oo` summand, which is a side already. So it moved from that parametrize list to test_glue_plain.py, which
 compares Python's `_terms_of` with relations_core's on `lt` atoms with an `oo` summand, and it is caught there.
-**Tested ce1092c** (port/state-relations-iii, rebased on 9e10f0d). Landed: see the landing line below. Incoming diff
+**Tested ce1092c** (port/state-relations-iii, rebased on 9e10f0d). **Landed cac82a9** (14:45Z, week 89%). Incoming diff
 9e10f0d..rust-slice at landing: none (rust-slice was 9e10f0d).
 
 ## The bar (pareto1 `~/sp19/sa-rust-ids-work/sa-port-207/bar-state-relations-iii1b`, 13:47Z-14:44Z, every phase exit 0, seed1 not run)
