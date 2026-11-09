@@ -1,8 +1,11 @@
-"""Step 6f: the two named SymPy-semantics callbacks (knowledge_f6_live.py) on the default Rust backend. Each is counted, answers as
-Python does, and an exception inside one is a KnowledgeFault (a BaseException), so it can't come back from a quiet handler as
-"unknown". `f6:unit_interval:float` fires on no workload (dev, fuzz, f6, value, rootof, core), so this is its firing case."""
+"""Step 6f: the named SymPy-semantics callbacks on the default Rust backend. Each is counted, answers as Python does, and an
+exception inside one is a KnowledgeFault (a BaseException), so it can't come back from a quiet handler as "unknown".
+6i(b): a Float query is refused (`algebra: Float`), so asin/acos of a Float still run the Python template on the kept path
+and its swapped `_unit_interval_units` (`f6:unit_interval:float`); `_value_units`' `expr.func(c)` is a callback from Rust now
+(fn_tpl.rs, `fn:value:sympy`), planted in SymPy's `genocchi.eval`. The Float cases fire on no
+workload (dev, fuzz, f6, value, rootof, core), so this is their firing case."""
 import pytest
-from sympy import Float, Integer, Q, acos, asin
+from sympy import Float, Integer, Q, acos, asin, genocchi
 from sympy.functions.special.gamma_functions import multigamma
 
 import knowledge_live as K
@@ -17,8 +20,12 @@ CASES = [(functions, '_unit_interval_units', 'f6:unit_interval:float', lambda: Q
          # 6i(a): multigamma's template is Rust's (outer_tpl.rs), which evaluates `expr.func(x, p)` itself; the raise is planted
          # in SymPy's `multigamma.eval`
          (multigamma, 'eval', 'outer:multigamma_value:sympy', lambda: Q.positive(multigamma(Integer(3), 2,
-                                                                                             evaluate=False)))]
-IDS = ['acos-float', 'asin-float-out', 'multigamma-3-2']
+                                                                                             evaluate=False))),
+         # 6i(b): genocchi's slotted template is Rust's (fn_tpl.rs), which evaluates `expr.func(c)` itself (`_value_units`)
+         (genocchi, 'eval', 'fn:value:sympy', lambda: Q.positive(genocchi(Integer(8), evaluate=False)))]
+IDS = ['acos-float', 'asin-float-out', 'multigamma-3-2', 'genocchi-8']
+LOUD = CASES
+LOUD_IDS = IDS
 
 
 @pytest.fixture
@@ -58,7 +65,7 @@ def test_fallback_counted(env, mod, name, key, query):
     assert count(key) >= 1 and count('fault') == 0
 
 
-@pytest.mark.parametrize('mod,name,key,query', CASES, ids=IDS)
+@pytest.mark.parametrize('mod,name,key,query', LOUD, ids=LOUD_IDS)
 def test_fallback_raise_is_loud(env, mod, name, key, query):
     mp, undos = env
     # As in test_fallback_counted: one ask on Python first. Cold, the Float case's `shifted` is refused (algebra: Float)
