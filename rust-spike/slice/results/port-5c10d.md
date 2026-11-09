@@ -41,17 +41,55 @@ landing by sa-port-193.
   (`st_view_bad`); it still runs on base trees.
 
 ## SHAs
-**Tested: 8ff9116** (port/5c10d on rust-slice b384ec1). Bar 00:29Z-TBD on pareto1, rows `~/sp19/sa-rust-ids-work/sa-port-193/bar-5c10d-r2/` (a first launch at 00:26 had literal quotes in its PLANTS/TESTS/WLS/DIRECT, so its tests phase found no files; stopped after 1 minute, rows discarded)
-(end marker `end.txt` TBD); `.so` sha256 TBD. Run beside sa-port-191's 6g(c6) bar, both under shared leases.
+**Tested: 8ff9116** (port/5c10d on rust-slice b384ec1). Bar 00:29Z-02:31Z on pareto1 (every phase exit 0 but seed1, not run; machine run released the lease exit 0), rows `~/sp19/sa-rust-ids-work/sa-port-193/bar-5c10d-r2/` (a first launch at 00:26 had literal quotes in its PLANTS/TESTS/WLS/DIRECT, so its tests phase found no files; stopped after 1 minute, rows discarded)
+(summary copied to `~/sa-rust-ids-work/sa-port-193/machine-run.log`); `.so` sha256 53fe77a5…. Run beside sa-port-191's 6g(c6) bar, both under shared leases.
 Base suite rows: 5c10c's landing bar (`sa-port-189/bar-5c10c/suite`).
 **Incoming diff before the bar:** none (b384ec1 was rust-slice's head at launch).
 **Landed:** TBD.
 
-## The bar (sa-port-193/bar-5c10d on 8ff9116)
-TBD
+## The bar (sa-port-193/bar-5c10d-r2 on 8ff9116)
+1. **Suite by id against 5c10c's rows:** 5,991 passed, 127 failed, 23 skipped, 18 xfailed, 6,159 ids. New 0, gone 0,
+   **changed outcome 0.** Passed splits as 5,990 with no firing and 1 with a firing (`test_ci_stream_reports_only_what_replays`).
+   `tests/test_public_incremental.py::test_public_comparison_catches_a_planted_history_dependence` failed, as on base: the
+   known id()-reuse test artifact (sa-port-185, report a28c548), unedited. S's standing: S's gate is met except for the 46
+   named stub failures, one cause.
+2. **Fresh dev and fuzz, plus loop, zero, cert, scope and budget:** answers and state MATCH, **`stats_diff` 0 everywhere** (the
+   stats view and flag after each query), and every control MATCHes. Answers: dev 31cd0945c07f02a6, fuzz 173502b6ef285ad6,
+   loop 09238b2537e54383, zero d9ed3534a2093027 (all equal to 5c10c's), budget 35bc2c4a937bebc0 (28 q). Rust made 0 Python
+   solvers, reentry 0. Snapshot digest equal at the switch on all seven (below).
+3. **Plants:** 20 of 21 caught (table below); void on the bar: `st-keep-flag-drop` (fires 0 on every workload and the suite),
+   caught by test_entry_core.py. **Both budget plants are caught on budget:** `over-budget-no-flag` (15 fires) and
+   `note-budget-count` (13), by `stats_diff` alone (answers unchanged). In sa-port-193's orion preview `note-budget-count`
+   gave `stats_diff` 14 on budget with answers equal: the view comparison catches what the answer comparison can't.
+4. **Quiet handlers in the suite:** 39 rows in 2 tests, the same multiset as base: `_consistent` AttributeError 34 (`_ok`) and
+   4 (`_rb_clauses`), the named needs-internals case; `Engine._build_context` "Already mutably borrowed" 1 in
+   `test_protocol_on_fuzz` (the 46-stub cause). **engine.py:1906's catches (`ctx:caught`):** 1 in the suite (that row), 0 on
+   all seven workloads; caught rows per id equal base (0 ids differ). TermFault 0. Every live, extra and plant handler file
+   has 0 rows; the 8 suite-plant runs give the same 39-row multiset.
+5. **Known differences in answers or read state:** none. Tests: 661 passed, 3 skipped (5c10c's 19 files plus
+   test_entry_core.py's 23); `relations_direct.py` exited 0.
 
 ## Plants
-TBD
+Caught by: L = the bar's live comparison (workloads where it DIFFERs, mostly `stats_diff`), U = the suite (SUITE_PLANTS=`zero`:
+the 8 that fired 0 on dev and fuzz; changed outcomes), T = test_entry_core.py (all 21).
+
+| plant | caught by |
+|---|---|
+| ent-is-no-hit-count, ent-put-result-no-put | L dev, fuzz, cert; T |
+| ent-is-many-queries-short | L dev, fuzz, scope, zero; T |
+| ent-decide-no-escalate | L dev, fuzz, loop, scope, zero; T |
+| ent-fresh-no-count, note-budget-count, st-view-order | L all seven; T |
+| st-cache-hit-drop | L dev, fuzz, loop; T |
+| st-relevant-drop, st-consistency-drop | L dev, fuzz; T |
+| over-budget-no-flag | L budget; U 16 tests; T |
+| st-flag-view-stale | L budget; U 16 tests; T |
+| ent-ask-no-gave-up | U 1 (`test_lra_constant_coefficients.py::test_hidden_algebraic_equality_gives_up_but_other_theories_answer`); T |
+| ent-drop-memos-keep-answers | U 34 (test_registry_versioning.py, test_history.py, ...); T |
+| ent-settings-no-clear | U 8; T |
+| ent-is-custom-no-hit | U 2; T |
+| st-scope-miss-double | U 1; T |
+| ent-ask-no-clear-flag, ent-check-version-no-sync, st-clear-flag-skip | fire on every workload but MATCH (sympy_api clears the flag itself; one engine, so the sync never empties); T only (`flag`, `shared`, `writes` cases) |
+| st-keep-flag-drop | **void on the bar** (0 fires everywhere, suite too); T only (`writes`) |
 
 ## The switch digest (planner's state ruling, item 3)
 `memo_check.py WL rust` at PYTHONHASHSEED=0 on base Rust (b384ec1, a worktree with its own build, `~/sa-rust-ids-work/sa-port-193/base`)
@@ -101,14 +139,15 @@ Base and 5c10d give the same row on every workload; the six earlier workloads' a
 
 `_record_consistency_check` and `_record_scope_miss` are 0 because their Rust callers write natively (relevance.rs
 `consistent`, `entry::scope_miss`); `_keep_budget_flag` (sympy_api :588-589) is reached by test_entry_core.py's `writes`
-case and TBD in the suite.
+case only: plant `st-keep-flag-drop` fired 0 in the suite too.
 
 **Which moved items are reached, and by what:** every row and both containers by every workload (above), except
 `_settings_changed`/`_drop_set_memos` (test_entry_core.py, suite) and `_over_budget` (budget only, 15 of 28 queries; the
 flag is True after those and False after the rest, pinned by the live comparison and test_entry_core.py).
 
 ## Kept reasons (planner ruling, 03:42 UTC 8 Nov)
-TBD
+Out-of-scope: dev 24/1,985 (1.21%), every other workload 0; refused 0 everywhere; no other named exception. Equal to
+5c10c's bar on dev, fuzz, loop, zero, cert, scope; budget has no base row (first time on a bar), 0 and 0. **No share rose.**
 
 ## State: each container 5c10d's rows touch (planner's state ruling, 8 Nov)
 | container | decision | readers past 5c10d | inventory row |
@@ -155,7 +194,9 @@ Moved to "before any backend PR", and none quoted as met:
 - the native path;
 - timing.
 
-Also not run: TBD
+Also not run:
+- the full suite under the 13 plants that fire on dev or fuzz (SUITE_PLANTS was `zero`);
+- memo_check's plant pass (the bar's live comparison and test_entry_core.py cover all 21).
 
 Other notes:
 - S's standing: S's gate is met except for the 46 named stub failures, one cause.
