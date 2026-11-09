@@ -45,7 +45,9 @@ landing by sa-port-193.
 (summary copied to `~/sa-rust-ids-work/sa-port-193/machine-run.log`); `.so` sha256 53fe77a5…. Run beside sa-port-191's 6g(c6) bar, both under shared leases.
 Base suite rows: 5c10c's landing bar (`sa-port-189/bar-5c10c/suite`).
 **Incoming diff before the bar:** none (b384ec1 was rust-slice's head at launch).
-**Landed:** TBD.
+**Landed:** the commit carrying this file, on rust-slice b384ec1 (unchanged since the bar started). **Incoming diff at
+landing: none** (b384ec1..b384ec1). Between 8ff9116 and the landed commit there is only this report and port-ownership.md
+(results/); the landing guard saw no source difference. Week reading before the push: 85%.
 
 ## The bar (sa-port-193/bar-5c10d-r2 on 8ff9116)
 1. **Suite by id against 5c10c's rows:** 5,991 passed, 127 failed, 23 skipped, 18 xfailed, 6,159 ids. New 0, gone 0,
