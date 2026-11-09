@@ -14,7 +14,7 @@ use pyo3::types::{PyBool, PyDict, PyList, PySet, PyTuple};
 use crate::compile::{self, block_lits, Cx, Def, Kind, Need, F, R};
 use crate::formula_py::PyP;
 
-const NAMES: [&str; 338] = [
+const NAMES: [&str; 344] = [
     "py:var", "py:dvar", "py:node", "py:compile", "py:literal", "py:table", "rs:visit", "rs:add_clause", "rs:ensure_vars",
     "rs:def_implications", "rs:neg_shared", "join", "rs:emit_callback", "refuse:depth", "refuse:convert", "refuse:object", "second:visit", "custom:own",
     "link:hit", "link:resolved", "link:none", "link:no_table", "link:second", "link:no_node",
@@ -73,6 +73,9 @@ const NAMES: [&str; 338] = [
     "ad:cbm_check", "ad:cbm_patched", "ad:cbm_off",
     // state step, part 2 (i): `integer_form` of a side that isn't an `Expr` answers None natively (lra_adapter.integer_form :400)
     "ad:lra_not_expr",
+    // state step, part 2 (ii): the solver and the transfer engagement held in the core (`Session.solver`/`Session.xfer`,
+    // `Relations.xfer`/`xfer_sel`/`_xadapter`), read natively by Rust and through read-only views by Python
+    "xf:solver_core", "xf:engage_core", "xf:read_core", "xf:session_view", "xf:rel_view", "xf:record",
 ];
 const VAR: usize = 0;
 const DVAR: usize = 1;
@@ -450,6 +453,12 @@ pub(crate) const AD_CBM_PATCHED: usize = 335;
 /// ... lra_live not installed (SLICE_LRA_TERM=py, SLICE_TERM=py): Python's functions throughout.
 pub(crate) const AD_CBM_OFF: usize = 336;
 pub(crate) const AD_LRA_NOT_EXPR: usize = 337;
+pub(crate) const XF_SOLVER_CORE: usize = 338;
+pub(crate) const XF_ENGAGE_CORE: usize = 339;
+pub(crate) const XF_READ_CORE: usize = 340;
+pub(crate) const XF_SESSION_VIEW: usize = 341;
+pub(crate) const XF_REL_VIEW: usize = 342;
+pub(crate) const XF_RECORD: usize = 343;
 
 /// Deeper formulas compile on Python, over this same table. Python's own limit depends on the caller's stack, so it isn't
 /// reproduced: its deepest shape is `Implies`, 3 frames a level (first failure at depth 330 from a bare stack, limit 1000), so
@@ -457,7 +466,7 @@ pub(crate) const AD_LRA_NOT_EXPR: usize = 337;
 const FORMULA_DEPTH: u32 = 64;
 
 thread_local! {
-    static COUNTS: [Cell<u64>; 338] = const { [const { Cell::new(0) }; 338] };
+    static COUNTS: [Cell<u64>; 344] = const { [const { Cell::new(0) }; 344] };
     /// Each session's serial, for the link's memo: a pointer could alias a dead session's.
     static SERIAL: Cell<u64> = const { Cell::new(0) };
 }
@@ -595,9 +604,94 @@ pub struct SessionCore {
     /// Each custom atom's own expr: an `Args` and a `Tuple` are `==`, so one node, and the node's object isn't the atom's.
     custom_exprs: RefCell<HashMap<(u32, u32), Py<PyAny>>>,
     st: RefCell<St>,
+    /// State step, part 2 (ii): `Session.solver`, handed over at `TableView.bind` (`Session.__init__` makes the solver
+    /// before the table). Python's attribute stays for its other readers until part 3; the transfer sites read this one.
+    solver: RefCell<Option<Py<PyAny>>>,
+    /// ... `Session.xfer`: the engaged `Relations`, or None.
+    session_xfer: RefCell<Option<Py<PyAny>>>,
+    /// ... each `Relations`' `xfer`, `xfer_sel` and `_xadapter` (four independent attributes on Python, so independent here).
+    xfer: RefCell<Vec<RelX>>,
 }
 
+/// `s.table.core`.
+pub(crate) fn core_of<'py>(s: &Bound<'py, PyAny>) -> PyResult<Bound<'py, SessionCore>> {
+    let p = s.py();
+    Ok(s.getattr(intern!(p, "table"))?.getattr(intern!(p, "core"))?.cast_into::<SessionCore>()?)
+}
+
+/// State step, part 2 (ii): `s.xfer`, from the core.
+pub(crate) fn session_xfer<'py>(s: &Bound<'py, PyAny>) -> PyResult<Option<Bound<'py, PyAny>>> {
+    Ok(core_of(s)?.borrow().xfer_session(s.py()))
+}
+
+/// One `Relations`' transfer attributes, by `XTH`, `XSEL`, `XAD`; `None` where Python's attribute is None.
+pub(crate) struct RelX {
+    rel: Py<PyAny>,
+    f: [Option<Py<PyAny>>; 3],
+}
+
+/// `rel.xfer` (the transfer theory), `rel.xfer_sel`, `rel._xadapter`.
+pub(crate) const XTH: usize = 0;
+pub(crate) const XSEL: usize = 1;
+pub(crate) const XAD: usize = 2;
+
 impl SessionCore {
+    /// `s.solver` for the Rust readers that moved off Python's attribute.
+    pub(crate) fn solver_direct<'py>(&self, p: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        tick(XF_SOLVER_CORE);
+        match &*self.solver.borrow() {
+            Some(s) => Ok(s.bind(p).clone()),
+            None => Err(PyValueError::new_err("the session core has no solver (TableView.bind gives it)")),
+        }
+    }
+
+    /// `_engage_transfer`'s four writes (`rel.xfer_sel`, `rel._xadapter`, `rel.xfer`, `s.xfer = rel`).
+    pub(crate) fn xfer_engage(&self, rel: &Bound<'_, PyAny>, th: &Bound<'_, PyAny>, ad: &Bound<'_, PyAny>, sel: &Bound<'_, PyAny>) {
+        tick(XF_ENGAGE_CORE);
+        self.xfer_put(rel, XSEL, Some(sel));
+        self.xfer_put(rel, XAD, Some(ad));
+        self.xfer_put(rel, XTH, Some(th));
+        *self.session_xfer.borrow_mut() = Some(rel.clone().unbind());
+    }
+
+    fn xfer_put(&self, rel: &Bound<'_, PyAny>, k: usize, v: Option<&Bound<'_, PyAny>>) {
+        let v = v.filter(|v| !v.is_none()).map(|v| v.clone().unbind());
+        let mut xs = self.xfer.borrow_mut();
+        match xs.iter_mut().find(|x| x.rel.is(rel)) {
+            Some(x) => x.f[k] = v,
+            None => {
+                let mut f = [None, None, None];
+                f[k] = v;
+                xs.push(RelX { rel: rel.clone().unbind(), f });
+            }
+        }
+    }
+
+    /// `s.xfer`: the engaged `Relations`, or None.
+    pub(crate) fn xfer_session<'py>(&self, p: Python<'py>) -> Option<Bound<'py, PyAny>> {
+        tick(XF_READ_CORE);
+        if crate::relations_core::planted(crate::relations_core::XF_SESSION_NONE) {
+            return None;
+        }
+        self.session_xfer.borrow().as_ref().map(|x| x.bind(p).clone())
+    }
+
+    /// `rel.xfer` (`XTH`), `rel.xfer_sel` (`XSEL`) or `rel._xadapter` (`XAD`); None where Python's attribute is None.
+    pub(crate) fn xfer_get<'py>(&self, rel: &Bound<'py, PyAny>, k: usize) -> Option<Bound<'py, PyAny>> {
+        tick(XF_READ_CORE);
+        let p = rel.py();
+        if k == XSEL && crate::relations_core::planted(crate::relations_core::XF_SEL_NONE) {
+            return None;
+        }
+        let xs = self.xfer.borrow();
+        let x = if crate::relations_core::planted(crate::relations_core::XF_REL_ANY) { xs.last() } else { xs.iter().find(|x| x.rel.is(rel)) };
+        x.and_then(|x| x.f[k].as_ref()).map(|v| v.bind(p).clone())
+    }
+
+    /// The same, with Python's None for a missing one.
+    pub(crate) fn xfer_obj<'py>(&self, rel: &Bound<'py, PyAny>, k: usize) -> Bound<'py, PyAny> {
+        self.xfer_get(rel, k).unwrap_or_else(|| rel.py().None().into_bound(rel.py()))
+    }
     fn shell<'py>(&self, p: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         self.shell.bind(p).call0()
     }
@@ -1207,7 +1301,92 @@ impl SessionCore {
                 dv: HashMap::new(),
                 dv_node: HashMap::new(),
             }),
+            solver: RefCell::new(None),
+            session_xfer: RefCell::new(None),
+            xfer: RefCell::new(vec![]),
         })
+    }
+
+    /// State step, part 2 (ii): the session's solver, from `TableView.bind`.
+    fn set_solver(&self, solver: &Bound<'_, PyAny>) -> PyResult<()> {
+        let s = if crate::relations_core::planted(crate::relations_core::XF_SOLVER_FRESH) { solver.get_type().call0()? } else { solver.clone() };
+        *self.solver.borrow_mut() = Some(s.unbind());
+        Ok(())
+    }
+
+    /// The view `Session.xfer`.
+    fn xfer_rel<'py>(&self, p: Python<'py>) -> Bound<'py, PyAny> {
+        tick(XF_SESSION_VIEW);
+        self.xfer_session(p).unwrap_or_else(|| p.None().into_bound(p))
+    }
+
+    /// The record method for `Session.xfer = v`: `Session.__init__`'s None, and Python's own `_engage_transfer`
+    /// (SLICE_REL=py over this core). Rust's engagement doesn't come through here.
+    fn set_xfer_rel(&self, v: &Bound<'_, PyAny>) {
+        tick(XF_RECORD);
+        *self.session_xfer.borrow_mut() = if v.is_none() { None } else { Some(v.clone().unbind()) };
+    }
+
+    /// The views `Relations.xfer` (0), `xfer_sel` (1) and `_xadapter` (2).
+    fn xfer_field<'py>(&self, rel: &Bound<'py, PyAny>, k: usize) -> PyResult<Bound<'py, PyAny>> {
+        tick(XF_REL_VIEW);
+        let p = rel.py();
+        if k > XAD {
+            return Err(PyValueError::new_err("no such transfer field"));
+        }
+        if crate::relations_core::planted(crate::relations_core::XF_REL_VIEW_NONE) {
+            return Ok(p.None().into_bound(p));
+        }
+        Ok(self.xfer_obj(rel, k))
+    }
+
+    /// The record method for `rel.xfer`/`xfer_sel`/`_xadapter = v`: Python's own `__init__` and `_engage_transfer`
+    /// (SLICE_REL=py over this core), and tests that set them to drive a method.
+    fn set_xfer_field(&self, rel: &Bound<'_, PyAny>, k: usize, v: &Bound<'_, PyAny>) -> PyResult<()> {
+        tick(XF_RECORD);
+        if k > XAD {
+            return Err(PyValueError::new_err("no such transfer field"));
+        }
+        self.xfer_put(rel, k, Some(v));
+        Ok(())
+    }
+
+    /// The solver and the transfer records reach back to the shell through the theories.
+    fn __traverse__(&self, visit: pyo3::PyVisit<'_>) -> Result<(), pyo3::PyTraverseError> {
+        if crate::relations_core::planted(crate::relations_core::XF_TRAVERSE_SKIP) {
+            return Ok(());
+        }
+        if let Ok(s) = self.solver.try_borrow() {
+            if let Some(x) = &*s {
+                visit.call(x)?;
+            }
+        }
+        if let Ok(x) = self.session_xfer.try_borrow() {
+            if let Some(x) = &*x {
+                visit.call(x)?;
+            }
+        }
+        if let Ok(v) = self.xfer.try_borrow() {
+            for x in v.iter() {
+                visit.call(&x.rel)?;
+                for f in x.f.iter().flatten() {
+                    visit.call(f)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn __clear__(&self) {
+        if let Ok(mut s) = self.solver.try_borrow_mut() {
+            *s = None;
+        }
+        if let Ok(mut x) = self.session_xfer.try_borrow_mut() {
+            *x = None;
+        }
+        if let Ok(mut v) = self.xfer.try_borrow_mut() {
+            v.clear();
+        }
     }
 
     fn var(&self, pred: &Bound<'_, PyAny>, node: &Bound<'_, PyAny>) -> PyResult<i32> {

@@ -268,8 +268,8 @@ fn complete_check<'py>(s: &Bound<'py, PyAny>, lits: &Bound<'py, PyAny>) -> PyRes
     }
     let solver = s.getattr(intern!(p, "solver"))?;
     let sync = |s: &Bound<'py, PyAny>| -> PyResult<()> {
-        let x = s.getattr(intern!(p, "xfer"))?;
-        if !x.is_none() {
+        // State step, part 2 (ii): `s.xfer` from the core.
+        if let Some(x) = crate::session::session_xfer(s)? {
             x.call_method0(intern!(p, "sync_transfer"))?;
         }
         Ok(())

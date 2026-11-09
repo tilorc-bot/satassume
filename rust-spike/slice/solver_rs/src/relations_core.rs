@@ -379,6 +379,18 @@ pub(crate) const AD_LRA_PAIR_SWAP: u16 = 255;
 /// State step, part 2 (i) (adapters.rs `Reader.integer_form`): a side that isn't an `Expr` is read as the number row of its
 /// value (an int as its `Integer`), not answered None as lra_adapter.integer_form's first line does.
 pub(crate) const AD_LRA_NOT_EXPR: u16 = 256;
+/// State step, part 2 (ii) (session.rs `SessionCore.xfer`/`solver`): `s.xfer` read from the core is None after engagement.
+pub(crate) const XF_SESSION_NONE: u16 = 257;
+/// ... a `Relations`' `xfer_sel` read from the core is None after engagement.
+pub(crate) const XF_SEL_NONE: u16 = 258;
+/// ... the record lookup ignores which `Relations` asks: the last engaged one's answers for any.
+pub(crate) const XF_REL_ANY: u16 = 259;
+/// ... the core keeps a fresh solver of the same class, not the session's.
+pub(crate) const XF_SOLVER_FRESH: u16 = 260;
+/// ... the Python views `Relations.xfer`/`xfer_sel`/`_xadapter` read None after engagement (Rust's reads unchanged).
+pub(crate) const XF_REL_VIEW_NONE: u16 = 261;
+/// ... the core's GC traversal skips the solver and the transfer records.
+pub(crate) const XF_TRAVERSE_SKIP: u16 = 262;
 
 #[pyfunction]
 fn rel_install(term_live: Py<PyAny>, relations: Py<PyAny>, euf_adapter: Py<PyAny>, fault: Py<PyAny>) {
@@ -610,6 +622,12 @@ fn rel_plant(name: Option<&str>) -> PyResult<()> {
         Some("ad-lra-patch-guard") => AD_LRA_PATCH_GUARD,
         Some("ad-lra-pair-swap") => AD_LRA_PAIR_SWAP,
         Some("ad-lra-not-expr") => AD_LRA_NOT_EXPR,
+        Some("xf-session-none") => XF_SESSION_NONE,
+        Some("xf-sel-none") => XF_SEL_NONE,
+        Some("xf-rel-any") => XF_REL_ANY,
+        Some("xf-solver-fresh") => XF_SOLVER_FRESH,
+        Some("xf-rel-view-none") => XF_REL_VIEW_NONE,
+        Some("xf-traverse-skip") => XF_TRAVERSE_SKIP,
         Some(x) => return Err(PyValueError::new_err(format!("no plant {x}"))),
     };
     PLANT.store(v, Relaxed);
@@ -1407,8 +1425,14 @@ impl<'py> Cx<'_, 'py> {
         self.rel.getattr(name)?.cast_into::<PyDict>().map_err(Into::into)
     }
 
+    /// State step, part 2 (ii): the core's copy of `s.solver`, not Python's attribute.
     fn solver(&self) -> PyResult<Bound<'py, PyAny>> {
-        self.s.getattr(intern!(self.s.py(), "solver"))
+        self.c.solver_direct(self.s.py())
+    }
+
+    /// `(rel.xfer, rel._xadapter)` from the core, Python's None where unset (a call on it fails as Python's would).
+    fn xfer(&self) -> PyResult<(Bound<'py, PyAny>, Bound<'py, PyAny>)> {
+        Ok((self.c.xfer_obj(self.rel, session::XTH), self.c.xfer_obj(self.rel, session::XAD)))
     }
 
     /// `structural(e)`: the term's row if it has one. No row is an ordinary answer, and that read goes to Python's own function.
@@ -1599,7 +1623,7 @@ impl<'py> Cx<'_, 'py> {
         if others.len()? < 2 {
             return Ok(false);
         }
-        if self.rel.getattr(intern!(p, "_xadapter"))?.call_method1(intern!(p, "term_of"), (node,))?.is_none()
+        if self.xfer()?.1.call_method1(intern!(p, "term_of"), (node,))?.is_none()
             && !self.rel.getattr(intern!(p, "num_sel"))?.contains(node)?
         {
             return Ok(false);
@@ -1660,10 +1684,9 @@ impl<'py> Cx<'_, 'py> {
         if !planted(DROP_ENGAGE) {
             solver.call_method1(intern!(p, "register_atom"), (&th, sel, (intern!(p, "enable"),)))?;
         }
-        self.rel.setattr(intern!(p, "xfer_sel"), sel)?;
-        self.rel.setattr(intern!(p, "_xadapter"), &ad)?;
-        self.rel.setattr(intern!(p, "xfer"), &th)?;
-        self.s.setattr(intern!(p, "xfer"), self.rel)
+        // State step, part 2 (ii): `rel.xfer_sel`, `rel._xadapter`, `rel.xfer` and `s.xfer = rel`, held in the core.
+        self.c.xfer_engage(self.rel, &th, &ad, sel.into_pyobject(p)?.as_any());
+        Ok(())
     }
 
     /// `_transfer_terms`.
@@ -1673,7 +1696,7 @@ impl<'py> Cx<'_, 'py> {
         let sy = p.import(intern!(p, "sympy"))?;
         let (basic, expr, rational) = (sy.getattr(intern!(p, "Basic"))?, sy.getattr(intern!(p, "Expr"))?, sy.getattr(intern!(p, "Rational"))?);
         let rel = self.rel;
-        let (ad, th) = (rel.getattr(intern!(p, "_xadapter"))?, rel.getattr(intern!(p, "xfer"))?);
+        let (th, ad) = self.xfer()?;
         let mut visited = false;
         let sides = rel.getattr(intern!(p, "_xside"))?;
         let n = sides.len()?;
@@ -1751,7 +1774,7 @@ impl<'py> Cx<'_, 'py> {
         let p = node.py();
         tick(session::REL_XSWITCH);
         let solver = self.solver()?;
-        let th = self.rel.getattr(intern!(p, "xfer"))?;
+        let (th, _) = self.xfer()?;
         let en = self.tvar(node, EN)?;
         let sd = self.tvar(node, SD)?;
         for v in th.call_method1(intern!(p, "switch"), (t, en, sd))?.try_iter()? {
@@ -1796,9 +1819,8 @@ impl<'py> Cx<'_, 'py> {
         let cand = rel.getattr(intern!(p, "_xcand"))?;
         let part = rel.getattr(intern!(p, "_xpart"))?;
         let xside = self.dict(intern!(p, "_xside"))?;
-        let ad = rel.getattr(intern!(p, "_xadapter"))?;
+        let (th, ad) = self.xfer()?;
         let solver = self.solver()?;
-        let th = rel.getattr(intern!(p, "xfer"))?;
         let polar: i32 = r.getattr(intern!(p, "BASIS_INDEX"))?.get_item(intern!(p, "polar"))?.extract()?;
         let mut changed = true;
         while changed && pend.is_truthy()? {
@@ -2011,7 +2033,6 @@ fn rel_init<'py>(rel: &Bound<'py, PyAny>, session: &Bound<'py, PyAny>, specs: &B
     let h = hooks()?;
     let r = h.relations.bind(p);
     let proxy = p.import(intern!(p, "weakref"))?.getattr(intern!(p, "proxy"))?.call1((session,))?;
-    let none = p.None();
     let set = |name: &str, v: Bound<'py, PyAny>| rel.setattr(name, v);
     set("session", proxy)?;
     set("specs", PyList::new(p, specs.try_iter()?.collect::<PyResult<Vec<_>>>()?)?.into_any())?;
@@ -2030,7 +2051,6 @@ fn rel_init<'py>(rel: &Bound<'py, PyAny>, session: &Bound<'py, PyAny>, specs: &B
     set("atom_sel", PyDict::new(p).into_any())?;
     set("num_sel", PyDict::new(p).into_any())?;
     set("_xextra", PyList::empty(p).into_any())?;
-    set("xfer_sel", none.bind(p).clone())?;
     set("_user_eq", PySet::empty(p)?.into_any())?;
     set("_roles", PyDict::new(p).into_any())?;
     set("_info", PyDict::new(p).into_any())?;
@@ -2044,8 +2064,6 @@ fn rel_init<'py>(rel: &Bound<'py, PyAny>, session: &Bound<'py, PyAny>, specs: &B
     set("_aux_eq", PySet::empty(p)?.into_any())?;
     set("_link_eq", PySet::empty(p)?.into_any())?;
     set("_xside", PyDict::new(p).into_any())?;
-    set("xfer", none.bind(p).clone())?;
-    set("_xadapter", none.bind(p).clone())?;
     set("_xslot", 1i32.into_pyobject(p)?.into_any())?;
     set("_xterm", 0i32.into_pyobject(p)?.into_any())?;
     set("_xnsides", (-1i32).into_pyobject(p)?.into_any())?;
@@ -2189,7 +2207,7 @@ fn rel_process<'py>(rel: &Bound<'py, PyAny>, user_atoms: Option<&Bound<'py, PyAn
     tick(session::REL_PROCESS);
     let h = hooks()?;
     let r = h.relations.bind(p);
-    let s = rel.getattr(intern!(p, "session"))?;
+    let (s, c) = session_of(p, &h, rel)?;
     let pred = intern!(p, "pred");
     let expr = intern!(p, "expr");
     let mut user: Vec<Bound<'py, PyAny>> = Vec::new();
@@ -2215,7 +2233,7 @@ fn rel_process<'py>(rel: &Bound<'py, PyAny>, user_atoms: Option<&Bound<'py, PyAn
     }
     for a in &user {
         if a.getattr(pred)?.eq(intern!(p, "eq"))? {
-            if rel.getattr(intern!(p, "xfer"))?.is_none()
+            if c.borrow().xfer_get(rel, session::XTH).is_none()
                 && !rel.getattr(intern!(p, "_want_transfer"))?.is_truthy()?
                 && s.getattr(intern!(p, "engine")).and_then(|e| crate::memos::setting(&e, intern!(p, "_transfer"), intern!(p, "transfer")))?.is_truthy()?
             {
@@ -2276,15 +2294,15 @@ fn rel_process<'py>(rel: &Bound<'py, PyAny>, user_atoms: Option<&Bound<'py, PyAn
         if rel.call_method0(intern!(p, "_share"))?.is_truthy()? {
             continue;
         }
-        if rel.getattr(intern!(p, "_want_transfer"))?.is_truthy()? && rel.getattr(intern!(p, "xfer"))?.is_none() {
+        if rel.getattr(intern!(p, "_want_transfer"))?.is_truthy()? && c.borrow().xfer_get(rel, session::XTH).is_none() {
             rel.call_method0(intern!(p, "_engage_transfer"))?;
         }
-        if !rel.getattr(intern!(p, "xfer"))?.is_none() && rel.call_method0(intern!(p, "_transfer_terms"))?.is_truthy()? {
+        if c.borrow().xfer_get(rel, session::XTH).is_some() && rel.call_method0(intern!(p, "_transfer_terms"))?.is_truthy()? {
             continue;
         }
         break;
     }
-    if !rel.getattr(intern!(p, "xfer"))?.is_none() {
+    if c.borrow().xfer_get(rel, session::XTH).is_some() {
         rel.call_method0(intern!(p, "sync_transfer"))?;
     }
     if s.getattr(intern!(p, "engine")).and_then(|e| crate::memos::setting(&e, intern!(p, "_uninterpreted"), intern!(p, "uninterpreted")))?.eq(intern!(p, "free"))? {

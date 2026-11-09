@@ -114,8 +114,8 @@ pub(crate) fn emit(s: &Bound<'_, PyAny>, clause: &Bound<'_, PyAny>) -> PyResult<
 fn head<'py>(s: &Bound<'py, PyAny>, mention: Bound<'py, PyAny>, plant: u16) -> PyResult<Bound<'py, PyAny>> {
     let p = s.py();
     let solver = s.getattr(intern!(p, "solver"))?;
-    let xfer = s.getattr(intern!(p, "xfer"))?;
-    if !xfer.is_none() {
+    // State step, part 2 (ii): `s.xfer` from the core.
+    if let Some(xfer) = crate::session::session_xfer(s)? {
         xfer.call_method0(intern!(p, "sync_transfer"))?;
     }
     if !solver.call_method0(intern!(p, "propagate"))?.is_truthy()? {
