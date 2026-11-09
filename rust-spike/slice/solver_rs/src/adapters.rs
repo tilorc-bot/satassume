@@ -364,8 +364,13 @@ impl<'py> Reader<'_, 'py> {
         PyTuple::new(self.p, ts)
     }
 
+    /// lra_live `_rust`'s `except Exception`: an `Exception` becomes its TermFault; a BaseException, `TermRefuse` above all,
+    /// goes up unchanged, so the query is refused and rerun on Python as on lra_live's path (sa-port-198's bar: 14 suite tests).
     fn fault(&self, site: &str, e: PyErr) -> PyErr {
         let p = self.p;
+        if !e.is_instance_of::<pyo3::exceptions::PyException>(p) {
+            return e;
+        }
         match self.live.fault.bind(p).call1((site, e.value(p))) {
             Ok(v) => PyErr::from_value(v),
             Err(e2) => e2,

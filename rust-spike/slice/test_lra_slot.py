@@ -34,7 +34,7 @@ ELSEWHERE = {
 
 
 def _queries():
-    from sympy import Q, Symbol, cos, log, pi, sqrt
+    from sympy import Mul, Q, Rational, Symbol, cos, log, pi, sqrt
     import cert_wl
     x, y = Symbol('x', real=True), Symbol('y', real=True)
     out = list(cert_wl.queries())
@@ -44,6 +44,12 @@ def _queries():
             (Q.ge(2 * x + 3 * y, 1), Q.ge(x, 1) & Q.ge(y, 0) & Q.integer(x)),
             # closed constants other than pi: `GENERIC_CONSTANTS` decides how they linearise (the flag guard's case)
             (Q.lt(x, log(3)), Q.lt(x, 1)), (Q.lt(x + sqrt(2), 3), Q.lt(x, 0)), (Q.gt(x, cos(1)), Q.gt(x, 1))]
+    # The table refuses these in `lra_integer_form` (TermRefuse, "mul: factors share a base"): the query is refused and rerun
+    # on Python, as lra_live's `_rust` lets a BaseException through. sa-port-198's bar: the slot turned it into a TermFault
+    # (tests/test_unevaluated_products.py::test_repro_is_open and 13 more).
+    z = Symbol('z')
+    m1 = Mul(Rational(1, 3), z, 3 / z, evaluate=False)
+    out += [(Q.eq(m1, 1), True), (Q.lt(m1, 2), Q.extended_real(z))]
     return out
 
 
