@@ -35,6 +35,8 @@ pub enum Kind {
     Add, Mul, Pow, Symbol, Dummy, Wild, Integer, Rational, Float, Zero, One, Half, NegativeOne, Infinity,
     NegativeInfinity, NaN, ComplexInfinity, ImaginaryUnit, Pi, Exp1, GoldenRatio, TribonacciConstant, EulerGamma,
     Catalan, AppliedUndef, Function, Other,
+    /// A plain Python `int`, a foreign leaf: never from `convert.py` (not in `KINDS`), only from `TermTable::py_int`.
+    PyInt,
 }
 
 const KINDS: [Kind; 27] = {

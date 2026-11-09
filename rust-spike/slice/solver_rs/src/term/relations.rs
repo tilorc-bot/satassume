@@ -59,7 +59,9 @@ impl TermTable {
     /// `default_sort_key` would compare it. Otherwise `sorted((l, r), key=_key)`, which is stable: they swap only when
     /// the key of `r` is below the key of `l`.
     pub fn eq_sides(&mut self, lhs: TermId, rhs: TermId) -> Result<(TermId, TermId), Refuse> {
-        let (l, r) = if self.is_number_term(lhs) || self.is_number_term(rhs) {
+        // `_affine_strip` returns its sides as they are when one isn't an `Expr`, as a plain Python int isn't.
+        let int_side = self.class_of(lhs).kind == Kind::PyInt || self.class_of(rhs).kind == Kind::PyInt;
+        let (l, r) = if int_side || self.is_number_term(lhs) || self.is_number_term(rhs) {
             (lhs, rhs)
         } else {
             self.affine_strip(lhs, rhs)?
@@ -220,6 +222,9 @@ impl TermTable {
         let mut out = vec![];
         let mut seen = std::collections::HashSet::new();
         for &side in sides {
+            if self.class_of(side).kind == Kind::PyInt {
+                continue; // Python's skips a side that isn't Basic
+            }
             if self.class_of(side).flags & flag::PLAIN_ATOMS == 0 {
                 return None;
             }

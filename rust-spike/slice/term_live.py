@@ -71,12 +71,14 @@ class TermFault(BaseException):
 
 class _Query:
     """One `_ask`'s table. `kept` is a reason, or None when the table is there."""
-    __slots__ = ('table', 'ids', 'objects', 'kept', 'counts', 'raised', 'derived', 'rev', 'memo')
+    __slots__ = ('table', 'ids', 'objects', 'kept', 'counts', 'raised', 'derived', 'rev', 'memo', 'ints', 'int_ids')
 
     def __init__(self, c):
         # Derived terms this query has met: {SymPy term: id} and {id: SymPy term}. Apart from `ids`, which other consumers
-        # index `objects` by.
+        # index `objects` by. Plain Python int sides (`_int_id`): {id: int} and {int: id}, apart from `derived`, so `scaffold`
+        # never gives one.
         self.derived, self.rev = {}, {}
+        self.ints, self.int_ids = {}, {}
         # The per-query form of a cross-query memo (ruling on memos): `_under_apps`, `zero_twin`. Dies with the query.
         self.memo = {}
         if isinstance(c, convert.Kept):
@@ -95,6 +97,7 @@ class _Refused(_Query):
 
     def __init__(self):
         self.derived, self.rev = {}, {}
+        self.ints, self.int_ids = {}, {}
         self.kept, self.table, self.ids, self.objects, self.counts, self.raised = 'refused', None, None, None, {}, ()
 
 
@@ -261,7 +264,7 @@ KEY_BAD = []
 #: Test plants on Rust's answers: 'swap' reverses `eq_sides`, 'termwise-true' and 'termwise-false' fix `_termwise`, 'no-strip'
 #: drops `_affine_strip` where it changed a side, 'key-reverse' flips a matched key, 'scaffold-form' fails the form check.
 #: Slice C's: 'le-swap', 'no-ext', 'is-number-false', 'affine-false', 'linked-drop', 'under-empty', 'interned-reversed',
-#: 'plan-drop', 'plan-pred', 'twin-one'.
+#: 'plan-drop', 'plan-pred', 'twin-one'. State step (iii)(a): plant 265 'int-as-number' (`_int_id`; counter 346 `term:int:*`).
 PLANT = [None]
 #: SLICE_TERM_CHECK: at each answer from Rust, also run Python's own function and compare, counted as `check:same:<site>` and
 #: `check:differs:<site>`, with the first few in `CHECK_BAD`. It builds in SymPy, so it's for evidence, never for a number
@@ -288,6 +291,8 @@ def term_id(q, e, site):
         # `==` can join classes (Float against Integer), so a row counts only for its own class.
         return i if type(q.objects[i]) is type(e) else None
     if not isinstance(e, Basic):
+        if type(e) is int and site in _INT_SITES:
+            return _int_id(q, e, site)
         COUNTS[f'term:unknown:{site}:{type(e).__name__}'] += 1
         return None
     i = q.derived.get(e)
@@ -370,6 +375,25 @@ def _guarded(site, f):
             raise TermFault(f'{site}: {type(x).__name__}: {x}') from x
     g.__wrapped__ = f
     return g
+
+
+#: The sites whose Rust work reads a plain int side as Python does (state step (iii)(a)): `_is_number` False, skipped by
+#: `_under_apps` and `_structural_subterms`, `extended_real` needed, no `_affine_strip`, Integer's sort key.
+_INT_SITES = frozenset({'relation_atom', '_is_number', '_under_apps', '_structural_subterms', '_ext_atoms', 'key'})
+
+
+def _int_id(q, e, site):
+    """A plain Python `int` side, as user code passes `relation_atom('lt', s, 1)`: Rust's foreign leaf for it (`py_int`),
+    never an `Integer` row, so Python's `_is_number(1)` False and the rest hold. The plant 'int-as-number' maps it to the
+    `Integer` row instead, which is what this mustn't do."""
+    COUNTS['term:int:' + site] += 1
+    if PLANT[0] == 'int-as-number':
+        return q.table.number(e, 1)
+    i = q.int_ids.get(e)
+    if i is None:
+        i = q.int_ids[e] = q.table.py_int(e)
+        q.ints[i] = e
+    return i
 
 
 def _ids(q, site, *terms):
@@ -456,7 +480,10 @@ def _same_sides(want, got):
 
 
 def _obj(q, i, site):
-    return q.objects[i] if i < q.table.n_input else scaffold(q, i, site)
+    if i < q.table.n_input:
+        return q.objects[i]
+    e = q.ints.get(i)
+    return scaffold(q, i, site) if e is None else e
 
 
 def _ext_atoms(py):
@@ -496,7 +523,7 @@ def _is_number(py):
     run = _guarded('_is_number', run)
 
     def is_number(e):
-        if not isinstance(e, Basic):
+        if not isinstance(e, Basic) and type(e) is not int:
             return py(e)
         got = run(e)
         return py(e) if got is None else got
@@ -550,7 +577,7 @@ def _under_apps(py):
     def run(e):
         q = current()
         sides = e if isinstance(e, tuple) else (e,)
-        if not all(isinstance(x, Basic) for x in sides):
+        if not all(isinstance(x, Basic) or type(x) is int for x in sides):
             return None
         ids = _ids(q, '_under_apps', *sides)
         if ids is None:
@@ -652,7 +679,7 @@ def _structural_subterms(py):
     run = _guarded('_structural_subterms', run)
 
     def subterms(e):
-        got = run(e) if isinstance(e, Basic) else None
+        got = run(e) if isinstance(e, Basic) or type(e) is int else None
         if got is None:
             return py(e)
         if CHECK[0]:
@@ -1021,6 +1048,8 @@ def from_env(default='terms'):
         print(f'SLICE_TERM={mode}: not a mode', file=sys.stderr)
         raise SystemExit(2)
     PLANT[0] = os.environ.get('SLICE_TERM_PLANT') or None
+    if not PLANT[0] and os.environ.get('SLICE_SESSION_PLANT') == 'int-as-number':
+        PLANT[0] = 'int-as-number'      # plant 265, the bar's channel (bar.sh's plants phase)
     CHECK[0] = bool(os.environ.get('SLICE_TERM_CHECK'))
     out = os.environ.get('SLICE_TERM_COUNTS')
     if out:

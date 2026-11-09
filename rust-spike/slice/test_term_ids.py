@@ -427,3 +427,54 @@ def test_interned_keeps_python_and_its_plant_shows(live):
         assert got != want
     finally:
         term_live.stack().pop()
+
+
+# State step (iii)(a): a plain Python int side, as scope_wl's extension passes `relation_atom('lt', s, 1)`. Rust's foreign leaf
+# (`py_int`) reads it as Python does, and is never the Integer row.
+INT_SIDES = [(x, 1), (1, x), (S.Zero, 1), (1, S.Zero), (x + 1, 2), (f(x), -3), (1, 1), (S.One, 1), (1, S.One), (nan, 1)]
+
+
+@pytest.mark.parametrize('name', ['eq', 'ne', 'lt', 'le', 'gt', 'ge'])
+@pytest.mark.parametrize('a, b', INT_SIDES)
+def test_an_int_side_matches_python_on_rust(live, name, a, b):
+    _in_query(x + 1, f(x), nan)
+    try:
+        got, want = R.relation_atom(name, a, b), R._relation_atom_py(name, a, b)
+        assert got == want and term_live._same_sides(want, got) if hasattr(got, 'args') else got == want
+        c = live.counts()
+        assert c['term:rust:relation_atom'] == 1 and c.get('term:py:relation_atom', 0) == 0, c
+        assert c['term:int:relation_atom'] >= 1
+    finally:
+        term_live.stack().pop()
+
+
+def test_int_sides_on_the_other_sites(live):
+    _in_query(x + 1, f(x))
+    try:
+        assert R._is_number(1) is False and R._is_number.__wrapped__(1) is False
+        t = (f(x), 1)
+        assert R._under_apps(t) == R._under_apps.__wrapped__(t) and R._under_apps((1,)) == frozenset()
+        assert R._structural_subterms(1) == R._structural_subterms.__wrapped__(1) == []
+        assert R._ext_atoms(x, 1) == R._ext_atoms.__wrapped__(x, 1)
+        assert sorted([x, 1, S.Half], key=R._key) == sorted([x, 1, S.Half], key=R._key.__wrapped__)
+        c = live.counts()
+        for site in ('_is_number', '_under_apps', '_structural_subterms', '_ext_atoms'):
+            assert c.get('term:py:' + site, 0) == 0 and c['term:int:' + site] >= 1, (site, c)
+        assert c.get('key:mismatch:relations._key', 0) == 0 and c['key:asked:relations._key'] >= 3, c
+    finally:
+        term_live.stack().pop()
+
+
+def test_an_int_is_never_the_integer_row_and_its_plant_shows(live):
+    q = _in_query(x)
+    try:
+        q = term_live.current()
+        i = term_live.term_id(q, 1, '_is_number')
+        assert i >= q.table.n_input and q.ints[i] == 1 and type(term_live._obj(q, i, 't')) is int
+        assert i != q.table.number(1, 1) and i not in q.rev and 1 not in q.derived
+        assert term_live.term_id(q, 1, '_is_number') == i
+        assert term_live.term_id(q, True, '_is_number') is None       # bool isn't int here
+        live.PLANT[0] = 'int-as-number'
+        assert R._is_number(1) is True                               # the plant: what Python's _is_number(1) is not
+    finally:
+        term_live.stack().pop()

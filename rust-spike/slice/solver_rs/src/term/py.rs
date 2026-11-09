@@ -517,6 +517,11 @@ impl PyTermTable {
         self.0.number(&Rat::new(p, q)).0
     }
 
+    /// The foreign leaf of a plain Python `int` (`TermTable::py_int`): not a number term.
+    fn py_int(&mut self, v: BigInt) -> u32 {
+        self.0.py_int(v).0
+    }
+
     /// `-t`. Raises TermRefuse, as do the rest.
     fn neg(&mut self, t: u32) -> PyResult<u32> {
         self.0.neg(TermId(t)).map(|x| x.0).map_err(refuse)

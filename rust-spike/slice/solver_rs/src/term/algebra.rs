@@ -126,6 +126,39 @@ impl TermTable {
         id
     }
 
+    /// A plain Python `int` side, as user code passes `relation_atom('lt', s, 1)`: a foreign leaf in a class of its own
+    /// (`Kind::PyInt`, added on first use), never an `Integer` row. `_is_number` is False (an int has no `is_number`), it has
+    /// no args or free symbols, `_under_apps` and `_structural_subterms` skip it, and its sort key is the `Integer`'s of its
+    /// value (`default_sort_key` sympifies). Content: the value.
+    pub fn py_int(&mut self, v: BigInt) -> TermId {
+        let class = match self.classes.iter().position(|c| c.kind == Kind::PyInt) {
+            Some(c) => super::ClassId(c as u32),
+            None => {
+                let name = self.strings.len() as u32;
+                self.strings.push("int".into());
+                self.classes.push(super::table::ClassRow {
+                    name,
+                    kind: Kind::PyInt,
+                    rank: None,
+                    flags: 0,
+                    class_key: V::None,
+                    templates: V::None,
+                    structural: false,
+                    custom_content: false,
+                });
+                super::ClassId(self.classes.len() as u32 - 1)
+            }
+        };
+        let content: Arc<[V]> = vec![V::Int(v)].into();
+        if let Some(t) = self.find(class, &content) {
+            return t;
+        }
+        let id = TermId(self.terms.len() as u32);
+        self.index_insert(class, content.clone(), id);
+        self.terms.push(TermRow { class, args: Box::default(), content, free: Box::default(), bits: fact::READ, level: 0, has_power: false });
+        id
+    }
+
     /// `_from_args`: no evaluation, no sort. One arg is that arg.
     fn from_args(&mut self, class: super::ClassId, args: Vec<TermId>) -> TermId {
         debug_assert!(!args.is_empty());
@@ -535,6 +568,12 @@ impl TermTable {
         let c = self.class_of(t);
         if let Some(v) = self.rat(t) {
             return Ok(tuple(vec![c.class_key.clone(), tuple(vec![int(0), tuple(vec![])]), tuple(vec![]), V::Rat(v)]));
+        }
+        if c.kind == Kind::PyInt {
+            let [V::Int(n)] = &*self.row(t).content else { return Err(Refuse("key: an int row without its value")) };
+            let v = Rat::new(n.clone(), BigInt::one());
+            let k = self.classes[self.class_of_rational(&v).index()].class_key.clone();
+            return Ok(tuple(vec![k, tuple(vec![int(0), tuple(vec![])]), tuple(vec![]), V::Rat(v)]));
         }
         match c.kind {
             Kind::Mul => self.mul_key(t),
