@@ -839,7 +839,7 @@ equal hash, different objects, different inner classes; 1520 of 1520 runs): `Und
 `UndefinedFunction('g')(w)`, `pickle.loads(pickle.dumps(t1))` and `sympify(srepr(t1))` all come back as `t1` itself.
 Twin classes cannot differ in content (`UndefinedFunction.__eq__` is the name and the assumptions), unlike `Subs` twins.
 
-- Single-twin queries: 10 forms (`repro.py`'s six, `Q.integer(t*w)`, `Q.nonnegative(t**2)`, `Q.positive(-t)`,
+- Single-twin queries: 10 forms (five of `repro.py`'s six, `Q.integer(t*w)`, `Q.nonnegative(t**2)`, `Q.positive(-t)`,
   `Q.ge(Abs(t), 0)`, `Q.lt(t - w, 0)` variants) on `g(w)`, `g(g(w))`, `g(w) + 1`; orders 1, 2, 12, 21.
 - Mixed queries, both twins in one query: 16 forms (the above with one twin in the proposition and the other in the
   assumptions, plus transitivity, `Q.eq(f(a), f(b))`, `Q.ne(a, b)`, two assumptions on different twins, and an
