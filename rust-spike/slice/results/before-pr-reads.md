@@ -245,7 +245,63 @@ was removed after the runs; the outputs are in `~/sa-rust-ids-work/sa-port-251/i
 
 ## Item 2: cause of the four slice files failing on base
 
-Not started.
+**Verdict: (iii) caused none of them. The four files give the same results, test id for test id, on 9e10f0d (the
+commit before (iii)'s first, 0fa9532) as on base 0192b35. One file holds a real stale test (test_term_live.py, 2
+tests, since 18d2bb6 of 8 Nov). The other three are not failures of the code: two need the suite's plugins and pass
+with them, and one is a script that pytest collects by its name.**
+
+| file | plain pytest, base 0192b35 | plain pytest, 9e10f0d (before (iii)) | cause | run as its docstring says, base | caused by (iii) | proposed owner |
+|---|---|---|---|---|---|---|
+| test_term_live.py | 2 failed, 18 passed, 1 skipped (2 failed, 19 passed with `SLICE_TERM_TEST_RUST=1`) | the same 2 | the tests build `_Mark` by `__new__` and set `tables, engines, cache` only (:339-340, :354-355); `_Mark.rollback` reads `self.facts` (term_live.py:171), which 18d2bb6 added to `__init__` (:141) | the same 2 fail under the plugins too | no | formula's step |
+| test_handler_count.py | 2 failed | the same 2 | `handler_count._out` is `None` until the `handler_count` plugin installs the counter (test_handler_count.py:54) | 2 passed with `-p rust_plugin -p handler_count`; script form exits 0 | no | before-PR list, unassigned |
+| test_catch_count.py | 3 failed | the same 3 | `catch_count.sink` stays empty: nothing installs the counter without `-p rust_plugin` | 3 passed with the plugins; script form exits 0 | no | before-PR list, unassigned |
+| test_cf_diff.py | collection error | the same | a script: `seed = int(sys.argv[1])` at module level (:10) reads pytest's `-q` | `test_cf_diff.py 1 20000`: MISMATCHES 0 | no | before-PR list, unassigned |
+
+### Evidence
+
+- Runs (`~/sa-rust-ids-work/sa-port-251/item2/run4.sh TREE OUT [pytest args]`: one pytest per file from
+  `rust-spike/slice`, as sa-port-243's `check1.sh` does it; Python env of `py.sh` plus the slice dir; orion):
+  `base-plain/`, `base-plain-rust/` (`SLICE_TERM_TEST_RUST=1`), `base-plugin/` (`-p rust_plugin -p handler_count`, as
+  run_suite.sh:17), `pre-plain/`, `pre-plugin/`. Each has `tree.txt` naming the `satassume` and `sa_solver.so` that
+  imported. Script forms: `hc-script.log`, `cc-script.log`, `cf-script.log`.
+- Failing ids, the same in base-plain and pre-plain:
+  `test_term_live.py::test_a_table_emptied_and_regrown_past_the_mark_keeps_nothing_of_the_run`,
+  `::test_what_was_there_before_the_run_stays` (`'_Mark' object has no attribute 'facts'`);
+  `test_handler_count.py::test_each_route_is_seen`, `::test_uninterpreted_is_not_counted`
+  (`'NoneType' object has no attribute 'flush'`);
+  `test_catch_count.py::test_formula_route_into_1107`, `::test_verdict_route_into_1107`,
+  `::test_complete_check_route_into_1906` (`assert [] == ['formula<_consistent']` and the like);
+  `test_cf_diff.py` (`ValueError: invalid literal for int() with base 10: '-q'`).
+- Which build: the clone's `sa_solver.so` was built at 12:02Z on 10 Nov from the tree of ba1ca22, and
+  `git diff ba1ca22 0192b35 -- rust-spike/slice/solver_rs satassume rust-spike/slice/*.py` is empty (the later commits
+  are documents). `sh rust-spike/slice/build_solver.sh` in the clone was a no-op and the copied `.so` has the same
+  bytes as before, so the base runs are on the base's source. The 9e10f0d runs use a worktree with its own build
+  (`build-pre-iii.log`); the worktree is removed, the logs stay.
+- History: `git log 9e10f0d..0192b35` touches none of the four test files, nor handler_count.py, catch_count.py or
+  rust_plugin.py. It touches term_live.py twice (7282317, f5dfa60), with no line about `facts`:
+  `git diff 9e10f0d 0192b35 -- rust-spike/slice/term_live.py` has no such line. `self.facts` came with 18d2bb6
+  (8 Nov 16:55Z, "WIP 5c10a: fact caches Rust-native"), an ancestor of 9e10f0d; the two tests date from before it and
+  were not updated. results/HANDOFF-sa-port-197.md:16 and port-state-memoized.md:249 already report the same 2 on
+  their base 9529850.
+- The docstrings say how each is meant to run: test_handler_count.py:3 ("By pytest with `-p rust_plugin -p
+  handler_count` ... or as a script"), test_catch_count.py:2 ("By pytest with `-p rust_plugin` ... or as a script"),
+  test_cf_diff.py:1 (`test_cf_diff.py [SEED] [OPS]`). `check1.sh` runs every `test_*.py` plain, which is where the
+  three come from.
+
+### Proposed fixes (none made here)
+
+- test_term_live.py: set `m.facts = {}` next to `m.tables, m.engines, m.cache = {}, {}, []` at :340 and :355 (test
+  only; `_Mark.rollback` is right to read it). **Owner: formula's step**, whose open list already names term_live;
+  if that item means something else, before-PR list, unassigned. Until then the 2 ids are known base failures and no
+  bar that lists test_term_live.py can be clean.
+- test_handler_count.py, test_catch_count.py: nothing to fix in the code under test. Either short checks run slice
+  tests with `-p rust_plugin -p handler_count` (as run_suite.sh does), or the two files get a fixture that installs
+  the counter when no plugin did, as their script forms do. **Owner: before-PR list, unassigned.**
+- test_cf_diff.py: keep it out of `test_*.py` globs, or put the module-level run under `if __name__ == "__main__"`
+  with a small pytest entry. **Owner: before-PR list, unassigned.**
+
+Not checked: whether any landing bar lists these four in TESTS or DIRECT (bar.sh's TESTS default is
+test_session_limits.py; each bar passes its own list); Rust backend through the plugin (`SLICE_SUITE_BACKEND=rust`).
 
 ## Item 3: `PROCESS.clear()` and the Rust stores
 
