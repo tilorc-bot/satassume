@@ -104,6 +104,8 @@ def install():
     runs exactly this. Tests that build `satassume.sat.solver.Solver` themselves are left on Python."""
     import satassume.engine as engine
     import satassume.ref as ref
+    import session_live
+    session_live.refuse_built_engines('backend.install()')     # state part 3: refuse, don't refresh (session_live.py)
     saved = engine.Solver, ref.Solver
     engine.Solver = ref.Solver = make
     undo_euf = install_euf()

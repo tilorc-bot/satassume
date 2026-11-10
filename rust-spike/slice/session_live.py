@@ -1107,7 +1107,8 @@ def _install_factcache():
 
     def __new__(cls, maxsize=200_000):
         return sa_solver.DictCache(maxsize)
-    D.__new__ = __new__
+    if PLANT[0] != 'inst-cache-new-skip':     # plant 422: a `DictCache` imported before the install stays Python's
+        D.__new__ = __new__
     bound = [(m, n) for m in list(sys.modules.values()) for n in ('DictCache', 'ObjectCache')
              if getattr(m, '__dict__', {}).get(n) is D]
     for m, n in bound:
@@ -1184,25 +1185,11 @@ def _install_relations():
     for m, ns in mods:
         for n in ns:
             setattr(m, n, getattr(sa_solver, _REL_FUNCS[n]))
-    # State step part 2 (iii): a default engine built before this install (a workload's `default_engine()` while its queries
-    # load: scope_wl; or a user's before `backend.install()`) holds Python's `with_closed_units` closure (engine.py:1341), which
-    # then runs per query. It is rewrapped on Rust's over the same templates, as an engine built after the install has it.
-    from satassume import sympy_api
-    eng = sympy_api._engine
-    ct = getattr(eng, 'clause_templates', None)
-    rewrapped = []
-    if getattr(ct, '__qualname__', '') == 'with_closed_units.<locals>.clauses' and ct.__module__ == relations.__name__:
-        inner = ct.__closure__[ct.__code__.co_freevars.index('clause_templates')].cell_contents
-        eng.clause_templates = sa_solver.rel_with_closed_units(inner)
-        rewrapped.append((eng, ct))
-
     def undo():
         for n, f in saved.items():
             setattr(R, n, f)
         for m, n, f in saved_f:
             setattr(m, n, f)
-        for e, f in rewrapped:
-            e.clause_templates = f
     return undo
 
 
@@ -1231,7 +1218,8 @@ def _install_scope():
     rs['EMPTY'] = empty
     PY_SCOPE_FUNCS.update({n: getattr(scope, n) for n in rs})
     py_empty = PY_SCOPE_FUNCS['EMPTY']
-    sets = [(scope, n, n) for n in rs] + [(importlib.import_module(m), mine, theirs) for m, ns in _SCOPE_IMPORTERS for mine, theirs in ns]
+    sets = [(scope, n, n) for n in rs] + [(importlib.import_module(m), mine, theirs) for m, ns in _SCOPE_IMPORTERS for mine, theirs in ns
+                                          if not (PLANT[0] == 'inst-importer-skip' and mine == '_theory_scope')]   # plant 423
     saved = [(m, mine, getattr(m, mine)) for m, mine, _ in sets]
     for m, mine, theirs in sets:
         setattr(m, mine, rs[theirs])
@@ -1277,8 +1265,25 @@ def _formula_literal(f, table, emit, dv=None):
     return PY_COMPILE[1](f, table, emit, dv) if lit is None else lit
 
 
+#: State part 3 (issue 323, OWED [106]): install() REFUSES once an `Engine` exists. An engine binds at construction what the
+#: install replaces (engine.py:1318-1341: `registry.clauses_for` under `with_closed_units`, `default_specs()`' adapters, its caches),
+#: so one built before would keep Python's paths inside a "Rust" backend. Refusing is shorter than refreshing every binding
+#: (it replaces (iii)'s rewrap of the default engine's `with_closed_units`, which covered one of them); `p_install` refuses the
+#: same way. Plant 420 `inst-no-refuse` drops the check (test_install_order.py catches the stale engine).
+def refuse_built_engines(who):
+    import gc
+    if PLANT[0] == 'inst-no-refuse' or os.environ.get('SLICE_SESSION_PLANT') == 'inst-no-refuse':
+        return
+    gc.collect()
+    n = sum(isinstance(o, engine.Engine) for o in gc.get_objects())
+    if n:
+        raise RuntimeError(f"{who} after {n} satassume Engine(s) were built: an engine binds the paths install() replaces when "
+                           "it is constructed, so it would keep Python's. Install first, then build engines.")
+
+
 def install():
     """Returns the undo."""
+    refuse_built_engines('session_live.install()')
     S = engine.Session
     saved = {n: S.__dict__.get(n) for n in ('table', 'base', 'xfer', 'node', 'var', 'dvar', '_dvar')}
     g = (engine.VarTable, engine.compile_formula, engine.formula_literal)

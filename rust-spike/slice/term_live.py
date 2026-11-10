@@ -32,6 +32,7 @@ as Python's own run does, and neither is ours to empty. `Dummy._count`: a templa
 advanced it, and setting it back could make a later Dummy equal to one SymPy's cache still holds.
 """
 import collections
+import os
 import sys
 import threading
 
@@ -988,7 +989,9 @@ def _install(keys, terms):
     if terms:
         relations._key = _key_match('relations._key', py_key)
         lra_adapter.default_sort_key = _key_match('lra_adapter', py_sort)
-        relations.relation_atom = sympy_api.relation_atom = relations.RELATION_ATOM_IMPL[0] = _relation_atom(py_atom)
+        relations.relation_atom = sympy_api.relation_atom = _relation_atom(py_atom)
+        if os.environ.get('SLICE_SESSION_PLANT') != 'inst-slot-skip':   # plant 421: the slot left empty
+            relations.RELATION_ATOM_IMPL[0] = relations.relation_atom
         relations._termwise = _termwise(py_wise)
         relations.Relations._eq_links = _eq_links(py_links)
         relations.glue_objects = engine.glue_objects = _glue_objects(py_glue)
