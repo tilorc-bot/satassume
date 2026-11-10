@@ -220,7 +220,9 @@ def matches(shape, args, consts):
             if not (type(a) is type(s[1]) and a == s[1]):
                 return False
         elif kind == 'same':
-            if a is not args[s[1]]:
+            # equality, not identity: two equal objects are one term (which of
+            # them a caller holds follows SymPy's caches, not the query)
+            if a != args[s[1]]:
                 return False
         elif kind == 'head':
             if _exp_arg(a) is None:
@@ -243,14 +245,14 @@ def power(gen):
     A node has a shape when each argument matches it: a number when it is
     of its type and equal (``-I`` is ``Mul(-1, I)``), ``('head', 'exp')``
     when it is ``exp(u)`` or an unevaluated ``E**u`` (:func:`.core._exp_arg`),
-    ``('same', j)`` when it is argument ``j``, ``('constant',)`` when it is a
+    ``('same', j)`` when it equals argument ``j``, ``('constant',)`` when it is a
     constant (an atomic number).  The terms exist as in the template that
     was before the rows: ``u`` for such a base, ``k*e`` (``Mul(k, e)``) when
     the exponent ``e`` is not a number, ``b + c`` when neither argument is
     a number, a term of the constant (``Abs(number) - 1``) when the
     argument is a SymPy ``Number``, computed there; a rule about a term that
     does not exist is left out.  The pattern is keyed as that template's
-    was, by the constants, ``b is e``, the angle of a base ``I``, ``-1``,
+    was, by the constants, ``b == e``, the angle of a base ``I``, ``-1``,
     ``-I`` (:func:`.core._unit_angle`), the ``u``, ``E**(I*pi*c*s)``
     (:func:`.core.ipi_split`) and which terms exist: the key decides every
     shape and every term.
@@ -320,7 +322,7 @@ def power(gen):
                 objs[k] = args[i] + c
         angle = _unit_angle(b)
         key = ('pow', const_key(b) if 0 in consts else None,
-               const_key(e) if 1 in consts else None, b is e, angle,
+               const_key(e) if 1 in consts else None, b == e, angle,
                (const_key(u) if u.is_Atom and u.is_number else True) if u is not None else False,
                ipi, const_key(objs[s_slot]) if s_slot in consts else None, has_t, has_b1)
 

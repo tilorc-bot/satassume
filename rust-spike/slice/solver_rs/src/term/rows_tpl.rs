@@ -754,6 +754,24 @@ fn is_number_at(consts: &Bound<'_, PyDict>, k: usize) -> PyResult<bool> {
     }
 }
 
+/// wiring.py's 'same' shape (`a != args[j]`) and the Pow key's `b == e`: equality, not identity (ruling Q1 (b)).
+/// Two objects whose cached hashes (`Basic._mhash`, a slot: no Python runs) differ are not equal; only past that does
+/// `==` run in Python (`Basic.__eq__`), counted. A query Rust reads never gets there with an input row: conversion keeps
+/// a query holding a term with two equal, distinct arguments (convert.py R12, `args-eq-not-is`), so Python reads it.
+fn same_term(c: &Common, a: &Bound<'_, PyAny>, b: &Bound<'_, PyAny>) -> PyResult<bool> {
+    if a.is(b) {
+        return Ok(true);
+    }
+    let p = a.py();
+    if let (Ok(x), Ok(y)) = (a.getattr(pyo3::intern!(p, "_mhash")), b.getattr(pyo3::intern!(p, "_mhash"))) {
+        if !x.is_none() && !y.is_none() && !x.eq(&y)? {
+            return Ok(false);
+        }
+    }
+    c.bump("rows:python:eq");
+    Ok(a.eq(b)? && crate::formula::same_eq_met())
+}
+
 fn same_value(a: &Bound<'_, PyAny>, v: &Bound<'_, PyAny>) -> PyResult<bool> {
     Ok(a.get_type().is(&v.get_type()) && a.eq(v)?)
 }
@@ -767,7 +785,7 @@ fn matches(&self, py: Python<'_>, c: &Common, shape: &[Option<ShapeItem>], args:
         let a = args.get_item(i)?;
         let ok = match s {
             ShapeItem::Value(v) => same_value(&a, v.bind(py))?,
-            ShapeItem::Same(j) => a.is(&args.get_item(*j)?),
+            ShapeItem::Same(j) => same_term(c, &a, &args.get_item(*j)?)?,
             ShapeItem::Head => {
                 let m = !self.split(py, c, "_exp_arg", &a)?.is_none();
                 if !m && c.plant == "rows-pow-head-any" {
@@ -913,7 +931,7 @@ impl RowsTpl {
             }
         }
         let angle = self.split(py, &cr, "_unit_angle", &b)?;
-        let mut same = b.is(&e);
+        let mut same = same_term(&cr, &b, &e)?;
         if same && cr.plant == "rows-pow-key-same" {
             cr.fired();
             same = false;

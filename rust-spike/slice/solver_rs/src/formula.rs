@@ -58,7 +58,7 @@ pub(crate) struct Occ {
     pub atom: u32,
 }
 
-const NAMES: [&str; 17] = [
+const NAMES: [&str; 18] = [
     "fm:convert",       // 630: conversions run
     "fm:nodes",         // 631: nodes built
     "fm:atom_occ",      // 632: atom occurrences read (`.pred`, `.expr`)
@@ -76,6 +76,7 @@ const NAMES: [&str; 17] = [
     "fm:nosession",     // 644: an engine `atoms_of` site with no session at hand: converted there, kept by nothing
     "cls:eq",           // 670: `same_class`: two class objects with one id in the query's class table
     "cls:differs",      // 671: `same_class`: two class objects, not one class to the query
+    "same:eq",          // 672: wiring's 'same' shape or the Pow key met two equal, distinct objects (`==`, not `is`)
 ];
 const CONVERT: usize = 0;
 const NODES: usize = 1;
@@ -94,7 +95,7 @@ pub(crate) const ATOMS_NODE: usize = 13;
 const NOSESSION: usize = 14;
 
 /// Plants 601-606, each the control of one comparison in test_formula_nodes.py.
-const PLANTS: [&str; 8] = [
+const PLANTS: [&str; 10] = [
     "fm-atoms-drop-last",  // 601: `atoms` without its last atom
     "fm-atoms-no-dedupe",  // 602: every occurrence its own atom
     "fm-args-reverse",     // 603: `And`/`Or` arguments reversed
@@ -103,10 +104,12 @@ const PLANTS: [&str; 8] = [
     "fm-not-drop",         // 606: `Not(a)` read as `a`
     "ad-lra-class-is",     // 660: adapters.rs `Reader.id` compares the row's class by identity again (sa-port-235's)
     "class-is",            // 661: `same_class` by identity again, at every site, Rust's and term_live's
+    "ad-lra-atom-object",  // 662: a native reader result holds the atom's own object, not the query's first (its row)
+    "same-is",             // 663: wiring's 'same' shape and the Pow key's `b == e` by identity again (rows_tpl.rs)
 ];
 
 thread_local! {
-    static COUNTS: [Cell<u64>; 17] = const { [const { Cell::new(0) }; 17] };
+    static COUNTS: [Cell<u64>; 18] = const { [const { Cell::new(0) }; 18] };
     /// The nine classes for a site with no session: `SessionRules`' list (session_live.py `_core_rules`), read once.
     static CLASSES: std::cell::RefCell<Option<Rc<Vec<Py<PyAny>>>>> = const { std::cell::RefCell::new(None) };
     /// 0: none; else 1 + the index into `PLANTS`.
@@ -129,8 +132,33 @@ fn planted(i: u8) -> bool {
 
 const CLS_EQ: usize = 15;
 const CLS_DIFFERS: usize = 16;
+const SAME_EQ: usize = 17;
 pub(crate) const AD_LRA_CLASS_IS: u8 = 6;
 const CLASS_IS: u8 = 7;
+const AD_LRA_ATOM_OBJECT: u8 = 8;
+const SAME_IS: u8 = 9;
+
+/// Whether plant `i` is set, not counted: for a plant that fires only where it changes something (`plant_fired`).
+fn plant_set(i: u8) -> bool {
+    PLANT.with(|c| c.get()) == i + 1
+}
+
+/// Plant 662, for adapters.rs: whether it is set (the adapter counts it with `atom_object_fired` where it acts).
+pub(crate) fn atom_object_set() -> bool {
+    plant_set(AD_LRA_ATOM_OBJECT)
+}
+
+pub(crate) fn atom_object_fired() {
+    planted(AD_LRA_ATOM_OBJECT);
+}
+
+/// wiring.py's 'same' shape and the Pow key's `b == e`, for rows_tpl.rs, once `a` and `b` are known to be two objects
+/// and `==`: they are one term (ruling Q1 (b): equality, not identity, so no answer follows which of two equal objects
+/// is held). Counted (672); plant 663 answers as identity did.
+pub(crate) fn same_eq_met() -> bool {
+    tick(SAME_EQ);
+    !planted(SAME_IS)
+}
 
 /// Plant 660, for adapters.rs.
 pub(crate) fn class_is_planted() -> bool {

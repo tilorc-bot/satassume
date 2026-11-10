@@ -148,7 +148,12 @@ impl LraAdapter {
             let s = b.as_ref().unwrap();
             (s.query.clone_ref(p), s.table.clone_ref(p), s.ids.clone_ref(p), s.objects.clone_ref(p), s.n_input)
         };
-        let r = Reader { p, live: &live, q: query.bind(p).clone(), table: table.bind(p).clone(), ids: ids.bind(p).clone(), objects: objects.bind(p).clone(), n_input, flag };
+        let mut objects = objects.bind(p).clone();
+        if crate::formula::atom_object_set() {
+            // plant 662: this read's own copy of the rows, so the query's stay as they are
+            objects = pyo3::types::PyList::new(p, objects.try_iter()?.collect::<PyResult<Vec<_>>>()?)?.into_any();
+        }
+        let r = Reader { p, live: &live, q: query.bind(p).clone(), table: table.bind(p).clone(), ids: ids.bind(p).clone(), objects, n_input, flag };
         let got = match kind {
             K_INTERPRET => r.interpret(arg)?,
             K_SIDES => r.order_sides(arg)?,
@@ -320,6 +325,11 @@ impl<'py> Reader<'_, 'py> {
             let o = self.objects.get_item(i)?;
             // plant 660 puts the identity compare back at this site alone
             let same = if crate::formula::class_is_planted() { o.get_type().is(&e.get_type()) } else { crate::formula::same_class(&self.q, &o, e)? };
+            if same && !o.is(e) && crate::formula::atom_object_set() {
+                // plant 662: the result is built from the atom's own object, not the first the query's input shows
+                self.objects.set_item(i, e)?;
+                crate::formula::atom_object_fired();
+            }
             return Ok(if same { Some(i) } else { None });
         }
         tick(session::AD_LRA_TERM_ID_PY);
