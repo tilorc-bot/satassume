@@ -17,7 +17,7 @@ use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{PyDict, PyList, PySet, PyType};
 
-use crate::relations_core::{hooks, planted, term_of};
+use crate::relations_core::{hooks, installed, planted, term_of};
 use crate::session::{self, tick, RelKeys, RelS, SessionCore, RS_NAMES};
 
 static BASIC: PyOnceLock<Py<PyType>> = PyOnceLock::new();
@@ -46,6 +46,21 @@ fn is_basic(x: &Bound<'_, PyAny>) -> PyResult<bool> {
     x.is_instance(b.bind(p))
 }
 
+static JOINABLE: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
+
+/// A Basic that `==` a non-Basic Python object of another class (`Integer(2) == 2`, `Float(2) == 2.0`, `S.true == True`,
+/// `Tuple(1, 2) == (1, 2)`), where a Python set joins the two. Such keys go by hash and `==` (the dict), never by term id, so
+/// RelKeys joins them as Python's set does (the state rule's exactness; the int/Integer gap of sa-port-221's handoff).
+fn is_joinable(x: &Bound<'_, PyAny>) -> PyResult<bool> {
+    let p = x.py();
+    let t = JOINABLE.get_or_try_init(p, || -> PyResult<Py<PyAny>> {
+        let s = p.import(intern!(p, "sympy"))?;
+        let b = p.import(intern!(p, "sympy.logic.boolalg"))?;
+        Ok(pyo3::types::PyTuple::new(p, [s.getattr("Number")?, b.getattr("BooleanAtom")?, s.getattr("Tuple")?])?.into_any().unbind())
+    })?;
+    x.is_instance(t.bind(p))
+}
+
 fn dict<'py>(p: Python<'py>, k: &mut RelKeys) -> Bound<'py, PyDict> {
     k.dict.get_or_insert_with(|| PyDict::new(p).unbind()).bind(p).clone()
 }
@@ -66,8 +81,9 @@ fn go_dict_only(p: Python<'_>, k: &mut RelKeys) -> PyResult<()> {
 /// The key of `x`, or None when it has none; with `origin`, interns it (or takes its term id) when it has none.
 pub(crate) fn rk_key(c: &SessionCore, x: &Bound<'_, PyAny>, origin: Option<usize>) -> PyResult<Option<u32>> {
     let p = x.py();
-    let basic = is_basic(x)?;
-    if basic && !c.relkeys.borrow().dict_only {
+    let basic = is_basic(x)? && !is_joinable(x)?;
+    // relations on Python (SLICE_REL=py, rel_install hasn't run): no query-table link, keys by hash (Python's `==` membership)
+    if basic && installed() && !c.relkeys.borrow().dict_only {
         let h = hooks()?;
         let q = h.term_live().bind(p).call_method0(intern!(p, "current"))?;
         let tableless = q.is_none() || !q.getattr(intern!(p, "kept"))?.is_none();

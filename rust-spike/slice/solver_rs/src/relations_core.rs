@@ -657,6 +657,14 @@ fn rel_plant(name: Option<&str>) -> PyResult<()> {
         Some("rb-built-model-drop") => RB_BUILT_MODEL_DROP,
         Some("rb-gen-any") => RB_GEN_ANY,
         Some("rb-check-skip") => RB_CHECK_SKIP,
+        // (iii)(b) rest: `rs-<set>-drop` (relkeys.rs RS_PLANT0 + k, 269-277), the moved set's add a no-op
+        Some(x) if x.starts_with("rs-") && x.ends_with("-drop") => {
+            let n = &x[3..x.len() - 5];
+            match crate::session::RS_NAMES.iter().position(|m| m.trim_start_matches('_') == n) {
+                Some(k) => crate::relkeys::RS_PLANT0 + k as u16,
+                None => return Err(PyValueError::new_err(format!("no plant {x}"))),
+            }
+        }
         Some(x) => return Err(PyValueError::new_err(format!("no plant {x}"))),
     };
     PLANT.store(v, Relaxed);
