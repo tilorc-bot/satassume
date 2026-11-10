@@ -105,9 +105,12 @@ tests/test_public_incremental.py::test_public_comparison_catches_a_planted_histo
   predict.py (difference count from the engines' ids alone): 100 of 100 logged runs match (Rust 35 x 0 and 15 x 1; Python
   47 x 2 and 3 x 1; reported shapes `[]` 35, `[(1, True, False)]` 13, `[(3, None, True)]` 2). With every engine kept
   alive both backends report exactly 2 on every run. Python fails too (4/50). This is 67d108d's row of a28c548's table.
-- The fix variant (plugfix/test_fix185.py) was not rerun. Suite-order id logs: pareto1 ~/sp19/sa-rust-ids-work/sa-port-237/
-  id-rust-{1,2,3}, id-py-{1,2} (worker 3894911's 972 ids with idlog185f; idlog.txt holds every engine of the module's tests;
-  id-end.txt when done). NOT READ; optional (the last five `IDLOG engine` lines before the planted test's `IDLOG bad`).
+- **In the suite's order too** (pareto1 ~/sp19/sa-rust-ids-work/sa-port-237/id-rust-{1,2,3}: worker 3894911's 972 ids, serial,
+  Rust, the tested tree, with the engine-id logger idlog185f; replay-id.sh): three runs of one order on one build. id-rust-1
+  FAILED (`[]`: op 1's engine at op 0's address and op 3's at op 2's); id-rust-2 and id-rust-3 passed (2 differences, no
+  address shared). Predicted from the ids 3 of 3. So it flips both ways with the order held fixed.
+- The fix variant (plugfix/test_fix185.py) was not rerun. id-py-{1,2} (the same order on the Python backend) were still
+  running at the handoff; optional.
 
 ## Landing
 - **Landed 3203cb4 on rust-slice at 15:09:50Z** (`PUSH=1 bash rust-spike/slice/p1/bar.sh land ba1ca22`), 59e9d15..3203cb4.
