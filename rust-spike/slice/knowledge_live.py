@@ -66,7 +66,7 @@ RAISED = term_live.RAISED
 #: the last clause of a pattern Rust builds with no query on the stack (atoms' no-query path, 6g(a)); the dispatch-* plants
 #: are term/dispatch.rs's.
 PLANTS = ('knowledge-rows-kept-raise', 'knowledge-pattern-drop', 'knowledge-value-multigamma-drop',
-          'dispatch-ignores-epoch', 'dispatch-opaque-off', 'dispatch-redefines-off', 'dispatch-user-off',
+          'dispatch-ignores-epoch', 'dispatch-keeps-memo', 'dispatch-opaque-off', 'dispatch-redefines-off', 'dispatch-user-off',
           'knowledge-no-query-drop', 'dispatch-slotted-off') + knowledge_common_live.PLANTS
 PLANT = [None]
 _UNDO = [None]
@@ -109,6 +109,27 @@ def _compare(kind, expr, ours, theirs):
     COUNTS['shadow:compared'] += 1
     for f in FIELDS:
         _mismatch(kind, expr, f, getattr(ours, f), getattr(theirs, f))
+
+
+def _copy(pat):
+    """A `Pattern` with `pat`'s fields, outside `_CACHE` (a plant's)."""
+    p = Pattern.__new__(Pattern)
+    for f in FIELDS:
+        setattr(p, f, getattr(pat, f))
+    return p
+
+
+#: cache_det.py's hook: called on each `_CACHE` hit of an atom template with the cached pattern and one built from this
+#: call's own reads, outside the cache. None (no call, no build) unless that probe is installed.
+RECHECK = [None]
+
+
+def _fresh(kn, q, i, value, is_symbol):
+    """Rust's pattern for this call, from its own reads and no cache (what `rust_compiled` built on every call before
+    the `_CACHE` fix): `i` is the input term, or None for a node read here."""
+    if i is None:
+        return kn.units(_derived_facts(kn, value, is_symbol))
+    return kn.symbol_units(q.table, i) if is_symbol else kn.constant_units(q.table, i)
 
 
 def _derived_facts(kn, expr, is_symbol):
@@ -219,6 +240,14 @@ def install_dispatch():
         d.set_plant(PLANT[0])
     DISPATCH[0] = d
     registry.clauses_for = d.clauses_for
+
+    # Rust's memo and class cache stand in for `registry._clauses_cache` and `_mro_cache` (adopted memos): whatever empties
+    # those (`memos.PROCESS.clear()`, `register`) empties Rust's too. Plant 665 `dispatch-keeps-memo` leaves them.
+    class _WithRusts(dict):
+        def clear(self):
+            dict.clear(self)
+            d.clear_memos()
+    registry._clauses_cache = _WithRusts(registry._clauses_cache)
     import convert
     convert.TEMPLATES_FOR[0] = d.templates_for
 
@@ -238,6 +267,7 @@ def install_dispatch():
         atexit.unregister(flush)
         DISPATCH[0] = None
         registry.__dict__.pop('clauses_for', None)
+        registry._clauses_cache = dict(registry._clauses_cache)
         convert.TEMPLATES_FOR[0] = None
     return undo
 
@@ -264,33 +294,41 @@ def install(shadow=False, data=None):
         # No query on the stack (a caller using `Engine` directly): no term table, so the node is read as a derived one
         # is (6g(a); it was `py:no-query`, wholly Python).
         i = None if q is None else q.ids.get(value)
+        c = knowledge_common_live.COMMON[0]
         try:
             if q is None:
                 COUNTS[kind + ':no-query'] += 1
-                r = kn.units(_derived_facts(kn, value, is_symbol))
+                i = None
             # `==` can join classes (const_key's Float against Integer), so a row counts only for its own class.
             elif i is not None and term_live.same_class(q, q.objects[i], value):
                 COUNTS[kind + ':input'] += 1
-                r = kn.symbol_units(q.table, i) if is_symbol else kn.constant_units(q.table, i)
             else:
                 COUNTS[kind + ':derived'] += 1
-                r = kn.units(_derived_facts(kn, value, is_symbol))
+                i = None
+            # The pattern comes from `_common._CACHE` under Python's key, and a miss fills it (common.rs `atom_pattern`;
+            # the `_CACHE` fix, issue 323): one pattern per key for both backends, so no extra `_SPLIT` row.
+            pat, hit = c.atom_pattern(is_symbol, value) if i is None else c.atom_pattern(is_symbol, value, q.table, i)
         except Exception as e:
             COUNTS['fault'] += 1
             raise KnowledgeFault(f'{kind} {value!r}: {e}') from e
-        pat = _wrap(r)
+        if RECHECK[0] is not None and hit:
+            RECHECK[0](kind, value, pat, _wrap(_fresh(kn, q, i, value, is_symbol)))
+        # The plants cut a copy: the cached pattern is every later query's.
         if PLANT[0] == 'knowledge-no-query-drop' and q is None and pat.clauses:
             _fired()
+            pat = _copy(pat)
             pat.clauses = pat.clauses[:-1]
         if PLANT[0] == 'knowledge-value-multigamma-drop' and kind == 'value' and type(obj).__name__ == 'multigamma' \
                 and pat.clauses:
             _fired()
             COUNTS['value:multigamma:plant'] += 1
+            pat = _copy(pat)
             pat.clauses = pat.clauses[:-1]
         if shadow:
-            _compare(kind, value, pat, py().pattern)
-        c = knowledge_common_live.COMMON[0]
-        return Compiled((obj,), pat) if c is None else c.make_compiled((obj,), pat)
+            # Python's template now answers from the same `_CACHE` entry, so the cached pattern is not compared with
+            # itself: this call's own build, outside the cache, against what Python's key holds.
+            _compare(kind, value, _wrap(_fresh(kn, q, i, value, is_symbol)), py().pattern)
+        return c.make_compiled((obj,), pat)
 
     def template(py, kind, is_symbol, python=None):
         python = python or py

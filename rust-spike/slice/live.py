@@ -391,6 +391,10 @@ def main():
         cls = traced_class(base, T.dump)
         engine.Solver = ref.Solver = cls
 
+    if os.environ.get("CACHE_DET"):     # cache_det.py: every `_CACHE` hit built again and compared; after the installs
+        import cache_det
+        cache_det.install()
+
     # After every install above, on both modes: a workload may build the default engine while it loads (scope_wl's
     # install() does), and an engine built before knowledge_live.from_env() and backend.install() keeps Python's
     # bindings, such as with_closed_units(registry.clauses_for) (engine.py:1330-1341), for the whole run (issue 323).

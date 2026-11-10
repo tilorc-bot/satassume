@@ -51,6 +51,8 @@ PLANTS += ('outer-multigamma-p', 'outer-multigamma-value', 'outer-rootof-index',
 # 6i(b): fn_tpl.rs, plants 340-345
 PLANTS += ('fn-unary-drop-last', 'fn-nary-drop-last', 'fn-unit-interval-flip', 'fn-value-drop', 'fn-genocchi-half-flip',
            'fn-unary-shift')
+# the `_CACHE` fix (formula step, sa-port-246), plant 664: a symbol's cache key without its values (common.rs atom_pattern)
+PLANTS += ('atom-symbol-key-names',)
 COMMON = [None]
 
 

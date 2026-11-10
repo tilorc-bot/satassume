@@ -13,7 +13,8 @@
 //! `_common._CACHE` itself (the epoch memo `state.memos` empties and `register` clears), its values are `Pattern`s and a
 //! template's result is a `Compiled`, both made with `__new__` and their slots set, their `__init__` not run.
 use super::knowledge::{self, BuiltPattern};
-use super::py::{extract_rules, pattern, PyKnowledge};
+use super::py::{extract_rules, pattern, refuse, PyKnowledge, PyTermTable};
+use super::TermId;
 use pyo3::exceptions::{PyKeyError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyFrozenSet, PyList, PyTuple, PyType};
@@ -33,6 +34,8 @@ pub const PLANTS: &[&str] = &[
     "common-consts-of-skip",   // consts_of: the last constant left out
     "common-pattern-key-type", // pattern_key: the constants' types left out
     "common-const-key-type",   // const_key: the type left out
+    // plant 664 (the `_CACHE` fix): `atom_pattern`'s symbol key without the values
+    "atom-symbol-key-names",
 ];
 
 fn bump(c: &mut HashMap<String, u64>, k: &str) {
@@ -149,6 +152,31 @@ impl Common {
             c.clear();
         }
         Ok(())
+    }
+
+    /// A `Pattern` with the fields `_common.units` gives it, from `Rules::units`' result.
+    fn unit_pattern<'py>(&self, py: Python<'py>, up: &knowledge::UnitPattern) -> PyResult<Bound<'py, PyAny>> {
+        let r = pattern(py, &self.kn.get().0, up)?;
+        let (rules, clauses, used, complete): (Bound<'py, PyAny>, Bound<'py, PyAny>, bool, bool) = r.extract()?;
+        let p = self.new_pattern(py)?;
+        p.setattr("rules", rules)?;
+        p.setattr("node", 0)?;
+        p.setattr("nobjs", 1)?;
+        p.setattr("clauses", clauses)?;
+        p.setattr("used", if used { PyTuple::new(py, [0])? } else { PyTuple::empty(py) })?;
+        p.setattr("child_preds", PyDict::new(py))?;
+        p.setattr("complete", complete)?;
+        p.setattr("wide", PyList::empty(py))?;
+        Ok(p)
+    }
+
+    /// `_common.const_key(obj)` itself: no kept test, no count.
+    fn const_key_raw<'py>(&self, py: Python<'py>, obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+        if self.plant == "common-const-key-type" {
+            self.fired();
+            return Ok(PyTuple::new(py, [obj.clone()])?.into_any());
+        }
+        Ok(PyTuple::new(py, [obj.get_type().into_any(), obj.clone()])?.into_any())
     }
 
     fn drop_last(&self, pat: &Bound<'_, PyAny>) -> PyResult<()> {
@@ -427,17 +455,7 @@ impl Common {
                 let f: Vec<(&str, bool)> = facts.iter().map(|(p, v)| (p.as_str(), *v)).collect();
                 let k = &self.kn.get().0;
                 let up = k.units(&f).map_err(PyKeyError::new_err)?;
-                let r = pattern(py, k, &up)?;
-                let (rules, clauses, used, complete): (Bound<'py, PyAny>, Bound<'py, PyAny>, bool, bool) = r.extract()?;
-                let p = self.new_pattern(py)?;
-                p.setattr("rules", rules)?;
-                p.setattr("node", 0)?;
-                p.setattr("nobjs", 1)?;
-                p.setattr("clauses", clauses)?;
-                p.setattr("used", if used { PyTuple::new(py, [0])? } else { PyTuple::empty(py) })?;
-                p.setattr("child_preds", PyDict::new(py))?;
-                p.setattr("complete", complete)?;
-                p.setattr("wide", PyList::empty(py))?;
+                let p = self.unit_pattern(py, &up)?;
                 if self.plant == "common-units-drop" {
                     self.drop_last(&p)?;
                 }
@@ -606,11 +624,107 @@ impl Common {
             return self.py_fn(py, "const_key")?.call1((obj,));
         }
         self.bump("common:const_key");
-        if self.plant == "common-const-key-type" {
-            self.fired();
-            return Ok(PyTuple::new(py, [obj.clone()])?.into_any());
+        self.const_key_raw(py, obj)
+    }
+
+    /// knowledge_live's atom templates under `_common.units`' cache (the `_CACHE` fix, issue 323). The key is Python's:
+    /// `atoms.symbol_units`' `('symbol', frozenset(assumptions0.items()))` or `atoms.value_units`' `('const', const_key(value))`.
+    /// `_CACHE` is read and filled as `units` does, so a pattern is built once per key whichever backend or query asks.
+    /// `t`: the input term whose reads `table` holds; None for a node read here (`assumptions0`, `const_value`: the reads
+    /// Python's template makes). Returns `(pattern, hit)`. Not for a kept query: the caller sends that to Python's template.
+    #[pyo3(signature = (is_symbol, value, table=None, t=None))]
+    fn atom_pattern<'py>(
+        &self,
+        py: Python<'py>,
+        is_symbol: bool,
+        value: &Bound<'py, PyAny>,
+        table: Option<PyRef<'py, PyTermTable>>,
+        t: Option<u32>,
+    ) -> PyResult<(Bound<'py, PyAny>, bool)> {
+        let k = &self.kn.get().0;
+        let input = match (&table, t) {
+            (Some(tb), Some(t)) => Some((tb.table(), TermId(t))),
+            _ => None,
+        };
+        // A symbol's key is its facts, so they are read before the cache; a constant's facts are read only on a miss.
+        let mut items: Vec<(String, Option<bool>)> = Vec::new();
+        let key = if is_symbol {
+            let set = match input {
+                Some((tb, t)) => {
+                    for (name, v) in tb.symbol_facts(t).map_err(refuse)? {
+                        items.push((name.to_string(), v));
+                    }
+                    let mut pairs = Vec::with_capacity(items.len());
+                    for (name, v) in &items {
+                        if self.plant == "atom-symbol-key-names" {
+                            pairs.push(PyTuple::new(py, [name.as_str()])?);
+                        } else {
+                            pairs.push((name.as_str(), *v).into_pyobject(py)?);
+                        }
+                    }
+                    PyFrozenSet::new(py, pairs)?
+                }
+                None => {
+                    let a0 = value.getattr("assumptions0")?;
+                    let mut pairs = Vec::new();
+                    for kv in a0.call_method0("items")?.try_iter()? {
+                        let kv = kv?;
+                        items.push(kv.extract()?);
+                        if self.plant == "atom-symbol-key-names" {
+                            pairs.push(PyTuple::new(py, [kv.get_item(0)?])?);
+                        } else {
+                            pairs.push(kv.cast_into::<PyTuple>()?);
+                        }
+                    }
+                    PyFrozenSet::new(py, pairs)?
+                }
+            };
+            if self.plant == "atom-symbol-key-names" {
+                self.fired();
+            }
+            ("symbol", set).into_pyobject(py)?
+        } else {
+            ("const", self.const_key_raw(py, value)?).into_pyobject(py)?
+        };
+        let cache = self.cache.clone_ref(py).into_bound(py);
+        if let Some(p) = cache.get_item(&key)? {
+            self.bump("common:atom:hit");
+            return Ok((p, true));
         }
-        Ok(PyTuple::new(py, [obj.get_type().into_any(), obj.clone()])?.into_any())
+        self.room(py)?;
+        self.bump("common:atom:miss");
+        let mut facts: Vec<(&str, bool)> = Vec::new();
+        if is_symbol {
+            for (name, v) in &items {
+                if let (true, Some(v)) = (k.in_vocab(name) && name != "commutative", v) {
+                    facts.push((name, *v));
+                }
+            }
+        } else {
+            let values: Vec<Option<bool>> = match input {
+                Some((tb, t)) => tb.constant_facts(t).map_err(refuse)?,
+                None => {
+                    let cv = self.const_value.bind(py);
+                    let mut out = Vec::with_capacity(k.const_basis.len());
+                    for name in &k.const_basis {
+                        out.push(cv.call1((value, name.as_str()))?.extract()?);
+                    }
+                    out
+                }
+            };
+            if values.len() != k.const_basis.len() {
+                return Err(PyValueError::new_err(format!("constant read: {} values", values.len())));
+            }
+            for (name, v) in k.const_basis.iter().zip(&values) {
+                if let Some(v) = v {
+                    facts.push((name.as_str(), *v));
+                }
+            }
+        }
+        let up = k.units(&facts).map_err(PyValueError::new_err)?;
+        let p = self.unit_pattern(py, &up)?;
+        cache.set_item(&key, &p)?;
+        Ok((p, false))
     }
 }
 

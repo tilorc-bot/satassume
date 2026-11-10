@@ -103,6 +103,11 @@ impl PyTermTable {
     pub(crate) fn serial(&self) -> u64 {
         self.3
     }
+
+    /// The table itself, for a reader outside this module (common.rs `atom_pattern`).
+    pub(crate) fn table(&self) -> &TermTable {
+        &self.0
+    }
 }
 
 /// One `lra_*` result as Rust values (Element._new step): no Python object in the memo.

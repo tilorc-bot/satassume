@@ -310,6 +310,22 @@ impl Dispatch {
         self.plant = p;
     }
 
+    /// `memos.PROCESS.clear()` on Python's `registry._clauses_cache` and `_mro_cache`: the memo and the class cache stand
+    /// in for them and are emptied with them (knowledge_live.install_dispatch). Without it a node's compiled result
+    /// outlives `_common._CACHE`, which that clear empties too, and the table then lacks keys Python's holds.
+    fn clear_memos(&mut self, py: Python<'_>) {
+        if self.plant == "dispatch-keeps-memo" {
+            if !self.entries.is_empty() || self.memo.bind(py).len() > 0 {
+                bump(&mut self.counts, "plant:fired");
+            }
+            return;
+        }
+        self.memo.bind(py).clear();
+        self.classes.bind(py).clear();
+        self.entries.clear();
+        bump(&mut self.counts, "registry:memos-clear");
+    }
+
     fn counts(&self) -> HashMap<String, u64> {
         self.counts.clone()
     }
