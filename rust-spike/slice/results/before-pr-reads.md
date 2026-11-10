@@ -147,6 +147,102 @@ Proposed check: two orders of one query over `Subs(g(x), x, 0)` and `Subs(g(y), 
 | `Subs` alpha-equivalence check | before-PR list, unassigned |
 | Two-order harness as a kept test (twin queries; 560 here, 34 caught on the reference with `is`) | before-PR list, unassigned; it would also serve as the plant-catching test for Q1 (b) on the reference |
 
+## Item 0 (sa-port-251): the two-order harness on satassume main
+
+**Verdict: main (9bafaa5, the shipped Python package) has the same flips as the base: 34 of 560 answers change with
+query order, and 0 of 560 with only wiring.py's `==` hunk from 17241af applied. For all 34 the order-independent answer
+is the definite one (25 `True`, 9 `False`); the other answer is `None`. No wrong answer in either order: the bug loses
+answers, it does not invert them.** Python only; nothing was opened against main.
+
+### What was run
+
+- Tree: `git worktree add --detach ~/sa-rust-ids-work/sa-port-251/main origin/main` (9bafaa5, an ancestor of 0192b35,
+  499 commits behind it). The fixed tree is a copy of that worktree's `satassume/` with
+  `git show 17241af -- satassume/knowledge/templates/wiring.py` applied by `patch -p1` (3 hunks, offset -13 lines, no
+  fuzz); the applied diff is `item0/applied.diff` in the work dir (10 changed lines, wiring.py only: `a is not args[s[1]]`
+  to `a != args[s[1]]` at :210, `b is e` to `b == e` at :310, two docstring lines).
+- Harness: sa-port-250's `twoorder3.py`, unchanged. Nothing had to be adapted: main has `satassume.Engine`,
+  `sympy_api.ask(proposition, assumptions, engine)`, `lra_adapter._INTERPRETED` / `_memoized` and `memos.PROCESS` as the
+  base does. Each run's log names the tree it imported (`main/satassume` or `main-eq/satassume`).
+- 13 orders per tree, each in its own process (`item0/run.sh`): the 8 of item 1 with the default engine, and 5 with a
+  new `Engine` per ask. Env: sa-port-250's `py.sh` with `TREE` set (Python reference, `PYTHONHASHSEED=0`), orion, four
+  processes at a time. 0 exceptions in any row.
+
+### Counts (of 560; `cmp0.py item0 0 main main-eq`)
+
+| comparison | main | main + `==` |
+|---|---|---|
+| A. original: asked alone vs right after its twin (default engine) | **34** | 0 |
+| A2. as A, `_INTERPRETED.clear()` between twin and original | **34** | 0 |
+| B. twin: asked alone vs right after its original | **34** | 0 |
+| A, A2, B with a new `Engine` per ask (process memos kept) | **34** each | 0 |
+| original (one process) vs twin (another process), default engine or a new `Engine` per ask | **34** | 0 |
+| original from emptied process memos vs right after its twin, per query | **34** | 0 |
+| twin from emptied process memos vs right after its original, per query | 0 | 0 |
+| original vs twin, process memos emptied between (default engine kept) | 0 | 0 |
+
+The last two rows are 0 on main because the default engine is kept across the asks and the original is asked first:
+the twin then gets the original's answer. They are not isolation (same limit as item 1).
+
+The 34 are the same query ids as on the base (item 1), 25 `True`/`None` and 9 `False`/`None`. In every one the term
+holds a power whose base equals its exponent: `x**x` (4 queries), `(x*y)**(x*y)` (2), `Abs(x)**Abs(x)` (4),
+`x**x + 1` (3), `x*x**x` (3), `(x + 1)**(x + 1)` (4), `x**x*y**y` (5), `exp(x)**exp(x)` (4), `(2*x)**(2*x)` (4),
+`x**x - y**y` (1). By form: `Q.gt(t + 1, 0)` given `x >= 0, y >= 0` (8), `Q.gt(t, 0)` given `x = y, x > 0` (10),
+`Q.le(t, 0)` given `x > 0, y > 0, real(f(x))` (8), `Q.extended_positive(t)` given both extended nonnegative (7) or
+`x` extended nonnegative and `x < y` (1). The full list with all four answers per query is printed by `cmp0b.py`.
+
+### Which answer is the order-independent one
+
+With the `==` hunk, every one of the 12,320 answers (13 orders, original and twin) equals main's answer for the
+original asked alone in a new process. So for each of the 34:
+
+- the answer for the term built from one object (`b is e`) is unchanged by the fix: `True` (25) or `False` (9);
+- the answer for the equal term built from two objects, and any answer asked after such a term, goes from `None` to
+  that same `True`/`False`.
+
+The other 526 queries give one answer in every order on main, and the fix changes none of them.
+
+By hand, the definite answers are right: `b**b > 0` for real `b >= 0` (`0**0 = 1`), so the 25 `True` hold and the 8
+`Q.le(t, 0)` are `False`; `x**x - y**y > 0` given `x = y` is `False`. This is my reading of 10 term shapes and 5 forms,
+not a check against an oracle (SymPy's evaluation is not ground truth, issue 247).
+
+### Three minimal reproductions on main (`item0/repro.py CASE ORDER`, one process each; output in `item0/repro.out`)
+
+`same` builds the query with `Pow(x, x)` from one `x` object. `distinct` builds an equal query (`==`, asserted) whose
+power is `Pow(x, Symbol('x'))` made after `clear_cache()`, so base and exponent are equal and not one object.
+
+| case | query | engine | `same` alone | `distinct` alone | `same, distinct` | `distinct, same` | with `==`, all four |
+|---|---|---|---|---|---|---|---|
+| r1 | `ask(Q.gt(x**x + 1, 0), Q.ge(x, 0))` | default | True | None | True, True | None, None | True |
+| r2 | `ask(Q.le(x**x, 0), Q.gt(x, 0))` | a new `Engine` per ask | False | None | False, False | None, None | False |
+| r3 | `ask(Q.gt(x**x - y**y, 0), Q.eq(x, y) & Q.gt(x, 0))` | default | False | None | False, False | None, None | False |
+
+So in one process the first of two equal queries decides both answers, with the default engine (r1, r3) and with a new
+engine per ask (r2: the carrier is process-wide, not the engine).
+
+A fourth, with no twin and no `clear_cache()` (`item0/repro_nocache.py`): `t = (x + 1)**(x + 1)` written once, as a
+user would. With SymPy's cache on, `t.base is t.exp` and main answers `ask(Q.gt(t, 0), Q.gt(x, 0))` True and
+`ask(Q.le(t, 0), Q.gt(x, 0))` False. With `SYMPY_USE_CACHE=no`, the two `x + 1` are two objects and main answers
+`None` to both. With the `==` hunk: True and False either way. So on main an answer depends on SymPy's cache setting
+(and, by the same route, on its evictions), not only on query order.
+
+A trap met while writing these, for whoever makes the kept test: without `clear_cache()` before each construction,
+SymPy's cache returns the first object (`Pow(x, x2)` gives back the cached `Pow(x, x)`, and `distinct + 1` gives back
+the `Add` holding it), and the two queries are one object. The first version of r1 and r3 showed no flip for that
+reason. `repro.py` asserts `base is not exp` on the query it asks.
+
+### Limits
+
+- Same 560 queries as item 1 (mine, chosen around this rule), so 34 of 560 is not a rate for real workloads. Main's
+  suite and workloads were not run in two orders.
+- The fix was measured as wiring.py's hunk alone on main. 17241af's other changes (Rust `same_term`, tests, plants) are
+  not on main and were not needed for these answers.
+- Not isolated here either: which process-wide holder carries the first object on main when `_INTERPRETED` is cleared
+  (A2 = A).
+
+**Owner: the planner (it goes to Tilo with the held Python PR); the kept test is the formula step's.** The worktree
+was removed after the runs; the outputs are in `~/sa-rust-ids-work/sa-port-251/item0/`.
+
 ## Item 2: cause of the four slice files failing on base
 
 Not started.
