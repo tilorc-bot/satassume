@@ -27,6 +27,7 @@
 #   PLANTS        SLICE_SESSION_PLANT names for dev and fuzz
 #   SUITE_PLANTS  plants also run on the suite (may contain `zero`)
 #   TESTS         test files in rust-spike/slice, one pytest run (default test_session_limits.py)
+#   TESTS_SPLIT   1: one pytest process per file, logs in $B/tests/, a line per file in tests.txt; TESTS=all is every test_*.py
 #   DIRECT        scripts with arguments, ';'-separated, each run in rust-spike/slice (e.g. "relations_direct.py 300 0")
 #   N             pytest -n for the suite (default 8)
 #   WLS           live.py workloads for the extra phase (default none: the phase is listed as not run)
@@ -96,7 +97,15 @@ build)
   run "cp $B/target/release/libsa_solver.so $S/sa_solver.so && sha256sum $S/sa_solver.so >> $B/build.txt"
   phase build $?;;
 tests)
-  run "\$PY -m pytest $TESTS -q --tb=short -p no:cacheprovider > $B/tests.txt 2>&1; echo \"exit \$?\" >> $B/tests.txt"
+  if [ "${TESTS_SPLIT:-0}" = 1 ]; then
+    # one pytest process per file (install() refuses once another file's Engine exists); a line per file in tests.txt
+    [ "$TESTS" = all ] && TESTS=$(ls test_*.py | tr '\n' ' ')
+    run "rm -rf $B/tests; mkdir -p $B/tests; : > $B/tests.txt"
+    run "printf '%s\n' $TESTS | PYTHONPATH=\$PYTHONPATH:$S xargs -P 4 -I{} bash -c '\$PY -m pytest {} -q --tb=short -p no:cacheprovider > $B/tests/{}.log 2>&1; echo \"{} exit \$? \$(tail -n 1 $B/tests/{}.log)\" >> $B/tests.txt'"
+    run "echo \"files \$(wc -l < $B/tests.txt); not exit 0: \$(grep -v ' exit 0 ' $B/tests.txt | cut -d' ' -f1 | sort | tr '\n' ' ')\" >> $B/tests.txt"
+  else
+    run "\$PY -m pytest $TESTS -q --tb=short -p no:cacheprovider > $B/tests.txt 2>&1; echo \"exit \$?\" >> $B/tests.txt"
+  fi
   : > $B/direct.txt
   IFS=';' read -ra DS <<< "$DIRECT"
   for d in "${DS[@]}"; do [ -n "${d// /}" ] && run "echo '== $d' >> $B/direct.txt; \$PY $d >> $B/direct.txt 2>&1; echo \"exit \$?\" >> $B/direct.txt"; done
