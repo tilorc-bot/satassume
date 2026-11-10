@@ -681,8 +681,6 @@ fn rel_plant(name: Option<&str>) -> PyResult<()> {
                 None => return Err(PyValueError::new_err(format!("no plant {x}"))),
             }
         }
-        // (iii)(b) rest: RelKeys gives an equal class's `==` object a key of its own (relkeys.rs `twin_row`, 409)
-        Some("rk-class-split") => crate::relkeys::RK_PLANT_SPLIT,
         Some(x) => return Err(PyValueError::new_err(format!("no plant {x}"))),
     };
     PLANT.store(v, Relaxed);

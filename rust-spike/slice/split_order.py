@@ -22,7 +22,8 @@ PLANTED_READER = "def f():\n    for k in _CLOSED:\n        yield k\n"      # pla
 
 
 def compare(a, b):
-    """Differences between Python's rows `a` and Rust's `b` (one engine point each), and the number of Rust-only copies."""
+    """Differences between Python's rows `a` and Rust's `b` (one engine point each), and the number of Rust-only `_SPLIT` rows
+    (a difference too)."""
     out = []
     for n in ('_WANT', '_CLOSED', '_SYMPY_ATOMS'):
         if Counter(map(json.dumps, a[n])) != Counter(map(json.dumps, b[n])):
@@ -33,11 +34,13 @@ def compare(a, b):
         out.append('_SPLIT distinct rows differ (%d against %d)' % (len(ca), len(cb)))
     if ca - cb:
         out.append('_SPLIT: %d Python rows Rust lacks' % sum((ca - cb).values()))
-    cached = {r[1] for r in b['_CACHE']}
-    free = sum(1 for r in b['_SPLIT'] if r[5] not in cached and r[2] != 'later')
+    # Exact since the `_CACHE` fix (c170496, 311fb80): Rust's atom templates fill `_CACHE` under Python's keys, so a
+    # Rust-only copy has no cause left and is a difference, and `_CACHE` holds the same keys.
     extra = sum((cb - ca).values())
-    if extra > free:
-        out.append('_SPLIT: %d Rust-only rows, only %d lists outside _CACHE' % (extra, free))
+    if extra:
+        out.append('_SPLIT: %d Rust-only rows' % extra)
+    if Counter((r[0], r[2]) for r in a['_CACHE']) != Counter((r[0], r[2]) for r in b['_CACHE']):     # key, clause count
+        out.append('_CACHE keys differ (%d against %d)' % (len(a['_CACHE']), len(b['_CACHE'])))
     return out, extra
 
 

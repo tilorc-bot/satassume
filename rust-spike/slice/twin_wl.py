@@ -4,8 +4,8 @@ One query that meets `f(u)` and `f(0)` under two equal `Function("f")` classes (
 on the bar of 0576370; see `_twin`'s docstring). Row 0 asks class B's query between a registry snapshot and its restore, as
 harness.checker.execute does; row 1 asks class A's held query on a fresh engine, whose session meets A's objects from the
 query and B's from the process-wide memos. No bar workload holds two equal classes, so this is the one where the plant
-`rk-class-split` (409) fires, and where the moved containers' digest (moved_digest.py) has to catch it: `_tv` holds `f(0)`
-twice. Each row is a callable (live.CALL), since the engines are the rows' own.
+`class-is` (661; `rk-class-split`, 409, until the formula step) fires in RelKeys, and where the moved containers' digest
+(moved_digest.py) has to catch it: `_tv` holds `f(0)` twice. Each row is a callable (live.CALL), since the engines are the rows' own.
 """
 
 

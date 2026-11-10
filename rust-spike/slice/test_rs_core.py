@@ -12,7 +12,7 @@ Here, one process per run:
 - the record method: Python's writes through the views (`add`, `update`, `in`, `len`) read back as Python's would;
 - the plants (relkeys.rs RS_PLANT0, 269-277) each move the digest; the counters (rk:*, rs:*, 350-358) are read out;
 - two equal classes (`_twin`, its own process): one query holding `f(0)` under two `==` `Function("f")` classes keys it once,
-  as Python's sets did; the plant `rk-class-split` (409) gives the second class's object its own key and is caught by the
+  as Python's sets did; the plant `class-is` (661) gives the second class's object its own key and is caught by the
   answer and by the sets' digest against Python.
 """
 import hashlib
@@ -216,7 +216,7 @@ def _twin(mode):
     out['filled'] = [sum(bool(x) for row in rows for x in row[i]) for i in (0, 1)]
     if mode == 'rust':
         after = dict(sa_solver.session_counts())
-        out['counts'] = {k: after.get(k, 0) - before.get(k, 0) for k in ('join', 'rk:twin', 'link:none', 'rel:plant_fired')}
+        out['counts'] = {k: after.get(k, 0) - before.get(k, 0) for k in ('join', 'cls:eq', 'link:none', 'rel:plant_fired')}
     print(json.dumps(out))
 
 
@@ -279,14 +279,17 @@ def test_two_equal_function_classes_key_as_one():
     assert py['first'] is True and py['answer'] is True and min(py['filled']) > 0, py
     assert (rust['first'], rust['answer']) == (py['first'], py['answer']), (py['answer'], rust['answer'], rust['counts'])
     assert rust['rows'] == py['rows'], (py['rows'], rust['rows'])
-    assert rust['counts']['rk:twin'] > 0, rust['counts']    # by taking the first class's id for the second's object
+    # by the query's own class table: the second class's object takes the first's row (term_live.py `same_class`)
+    assert rust['counts']['cls:eq'] > 0, rust['counts']
 
 
 def test_class_split_plant_is_caught():
-    """RelKeys keying the second class's object apart (plant `rk-class-split`, 409) loses the answer and moves the sets'
-    digest off Python's."""
-    py, got = _run('py', child='twin'), _run('rust', 'rk-class-split', child='twin')
-    assert got['counts']['rk:twin'] == 0 and got['counts']['join'] > 0 and got['counts']['rel:plant_fired'] > 0, got['counts']
+    """The second class's object keyed apart (plant `class-is`, 661: a row counts only for its own class object again, so
+    RelKeys interns the object by hash beside the first's term-id key) loses the answer and moves the sets' digest off
+    Python's. Until the formula step this was plant `rk-class-split` (409) on relkeys.rs's `twin_row`, which the query's class
+    table made unreachable."""
+    py, got = _run('py', child='twin'), _run('rust', 'class-is', child='twin')
+    assert got['counts']['cls:eq'] == 0 and got['counts']['join'] > 0 and got['counts']['rel:plant_fired'] > 0, got['counts']
     assert got['answer'] != py['answer'], got
     assert got['rows'] != py['rows'], got['rows']
     # `_tv` (the transfer's values) is where the two keys show: `f(u)` and `f(0)` twice

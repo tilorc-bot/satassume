@@ -82,7 +82,7 @@ const NAMES: [&str; 571] = [
     // 345-419 reserved (state part 2's numbering runs to 369; 6i(a)'s 370-419 are Common counts)
     "reserved:345", "reserved:346",
     // state step, part 2 (iii)(b): Relations' scalar cursors held in the core (`_xtcur`.. `_xsides_n`)
-    "rc:core", "rc:view", "rc:record", "rk:intern:input", "rk:intern:engine", "rk:term", "rk:outlive", "rk:migrate", "rs:core", "rs:view", "rs:record", "rk:dict:hit", "rk:twin", "reserved:360", "reserved:361", "reserved:362", "reserved:363", "reserved:364", "reserved:365", "reserved:366", "reserved:367", "reserved:368", "reserved:369", "reserved:370", "reserved:371", "reserved:372", "reserved:373", "reserved:374", "reserved:375", "reserved:376", "reserved:377", "reserved:378", "reserved:379", "reserved:380", "reserved:381", "reserved:382", "reserved:383", "reserved:384", "reserved:385", "reserved:386", "reserved:387", "reserved:388", "reserved:389", "reserved:390", "reserved:391", "reserved:392", "reserved:393", "reserved:394", "reserved:395", "reserved:396", "reserved:397", "reserved:398", "reserved:399", "reserved:400", "reserved:401", "reserved:402", "reserved:403", "reserved:404", "reserved:405", "reserved:406", "reserved:407", "reserved:408", "reserved:409", "reserved:410", "reserved:411", "reserved:412", "reserved:413", "reserved:414", "reserved:415", "reserved:416", "reserved:417", "reserved:418", "reserved:419",
+    "rc:core", "rc:view", "rc:record", "rk:intern:input", "rk:intern:engine", "rk:term", "rk:outlive", "rk:migrate", "rs:core", "rs:view", "rs:record", "rk:dict:hit", "reserved:359", "reserved:360", "reserved:361", "reserved:362", "reserved:363", "reserved:364", "reserved:365", "reserved:366", "reserved:367", "reserved:368", "reserved:369", "reserved:370", "reserved:371", "reserved:372", "reserved:373", "reserved:374", "reserved:375", "reserved:376", "reserved:377", "reserved:378", "reserved:379", "reserved:380", "reserved:381", "reserved:382", "reserved:383", "reserved:384", "reserved:385", "reserved:386", "reserved:387", "reserved:388", "reserved:389", "reserved:390", "reserved:391", "reserved:392", "reserved:393", "reserved:394", "reserved:395", "reserved:396", "reserved:397", "reserved:398", "reserved:399", "reserved:400", "reserved:401", "reserved:402", "reserved:403", "reserved:404", "reserved:405", "reserved:406", "reserved:407", "reserved:408", "reserved:409", "reserved:410", "reserved:411", "reserved:412", "reserved:413", "reserved:414", "reserved:415", "reserved:416", "reserved:417", "reserved:418", "reserved:419",
     // S2 (block.rs rule_tables): the engine's block from the generated tables, another block built in Rust, a failed check
     "rb:generated", "rb:built", "rb:check_error",
     "reserved:423", "reserved:424", "reserved:425", "reserved:426", "reserved:427", "reserved:428", "reserved:429", "reserved:430", "reserved:431", "reserved:432", "reserved:433", "reserved:434", "reserved:435", "reserved:436", "reserved:437", "reserved:438", "reserved:439", "reserved:440", "reserved:441", "reserved:442", "reserved:443", "reserved:444", "reserved:445", "reserved:446", "reserved:447", "reserved:448", "reserved:449", "reserved:450", "reserved:451", "reserved:452", "reserved:453", "reserved:454", "reserved:455", "reserved:456", "reserved:457", "reserved:458", "reserved:459", "reserved:460", "reserved:461", "reserved:462", "reserved:463", "reserved:464", "reserved:465", "reserved:466", "reserved:467", "reserved:468", "reserved:469", "reserved:470", "reserved:471", "reserved:472", "reserved:473", "reserved:474", "reserved:475", "reserved:476", "reserved:477", "reserved:478", "reserved:479", "reserved:480", "reserved:481", "reserved:482", "reserved:483", "reserved:484", "reserved:485", "reserved:486", "reserved:487", "reserved:488", "reserved:489", "reserved:490", "reserved:491", "reserved:492", "reserved:493", "reserved:494", "reserved:495", "reserved:496", "reserved:497", "reserved:498", "reserved:499", "reserved:500", "reserved:501", "reserved:502", "reserved:503", "reserved:504", "reserved:505", "reserved:506", "reserved:507", "reserved:508", "reserved:509", "reserved:510", "reserved:511", "reserved:512", "reserved:513", "reserved:514", "reserved:515", "reserved:516", "reserved:517", "reserved:518", "reserved:519",
@@ -506,8 +506,6 @@ pub(crate) const RS_VIEW: usize = 356;
 pub(crate) const RS_RECORD: usize = 357;
 /// ... a lookup answered by the intern dict (a hash).
 pub(crate) const RK_DICT_HIT: usize = 358;
-/// RelKeys took the term id of an `==` object of an equal class (relkeys.rs `twin_row`): two equal `Function` classes in one query
-pub(crate) const RK_TWIN: usize = 359;
 pub(crate) const RD_CORE: usize = 520;
 pub(crate) const RD_VIEW: usize = 521;
 pub(crate) const RD_RECORD: usize = 522;
@@ -861,8 +859,9 @@ pub(crate) fn named<'py>(obj: &Bound<'py, PyAny>, name: &Bound<'py, pyo3::types:
 /// A SymPy term with an id in the query's table takes it (`by_term`, no hash); any other key is interned once by hash (`dict`).
 /// `table` is the serial (`PyTermTable::serial`, never the address) of the one query table whose ids `by_term` holds. A session
 /// that meets a second table, or a table after it interned a term with none, outlives its query: its `by_term` keys move to
-/// `dict` and it stays dict-only. An object with no row of its own class takes the id of the `==` row of an equal class
-/// (relkeys.rs `twin_row`), so two equal `Function` classes in one query key as one, as Python's sets and dicts did.
+/// `dict` and it stays dict-only. Two equal `Function` classes in one query key as one, as Python's sets and dicts did: the
+/// query's table gives an object of either class the one row (term_live.py `same_class`, the query's own class table), so
+/// `term_of` answers for both (counted `cls:eq`; plant 661 `class-is`).
 #[derive(Default)]
 pub(crate) struct RelKeys {
     pub(crate) objs: Vec<Py<PyAny>>,

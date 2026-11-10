@@ -1,5 +1,5 @@
 """The moved containers' digest (moved_digest.py, in live.py's rows, compared by livecmp.py) on the `twin` workload: equal to
-Python's on the clean build, and moved by the plant `rk-class-split` (409) at `_tv`, the dict where the second class's
+Python's on the clean build, and moved by the plant `class-is` (661) at `_tv`, the dict where the second class's
 `f(0)` gets its own key (issue 323: the nine sets' digest alone did not see this plant)."""
 import json
 import os
@@ -31,7 +31,7 @@ def _cmp(a, b):
 
 
 def test_twin_digest_equal_unarmed_and_moved_by_the_class_split_plant(tmp_path):
-    py, rust, plant = _live(tmp_path, 'py'), _live(tmp_path, 'rust'), _live(tmp_path, 'rust', 'rk-class-split')
+    py, rust, plant = _live(tmp_path, 'py'), _live(tmp_path, 'rust'), _live(tmp_path, 'rust', 'class-is')
     n, first, verdict = _cmp(py, rust)
     assert verdict == 'MATCH' and n['moved_diff'] == 0 and n['moved_rows'] == 2 and n['moved_engine_points'] == 1, (n, first)
     tot = json.loads(open(rust).read().splitlines()[-1])['total']['moved']
@@ -42,16 +42,19 @@ def test_twin_digest_equal_unarmed_and_moved_by_the_class_split_plant(tmp_path):
 
 
 def test_twin_known_rows_and_the_extension(tmp_path):
-    """The known differences are inside the verdict and exact (the planner's (A) ruling, with sa-port-239's numbers): `_SPLIT`
-    2 rows on Python against 4 on Rust, `_CACHE` 2 keys against 0. Plants 450, 451 and 453 each move the verdict; so does a
-    known row that is off by one. The extension's rows (state part 3's session containers, the LRA slot, the handles, the
+    """`_SPLIT` and `_CACHE` are exact since the `_CACHE` fix (c170496, 311fb80): 2 rows and 2 keys on both backends (before
+    it, the known row was `_SPLIT` 2 against 4 and `_CACHE` 2 against 0, sa-port-239's numbers). Plants 450, 451 and 453 each
+    move the verdict; so does a known row that doesn't hold (the mechanism stays for a ruled known difference). The extension's rows (state part 3's session containers, the LRA slot, the handles, the
     engines built in a query, 5c9a's native tables) are filled on this workload, and a dropped `demand` entry (plant 442,
     where the build has it) moves the session's row."""
     py, rust = _live(tmp_path, 'py'), _live(tmp_path, 'rust')
     n, first, verdict = _cmp(py, rust)
     assert verdict == 'MATCH' and n['moved_known_diff'] == 0 and n['moved_native_diff'] == 0, (n, first)
     known = json.load(open(os.path.join(HERE, 'known_moved.json')))
-    assert known['twin'] == [[2, 4, 2, 0]]
+    assert 'twin' not in known and '"known rows (twin): []' not in verdict       # exact: no known row, the counts equal
+    seen = json.loads(subprocess.run([sys.executable, os.path.join(HERE, 'livecmp.py'), py, rust], capture_output=True,
+                                     text=True).stdout.split('per engine point): ')[1].split(' | known rows')[0])
+    assert seen == [[2, 2, 2, 2]], seen
     rows = [json.loads(l) for l in open(rust)]
     tot = rows[-1]['total']['moved']
     assert tot['sessions'] == 4 and tot['engines'] >= 2 and tot['lra_entries'] > 0, tot
@@ -64,13 +67,14 @@ def test_twin_known_rows_and_the_extension(tmp_path):
     n, first, verdict = _cmp(py, _live(tmp_path, 'rust', split='closed-row-drop'))
     assert verdict == 'DIFFER' and n['moved_diff'] and '_CLOSED' in json.dumps(first.get('moved_eng')), (n, first)
     n, first, verdict = _cmp(_live(tmp_path, 'py', split='atoms-uncached'), rust)
-    assert verdict == 'DIFFER' and n['moved_known_diff'] == 1 and first['moved_known'][2][:2] == [4, 4], (n, first)
-    # a known row that no longer holds is a DIFFER too (the table is exact, not a tolerance)
+    assert verdict == 'DIFFER' and n['moved_known_diff'] == 1 and first['moved_known'][2][:2] == [4, 2], (n, first)
+    # a known row that no longer holds is a DIFFER too (the table is exact, not a tolerance): the row twin had before the
+    # `_CACHE` fix
     old = os.path.join(HERE, 'livecmp.py')
     alt = os.path.join(str(tmp_path), 'alt')
     os.mkdir(alt)
     open(os.path.join(alt, 'livecmp.py'), 'w').write(open(old).read())
-    json.dump(dict(known, twin=[[2, 5, 2, 0]]), open(os.path.join(alt, 'known_moved.json'), 'w'))
+    json.dump(dict(known, twin=[[2, 4, 2, 0]]), open(os.path.join(alt, 'known_moved.json'), 'w'))
     r = subprocess.run([sys.executable, os.path.join(alt, 'livecmp.py'), py, rust], capture_output=True, text=True)
     assert r.stdout.splitlines()[-1] == 'DIFFER' and '"moved_known_diff": 1' in r.stdout
     # the session containers' row is live: plant 442 drops a `demand` write

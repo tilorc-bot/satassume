@@ -18,8 +18,7 @@ use pyo3::sync::PyOnceLock;
 use pyo3::BoundObject;
 use pyo3::types::{PyDict, PyList, PySet, PyType};
 
-use crate::relations_core::{hooks, installed, planted, term_of, Linked};
-use crate::term::py::PyTermTable;
+use crate::relations_core::{hooks, installed, planted, term_of};
 use crate::session::{self, tick, RelKeys, RelS, SessionCore, RD_NAMES, RL_NAMES, RS_NAMES};
 
 static BASIC: PyOnceLock<Py<PyType>> = PyOnceLock::new();
@@ -80,45 +79,6 @@ fn go_dict_only(p: Python<'_>, k: &mut RelKeys) -> PyResult<()> {
     Ok(())
 }
 
-/// The plant `rk-class-split` (409): no equal-class row, so an `==` object of a second, equal class gets a key of its own
-/// (RelKeys as it was on 0576370).
-pub(crate) const RK_PLANT_SPLIT: u16 = 409;
-
-/// The row of an `==` object of an equal class, for an `x` with no row of its own class in the query's table.
-///
-/// Two `Function("f")` classes made either side of a SymPy cache eviction are two classes that are `==` and hash alike, and so
-/// are their applications: Python's sets and dicts hold `f(0)` of one and `f(0)` of the other as one member. The table gives the
-/// row to the first class only (term_live `term_id`: a row counts only for its own class), so `term_of` has no id for the
-/// second class's object, and by hash alone it would get a second key beside the first's term-id key (the eight lost
-/// zero-twin answers on the bar of 0576370). The planner's ruling (~11:51 UTC 10 Nov): within the query's own table, `==`
-/// classes and the terms built from them get one id; RelKeys keys as the containers it replaced did, by hash and `==`.
-/// For a Basic that isn't a number, `==` needs equal classes, so the row found by `==` whose object's class is equal and
-/// not the same is that member. An identical class is `term_of`'s own answer and isn't asked again here (`link-none` stays
-/// a plant on every key). Counted `rk:twin`.
-fn twin_row<'py>(q: &Bound<'py, PyAny>, x: &Bound<'py, PyAny>) -> PyResult<Option<Linked<'py>>> {
-    let p = x.py();
-    if planted(RK_PLANT_SPLIT) {
-        return Ok(None);
-    }
-    for (ids, objs) in [(intern!(p, "ids"), intern!(p, "objects")), (intern!(p, "derived"), intern!(p, "rev"))] {
-        let d = q.getattr(ids)?;
-        if d.is_none() {
-            continue;
-        }
-        let i = d.call_method1(intern!(p, "get"), (x,))?;
-        if i.is_none() {
-            continue;
-        }
-        let (to, tx) = (q.getattr(objs)?.get_item(&i)?.get_type(), x.get_type());
-        if to.is(&tx) || !to.eq(&tx)? {
-            return Ok(None);
-        }
-        tick(session::RK_TWIN);
-        return Ok(Some(Linked { table: q.getattr(intern!(p, "table"))?.cast_into::<PyTermTable>()?, id: i.extract()? }));
-    }
-    Ok(None)
-}
-
 /// The key of `x`, or None when it has none; with `origin`, interns it (or takes its term id) when it has none.
 pub(crate) fn rk_key(c: &SessionCore, x: &Bound<'_, PyAny>, origin: Option<usize>) -> PyResult<Option<u32>> {
     let p = x.py();
@@ -135,10 +95,7 @@ pub(crate) fn rk_key(c: &SessionCore, x: &Bound<'_, PyAny>, origin: Option<usize
             } else if origin.is_some() {
                 k.tableless = true;
             }
-        } else if let Some(l) = match term_of(c, &h, x)? {
-            Some(l) => Some(l),
-            None => twin_row(&q, x)?,
-        } {
+        } else if let Some(l) = term_of(c, &h, x)? {
             // the table's serial, not its address: a session that outlives its query can meet a new table at the dead one's
             // address, and would then read its old term ids as the new table's
             let t = l.table.try_borrow()?.serial();

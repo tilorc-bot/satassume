@@ -982,10 +982,20 @@ def test_join_second_object_resolves_on_its_own():
     got = _call('join')
     for order in ('held-first', 'other-first'):
         o = got[order]
-        # The term's own object has its id, the other class none, in either order and past memo hits.
-        assert o['ids'] == [o['want'], None, o['want'], o['want'], None], (order, o)
+        # The term's own object and the equal class's object both have the row's id, in either order: the query's class table
+        # holds the two `Function('f')` as one class (term_live.py `same_class`). The memo holds one object per node, so each
+        # change of object asks `term_id` again (`second`) and only the repeat is a hit.
+        assert o['ids'] == [o['want']] * 5, (order, o)
         assert o['none_yet'] and o['no_new_node'] and o['no_node'] == 1 and o['join_quiet'], (order, o)
+        assert o['hit'] == 1 and o['second'] == 3 and o['none'] == 0, (order, o)
+    # Plant 661 (`class-is`): a row counts only for its own class object again, so the other class has no id (the rule
+    # before the formula step, and what this test held then).
+    got = _call('join', SLICE_SESSION_PLANT='class-is')
+    for order in ('held-first', 'other-first'):
+        o = got[order]
+        assert o['ids'] == [o['want'], None, o['want'], o['want'], None], (order, o)
         assert o['hit'] >= 2 and o['second'] == 2 and o['none'] == 2, (order, o)
+    got = _call('join')
     a, b = got['numbers']
     assert a == b
 

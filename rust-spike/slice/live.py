@@ -272,7 +272,7 @@ def load(wl):
     if wl == "scope":   # scope_wl.py: custom predicates registered, for `extension_atoms` (step scope)
         import scope_wl
         return scope_wl.queries()
-    if wl == "twin":    # twin_wl.py: two equal Function classes in one query, where plant rk-class-split fires (issue 323)
+    if wl == "twin":    # twin_wl.py: two equal Function classes in one query, where plant class-is fires (issue 323)
         import twin_wl
         return twin_wl.queries()
     if wl == "zero":    # zero_wl.py: zero twins under an application, for `_glue_of`'s twin branch (before 5c7)

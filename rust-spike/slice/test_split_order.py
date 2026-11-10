@@ -23,12 +23,17 @@ def run(tmp, mode, plant=None):
 
 def test_twin(tmp_path):
     py, rust = run(tmp_path, 'py'), run(tmp_path, 'rust')
-    assert (len(py['rows']['_SPLIT']), len(rust['rows']['_SPLIT'])) == (2, 4)
-    assert split_order.compare(py['rows'], rust['rows']) == ([], 2)
-    # 451: Python's atom templates uncached, as Rust's are: Python's `_SPLIT` has Rust's rows
+    # exact since the `_CACHE` fix: the same rows and the same number of them (2 against 4 before it), `_CACHE` 2 keys each
+    assert (len(py['rows']['_SPLIT']), len(rust['rows']['_SPLIT'])) == (2, 2)
+    assert (len(py['rows']['_CACHE']), len(rust['rows']['_CACHE'])) == (2, 2)
+    assert split_order.compare(py['rows'], rust['rows']) == ([], 0)
+    # 451: Python's atom templates uncached, as Rust's were before the fix: Python's `_SPLIT` has the two copies Rust's had
+    # then, and the comparison names them
     unc = run(tmp_path, 'py', 'atoms-uncached')
     assert unc['plant_fired'] > 0 and len(unc['rows']['_SPLIT']) == 4
-    assert split_order.compare(unc['rows'], rust['rows']) == ([], 0)
+    assert split_order.compare(unc['rows'], rust['rows']) == (['_SPLIT: 2 Python rows Rust lacks'], 0)
+    # and the other way round (Rust's rows before the fix against Python's now): a Rust-only copy is a difference
+    assert split_order.compare(py['rows'], unc['rows']) == (['_SPLIT: 2 Rust-only rows'], 2)
     # 450 and 453: a row lost from Rust's read is a difference, though counts and order already differ on the clean build
     for plant, name in (('split-row-drop', '_SPLIT'), ('closed-row-drop', '_CLOSED')):
         bad = run(tmp_path, 'rust', plant)

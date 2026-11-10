@@ -1069,9 +1069,7 @@ _REL_STATE_PLANTS = ('ad-lra-not-expr',
                      'rd-atom_sel-drop', 'rd-num_sel-drop', 'rd-roles-drop', 'rd-info-drop', 'rd-link_of-drop', 'rd-tv-drop',
                      'rd-tsrc-drop', 'rd-xside-drop', 'rd-xheads-drop',
                      # (iii)(b) rest (relkeys.rs RL_PLANT0, 405-408): one per moved list, its push a no-op
-                     'rl-queue-drop', 'rl-pending_links-drop', 'rl-xextra-drop', 'rl-xpend-drop',
-                     # (iii)(b) rest (relkeys.rs RK_PLANT_SPLIT, 409): an equal class's `==` object gets its own key
-                     'rk-class-split')
+                     'rl-queue-drop', 'rl-pending_links-drop', 'rl-xextra-drop', 'rl-xpend-drop')
 #: S2 (block.rs rule_tables, relations_core.rs 320-323): see test_rule_tables.py
 _RULE_BLOCK_PLANTS = ('rb-gen-model-flip', 'rb-built-model-drop', 'rb-gen-any', 'rb-check-skip')
 #: State part 3 (theory_flags.rs, 428-430): engine.py `_gave_up`/`_exhausted` in Rust; see test_theory_flags.py
