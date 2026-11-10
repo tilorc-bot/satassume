@@ -337,7 +337,7 @@ def test_a_table_emptied_and_regrown_past_the_mark_keeps_nothing_of_the_run():
     t['old1'] = 1
     t['old2'] = 2
     m = term_live._Mark.__new__(term_live._Mark)
-    m.tables, m.engines, m.cache = {}, {}, []
+    m.tables, m.engines, m.cache, m.facts = {}, {}, [], {}
     m._note(t)
     t.clear()
     for i in range(5):
@@ -352,7 +352,7 @@ def test_what_was_there_before_the_run_stays():
     t = memos.Table('term_live_test2', 'pure', 10)
     t['old1'] = 1
     m = term_live._Mark.__new__(term_live._Mark)
-    m.tables, m.engines, m.cache = {}, {}, []
+    m.tables, m.engines, m.cache, m.facts = {}, {}, [], {}
     m._note(t)
     t['run'] = 2
     term_live.COUNTS.clear()

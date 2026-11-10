@@ -6,9 +6,9 @@ queries (dev 27, fuzz 1,697, zero 2, scope 13, cert 72 calls at c3d0999). relati
 those. Here, in one process per run, it is compared with Python's `glue_objects` on `lt` atoms, with the default specs and with
 none; plant 263 `gl-plain-no-link` (`link_objects` of the sides left out) must move a case, and counter `gl:plain` must fire.
 
-Also session_live's install: a default engine built before it (scope_wl builds one while its queries load) held Python's
-`with_closed_units` closure, which ran per query (scope 518 calls); the install rewraps it on Rust's over the same templates,
-and its undo puts Python's back.
+Also session_live's install: a default engine built before it (scope_wl built one while its queries loaded) held Python's
+`with_closed_units` closure. (iii) rewrapped that one binding; state part 3 refuses the install instead (session_live
+`refuse_built_engines`, test_install_order.py), since the closure is one of several things an engine binds when it is built.
 """
 import json
 import os
@@ -61,11 +61,14 @@ def _child_rewrap():
     eng = sympy_api.default_engine()
     before = eng.clause_templates
     from test_relations_core import _rust
-    sl = _rust()
-    import sa_solver
-    after = eng.clause_templates
+    try:
+        _rust()
+        refused = None
+    except RuntimeError as e:
+        refused = str(e)
     out = {'python-before': [type(before).__name__ == 'function', before.__qualname__ == 'with_closed_units.<locals>.clauses'],
-           'rust-after': [type(after).__module__ != 'satassume.relations', type(after) is type(sa_solver.rel_with_closed_units(None))]}
+           'refused': [refused is not None, 'Engine(s) were built' in (refused or '')],
+           'python-kept': [eng.clause_templates is before]}
     print(json.dumps(out))
 
 
@@ -104,7 +107,7 @@ def test_plant_moves_a_case(clean, plant):
     assert moved
 
 
-def test_default_engine_rewrapped():
+def test_install_after_a_default_engine_is_refused():
     got = _run(mode='rewrap')
     assert all(all(v) for v in got.values()), got
 

@@ -222,6 +222,24 @@ def _ses_sview(name, k):
     return property(get, put)
 
 
+def _ses_solver_get(self):
+    try:
+        return self.__dict__['solver']
+    except KeyError:
+        raise AttributeError('solver') from None
+
+
+def _ses_solver_set(self, v):
+    """State part 3, sub-part 5: `Session.solver`'s record method. Rust reads the core's copy (session.rs `solver_of`), so a
+    write after `TableView.bind` (a test replacing the solver to drive a handler: test_catch_count.py) has to reach the core.
+    The attribute itself stays in the instance's dict, so Python's reads are what they were."""
+    d = self.__dict__
+    d['solver'] = v
+    c = getattr(d.get('_table_view'), 'core', None)
+    if c is not None and isinstance(d['_table_view'], TableView):
+        c.set_solver(v)
+
+
 #: The scalar views, by attribute (the order of session.rs `SS_NAMES`).
 _SES_SVIEWS = {n: k for k, n in enumerate(('truncated', '_link_pending', '_neg_shared', 'sel', 'n_hold', 'verdict'))}
 
@@ -1314,12 +1332,13 @@ def install():
     """Returns the undo."""
     refuse_built_engines('session_live.install()')
     S = engine.Session
-    saved = {n: S.__dict__.get(n) for n in ('table', 'base', 'xfer', 'node', 'var', 'dvar', '_dvar', *_SES_SVIEWS)}
+    saved = {n: S.__dict__.get(n) for n in ('table', 'base', 'xfer', 'node', 'var', 'dvar', '_dvar', 'solver', *_SES_SVIEWS)}
     g = (engine.VarTable, engine.compile_formula, engine.formula_literal)
     PY_COMPILE[:] = g[1:]
     S.table = property(_table_get, _table_set)
     S.base = property(_base_get, _base_set)
     S.xfer = property(_xfer_get, _xfer_set)
+    S.solver = property(_ses_solver_get, _ses_solver_set)
     for n, k in _SES_SVIEWS.items():
         setattr(S, n, _ses_sview(n, k))
     from satassume import relations

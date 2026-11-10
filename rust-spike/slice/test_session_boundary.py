@@ -7,6 +7,7 @@ was replaced (`named`). Each mode runs in its own process (install() refuses onc
   size, which `_neg_shared` decides), and `Engine.verdict`.
 - `dump:*`: Rust only, the solver's dump after the set's queries (its held levels are what `n_hold` decides): for the plants.
 - `trunc`: a session cut by `escalate(1)`, its scalars and its complete check (UNKNOWN when truncated).
+- `solver-write`: a solver assigned after the session was built is the one the complete check runs on.
 - `view`: on Rust, the views equal the core's own export (`ses_snapshot`), and a write through a view is read back natively.
 Plants (SLICE_SESSION_PLANT, session.rs `sb_plant`): 431 `sb-truncated-stale`, 432 `sb-link-pending-stale`, 433
 `sb-neg-shared-stale`, 434 `sb-sel-zero`, 435 `sb-hold-zero`, 436 `sb-verdict-none`, 437 `sb-fwd-skip-link`, 438 `sb-solver-fresh`.
@@ -117,6 +118,25 @@ def trunc():
 
 
 rows['trunc'] = guard(trunc)
+
+
+def solver_write():
+    """A solver assigned to the session after it was built is the one the complete check runs on, on either backend."""
+    hits = []
+
+    class Raises:
+        def __getattr__(self, name):
+            hits.append(name)
+            raise RuntimeError('planted solver')
+    e = CoreEngine()
+    s = Session(e)
+    lits = s.assume_formula(P('positive', x))
+    s.solver = Raises()
+    r = guard(lambda: e._complete_check(s, list(lits)))
+    return [bool(hits), r[:2] if isinstance(r, list) else r, s.solver.__class__.__name__]
+
+
+rows['solver-write'] = guard(solver_write)
 counts = {k: v for k, v in dict(sa_solver.session_counts()).items() if k.startswith('sb:') or k == 'rel:plant_fired'} if rust else {}
 print(json.dumps(dict(rows=rows, counts=counts)))
 '''
@@ -169,6 +189,11 @@ def test_views_are_the_core(rs):
     assert v[0] is True
     assert v[1] == [False, 'x', 7, 'x', 7]
     assert v[3] == [], 'defvars/_dv/_dv_node are no longer written on a Rust session'
+
+
+def test_solver_write_reaches_rust(py, rs):
+    """`Session.solver` is read from the core (`solver_of`); the attribute's record method keeps the core's copy current."""
+    assert py['rows']['solver-write'] == [True, ['raise', 'RuntimeError'], 'Raises'] == rs['rows']['solver-write']
 
 
 def test_counters_fire(rs):
