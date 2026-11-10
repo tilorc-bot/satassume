@@ -20,7 +20,7 @@ use pyo3::types::{PyDict, PyList, PyString, PyTuple};
 use std::collections::HashMap;
 
 use crate::relations_core::{
-    planted, AD_EUF_NODE, AD_EUF_SHARED, AD_LRA_FLAG_KEY, AD_LRA_KIND_KEY, AD_LRA_NOT_EXPR, AD_LRA_PAIR_SWAP, AD_LRA_PATCH_GUARD,
+    planted, AD_EUF_NODE, AD_EUF_SHARED, AD_LRA_CLASS_IS, AD_LRA_FLAG_KEY, AD_LRA_KIND_KEY, AD_LRA_NOT_EXPR, AD_LRA_PAIR_SWAP, AD_LRA_PATCH_GUARD,
     AD_LRA_SHARED, AD_LRA_SLOT_STALE,
 };
 use crate::term::py::PyTermTable;
@@ -312,13 +312,15 @@ struct Reader<'a, 'py> {
 }
 
 impl<'py> Reader<'_, 'py> {
-    /// term_live's `term_id`: an input row of the term's own class here; anything else is term_live's rule, counted.
+    /// term_live's `term_id`: an input row of the term's own class here (classes by `==`: two `Function('f')` are one
+    /// class to SymPy and two objects); anything else is term_live's rule, counted.
     fn id(&self, e: &Bound<'py, PyAny>, site: &str) -> PyResult<Option<u32>> {
         let p = self.p;
         if let Ok(Some(i)) = self.ids.get_item(e) {
             let i: u32 = i.extract()?;
             let o = self.objects.get_item(i)?;
-            return Ok(if o.get_type().is(&e.get_type()) { Some(i) } else { None });
+            let (a, b) = (o.get_type(), e.get_type());
+            return Ok(if a.is(&b) || (!planted(AD_LRA_CLASS_IS) && a.eq(&b)?) { Some(i) } else { None });
         }
         tick(session::AD_LRA_TERM_ID_PY);
         let got = self.live.term_id.bind(p).call1((&self.q, e, site))?;

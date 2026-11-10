@@ -288,8 +288,9 @@ def term_id(q, e, site):
     its args as they are, so its form isn't in question. Any other class Python built has no row."""
     i = q.ids.get(e) if isinstance(e, Basic) else None
     if i is not None:
-        # `==` can join classes (Float against Integer), so a row counts only for its own class.
-        return i if type(q.objects[i]) is type(e) else None
+        # `==` can join classes (Float against Integer), so a row counts only for its own class. Classes by `==`, not `is`:
+        # two `Function('f')` are one class to SymPy and two objects, and which object a memo hands back follows history.
+        return i if type(q.objects[i]) == type(e) else None
     if not isinstance(e, Basic):
         if type(e) is int and site in _INT_SITES:
             return _int_id(q, e, site)
@@ -297,7 +298,7 @@ def term_id(q, e, site):
         return None
     i = q.derived.get(e)
     if i is not None:
-        return i if type(q.rev[i]) is type(e) else None
+        return i if type(q.rev[i]) == type(e) else None
     cls = type(e)
     if isinstance(e, Rational):
         i = q.table.number(e.p, e.q)

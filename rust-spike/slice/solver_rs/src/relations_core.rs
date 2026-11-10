@@ -379,6 +379,9 @@ pub(crate) const AD_LRA_PAIR_SWAP: u16 = 255;
 /// State step, part 2 (i) (adapters.rs `Reader.integer_form`): a side that isn't an `Expr` is read as the number row of its
 /// value (an int as its `Integer`), not answered None as lra_adapter.integer_form's first line does.
 pub(crate) const AD_LRA_NOT_EXPR: u16 = 256;
+/// Cause read of `ad:cbm_noid` (adapters.rs `Reader.id`): the row's class is compared by identity, not `==`, so a term of an
+/// equal class that is another object (a second `Function('f')`) has no id and Python reads it.
+pub(crate) const AD_LRA_CLASS_IS: u16 = 660;
 /// State step, part 2 (ii) (session.rs `SessionCore.xfer`/`solver`): `s.xfer` read from the core is None after engagement.
 pub(crate) const XF_SESSION_NONE: u16 = 257;
 /// ... a `Relations`' `xfer_sel` read from the core is None after engagement.
@@ -636,6 +639,7 @@ fn rel_plant(name: Option<&str>) -> PyResult<()> {
         Some("ad-lra-patch-guard") => AD_LRA_PATCH_GUARD,
         Some("ad-lra-pair-swap") => AD_LRA_PAIR_SWAP,
         Some("ad-lra-not-expr") => AD_LRA_NOT_EXPR,
+        Some("ad-lra-class-is") => AD_LRA_CLASS_IS,
         Some("xf-session-none") => XF_SESSION_NONE,
         Some("xf-sel-none") => XF_SEL_NONE,
         Some("xf-rel-any") => XF_REL_ANY,
