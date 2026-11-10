@@ -35,6 +35,7 @@ mod entry;
 mod factcache;
 mod relations_core;
 mod relkeys;
+mod ses_cont;
 mod rows;
 mod rule_tables_gen;
 mod scope_core;
@@ -630,6 +631,8 @@ fn sa_solver(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<relkeys::RelSetView>()?;
     m.add_class::<relkeys::RelDictView>()?;
     m.add_class::<relkeys::RelListView>()?;
+    m.add_class::<ses_cont::SesDictView>()?;
+    m.add_class::<ses_cont::SesSeqView>()?;
     m.add_class::<lra_py::LraCore>()?;
     constfield::register(m)?;
     lra_cert::register(m)?;

@@ -239,7 +239,8 @@ pub(crate) fn query_all<'py>(
 pub(crate) fn literal_of<'py>(s: &Bound<'py, PyAny>, f: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
     tick(SES_LITERAL_OF);
     let p = s.py();
-    let lit = s.getattr(intern!(p, "literals"))?.call_method1(intern!(p, "get"), (f,))?;
+    let ses = crate::ses_cont::Ses::of(s);
+    let lit = ses.d_get(crate::ses_cont::SD_LITERALS, f)?;
     if !lit.is_none() {
         return Ok(lit);
     }
@@ -258,7 +259,7 @@ pub(crate) fn literal_of<'py>(s: &Bound<'py, PyAny>, f: &Bound<'py, PyAny>) -> P
         s.call_method1(intern!(p, "_relations"), (f,))?;
     }
     if !planted(DROP_LO_MEMO) {
-        s.getattr(intern!(p, "literals"))?.set_item(f, &lit)?;
+        ses.d_set(crate::ses_cont::SD_LITERALS, f, &lit)?;
     }
     Ok(lit)
 }

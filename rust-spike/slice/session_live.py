@@ -222,6 +222,32 @@ def _ses_sview(name, k):
     return property(get, put)
 
 
+def _ses_cview(name, k, seq):
+    """State part 3, sub-part 5: `Session.frontier`, `deferred` (sequences) and `pending`, `pending_c`, `demand`, `literals`,
+    `_groups` (dicts), views of the core's containers (ses_cont.rs). An assignment replaces the content through the core's
+    record method (`self.frontier = deque()` in Python's own methods under SLICE_DISC=py, a test seeding one). A session with
+    no core keeps Python's own object."""
+    def get(self):
+        d = self.__dict__
+        if name in d:
+            return d[name]
+        c = d['_table_view'].core
+        return c.sc_seq(k) if seq else c.sc_dict(k)
+
+    def put(self, v):
+        t = self.__dict__.get('_table_view')
+        if isinstance(t, TableView):
+            (t.core.sc_seq_replace if seq else t.core.sc_dict_replace)(k, v)
+        else:
+            self.__dict__[name] = v
+    return property(get, put)
+
+
+#: The container views, by attribute: (index, is a sequence), the order of ses_cont.rs `SQ_NAMES` and `SD_NAMES`.
+_SES_CVIEWS = {'frontier': (0, True), 'deferred': (1, True), 'pending': (0, False), 'pending_c': (1, False),
+               'demand': (2, False), 'literals': (3, False), '_groups': (4, False)}
+
+
 def _ses_solver_get(self):
     try:
         return self.__dict__['solver']
@@ -1047,7 +1073,8 @@ _TH_PLANTS = ('th-gave-up-skip', 'th-exhausted-skip', 'th-first-only')
 #: State part 3, sub-part 5 (session.rs `sb_plant`, 431-438): the session's scalars in the core, `_link` called directly, the
 #: solver from the core; see test_session_boundary.py
 _SB_PLANTS = ('sb-truncated-stale', 'sb-link-pending-stale', 'sb-neg-shared-stale', 'sb-sel-zero', 'sb-hold-zero',
-              'sb-verdict-none', 'sb-fwd-skip-link', 'sb-solver-fresh')
+              'sb-verdict-none', 'sb-fwd-skip-link', 'sb-solver-fresh', 'sc-frontier-drop', 'sc-pending-drop',
+              'sc-pending_c-drop', 'sc-demand-drop', 'sc-deferred-drop', 'sc-literals-drop', 'sc-groups-drop')
 
 
 def entry_native():
@@ -1332,7 +1359,7 @@ def install():
     """Returns the undo."""
     refuse_built_engines('session_live.install()')
     S = engine.Session
-    saved = {n: S.__dict__.get(n) for n in ('table', 'base', 'xfer', 'node', 'var', 'dvar', '_dvar', 'solver', *_SES_SVIEWS)}
+    saved = {n: S.__dict__.get(n) for n in ('table', 'base', 'xfer', 'node', 'var', 'dvar', '_dvar', 'solver', *_SES_SVIEWS, *_SES_CVIEWS)}
     g = (engine.VarTable, engine.compile_formula, engine.formula_literal)
     PY_COMPILE[:] = g[1:]
     S.table = property(_table_get, _table_set)
@@ -1341,6 +1368,8 @@ def install():
     S.solver = property(_ses_solver_get, _ses_solver_set)
     for n, k in _SES_SVIEWS.items():
         setattr(S, n, _ses_sview(n, k))
+    for n, (k, seq) in _SES_CVIEWS.items():
+        setattr(S, n, _ses_cview(n, k, seq))
     from satassume import relations
     R = relations.Relations
     saved_v = {n: R.__dict__.get(n) for n in (*_REL_XVIEWS, *_REL_CVIEWS, *_REL_SVIEWS, *_REL_DVIEWS, *_REL_LVIEWS)}

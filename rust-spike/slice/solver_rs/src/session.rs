@@ -14,7 +14,7 @@ use pyo3::types::{PyBool, PyDict, PyList, PySet, PyTuple};
 use crate::compile::{self, block_lits, Cx, Def, Kind, Need, F, R};
 use crate::formula_py::PyP;
 
-const NAMES: [&str; 565] = [
+const NAMES: [&str; 568] = [
     "py:var", "py:dvar", "py:node", "py:compile", "py:literal", "py:table", "rs:visit", "rs:add_clause", "rs:ensure_vars",
     "rs:def_implications", "rs:neg_shared", "join", "rs:emit_callback", "refuse:depth", "refuse:convert", "refuse:object", "second:visit", "custom:own",
     "link:hit", "link:resolved", "link:none", "link:no_table", "link:second", "link:no_node",
@@ -97,6 +97,8 @@ const NAMES: [&str; 565] = [
     // `_share_guard`/`_visit` called directly, or by name where a test or SLICE_*=py replaced the method; the session's scalars
     // in the core (native use, Python's view, Python's record method), 559-564
     "sb:attr", "sb:fwd_direct", "sb:fwd_named", "sb:scalar_core", "sb:scalar_view", "sb:scalar_record",
+    // ... the session's containers in the core (ses_cont.rs): a native use, Python's view, Python's record method, 565-567
+    "sc:core", "sc:view", "sc:record",
 ];
 const VAR: usize = 0;
 const DVAR: usize = 1;
@@ -520,6 +522,9 @@ pub(crate) const SB_FWD_NAMED: usize = 561;
 pub(crate) const SB_SCALAR_CORE: usize = 562;
 pub(crate) const SB_SCALAR_VIEW: usize = 563;
 pub(crate) const SB_SCALAR_RECORD: usize = 564;
+pub(crate) const SC_CORE: usize = 565;
+pub(crate) const SC_VIEW: usize = 566;
+pub(crate) const SC_RECORD: usize = 567;
 
 /// Deeper formulas compile on Python, over this same table. Python's own limit depends on the caller's stack, so it isn't
 /// reproduced: its deepest shape is `Implies`, 3 frames a level (first failure at depth 330 from a bare stack, limit 1000), so
@@ -527,7 +532,7 @@ pub(crate) const SB_SCALAR_RECORD: usize = 564;
 const FORMULA_DEPTH: u32 = 64;
 
 thread_local! {
-    static COUNTS: [Cell<u64>; 565] = const { [const { Cell::new(0) }; 565] };
+    static COUNTS: [Cell<u64>; 568] = const { [const { Cell::new(0) }; 568] };
     /// Each session's serial, for the link's memo: a pointer could alias a dead session's.
     static SERIAL: Cell<u64> = const { Cell::new(0) };
 }
@@ -680,6 +685,8 @@ pub struct SessionCore {
     pub(crate) rels: RefCell<Vec<RelS>>,
     /// State part 3, sub-part 5: the session's scalars (`SS_NAMES`), Rust-native; `Session.truncated` .. `verdict` are views.
     ses: SesScalars,
+    /// ... the session's own containers (ses_cont.rs), Rust-native; `Session.frontier` .. `_groups` are views.
+    pub(crate) sc: RefCell<crate::ses_cont::SesCont>,
 }
 
 /// State part 3, sub-part 5: `Session`'s scalars, as Python named them: three flags, two ints, then `verdict` (an object:
@@ -701,10 +708,12 @@ struct SesScalars {
 
 /// Sub-part 5's plants (`sb_plant`, SLICE_SESSION_PLANT): 431-436 a scalar read natively as its initial value
 /// (`sb-truncated-stale`, `sb-link-pending-stale`, `sb-neg-shared-stale`, `sb-sel-zero`, `sb-hold-zero`, `sb-verdict-none`),
-/// 437 `sb-fwd-skip-link` (the direct `_link` not run), 438 `sb-solver-fresh` (`solver_of` gives a new solver).
+/// 437 `sb-fwd-skip-link` (the direct `_link` not run), 438 `sb-solver-fresh` (`solver_of` gives a new solver),
+/// 439-445 `sc-<name>-drop` (ses_cont.rs: a session container's write is a no-op).
 static SB_PLANT: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(0);
-const SB_PLANTS: [&str; 8] = ["sb-truncated-stale", "sb-link-pending-stale", "sb-neg-shared-stale", "sb-sel-zero", "sb-hold-zero",
-    "sb-verdict-none", "sb-fwd-skip-link", "sb-solver-fresh"];
+const SB_PLANTS: [&str; 15] = ["sb-truncated-stale", "sb-link-pending-stale", "sb-neg-shared-stale", "sb-sel-zero", "sb-hold-zero",
+    "sb-verdict-none", "sb-fwd-skip-link", "sb-solver-fresh", "sc-frontier-drop", "sc-pending-drop", "sc-pending_c-drop",
+    "sc-demand-drop", "sc-deferred-drop", "sc-literals-drop", "sc-groups-drop"];
 pub(crate) const SB_FWD_SKIP_LINK: u16 = 437;
 const SB_SOLVER_FRESH: u16 = 438;
 
@@ -1696,6 +1705,7 @@ impl SessionCore {
             relkeys: RefCell::new(RelKeys::default()),
             rels: RefCell::new(vec![]),
             ses: SesScalars::default(),
+            sc: RefCell::new(Default::default()),
         })
     }
 
@@ -1765,6 +1775,32 @@ impl SessionCore {
             _ => return Err(PyValueError::new_err("no such session scalar")),
         }
         Ok(())
+    }
+
+    /// State part 3, sub-part 5: the view `Session.<SD_NAMES[k]>` (ses_cont.rs `SesDictView`).
+    fn sc_dict(slf: &Bound<'_, Self>, k: usize) -> PyResult<crate::ses_cont::SesDictView> {
+        tick(SC_VIEW);
+        crate::ses_cont::dict_view(slf, k)
+    }
+
+    /// ... `Session.frontier` (0), `Session.deferred` (1).
+    fn sc_seq(slf: &Bound<'_, Self>, k: usize) -> PyResult<crate::ses_cont::SesSeqView> {
+        tick(SC_VIEW);
+        crate::ses_cont::seq_view(slf, k)
+    }
+
+    /// The record methods behind an assignment to the attribute.
+    fn sc_dict_replace(slf: &Bound<'_, Self>, k: usize, d: &Bound<'_, PyAny>) -> PyResult<()> {
+        crate::ses_cont::dict_replace(slf, k, d)
+    }
+
+    fn sc_seq_replace(slf: &Bound<'_, Self>, k: usize, xs: &Bound<'_, PyAny>) -> PyResult<()> {
+        crate::ses_cont::seq_replace(slf, k, xs)
+    }
+
+    /// Test-only snapshot export: the session's containers by name (dicts as dicts, sequences as lists).
+    fn sc_snapshot<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyDict>> {
+        crate::ses_cont::snapshot(slf)
     }
 
     /// Test-only snapshot export: the session's scalars by name.

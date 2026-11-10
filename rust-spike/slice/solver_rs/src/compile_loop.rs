@@ -10,6 +10,8 @@ use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyFrozenSet, PyList, PySet, PyTuple};
 
+use crate::ses_cont::{Ses, SD_DEMAND, SD_PENDING, SD_PENDING_C, SQ_DEFERRED, SQ_FRONTIER};
+
 use crate::relations_core::{
     planted, DROP_COMPILE_DEMAND, DROP_CUSTOM_FACTS, DROP_CUSTOM_REL, DROP_EMIT_MENT, DROP_FLUSH_CUSTOM, DROP_PEND_COMPILE, DROP_PAT_DEMAND,
     DROP_SPLIT_LATER, DROP_VISIT_ITEMS, WANT_EMPTY,
@@ -145,8 +147,8 @@ pub(crate) fn flush(s: &Bound<'_, PyAny>, node: &Bound<'_, PyAny>) -> PyResult<(
             continue;
         }
         match &direct {
-            Some(d) if !d.contains(&child)? => s.getattr(intern!(p, "deferred"))?.call_method1(intern!(p, "append"), (child,))?,
-            _ => s.getattr(intern!(p, "frontier"))?.call_method1(intern!(p, "append"), (child,))?,
+            Some(d) if !d.contains(&child)? => c.sq_push(SQ_DEFERRED, &child),
+            _ => c.sq_push(SQ_FRONTIER, &child),
         };
     }
     table.setattr(intern!(p, "new_nodes"), PyList::empty(p))
@@ -159,7 +161,7 @@ pub(crate) fn compile(s: &Bound<'_, PyAny>, node: &Bound<'_, PyAny>, items: &Bou
     let eng = engine_mod(p)?;
     let table = s.getattr(intern!(p, "table"))?;
     let emit = s.getattr(intern!(p, "emit"))?;
-    let demand = s.getattr(intern!(p, "demand"))?;
+    let ses = Ses::of(s);
     let (pred_index, basis_of) = (eng.getattr(intern!(p, "PRED_INDEX"))?, eng.getattr(intern!(p, "BASIS_OF"))?);
     for item in items.try_iter()? {
         let item = item?;
@@ -170,10 +172,10 @@ pub(crate) fn compile(s: &Bound<'_, PyAny>, node: &Bound<'_, PyAny>, items: &Bou
             if e.ne(node)? {
                 let pred = atom.getattr(intern!(p, "pred"))?;
                 if pred_index.contains(&pred)? && !planted(DROP_COMPILE_DEMAND) {
-                    let mut d = demand.call_method1(intern!(p, "get"), (&e,))?;
+                    let mut d = ses.d_get(SD_DEMAND, &e)?;
                     if d.is_none() {
                         d = PySet::empty(p)?.into_any();
-                        demand.set_item(&e, &d)?;
+                        ses.d_set(SD_DEMAND, &e, &d)?;
                     }
                     d.call_method1(intern!(p, "update"), (basis_of.get_item(&pred)?,))?;
                 }
@@ -189,8 +191,8 @@ pub(crate) fn compile_pending(s: &Bound<'_, PyAny>, node: &Bound<'_, PyAny>, dem
     tick(SES_COMPILE_PENDING);
     let p = s.py();
     let want = want_of(demanded)?;
-    let pending_c = s.getattr(intern!(p, "pending_c"))?;
-    let pend_c = pending_c.call_method1(intern!(p, "get"), (node,))?;
+    let ses = Ses::of(s);
+    let pend_c = ses.d_get(SD_PENDING_C, node)?;
     if pend_c.is_truthy()? {
         let keep = PyList::empty(p);
         for x in pend_c.try_iter()? {
@@ -208,13 +210,12 @@ pub(crate) fn compile_pending(s: &Bound<'_, PyAny>, node: &Bound<'_, PyAny>, dem
             }
         }
         if !keep.is_empty() {
-            pending_c.set_item(node, keep)?;
+            ses.d_set(SD_PENDING_C, node, keep.as_any())?;
         } else {
-            pending_c.del_item(node)?;
+            ses.d_del(SD_PENDING_C, node)?;
         }
     }
-    let pending = s.getattr(intern!(p, "pending"))?;
-    let pend = pending.call_method1(intern!(p, "get"), (node,))?;
+    let pend = ses.d_get(SD_PENDING, node)?;
     if !pend.is_truthy()? {
         return Ok(());
     }
@@ -238,9 +239,9 @@ pub(crate) fn compile_pending(s: &Bound<'_, PyAny>, node: &Bound<'_, PyAny>, dem
         if hit { now.append(item)? } else { later.append(item)? }
     }
     if !later.is_empty() {
-        pending.set_item(node, later)?;
+        ses.d_set(SD_PENDING, node, later.as_any())?;
     } else {
-        pending.del_item(node)?;
+        ses.d_del(SD_PENDING, node)?;
     }
     if !now.is_empty() && !planted(DROP_PEND_COMPILE) {
         compile(s, node, now.as_any())?;
@@ -254,7 +255,7 @@ pub(crate) fn compile_patterns(s: &Bound<'_, PyAny>, node: &Bound<'_, PyAny>, co
     let p = s.py();
     let table = s.getattr(intern!(p, "table"))?;
     let base_of = table.getattr(intern!(p, "base_of"))?;
-    let demand = s.getattr(intern!(p, "demand"))?;
+    let ses = Ses::of(s);
     let want = if demanded.is_none() { p.None().into_bound(p) } else { want_of(demanded)? };
     for comp in compiled.try_iter()? {
         let comp = comp?;
@@ -274,9 +275,12 @@ pub(crate) fn compile_patterns(s: &Bound<'_, PyAny>, node: &Bound<'_, PyAny>, co
         let r = split(&pat.getattr(intern!(p, "clauses"))?, &want)?;
         let (now, later, ment) = (r.get_item(1)?, r.get_item(2)?, r.get_item(3)?);
         if !later.is_none() {
-            s.getattr(intern!(p, "pending_c"))?
-                .call_method1(intern!(p, "setdefault"), (node, PyList::empty(p)))?
-                .call_method1(intern!(p, "append"), (PyTuple::new(p, [later, bases.clone().into_any()])?,))?;
+            let mut l = ses.d_get(SD_PENDING_C, node)?;
+            if l.is_none() {
+                l = PyList::empty(p).into_any();
+                ses.d_set(SD_PENDING_C, node, &l)?;
+            }
+            l.call_method1(intern!(p, "append"), (PyTuple::new(p, [later, bases.clone().into_any()])?,))?;
         }
         if now.is_truthy()? {
             emit_pattern(s, &now, bases.as_any(), &ment)?;
@@ -288,9 +292,9 @@ pub(crate) fn compile_patterns(s: &Bound<'_, PyAny>, node: &Bound<'_, PyAny>, co
                 continue;
             }
             let o = objs.get_item(&k)?;
-            let d = demand.call_method1(intern!(p, "get"), (&o,))?;
+            let d = ses.d_get(SD_DEMAND, &o)?;
             if d.is_none() {
-                demand.set_item(objs.get_item(&k)?, PySet::new(p, preds.try_iter()?.collect::<PyResult<Vec<_>>>()?)?)?;
+                ses.d_set(SD_DEMAND, &objs.get_item(&k)?, PySet::new(p, preds.try_iter()?.collect::<PyResult<Vec<_>>>()?)?.as_any())?;
             } else {
                 d.call_method1(intern!(p, "update"), (preds,))?;
             }
@@ -298,9 +302,9 @@ pub(crate) fn compile_patterns(s: &Bound<'_, PyAny>, node: &Bound<'_, PyAny>, co
         let pn = pat.getattr(intern!(p, "node"))?;
         for k in new {
             if k.lt(&pn)? {
-                s.getattr(intern!(p, "frontier"))?.call_method1(intern!(p, "append"), (objs.get_item(&k)?,))?;
+                ses.q_push(SQ_FRONTIER, &objs.get_item(&k)?)?;
             } else if k.gt(&pn)? {
-                s.getattr(intern!(p, "deferred"))?.call_method1(intern!(p, "append"), (objs.get_item(&k)?,))?;
+                ses.q_push(SQ_DEFERRED, &objs.get_item(&k)?)?;
             }
         }
     }
@@ -413,7 +417,7 @@ pub(crate) fn visit(s: &Bound<'_, PyAny>, node: &Bound<'_, PyAny>, b: i32, deman
             if demanded.is_none() {
                 compile(s, node, items.as_any())?;
             } else {
-                s.getattr(intern!(p, "pending"))?.set_item(node, &items)?;
+                Ses::of(s).d_set(SD_PENDING, node, items.as_any())?;
                 compile_pending(s, node, demanded)?;
             }
         }

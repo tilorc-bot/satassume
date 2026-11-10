@@ -385,6 +385,16 @@ impl OrdMap {
         }
         v
     }
+    /// `dict.popitem()`: the last key set that is still present (state part 3: ses_cont.rs).
+    pub(crate) fn pop_last(&mut self) -> Option<(u32, Py<PyAny>)> {
+        while let Some(e) = self.ent.pop() {
+            if let Some((k, v)) = e {
+                self.idx.remove(&k);
+                return Some((k, v));
+            }
+        }
+        None
+    }
     pub(crate) fn len(&self) -> usize {
         self.idx.len()
     }

@@ -43,17 +43,21 @@ pub(crate) fn init(s: &Bound<'_, PyAny>, engine: &Bound<'_, PyAny>, scope: &Boun
     )?;
     s.setattr(intern!(p, "table"), em.getattr(intern!(p, "VarTable"))?.call0()?)?;
     s.setattr(intern!(p, "base"), PyDict::new(p))?;
-    s.setattr(intern!(p, "frontier"), em.getattr(intern!(p, "deque"))?.call0()?)?;
-    s.setattr(intern!(p, "pending"), PyDict::new(p))?;
-    s.setattr(intern!(p, "pending_c"), PyDict::new(p))?;
-    s.setattr(intern!(p, "demand"), PyDict::new(p))?;
-    s.setattr(intern!(p, "deferred"), PyList::empty(p))?;
-    s.setattr(intern!(p, "literals"), PyDict::new(p))?;
+    // `frontier`, `pending`, `pending_c`, `demand`, `deferred`, `literals`, `_groups`: the core's, empty from the start (state
+    // part 3, sub-part 5: ses_cont.rs); a session with no core gets Python's own.
+    if crate::session::core_of(s).is_err() {
+        s.setattr(intern!(p, "frontier"), em.getattr(intern!(p, "deque"))?.call0()?)?;
+        s.setattr(intern!(p, "pending"), PyDict::new(p))?;
+        s.setattr(intern!(p, "pending_c"), PyDict::new(p))?;
+        s.setattr(intern!(p, "demand"), PyDict::new(p))?;
+        s.setattr(intern!(p, "deferred"), PyList::empty(p))?;
+        s.setattr(intern!(p, "literals"), PyDict::new(p))?;
+        s.setattr(intern!(p, "_groups"), PyDict::new(p))?;
+    }
     s.setattr(intern!(p, "assumption_formula"), p.None())?;
     s.setattr(intern!(p, "_a_raw"), PyTuple::empty(p))?;
     s.setattr(intern!(p, "_a_zs"), PyTuple::empty(p))?;
     s.setattr(intern!(p, "_a_under"), p.None())?;
-    s.setattr(intern!(p, "_groups"), PyDict::new(p))?;
     s.setattr(intern!(p, "_a_all"), p.None())?;
     s.setattr(intern!(p, "_a_atoms"), PyFrozenSet::empty(p)?)?;
     s.setattr(intern!(p, "relations"), p.None())?;
@@ -207,7 +211,7 @@ pub(crate) fn assumption_lits<'py>(s: &Bound<'py, PyAny>, prop: &Bound<'py, PyAn
             let ga = group_sel(s, &p.None().into_bound(p), &a_all)?;
             if ga.is_truthy()? {
                 lits.append(&ga)?;
-                seen = s.getattr(intern!(p, "_groups"))?.get_item(p.None())?.get_item(1)?;
+                seen = crate::ses_cont::Ses::of(s).d_item(crate::ses_cont::SD_GROUPS, &p.None().into_bound(p))?.get_item(1)?;
             }
         }
         seen
@@ -241,12 +245,12 @@ pub(crate) fn set_glue<'py>(s: &Bound<'py, PyAny>, a_all: &Bound<'py, PyAny>, xf
     let p = s.py();
     let em = engine_mod(p)?;
     let rel = s.getattr(intern!(p, "relations"))?;
-    let groups = s.getattr(intern!(p, "_groups"))?;
+    let groups = crate::ses_cont::Ses::of(s);
     let t = PyBool::new(p, true).to_owned().into_any();
-    let mut g = groups.call_method1(intern!(p, "get"), (&t,))?;
+    let mut g = groups.d_get(crate::ses_cont::SD_GROUPS, &t)?;
     if g.is_none() {
         let l = PyList::new(p, [PySet::empty(p)?.into_any(), p.None().into_bound(p), t.clone(), t.clone()])?;
-        groups.set_item(&t, &l)?;
+        groups.d_set(crate::ses_cont::SD_GROUPS, &t, l.as_any())?;
         g = l.into_any();
     }
     let have = g.get_item(0)?;
@@ -324,8 +328,8 @@ pub(crate) fn group_sel<'py>(s: &Bound<'py, PyAny>, key: &Bound<'py, PyAny>, ato
     tick(SES_GROUP_SEL);
     let p = s.py();
     let rel = s.getattr(intern!(p, "relations"))?;
-    let groups = s.getattr(intern!(p, "_groups"))?;
-    let g = groups.call_method1(intern!(p, "get"), (key,))?;
+    let groups = crate::ses_cont::Ses::of(s);
+    let g = groups.d_get(crate::ses_cont::SD_GROUPS, key)?;
     let stamp = PyTuple::new(
         p,
         [
@@ -343,13 +347,13 @@ pub(crate) fn group_sel<'py>(s: &Bound<'py, PyAny>, key: &Bound<'py, PyAny>, ato
     let solver = crate::session::solver_of(s)?;
     let g = if g.is_none() {
         if want.is_empty() {
-            groups.set_item(key, PyList::new(p, [zero.clone(), PySet::empty(p)?.into_any(), stamp.into_any()])?)?;
+            groups.d_set(crate::ses_cont::SD_GROUPS, key, PyList::new(p, [zero.clone(), PySet::empty(p)?.into_any(), stamp.into_any()])?.as_any())?;
             return Ok(zero);
         }
         let v = s.getattr(intern!(p, "table"))?.call_method0(intern!(p, "aux"))?;
         solver.call_method1(intern!(p, "ensure_vars"), (&v,))?;
         let l = PyList::new(p, [v.clone(), PySet::empty(p)?.into_any(), stamp.clone().into_any()])?;
-        groups.set_item(key, &l)?;
+        groups.d_set(crate::ses_cont::SD_GROUPS, key, l.as_any())?;
         crate::session::solver_of(s)?.call_method1(intern!(p, "set_inert"), (&v,))?;
         l.into_any()
     } else if !g.get_item(0)?.is_truthy()? {
