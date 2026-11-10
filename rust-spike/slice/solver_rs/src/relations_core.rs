@@ -1078,7 +1078,7 @@ fn rel_link_integer<'py>(rel: &Bound<'py, PyAny>, ad: &Bound<'py, PyAny>, e: &Bo
     let (s, c) = session_of(p, &h, rel)?;
     let c = c.borrow();
     let i = fresh(&s, &c, false)?;
-    ad.call_method1(intern!(p, "register_integer"), (s.getattr(intern!(p, "solver"))?, i, &form))?;
+    ad.call_method1(intern!(p, "register_integer"), (crate::session::solver_of(&s)?, i, &form))?;
     let guard: Vec<i32> = guard(rel, &s, &c, &h, ad, &form.get_item(1)?)?.extract()?;
     let z = c.var_direct(intern!(p, "integer").as_any(), e)?;
     let with = |x: [i32; 3]| guard.iter().copied().chain(x).collect::<Vec<i32>>();
@@ -1100,7 +1100,7 @@ fn fresh(s: &Bound<'_, PyAny>, c: &SessionCore, inert: bool) -> PyResult<i32> {
         if PLANT.load(Relaxed) == FRESH_NOT_INERT {
             tick(session::REL_PLANT);
         } else {
-            s.getattr(intern!(p, "solver"))?.call_method1(intern!(p, "set_inert"), (v,))?;
+            crate::session::solver_of(&s)?.call_method1(intern!(p, "set_inert"), (v,))?;
         }
     }
     Ok(v)
@@ -1123,7 +1123,7 @@ fn bound(rel: &Bound<'_, PyAny>, s: &Bound<'_, PyAny>, c: &SessionCore, ad: &Bou
         return Ok(());
     }
     // A bound method, so the adapter can call it as Python's would; `session_live` routes it back here.
-    let vs = register.call1((s.getattr(intern!(p, "solver"))?, u, rel.getattr(intern!(p, "_fresh"))?))?;
+    let vs = register.call1((crate::session::solver_of(&s)?, u, rel.getattr(intern!(p, "_fresh"))?))?;
     for v in vs.try_iter()? {
         let v: i32 = v?.extract()?;
         if PLANT.load(Relaxed) == DROP_BOUND {
@@ -1237,7 +1237,7 @@ fn rel_interpret<'py>(rel: &Bound<'py, PyAny>, atom: &Bound<'py, PyAny>) -> PyRe
     let (s, c) = session_of(p, &h, rel)?;
     let c = c.borrow();
     let r = h.relations.bind(p);
-    let solver = s.getattr(intern!(p, "solver"))?;
+    let solver = crate::session::solver_of(&s)?;
     let Some(var) = c.custom_direct(atom)? else { return Err(PyKeyError::new_err(atom.clone().unbind())) };
     let pred = atom.getattr(intern!(p, "pred"))?;
     let order = pred.eq(intern!(p, "lt"))?;
@@ -1440,6 +1440,15 @@ const IL: usize = 4;
 /// Turns the plant off: for a fault that fires once.
 pub(crate) fn unplant() {
     PLANT.store(0, Relaxed);
+}
+
+static FW_INTERPRET: pyo3::sync::PyOnceLock<Py<PyAny>> = pyo3::sync::PyOnceLock::new();
+static FW_LINK: pyo3::sync::PyOnceLock<Py<PyAny>> = pyo3::sync::PyOnceLock::new();
+static FW_SHARE_GUARD: pyo3::sync::PyOnceLock<Py<PyAny>> = pyo3::sync::PyOnceLock::new();
+
+/// The counter every relations plant ticks when it fires.
+pub(crate) fn plant_counter() -> usize {
+    session::REL_PLANT
 }
 
 pub(crate) fn planted(x: u16) -> bool {
@@ -2228,7 +2237,7 @@ fn rel_wants_transfer<'py>(rel: &Bound<'py, PyAny>, atoms: &Bound<'py, PyAny>) -
 
 /// `_share`. The adapters' `shared_terms()` reach `update` as a lazy `map`, as Python's generator does.
 #[pyfunction]
-fn rel_share(rel: &Bound<'_, PyAny>) -> PyResult<bool> {
+fn rel_share<'py>(rel: &Bound<'py, PyAny>) -> PyResult<bool> {
     let p = rel.py();
     tick(session::REL_SHARE);
     if plant_on(SKIP_SHARE) {
@@ -2263,8 +2272,15 @@ fn rel_share(rel: &Bound<'_, PyAny>) -> PyResult<bool> {
         }
         tick(session::REL_CB_ATOM_VAR);
         rel.call_method1(intern!(p, "_atom_var"), (&eqa,))?;
-        let ga = rel.call_method1(intern!(p, "_share_guard"), (&a,))?;
-        let gb = rel.call_method1(intern!(p, "_share_guard"), (&b,))?;
+        // state part 3, sub-part 5: directly, unless the method was replaced (session.rs `named`)
+        let sg = |u: &Bound<'py, PyAny>| -> PyResult<Bound<'py, PyAny>> {
+            match session::named(rel, intern!(p, "_share_guard"), &FW_SHARE_GUARD, "_rel_share_guard")? {
+                None => Ok(rel_share_guard(rel, u)?.into_any()),
+                Some(m) => m.call1((u,)),
+            }
+        };
+        let ga = sg(&a)?;
+        let gb = sg(&b)?;
         let g = ga.add(gb)?;
         rel.call_method1(intern!(p, "_add_role"), (&eqa, g, intern!(p, "iface")))?;
     }
@@ -2332,7 +2348,10 @@ fn rel_process<'py>(rel: &Bound<'py, PyAny>, user_atoms: Option<&Bound<'py, PyAn
     loop {
         s.call_method0(intern!(p, "discover"))?;
         if let Some(atom) = RList::of(rel, session::RL_QUEUE)?.pop()? {
-            let ok = rel.call_method1(intern!(p, "_interpret"), (&atom,))?;
+            let ok = match session::named(rel, intern!(p, "_interpret"), &FW_INTERPRET, "_rel_interpret")? {
+                None => pyo3::types::PyBool::new(p, rel_interpret(rel, &atom)?).to_owned().into_any(),
+                Some(m) => m.call1((&atom,))?,
+            };
             RDict::of(rel, crate::session::RD_STATUS)?.set_item(&atom, &ok)?;
             rel.setattr(intern!(p, "active"), true)?;
             if ok.is_truthy()? && unlinked.contains(&atom)? {
@@ -2356,7 +2375,16 @@ fn rel_process<'py>(rel: &Bound<'py, PyAny>, user_atoms: Option<&Bound<'py, PyAn
             }
         }
         if let Some(e) = RList::of(rel, session::RL_PENDING_LINKS)?.pop()? {
-            rel.call_method1(intern!(p, "_link"), (e,))?;
+            match session::named(rel, intern!(p, "_link"), &FW_LINK, "_rel_link")? {
+                None => {
+                    if !session::sb_planted(session::SB_FWD_SKIP_LINK) {
+                        rel_link(rel, &e)?;
+                    }
+                }
+                Some(m) => {
+                    m.call1((e,))?;
+                }
+            }
             continue;
         }
         if rel.call_method0(intern!(p, "_share"))?.is_truthy()? {

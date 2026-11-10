@@ -14,7 +14,7 @@ use pyo3::types::{PyBool, PyDict, PyList, PySet, PyTuple};
 use crate::compile::{self, block_lits, Cx, Def, Kind, Need, F, R};
 use crate::formula_py::PyP;
 
-const NAMES: [&str; 559] = [
+const NAMES: [&str; 565] = [
     "py:var", "py:dvar", "py:node", "py:compile", "py:literal", "py:table", "rs:visit", "rs:add_clause", "rs:ensure_vars",
     "rs:def_implications", "rs:neg_shared", "join", "rs:emit_callback", "refuse:depth", "refuse:convert", "refuse:object", "second:visit", "custom:own",
     "link:hit", "link:resolved", "link:none", "link:no_table", "link:second", "link:no_node",
@@ -93,6 +93,10 @@ const NAMES: [&str; 559] = [
     "reserved:526", "reserved:527", "reserved:528", "reserved:529", "reserved:530", "reserved:531", "reserved:532", "reserved:533", "reserved:534", "reserved:535", "reserved:536", "reserved:537", "reserved:538", "reserved:539", "reserved:540", "reserved:541", "reserved:542", "reserved:543", "reserved:544", "reserved:545", "reserved:546", "reserved:547", "reserved:548", "reserved:549", "reserved:550", "reserved:551", "reserved:552", "reserved:553", "reserved:554",
     // state part 3 (theory_flags.rs): engine.py _gave_up/_exhausted in Rust, 555-558
     "th:gave_up", "th:exhausted", "th:py_flag", "th:py_helper",
+    // state part 3, sub-part 5 (the session/solver boundary): a session with no core read by attribute; `_interpret`/`_link`/
+    // `_share_guard`/`_visit` called directly, or by name where a test or SLICE_*=py replaced the method; the session's scalars
+    // in the core (native use, Python's view, Python's record method), 559-564
+    "sb:attr", "sb:fwd_direct", "sb:fwd_named", "sb:scalar_core", "sb:scalar_view", "sb:scalar_record",
 ];
 const VAR: usize = 0;
 const DVAR: usize = 1;
@@ -510,6 +514,12 @@ pub(crate) const TH_GAVE_UP: usize = 555;
 pub(crate) const TH_EXHAUSTED: usize = 556;
 pub(crate) const TH_PY_FLAG: usize = 557;
 pub(crate) const TH_PY_HELPER: usize = 558;
+pub(crate) const SB_ATTR: usize = 559;
+pub(crate) const SB_FWD_DIRECT: usize = 560;
+pub(crate) const SB_FWD_NAMED: usize = 561;
+pub(crate) const SB_SCALAR_CORE: usize = 562;
+pub(crate) const SB_SCALAR_VIEW: usize = 563;
+pub(crate) const SB_SCALAR_RECORD: usize = 564;
 
 /// Deeper formulas compile on Python, over this same table. Python's own limit depends on the caller's stack, so it isn't
 /// reproduced: its deepest shape is `Implies`, 3 frames a level (first failure at depth 330 from a bare stack, limit 1000), so
@@ -517,7 +527,7 @@ pub(crate) const TH_PY_HELPER: usize = 558;
 const FORMULA_DEPTH: u32 = 64;
 
 thread_local! {
-    static COUNTS: [Cell<u64>; 559] = const { [const { Cell::new(0) }; 559] };
+    static COUNTS: [Cell<u64>; 565] = const { [const { Cell::new(0) }; 565] };
     /// Each session's serial, for the link's memo: a pointer could alias a dead session's.
     static SERIAL: Cell<u64> = const { Cell::new(0) };
 }
@@ -668,6 +678,163 @@ pub struct SessionCore {
     pub(crate) relkeys: RefCell<RelKeys>,
     /// ... each `Relations`' sets (`RS_NAMES`), Rust-native.
     pub(crate) rels: RefCell<Vec<RelS>>,
+    /// State part 3, sub-part 5: the session's scalars (`SS_NAMES`), Rust-native; `Session.truncated` .. `verdict` are views.
+    ses: SesScalars,
+}
+
+/// State part 3, sub-part 5: `Session`'s scalars, as Python named them: three flags, two ints, then `verdict` (an object:
+/// the engine's verdict constant, compared by identity, or None). `Session.__init__`'s values are the defaults.
+pub(crate) const SS_NAMES: [&str; 6] = ["truncated", "_link_pending", "_neg_shared", "sel", "n_hold", "verdict"];
+pub(crate) const SS_TRUNCATED: usize = 0;
+pub(crate) const SS_LINK_PENDING: usize = 1;
+pub(crate) const SS_NEG_SHARED: usize = 2;
+pub(crate) const SS_SEL: usize = 3;
+pub(crate) const SS_N_HOLD: usize = 4;
+pub(crate) const SS_VERDICT: usize = 5;
+
+#[derive(Default)]
+struct SesScalars {
+    flags: [Cell<bool>; 3],
+    ints: [Cell<i64>; 2],
+    verdict: RefCell<Option<Py<PyAny>>>,
+}
+
+/// Sub-part 5's plants (`sb_plant`, SLICE_SESSION_PLANT): 431-436 a scalar read natively as its initial value
+/// (`sb-truncated-stale`, `sb-link-pending-stale`, `sb-neg-shared-stale`, `sb-sel-zero`, `sb-hold-zero`, `sb-verdict-none`),
+/// 437 `sb-fwd-skip-link` (the direct `_link` not run), 438 `sb-solver-fresh` (`solver_of` gives a new solver).
+static SB_PLANT: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(0);
+const SB_PLANTS: [&str; 8] = ["sb-truncated-stale", "sb-link-pending-stale", "sb-neg-shared-stale", "sb-sel-zero", "sb-hold-zero",
+    "sb-verdict-none", "sb-fwd-skip-link", "sb-solver-fresh"];
+pub(crate) const SB_FWD_SKIP_LINK: u16 = 437;
+const SB_SOLVER_FRESH: u16 = 438;
+
+pub(crate) fn sb_planted(x: u16) -> bool {
+    if SB_PLANT.load(std::sync::atomic::Ordering::Relaxed) == x {
+        tick(crate::relations_core::plant_counter());
+        return true;
+    }
+    false
+}
+
+#[pyfunction]
+#[pyo3(signature = (name=None))]
+fn sb_plant(name: Option<&str>) -> PyResult<()> {
+    let v = match name {
+        None => 0,
+        Some(n) => match SB_PLANTS.iter().position(|x| *x == n) {
+            Some(i) => 431 + i as u16,
+            None => return Err(PyValueError::new_err(format!("no such plant: {n}"))),
+        },
+    };
+    SB_PLANT.store(v, std::sync::atomic::Ordering::Relaxed);
+    Ok(())
+}
+
+/// State part 3, sub-part 5: `s.solver`, from the core. A session with no core (a test's stand-in) is read by attribute, counted.
+pub(crate) fn solver_of<'py>(s: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    let p = s.py();
+    match core_of(s) {
+        Ok(c) => {
+            let v = c.borrow().solver_direct(p)?;
+            if sb_planted(SB_SOLVER_FRESH) { v.get_type().call0() } else { Ok(v) }
+        }
+        Err(_) => {
+            tick(SB_ATTR);
+            s.getattr(intern!(p, "solver"))
+        }
+    }
+}
+
+/// ... a flag of `SS_NAMES` (`k` < 3).
+pub(crate) fn ses_flag(s: &Bound<'_, PyAny>, k: usize) -> PyResult<bool> {
+    match core_of(s) {
+        Ok(c) => Ok(c.borrow().flag(k)),
+        Err(_) => {
+            tick(SB_ATTR);
+            s.getattr(SS_NAMES[k])?.is_truthy()
+        }
+    }
+}
+
+pub(crate) fn ses_set_flag(s: &Bound<'_, PyAny>, k: usize, v: bool) -> PyResult<()> {
+    match core_of(s) {
+        Ok(c) => {
+            c.borrow().set_flag(k, v);
+            Ok(())
+        }
+        Err(_) => {
+            tick(SB_ATTR);
+            s.setattr(SS_NAMES[k], v)
+        }
+    }
+}
+
+/// ... `sel` or `n_hold`.
+pub(crate) fn ses_int(s: &Bound<'_, PyAny>, k: usize) -> PyResult<i64> {
+    match core_of(s) {
+        Ok(c) => Ok(c.borrow().int(k)),
+        Err(_) => {
+            tick(SB_ATTR);
+            s.getattr(SS_NAMES[k])?.extract()
+        }
+    }
+}
+
+pub(crate) fn ses_set_int(s: &Bound<'_, PyAny>, k: usize, v: i64) -> PyResult<()> {
+    match core_of(s) {
+        Ok(c) => {
+            c.borrow().set_int(k, v);
+            Ok(())
+        }
+        Err(_) => {
+            tick(SB_ATTR);
+            s.setattr(SS_NAMES[k], v)
+        }
+    }
+}
+
+/// ... `verdict`.
+pub(crate) fn ses_verdict<'py>(s: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    let p = s.py();
+    match core_of(s) {
+        Ok(c) => Ok(c.borrow().verdict(p)),
+        Err(_) => {
+            tick(SB_ATTR);
+            s.getattr(intern!(p, "verdict"))
+        }
+    }
+}
+
+pub(crate) fn ses_set_verdict(s: &Bound<'_, PyAny>, v: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
+    let p = s.py();
+    match core_of(s) {
+        Ok(c) => {
+            c.borrow().set_verdict(v);
+            Ok(())
+        }
+        Err(_) => {
+            tick(SB_ATTR);
+            s.setattr(intern!(p, "verdict"), v)
+        }
+    }
+}
+
+/// State part 3, sub-part 5: `obj.<name>` as Rust should call it. None when the attribute is still session_live's own frame
+/// `wrapper` (which only picks Python's copy for a session with no core, then calls the Rust function): the caller runs that
+/// function directly. Otherwise the bound attribute to call: a test's override, or Python's method under SLICE_REL/LOOP=py.
+pub(crate) fn named<'py>(obj: &Bound<'py, PyAny>, name: &Bound<'py, pyo3::types::PyString>, cell: &'static pyo3::sync::PyOnceLock<Py<PyAny>>,
+                         wrapper: &'static str) -> PyResult<Option<Bound<'py, PyAny>>> {
+    let p = obj.py();
+    let m = obj.getattr(name)?;
+    let w = cell.get_or_try_init(p, || -> PyResult<Py<PyAny>> { Ok(p.import(intern!(p, "session_live"))?.getattr(wrapper)?.unbind()) })?;
+    if let Ok(f) = m.getattr(intern!(p, "__func__")) {
+        if f.is(w.bind(p)) {
+            tick(SB_FWD_DIRECT);
+            return Ok(None);
+        }
+    }
+    tick(SB_FWD_NAMED);
+    Ok(Some(m))
 }
 
 /// RelKeys (planner's ruling, ~04:50 10 Nov): a key is an index into `objs`, which holds a strong ref so `id()` can't be reused.
@@ -786,6 +953,48 @@ impl SessionCore {
             Some(s) => Ok(s.bind(p).clone()),
             None => Err(PyValueError::new_err("the session core has no solver (TableView.bind gives it)")),
         }
+    }
+
+    /// State part 3, sub-part 5: a session flag (`SS_TRUNCATED`, `SS_LINK_PENDING`, `SS_NEG_SHARED`), natively.
+    pub(crate) fn flag(&self, k: usize) -> bool {
+        tick(SB_SCALAR_CORE);
+        if sb_planted(431 + k as u16) {
+            return false;
+        }
+        self.ses.flags[k].get()
+    }
+
+    pub(crate) fn set_flag(&self, k: usize, v: bool) {
+        tick(SB_SCALAR_CORE);
+        self.ses.flags[k].set(v)
+    }
+
+    /// ... `SS_SEL` or `SS_N_HOLD`.
+    pub(crate) fn int(&self, k: usize) -> i64 {
+        tick(SB_SCALAR_CORE);
+        if sb_planted(431 + k as u16) {
+            return 0;
+        }
+        self.ses.ints[k - 3].get()
+    }
+
+    pub(crate) fn set_int(&self, k: usize, v: i64) {
+        tick(SB_SCALAR_CORE);
+        self.ses.ints[k - 3].set(v)
+    }
+
+    /// ... `verdict`: the engine's constant, or None.
+    pub(crate) fn verdict<'py>(&self, p: Python<'py>) -> Bound<'py, PyAny> {
+        tick(SB_SCALAR_CORE);
+        if sb_planted(436) {
+            return p.None().into_bound(p);
+        }
+        self.ses.verdict.borrow().as_ref().map_or_else(|| p.None().into_bound(p), |v| v.bind(p).clone())
+    }
+
+    pub(crate) fn set_verdict(&self, v: Option<&Bound<'_, PyAny>>) {
+        tick(SB_SCALAR_CORE);
+        *self.ses.verdict.borrow_mut() = v.filter(|v| !v.is_none()).map(|v| v.clone().unbind());
     }
 
     /// `_engage_transfer`'s four writes (`rel.xfer_sel`, `rel._xadapter`, `rel.xfer`, `s.xfer = rel`).
@@ -1128,14 +1337,14 @@ impl SessionCore {
 
     fn emit(&self, p: Python<'_>, clause: &[i32]) -> PyResult<()> {
         tick(ADD_CLAUSE);
-        let s = self.shell(p)?.getattr(intern!(p, "solver"))?;
+        let s = self.solver_direct(p)?;
         s.call_method1(intern!(p, "add_clause"), (PyList::new(p, clause)?,))?;
         Ok(())
     }
 
     fn ensure_vars(&self, p: Python<'_>, v: i32) -> PyResult<()> {
         tick(ENSURE);
-        self.shell(p)?.getattr(intern!(p, "solver"))?.call_method1(intern!(p, "ensure_vars"), (v,))?;
+        self.solver_direct(p)?.call_method1(intern!(p, "ensure_vars"), (v,))?;
         Ok(())
     }
 
@@ -1351,7 +1560,7 @@ impl SessionCore {
         let need = match need {
             Need::NegUnit | Need::PosUnit => {
                 tick(NEG);
-                let on = self.shell(p)?.getattr(intern!(p, "_neg_shared"))?.is_truthy()?;
+                let on = self.flag(SS_NEG_SHARED);
                 if !on || d.1.len() < 2 {
                     return Ok(None);
                 }
@@ -1486,6 +1695,7 @@ impl SessionCore {
             relc: RefCell::new(vec![]),
             relkeys: RefCell::new(RelKeys::default()),
             rels: RefCell::new(vec![]),
+            ses: SesScalars::default(),
         })
     }
 
@@ -1531,6 +1741,43 @@ impl SessionCore {
         }
         self.xfer_put(rel, k, Some(v));
         Ok(())
+    }
+
+    /// State part 3, sub-part 5: the views `Session.truncated` .. `verdict` (index into `SS_NAMES`).
+    fn ses_field<'py>(&self, p: Python<'py>, k: usize) -> PyResult<Bound<'py, PyAny>> {
+        tick(SB_SCALAR_VIEW);
+        Ok(match k {
+            0..=2 => PyBool::new(p, self.ses.flags[k].get()).to_owned().into_any(),
+            3 | 4 => self.ses.ints[k - 3].get().into_pyobject(p)?.into_any(),
+            5 => self.ses.verdict.borrow().as_ref().map_or_else(|| p.None().into_bound(p), |v| v.bind(p).clone()),
+            _ => return Err(PyValueError::new_err("no such session scalar")),
+        })
+    }
+
+    /// The record method for `s.truncated` .. `s.verdict = v`: Python's own `Session` methods over this core (SLICE_GLUE=py,
+    /// SLICE_DISC=py), `_build_context`'s Python copy, and tests that set one to drive a method.
+    fn set_ses_field(&self, k: usize, v: &Bound<'_, PyAny>) -> PyResult<()> {
+        tick(SB_SCALAR_RECORD);
+        match k {
+            0..=2 => self.ses.flags[k].set(v.is_truthy()?),
+            3 | 4 => self.ses.ints[k - 3].set(v.extract()?),
+            5 => *self.ses.verdict.borrow_mut() = if v.is_none() { None } else { Some(v.clone().unbind()) },
+            _ => return Err(PyValueError::new_err("no such session scalar")),
+        }
+        Ok(())
+    }
+
+    /// Test-only snapshot export: the session's scalars by name.
+    fn ses_snapshot<'py>(&self, p: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let d = PyDict::new(p);
+        for (k, n) in SS_NAMES.iter().enumerate() {
+            match k {
+                0..=2 => d.set_item(n, self.ses.flags[k].get())?,
+                3 | 4 => d.set_item(n, self.ses.ints[k - 3].get())?,
+                _ => d.set_item(n, self.ses.verdict.borrow().as_ref().map(|v| v.bind(p).clone()))?,
+            }
+        }
+        Ok(d)
     }
 
     /// State step, part 2 (iii)(b): the views `Relations._xtcur` .. `_xsides_n` (index into `RC_NAMES`).
@@ -1952,5 +2199,6 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(set_join_hook, m)?)?;
     m.add_class::<SessionRules>()?;
     m.add_class::<SessionCore>()?;
+    m.add_function(wrap_pyfunction!(sb_plant, m)?)?;
     m.add_function(wrap_pyfunction!(session_counts, m)?)
 }

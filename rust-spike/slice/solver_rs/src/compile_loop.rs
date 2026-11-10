@@ -95,7 +95,7 @@ pub(crate) fn emit_pattern(s: &Bound<'_, PyAny>, clauses: &Bound<'_, PyAny>, bas
     tick(SES_EMIT_PATTERN);
     let p = s.py();
     let ment = if ment.is_none() { split(clauses, &p.None().into_bound(p))?.get_item(3)? } else { ment.clone() };
-    let solver = s.getattr(intern!(p, "solver"))?;
+    let solver = crate::session::solver_of(s)?;
     let n = s.getattr(intern!(p, "table"))?.len()?;
     solver.call_method1(intern!(p, "ensure_vars"), (n,))?;
     let cls = PyList::empty(p);
@@ -380,7 +380,7 @@ pub(crate) fn visit(s: &Bound<'_, PyAny>, node: &Bound<'_, PyAny>, b: i32, deman
     } else {
         None
     };
-    let solver = s.getattr(intern!(p, "solver"))?;
+    let solver = crate::session::solver_of(s)?;
     let complete_constant = compiled.len()? == 1
         && compiled.get_item(0)?.getattr(intern!(p, "pattern"))?.getattr(intern!(p, "complete"))?.is_truthy()?
         && !has_formulas;
@@ -435,7 +435,13 @@ pub(crate) fn core_visit(s: &Bound<'_, PyAny>, node: &Bound<'_, PyAny>, b: i32, 
     crate::engmemo::set_add(&constructing, node)?;
     // by name, as Python's `Session.node` calls `self._visit`: the class's is Rust's (`ses_visit`); a test's instance override
     // (test_session_limits.py `_object_case`) is honoured
-    let r = s.call_method1(intern!(p, "_visit"), (node, b, demanded)).map(|_| ());
+    // state part 3, sub-part 5: `visit` directly while the class's is still session_live's frame (session.rs `named`)
+    static FW_VISIT: pyo3::sync::PyOnceLock<Py<PyAny>> = pyo3::sync::PyOnceLock::new();
+    let r = match crate::session::named(s, intern!(p, "_visit"), &FW_VISIT, "_ses_visit") {
+        Ok(None) => visit(s, node, b, demanded),
+        Ok(Some(m)) => m.call1((node, b, demanded)).map(|_| ()),
+        Err(e) => Err(e),
+    };
     crate::engmemo::set_discard(&constructing, node)?;
     r
 }

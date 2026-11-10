@@ -203,6 +203,29 @@ def _xfer_set(self, rel):
     self.__dict__['_table_view'].core.set_xfer_rel(rel)
 
 
+def _ses_sview(name, k):
+    """State part 3, sub-part 5: `Session.truncated`, `_link_pending`, `_neg_shared`, `sel`, `n_hold`, `verdict`, views of the
+    core's scalars (session.rs `SS_NAMES`). Writes go through the core's record method (Python's own methods under SLICE_GLUE=py
+    or SLICE_DISC=py, tests that set one to drive a method). A session with no core keeps Python's own attribute."""
+    def get(self):
+        d = self.__dict__
+        if name in d:
+            return d[name]
+        return d['_table_view'].core.ses_field(k)
+
+    def put(self, v):
+        t = self.__dict__.get('_table_view')
+        if isinstance(t, TableView):
+            t.core.set_ses_field(k, v)
+        else:
+            self.__dict__[name] = v
+    return property(get, put)
+
+
+#: The scalar views, by attribute (the order of session.rs `SS_NAMES`).
+_SES_SVIEWS = {n: k for k, n in enumerate(('truncated', '_link_pending', '_neg_shared', 'sel', 'n_hold', 'verdict'))}
+
+
 def _rel_xview(name, k):
     """State step, part 2 (ii): `Relations.xfer` (0), `xfer_sel` (1), `_xadapter` (2), views of the core's record. Writes go
     through the core's record method (Python's own `__init__`/`_engage_transfer` under SLICE_REL=py, tests that drive a method).
@@ -1003,6 +1026,10 @@ _REL_STATE_PLANTS = ('ad-lra-not-expr',
 _RULE_BLOCK_PLANTS = ('rb-gen-model-flip', 'rb-built-model-drop', 'rb-gen-any', 'rb-check-skip')
 #: State part 3 (theory_flags.rs, 428-430): engine.py `_gave_up`/`_exhausted` in Rust; see test_theory_flags.py
 _TH_PLANTS = ('th-gave-up-skip', 'th-exhausted-skip', 'th-first-only')
+#: State part 3, sub-part 5 (session.rs `sb_plant`, 431-438): the session's scalars in the core, `_link` called directly, the
+#: solver from the core; see test_session_boundary.py
+_SB_PLANTS = ('sb-truncated-stale', 'sb-link-pending-stale', 'sb-neg-shared-stale', 'sb-sel-zero', 'sb-hold-zero',
+              'sb-verdict-none', 'sb-fwd-skip-link', 'sb-solver-fresh')
 
 
 def entry_native():
@@ -1287,12 +1314,14 @@ def install():
     """Returns the undo."""
     refuse_built_engines('session_live.install()')
     S = engine.Session
-    saved = {n: S.__dict__.get(n) for n in ('table', 'base', 'xfer', 'node', 'var', 'dvar', '_dvar')}
+    saved = {n: S.__dict__.get(n) for n in ('table', 'base', 'xfer', 'node', 'var', 'dvar', '_dvar', *_SES_SVIEWS)}
     g = (engine.VarTable, engine.compile_formula, engine.formula_literal)
     PY_COMPILE[:] = g[1:]
     S.table = property(_table_get, _table_set)
     S.base = property(_base_get, _base_set)
     S.xfer = property(_xfer_get, _xfer_set)
+    for n, k in _SES_SVIEWS.items():
+        setattr(S, n, _ses_sview(n, k))
     from satassume import relations
     R = relations.Relations
     saved_v = {n: R.__dict__.get(n) for n in (*_REL_XVIEWS, *_REL_CVIEWS, *_REL_SVIEWS, *_REL_DVIEWS, *_REL_LVIEWS)}
@@ -1379,6 +1408,8 @@ def from_env():
                 sa_solver.rel_plant(PLANT[0])
             elif PLANT[0] in _TH_PLANTS:
                 sa_solver.th_plant(PLANT[0])
+            elif PLANT[0] in _SB_PLANTS:
+                sa_solver.sb_plant(PLANT[0])
         return install()
     return None
 

@@ -97,7 +97,7 @@ fn ctx_context_session<'py>(eng: &Bound<'py, PyAny>, assumptions: &Bound<'py, Py
         }
     }
     let (s, lits) = memoized(eng, assumptions, proposition)?;
-    if s.getattr(intern!(p, "verdict"))?.is(&inc) && !planted(CTX_SESSION_INCONSISTENT_PASS) {
+    if crate::session::ses_verdict(&s)?.is(&inc) && !planted(CTX_SESSION_INCONSISTENT_PASS) {
         return Err(inconsistent_err(p)?);
     }
     if planted(CTX_SESSIONS_STORE) {
@@ -142,7 +142,7 @@ fn build_memoized<'py>(eng: &Bound<'py, PyAny>, assumptions: &Bound<'py, PyAny>,
     if !planted(CTX_VERDICT_NO_BOUND) && engmemo::len(&verdicts)? >= 20_000 {
         engmemo::clear(&verdicts)?;
     }
-    engmemo::set(&verdicts, assumptions, &s.getattr(intern!(p, "verdict"))?)?;
+    engmemo::set(&verdicts, assumptions, &crate::session::ses_verdict(&s)?)?;
     Ok((s, lits))
 }
 
@@ -192,7 +192,7 @@ fn build_context<'py>(eng: &Bound<'py, PyAny>, assumptions: &Bound<'py, PyAny>, 
     let inc = konst(p, "INCONSISTENT")?;
     if let Some(v) = &v {
         if v.is(&inc) {
-            s.setattr(intern!(p, "verdict"), v)?;
+            crate::session::ses_set_verdict(&s, Some(v))?;
             return Ok((s, lits));
         }
     }
@@ -204,7 +204,7 @@ fn build_context<'py>(eng: &Bound<'py, PyAny>, assumptions: &Bound<'py, PyAny>, 
             konst(p, "UNKNOWN")?
         }
     };
-    s.setattr(intern!(p, "verdict"), v)?;
+    crate::session::ses_set_verdict(&s, Some(&v))?;
     if !planted(CTX_BUILD_NO_LINK) {
         s.call_method0(intern!(p, "link_set"))?;
     }
@@ -247,7 +247,7 @@ fn ctx_verdict<'py>(eng: &Bound<'py, PyAny>, assumptions: &Bound<'py, PyAny>) ->
         tick(CTX_VERDICT_HIT);
         return Ok(v);
     }
-    memoized(eng, assumptions, None)?.0.getattr(intern!(p, "verdict"))
+    crate::session::ses_verdict(&memoized(eng, assumptions, None)?.0)
 }
 
 /// `Engine._complete_check` (a staticmethod).
@@ -262,7 +262,7 @@ fn complete_check<'py>(s: &Bound<'py, PyAny>, lits: &Bound<'py, PyAny>) -> PyRes
     if planted(CTX_CHECK_RAISE) {
         return Err(PyValueError::new_err("planted ctx-check-raise"));
     }
-    let solver = s.getattr(intern!(p, "solver"))?;
+    let solver = crate::session::solver_of(s)?;
     let sync = |s: &Bound<'py, PyAny>| -> PyResult<()> {
         // State step, part 2 (ii): `s.xfer` from the core.
         if let Some(x) = crate::session::session_xfer(s)? {
@@ -292,7 +292,7 @@ fn complete_check<'py>(s: &Bound<'py, PyAny>, lits: &Bound<'py, PyAny>) -> PyRes
         && (theory_flag(s, Flag::GaveUp)?
             || theory_flag(s, Flag::Exhausted)?
             || s.getattr(intern!(p, "incomplete"))?.is_truthy()?
-            || s.getattr(intern!(p, "truncated"))?.is_truthy()?)
+            || crate::session::ses_flag(s, crate::session::SS_TRUNCATED)?)
     {
         return konst(p, "UNKNOWN");
     }

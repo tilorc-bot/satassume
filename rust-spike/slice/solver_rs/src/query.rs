@@ -106,14 +106,14 @@ pub(crate) fn emit(s: &Bound<'_, PyAny>, clause: &Bound<'_, PyAny>) -> PyResult<
     if planted(DROP_EMIT) {
         return Ok(());
     }
-    s.getattr(intern!(p, "solver"))?.call_method1(intern!(p, "add_clause"), (clause,))?;
+    crate::session::solver_of(s)?.call_method1(intern!(p, "add_clause"), (clause,))?;
     Ok(())
 }
 
 /// The head both `query_literal` and `_query_all` share: transfer sync, root propagation, `mention`.
 fn head<'py>(s: &Bound<'py, PyAny>, mention: Bound<'py, PyAny>, plant: u16) -> PyResult<Bound<'py, PyAny>> {
     let p = s.py();
-    let solver = s.getattr(intern!(p, "solver"))?;
+    let solver = crate::session::solver_of(s)?;
     // State step, part 2 (ii): `s.xfer` from the core.
     if let Some(xfer) = crate::session::session_xfer(s)? {
         xfer.call_method0(intern!(p, "sync_transfer"))?;

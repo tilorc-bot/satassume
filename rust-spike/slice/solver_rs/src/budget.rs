@@ -577,7 +577,7 @@ fn bud_over_budget<'py>(eng: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> 
 pub(crate) fn note_budget(eng: &Bound<'_, PyAny>, s: &Bound<'_, PyAny>) -> PyResult<()> {
     tick(BUD_NOTE_BUDGET);
     let p = eng.py();
-    let truncated = s.getattr(intern!(p, "truncated"))?.is_truthy()?;
+    let truncated = crate::session::ses_flag(s, crate::session::SS_TRUNCATED)?;
     if truncated {
         return Err(PyAssertionError::new_err("a session of a query within the budget was truncated"));
     }

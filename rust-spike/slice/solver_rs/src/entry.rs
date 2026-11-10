@@ -508,7 +508,7 @@ fn root_only(eng: &Bound<'_, PyAny>) -> PyResult<bool> {
 fn put_result(eng: &Bound<'_, PyAny>, s: &Bound<'_, PyAny>, cache: &Bound<'_, PyAny>, node: &Bound<'_, PyAny>, pred: &Bound<'_, PyAny>, r: &Bound<'_, PyAny>) -> PyResult<()> {
     tick(ENT_PUT_RESULT);
     let p = eng.py();
-    if s.getattr(intern!(p, "truncated"))?.is_truthy()? {
+    if crate::session::ses_flag(s, crate::session::SS_TRUNCATED)? {
         return Err(PyRuntimeError::new_err("a session of a query within the budget was truncated"));
     }
     set_flag(eng, false)?;
@@ -799,7 +799,7 @@ fn ask_inner<'py>(eng: &Bound<'py, PyAny>, s: &Bound<'py, PyAny>, _lits: &Bound<
     tick(ENT_ASK_INNER);
     let p = eng.py();
     let release = |s: &Bound<'py, PyAny>| -> PyResult<()> {
-        s.getattr(intern!(p, "solver"))?.call_method1(intern!(p, "release"), (s.getattr(intern!(p, "n_hold"))?,))?;
+        crate::session::solver_of(s)?.call_method1(intern!(p, "release"), (crate::session::ses_int(s, crate::session::SS_N_HOLD)?,))?;
         Ok(())
     };
     release(s)?;

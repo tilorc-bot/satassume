@@ -36,7 +36,6 @@ pub(crate) fn init(s: &Bound<'_, PyAny>, engine: &Bound<'_, PyAny>, scope: &Boun
     s.setattr(intern!(p, "scope"), scope)?;
     let solver = em.getattr(intern!(p, "Solver"))?.call0()?;
     s.setattr(intern!(p, "solver"), &solver)?;
-    let solver = s.getattr(intern!(p, "solver"))?;
     solver.setattr(intern!(p, "track_owners"), false)?;
     solver.call_method1(
         intern!(p, "set_rule_block"),
@@ -49,25 +48,18 @@ pub(crate) fn init(s: &Bound<'_, PyAny>, engine: &Bound<'_, PyAny>, scope: &Boun
     s.setattr(intern!(p, "pending_c"), PyDict::new(p))?;
     s.setattr(intern!(p, "demand"), PyDict::new(p))?;
     s.setattr(intern!(p, "deferred"), PyList::empty(p))?;
-    s.setattr(intern!(p, "verdict"), p.None())?;
     s.setattr(intern!(p, "literals"), PyDict::new(p))?;
-    s.setattr(intern!(p, "defvars"), PyDict::new(p))?;
-    s.setattr(intern!(p, "_dv"), PyDict::new(p))?;
-    s.setattr(intern!(p, "_dv_node"), PyDict::new(p))?;
-    s.setattr(intern!(p, "_neg_shared"), false)?;
     s.setattr(intern!(p, "assumption_formula"), p.None())?;
     s.setattr(intern!(p, "_a_raw"), PyTuple::empty(p))?;
     s.setattr(intern!(p, "_a_zs"), PyTuple::empty(p))?;
     s.setattr(intern!(p, "_a_under"), p.None())?;
-    s.setattr(intern!(p, "sel"), 0)?;
-    s.setattr(intern!(p, "n_hold"), 0)?;
     s.setattr(intern!(p, "_groups"), PyDict::new(p))?;
     s.setattr(intern!(p, "_a_all"), p.None())?;
     s.setattr(intern!(p, "_a_atoms"), PyFrozenSet::empty(p)?)?;
     s.setattr(intern!(p, "relations"), p.None())?;
-    s.setattr(intern!(p, "_link_pending"), false)?;
+    // `verdict`, `sel`, `n_hold`, `_link_pending`, `_neg_shared`, `truncated`: the core's, at `__init__`'s values from the start
+    // (state part 3, sub-part 5); `defvars`, `_dv`, `_dv_node` are session.rs `St`'s, and Python's attributes were never read.
     // `s.xfer`: the core's, None from the start (state step, part 2 (ii)); `Session.xfer` is its view.
-    s.setattr(intern!(p, "truncated"), false)?;
     if scope.getattr(intern!(p, "glue"))?.is_truthy()? && !planted(INIT_NO_RELATIONS) {
         let specs = engine.getattr(intern!(p, "_relation_specs"))?;
         if specs.is_truthy()? {
@@ -91,7 +83,7 @@ pub(crate) fn assume_formula<'py>(s: &Bound<'py, PyAny>, f: &Bound<'py, PyAny>) 
     s.setattr(intern!(p, "_a_all"), p.None())?;
     s.call_method1(intern!(p, "_ensure_atoms"), (f,))?;
     let sv = s.getattr(intern!(p, "table"))?.call_method0(intern!(p, "aux"))?;
-    s.setattr(intern!(p, "sel"), &sv)?;
+    crate::session::ses_set_int(s, crate::session::SS_SEL, sv.extract()?)?;
     // `sum(1 for a in self._a_raw if len(DEF_LITS.get(a.pred, ((), ()))[1]) > 1) >= _NEG_SHARED`
     let def_lits = em.getattr(intern!(p, "DEF_LITS"))?;
     let empty = PyTuple::new(p, [PyTuple::empty(p), PyTuple::empty(p)])?;
@@ -105,7 +97,7 @@ pub(crate) fn assume_formula<'py>(s: &Bound<'py, PyAny>, f: &Bound<'py, PyAny>) 
         }
     }
     let ns = n.into_pyobject(p)?.into_any().ge(em.getattr(intern!(p, "_NEG_SHARED"))?)?;
-    s.setattr(intern!(p, "_neg_shared"), ns)?;
+    crate::session::ses_set_flag(s, crate::session::SS_NEG_SHARED, ns)?;
     let neg: Bound<'py, PyAny> = sv.neg()?;
     let tail = PyList::new(p, [&neg])?.unbind();
     let ses = s.clone().unbind();
@@ -125,7 +117,7 @@ pub(crate) fn assume_formula<'py>(s: &Bound<'py, PyAny>, f: &Bound<'py, PyAny>) 
         if sc.getattr(intern!(p, "glue"))?.is_truthy()? {
             s.call_method1(intern!(p, "_relations"), (f,))?;
         } else {
-            s.setattr(intern!(p, "_link_pending"), true)?;
+            crate::session::ses_set_flag(s, crate::session::SS_LINK_PENDING, true)?;
         }
     }
     Ok(PyList::new(p, [sv])?.into_any())
@@ -135,8 +127,8 @@ pub(crate) fn assume_formula<'py>(s: &Bound<'py, PyAny>, f: &Bound<'py, PyAny>) 
 pub(crate) fn link_set(s: &Bound<'_, PyAny>) -> PyResult<()> {
     tick(SES_LINK_SET);
     let p = s.py();
-    if s.getattr(intern!(p, "_link_pending"))?.is_truthy()? {
-        s.setattr(intern!(p, "_link_pending"), false)?;
+    if crate::session::ses_flag(s, crate::session::SS_LINK_PENDING)? {
+        crate::session::ses_set_flag(s, crate::session::SS_LINK_PENDING, false)?;
         if !planted(LINK_SET_SKIP) {
             s.call_method1(intern!(p, "_relations"), (s.getattr(intern!(p, "assumption_formula"))?,))?;
         }
@@ -154,14 +146,14 @@ pub(crate) fn assumption_lits<'py>(s: &Bound<'py, PyAny>, prop: &Bound<'py, PyAn
     tick(SES_ASSUMPTION_LITS);
     let p = s.py();
     let em = engine_mod(p)?;
-    let sel = s.getattr(intern!(p, "sel"))?;
+    let sel = crate::session::ses_int(s, crate::session::SS_SEL)?.into_pyobject(p)?.into_any();
     let lits = if sel.is_truthy()? { PyList::new(p, [&sel])? } else { PyList::empty(p) };
-    s.setattr(intern!(p, "n_hold"), lits.len())?;
+    crate::session::ses_set_int(s, crate::session::SS_N_HOLD, lits.len() as i64)?;
     let rel = s.getattr(intern!(p, "relations"))?;
     if rel.is_none() {
         return Ok(lits.into_any());
     }
-    if !prop.is_none() && s.getattr(intern!(p, "_link_pending"))?.is_truthy()? {
+    if !prop.is_none() && crate::session::ses_flag(s, crate::session::SS_LINK_PENDING)? {
         return Err(PyAssertionError::new_err("Session.link_set"));
     }
     let ra = em.getattr(intern!(p, "RELATION_ATOMS"))?;
@@ -220,7 +212,7 @@ pub(crate) fn assumption_lits<'py>(s: &Bound<'py, PyAny>, prop: &Bound<'py, PyAn
         }
         seen
     };
-    s.setattr(intern!(p, "n_hold"), lits.len())?;
+    crate::session::ses_set_int(s, crate::session::SS_N_HOLD, lits.len() as i64)?;
     if p_all.is_truthy()? && !planted(AL_DROP_DELTA) {
         for x in rel.call_method1(intern!(p, "selectors_of"), (&p_all,))?.try_iter()? {
             let x = x?;
@@ -348,7 +340,7 @@ pub(crate) fn group_sel<'py>(s: &Bound<'py, PyAny>, key: &Bound<'py, PyAny>, ato
     }
     let want = PySet::new(p, rel.call_method1(intern!(p, "selectors_of"), (atoms,))?.try_iter()?.collect::<PyResult<Vec<_>>>()?)?;
     let zero = 0i64.into_pyobject(p)?.into_any();
-    let solver = s.getattr(intern!(p, "solver"))?;
+    let solver = crate::session::solver_of(s)?;
     let g = if g.is_none() {
         if want.is_empty() {
             groups.set_item(key, PyList::new(p, [zero.clone(), PySet::empty(p)?.into_any(), stamp.into_any()])?)?;
@@ -358,7 +350,7 @@ pub(crate) fn group_sel<'py>(s: &Bound<'py, PyAny>, key: &Bound<'py, PyAny>, ato
         solver.call_method1(intern!(p, "ensure_vars"), (&v,))?;
         let l = PyList::new(p, [v.clone(), PySet::empty(p)?.into_any(), stamp.clone().into_any()])?;
         groups.set_item(key, &l)?;
-        s.getattr(intern!(p, "solver"))?.call_method1(intern!(p, "set_inert"), (&v,))?;
+        crate::session::solver_of(s)?.call_method1(intern!(p, "set_inert"), (&v,))?;
         l.into_any()
     } else if !g.get_item(0)?.is_truthy()? {
         if want.is_empty() {
@@ -367,7 +359,7 @@ pub(crate) fn group_sel<'py>(s: &Bound<'py, PyAny>, key: &Bound<'py, PyAny>, ato
         }
         g.set_item(0, s.getattr(intern!(p, "table"))?.call_method0(intern!(p, "aux"))?)?;
         solver.call_method1(intern!(p, "ensure_vars"), (g.get_item(0)?,))?;
-        s.getattr(intern!(p, "solver"))?.call_method1(intern!(p, "set_inert"), (g.get_item(0)?,))?;
+        crate::session::solver_of(s)?.call_method1(intern!(p, "set_inert"), (g.get_item(0)?,))?;
         g
     } else {
         g

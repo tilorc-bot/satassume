@@ -217,7 +217,7 @@ fn ses_escalate(s: &Bound<'_, PyAny>, budget: Option<Bound<'_, PyAny>>) -> PyRes
             }
         }
         if cut && !planted(TRUNCATED_NEVER) {
-            s.setattr(intern!(p, "truncated"), true)?;
+            crate::session::ses_set_flag(s, crate::session::SS_TRUNCATED, true)?;
         }
     }
     s.setattr(intern!(p, "frontier"), deque(p, None)?)
