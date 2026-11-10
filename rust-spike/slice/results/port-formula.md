@@ -220,3 +220,57 @@ shares, fallback rows (dispatch.rs:242, rows_tpl.rs:413, `ad:cbm_noid`), `rk:int
 - New rows, owner this step: the `ad:cbm_noid` fix (per-query `==` class keys), the `_common._CACHE` fix, and (planner
   ~15:23 10 Nov) the term_live wrappers falling back in tests/test_transfer.py::test_inequalities_restate_an_equality (42
   calls into relations.py; cause **not read**; port-state-relations.md:627-629 on 0192b35). None started.
+
+## sa-port-243, 10 Nov: the after-probe and the plants on dev and zero, read. Unbarred, unlanded.
+Rebased onto rust-slice 0192b35 (docs only; no rerun). Read from `~/sa-rust-ids-work/sa-port-234/probe/probe-after/` (15 runs,
+all exit 0, empty stderr; the build is a9b4073's) and `plants/`.
+
+### Module-wide probe, after (a9b4073, pass 1, every function in the file)
+Same tool and columns as the before table. Python calls on converted queries, kept in brackets; the Rust counters are
+totals over the run's two passes. `scope:cb_atoms_of` is 0 by construction (the tick is removed), so it has no column.
+
+| workload | sat/formula.py | of which `atoms_of` (all from engine.py) | knowledge/compile.py | `rv:cb_formula` | `refuse:object` | `em:key_eq` | `pm:key_eq` | `fm:convert` | `fm:cache_hit` | `fm:nosession` | `rk:intern:engine` | `rk:intern:input` |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| dev | 5,810 (kept 24) | 1,616 | 42 | 244 | 34 | 5,860 | 14,356 | 7,856 | 4,294 | 5,796 | 8,134 | 1,022 |
+| fuzz | 68,474 | 5,899 | 205 | 630 | 60 | 30,701 | 242,675 | 46,196 | 30,764 | 35,030 | 186,572 | 19,078 |
+| f6 | 38 (kept 14) | 12 | 0 | 16 | 0 | 222 | 39,054 | 2,296 | 1,190 | 268 | 0 | 0 |
+| value | 1,274 | 1,274 | 0 | 8 | 0 | 6,114 | 19,466 | 4,622 | 2,458 | 3,590 | 2,366 | 788 |
+| rootof | 737 | 737 | 0 | 4 | 0 | 2,944 | 15,372 | 2,948 | 1,472 | 2,212 | 0 | 0 |
+| core | 809 | 607 | 0 | 36 | 0 | 3,474 | 20,272 | 4,132 | 1,928 | 2,182 | 0 | 0 |
+| opaque | 61 | 61 | 0 | 4 | 0 | 672 | 4,320 | 248 | 124 | 186 | 0 | 0 |
+| scope | 2,306 | 332 | 7 | 0 | 2 | 1,252 | 3,932 | 3,526 | 1,404 | 2,340 | 3,906 | 606 |
+| loop | 6,247 | 488 | 0 | 0 | 0 | 1,654 | 7,504 | 6,158 | 4,686 | 1,818 | 0 | 0 |
+| zero | 8,045 | 1,423 | 288 | 74 | 188 | 5,646 | 26,594 | 8,994 | 6,098 | 6,536 | 36,676 | 2,054 |
+| wiring | 22,299 | 9,819 | 0 | 406 | 0 | 37,874 | 192,292 | 37,768 | 21,662 | 25,604 | 0 | 0 |
+| cert | 1,954 | 122 | 0 | 0 | 0 | 236 | 3,178 | 982 | 728 | 738 | 1,804 | 384 |
+| budget | 12,744 | 49 | 0 | 0 | 0 | 146 | 8,154 | 1,490 | 1,072 | 450 | 0 | 0 |
+| dev-seed1 | 5,810 (kept 24) | 1,616 | 42 | 244 | 34 | 5,888 | 14,356 | 7,856 | 4,294 | 5,796 | 8,134 | 1,022 |
+| fuzz-seed1 | 68,474 | 5,899 | 205 | 630 | 60 | 30,608 | 242,675 | 46,196 | 30,764 | 35,030 | 186,572 | 19,078 |
+
+- sat/formula.py, before to after: dev 10,977 to 5,810; fuzz 102,045 to 68,474; f6 1,112 to 38; value 4,298 to 1,274;
+  rootof 2,579 to 737; core 3,175 to 809; opaque 216 to 61; scope 4,264 to 2,306; loop 9,570 to 6,247; zero 14,604 to
+  8,045; wiring 46,187 to 22,299; cert 2,688 to 1,954; budget 13,505 to 12,744. knowledge/compile.py, `rv:cb_formula`,
+  `refuse:object`, `em:key_eq` and `pm:key_eq` are unchanged on every workload (groups C and E aren't started).
+- **Not zero, so the module does not count.** What is left in sat/formula.py: `atoms_of`, every call from
+  satassume/engine.py (the column above; the entry's own reading of the input, item "the entry converts once");
+  `Formula.__hash__` from session_live.py (`f`, `_context_session`, `verdict`) and from formula.py itself (group E, and
+  session_live rows that wait for state part 3); `Formula.__init__`/`Not.__init__` (group D).
+- `fm:nosession` is nonzero on all 13 workloads (B6/B7 convert on the spot), and `fm:convert` exceeds one per input
+  formula by at least that much. Owner: this step, the entry-converts-once item.
+- Seed 1 on dev and fuzz gives the same numbers except `em:key_eq` (5,888 and 30,608).
+- `rk:intern:*` read 0 on f6, rootof, core, opaque, loop, wiring and budget in this probe's reports; whether RelKeys is
+  unreached there or the report dropped the keys is **not checked**.
+
+### Plants 601-606 on dev and zero (one Rust run each against one Python run)
+| plant | id | dev fired | dev verdict | zero fired | zero verdict |
+|---|---|---|---|---|---|
+| `fm-atoms-drop-last` | 601 | 3,413 | caught: 49 answers, 617 end states | 3,590 | caught: 163 answers, 614 end states |
+| `fm-atoms-no-dedupe` | 602 | 4,089 | **not caught** (MATCH) | 9,568 | **not caught** (MATCH) |
+| `fm-args-reverse` | 603 | 1,818 | caught: 0 answers, 412 end states, 113 LRA | 3,812 | caught: 0 answers, 561 end states, 99 LRA |
+| `fm-implies-swap` | 604 | 0 | **void** | 0 | **void** |
+| `fm-ite-swap` | 605 | 0 | **void** | 0 | **void** |
+| `fm-not-drop` | 606 | 263 | caught: 157 answers | 908 | caught: 123 answers |
+
+604 and 605 are void on both workloads: no `Implies` or `Ite` node reaches the conversion there. They are caught only in
+test_formula_nodes.py; they need a workload with such formulas, or a footnote. 602 fires and is not caught on either;
+its classification is still owed. The other 11 workloads were not run with plants.
