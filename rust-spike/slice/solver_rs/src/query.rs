@@ -248,7 +248,7 @@ pub(crate) fn literal_of<'py>(s: &Bound<'py, PyAny>, f: &Bound<'py, PyAny>) -> P
     let eng = engine_mod(p)?;
     let lit = eng.getattr(intern!(p, "formula_literal"))?.call1((
         f,
-        s.getattr(intern!(p, "table"))?,
+        crate::session::table_of(s)?,
         s.getattr(intern!(p, "emit"))?,
         s.getattr(intern!(p, "dvar"))?,
     ))?;
@@ -310,7 +310,7 @@ pub(crate) fn ensure_twins(s: &Bound<'_, PyAny>, atoms: &Bound<'_, PyAny>) -> Py
     if g.is(atoms) {
         return Ok(false);
     }
-    let var = s.getattr(intern!(p, "table"))?.getattr(intern!(p, "var"))?;
+    let var = crate::session::table_of(s)?.getattr(intern!(p, "var"))?;
     let n = atoms.len()?;
     let tail = g.get_item(pyo3::types::PySlice::new(p, n as isize, isize::MAX, 1))?;
     for atom in tail.try_iter()? {

@@ -86,7 +86,7 @@ pub(crate) fn assume_formula<'py>(s: &Bound<'py, PyAny>, f: &Bound<'py, PyAny>) 
     s.setattr(intern!(p, "_a_under"), p.None())?;
     s.setattr(intern!(p, "_a_all"), p.None())?;
     s.call_method1(intern!(p, "_ensure_atoms"), (f,))?;
-    let sv = s.getattr(intern!(p, "table"))?.call_method0(intern!(p, "aux"))?;
+    let sv = crate::session::table_of(s)?.call_method0(intern!(p, "aux"))?;
     crate::session::ses_set_int(s, crate::session::SS_SEL, sv.extract()?)?;
     // `sum(1 for a in self._a_raw if len(DEF_LITS.get(a.pred, ((), ()))[1]) > 1) >= _NEG_SHARED`
     let def_lits = em.getattr(intern!(p, "DEF_LITS"))?;
@@ -113,7 +113,7 @@ pub(crate) fn assume_formula<'py>(s: &Bound<'py, PyAny>, f: &Bound<'py, PyAny>) 
         ses.bind(p).call_method1(intern!(p, "emit"), (c,))?;
         Ok(())
     })?;
-    em.getattr(intern!(p, "compile_formula"))?.call1((f, s.getattr(intern!(p, "table"))?, emit, s.getattr(intern!(p, "dvar"))?))?;
+    em.getattr(intern!(p, "compile_formula"))?.call1((f, crate::session::table_of(s)?, emit, s.getattr(intern!(p, "dvar"))?))?;
     s.call_method0(intern!(p, "discover"))?;
     if !s.getattr(intern!(p, "relations"))?.is_none() && !planted(AF_DROP_RELATIONS) {
         let exts = s.getattr(intern!(p, "engine"))?.getattr(intern!(p, "_extensions"))?;
@@ -350,7 +350,7 @@ pub(crate) fn group_sel<'py>(s: &Bound<'py, PyAny>, key: &Bound<'py, PyAny>, ato
             groups.d_set(crate::ses_cont::SD_GROUPS, key, PyList::new(p, [zero.clone(), PySet::empty(p)?.into_any(), stamp.into_any()])?.as_any())?;
             return Ok(zero);
         }
-        let v = s.getattr(intern!(p, "table"))?.call_method0(intern!(p, "aux"))?;
+        let v = crate::session::table_of(s)?.call_method0(intern!(p, "aux"))?;
         solver.call_method1(intern!(p, "ensure_vars"), (&v,))?;
         let l = PyList::new(p, [v.clone(), PySet::empty(p)?.into_any(), stamp.clone().into_any()])?;
         groups.d_set(crate::ses_cont::SD_GROUPS, key, l.as_any())?;
@@ -361,7 +361,7 @@ pub(crate) fn group_sel<'py>(s: &Bound<'py, PyAny>, key: &Bound<'py, PyAny>, ato
             g.set_item(2, &stamp)?;
             return Ok(zero);
         }
-        g.set_item(0, s.getattr(intern!(p, "table"))?.call_method0(intern!(p, "aux"))?)?;
+        g.set_item(0, crate::session::table_of(s)?.call_method0(intern!(p, "aux"))?)?;
         solver.call_method1(intern!(p, "ensure_vars"), (g.get_item(0)?,))?;
         crate::session::solver_of(s)?.call_method1(intern!(p, "set_inert"), (g.get_item(0)?,))?;
         g

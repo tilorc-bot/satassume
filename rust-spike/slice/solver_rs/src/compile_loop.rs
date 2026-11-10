@@ -17,7 +17,7 @@ use crate::relations_core::{
     DROP_SPLIT_LATER, DROP_VISIT_ITEMS, WANT_EMPTY,
 };
 use crate::session::{
-    tick, SessionCore, SES_COMPILE, SES_COMPILE_PATTERNS, SES_COMPILE_PENDING, SES_CORE_VISIT, SES_CUSTOM, SES_EMIT_PATTERN, SES_FLUSH,
+    tick, SES_COMPILE, SES_COMPILE_PATTERNS, SES_COMPILE_PENDING, SES_CORE_VISIT, SES_CUSTOM, SES_EMIT_PATTERN, SES_FLUSH,
     SES_SPLIT, SES_VISIT, SES_WANT_OF,
 };
 
@@ -25,10 +25,7 @@ fn engine_mod(p: Python<'_>) -> PyResult<Bound<'_, PyModule>> {
     p.import(intern!(p, "satassume.engine"))
 }
 
-fn core_of<'py>(s: &Bound<'py, PyAny>) -> PyResult<Bound<'py, SessionCore>> {
-    let p = s.py();
-    Ok(s.getattr(intern!(p, "table"))?.getattr(intern!(p, "core"))?.cast_into::<SessionCore>()?)
-}
+use crate::session::core_of;
 
 /// Module `want_of`.
 pub(crate) fn want_of<'py>(demanded: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
@@ -98,7 +95,7 @@ pub(crate) fn emit_pattern(s: &Bound<'_, PyAny>, clauses: &Bound<'_, PyAny>, bas
     let p = s.py();
     let ment = if ment.is_none() { split(clauses, &p.None().into_bound(p))?.get_item(3)? } else { ment.clone() };
     let solver = crate::session::solver_of(s)?;
-    let n = s.getattr(intern!(p, "table"))?.len()?;
+    let n = crate::session::table_of(s)?.len()?;
     solver.call_method1(intern!(p, "ensure_vars"), (n,))?;
     let cls = PyList::empty(p);
     for c in clauses.try_iter()? {
@@ -126,7 +123,7 @@ pub(crate) fn emit_pattern(s: &Bound<'_, PyAny>, clauses: &Bound<'_, PyAny>, bas
 pub(crate) fn flush(s: &Bound<'_, PyAny>, node: &Bound<'_, PyAny>) -> PyResult<()> {
     tick(SES_FLUSH);
     let p = s.py();
-    let table = s.getattr(intern!(p, "table"))?;
+    let table = crate::session::table_of(s)?;
     while table.getattr(intern!(p, "new_custom"))?.is_truthy()? {
         let atoms = table.getattr(intern!(p, "new_custom"))?;
         table.setattr(intern!(p, "new_custom"), PyList::empty(p))?;
@@ -159,7 +156,7 @@ pub(crate) fn compile(s: &Bound<'_, PyAny>, node: &Bound<'_, PyAny>, items: &Bou
     tick(SES_COMPILE);
     let p = s.py();
     let eng = engine_mod(p)?;
-    let table = s.getattr(intern!(p, "table"))?;
+    let table = crate::session::table_of(s)?;
     let emit = s.getattr(intern!(p, "emit"))?;
     let ses = Ses::of(s);
     let (pred_index, basis_of) = (eng.getattr(intern!(p, "PRED_INDEX"))?, eng.getattr(intern!(p, "BASIS_OF"))?);
@@ -253,7 +250,7 @@ pub(crate) fn compile_pending(s: &Bound<'_, PyAny>, node: &Bound<'_, PyAny>, dem
 pub(crate) fn compile_patterns(s: &Bound<'_, PyAny>, node: &Bound<'_, PyAny>, compiled: &Bound<'_, PyAny>, demanded: &Bound<'_, PyAny>) -> PyResult<()> {
     tick(SES_COMPILE_PATTERNS);
     let p = s.py();
-    let table = s.getattr(intern!(p, "table"))?;
+    let table = crate::session::table_of(s)?;
     let base_of = table.getattr(intern!(p, "base_of"))?;
     let ses = Ses::of(s);
     let want = if demanded.is_none() { p.None().into_bound(p) } else { want_of(demanded)? };
@@ -345,7 +342,7 @@ pub(crate) fn custom(s: &Bound<'_, PyAny>, atom: &Bound<'_, PyAny>) -> PyResult<
         if planted(DROP_CUSTOM_FACTS) {
             continue;
         }
-        eng.getattr(intern!(p, "compile_formula"))?.call1((f, s.getattr(intern!(p, "table"))?, s.getattr(intern!(p, "emit"))?))?;
+        eng.getattr(intern!(p, "compile_formula"))?.call1((f, crate::session::table_of(s)?, s.getattr(intern!(p, "emit"))?))?;
     }
     Ok(())
 }

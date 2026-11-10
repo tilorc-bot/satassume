@@ -177,12 +177,18 @@ class TableView:
 
 
 def _table_get(self):
+    # A Python frame per read: Rust reads `_core`/`_table_view` (session.rs `core_of`, `table_of`), and this module's own
+    # dispatch tests read `__dict__` (`isinstance(s.__dict__.get('_table_view'), TableView)`), so what is left is Python's
+    # own `.table` reads and relations_core.rs's sites.
     return self.__dict__['_table_view']
 
 
 def _table_set(self, view):
     view.bind(self)
-    self.__dict__['_table_view'] = view
+    d = self.__dict__
+    d['_table_view'] = view
+    # session.rs `core_of` reads this plain instance attribute: a property would run a Python frame (`_table_get`) per read.
+    d['_core'] = view.core
 
 
 def _base_get(self):
@@ -441,152 +447,152 @@ def _fault(site, text):
 
 
 def _rel_closed_extended_real(self, e):
-    if not isinstance(self.session.table, TableView):
+    if not isinstance(self.session.__dict__.get('_table_view'), TableView):
         return PY_REL['_closed_extended_real'](self, e)
     return sa_solver.rel_closed_extended_real(self, e)
 
 
 def _rel_order_sides(self, var, atom):
-    if not isinstance(self.session.table, TableView):
+    if not isinstance(self.session.__dict__.get('_table_view'), TableView):
         return PY_REL['_order_sides'](self, var, atom)
     return sa_solver.rel_order_sides(self, var, atom)
 
 
 def _rel_order_infinite(self, var, sides):
-    if not isinstance(self.session.table, TableView):
+    if not isinstance(self.session.__dict__.get('_table_view'), TableView):
         return PY_REL['_order_infinite'](self, var, sides)
     return sa_solver.rel_order_infinite(self, var, sides)
 
 
 def _rel_trichotomy(self, var, atom):
-    if not isinstance(self.session.table, TableView):
+    if not isinstance(self.session.__dict__.get('_table_view'), TableView):
         return PY_REL['_trichotomy'](self, var, atom)
     return sa_solver.rel_trichotomy(self, var, atom)
 
 
 def _rel_mention_number(self, e):
-    if not isinstance(self.session.table, TableView):
+    if not isinstance(self.session.__dict__.get('_table_view'), TableView):
         return PY_REL['_mention_number'](self, e)
     return sa_solver.rel_mention_number(self, e)
 
 
 def _rel_link_integer(self, ad, e, g):
-    if not isinstance(self.session.table, TableView):
+    if not isinstance(self.session.__dict__.get('_table_view'), TableView):
         return PY_REL['_link_integer'](self, ad, e, g)
     return sa_solver.rel_link_integer(self, ad, e, g)
 
 
 def _rel_fresh(self, inert=False):
-    if not isinstance(self.session.table, TableView):
+    if not isinstance(self.session.__dict__.get('_table_view'), TableView):
         return PY_REL['_fresh'](self, inert)
     return sa_solver.rel_fresh(self, inert)
 
 
 def _rel_interpret(self, atom):
-    if not isinstance(self.session.table, TableView):
+    if not isinstance(self.session.__dict__.get('_table_view'), TableView):
         return PY_REL['_interpret'](self, atom)
     return sa_solver.rel_interpret(self, atom)
 
 
 def _rel_guard(self, ad, terms):
-    if not isinstance(self.session.table, TableView):
+    if not isinstance(self.session.__dict__.get('_table_view'), TableView):
         return PY_REL['_guard'](self, ad, terms)
     return sa_solver.rel_guard(self, ad, terms)
 
 
 def _rel_bound(self, ad, c):
-    if not isinstance(self.session.table, TableView):
+    if not isinstance(self.session.__dict__.get('_table_view'), TableView):
         return PY_REL['_bound'](self, ad, c)
     return sa_solver.rel_bound(self, ad, c)
 
 
 def _rel_link(self, e):
-    if not isinstance(self.session.table, TableView):
+    if not isinstance(self.session.__dict__.get('_table_view'), TableView):
         return PY_REL['_link'](self, e)
     return sa_solver.rel_link(self, e)
 
 
 def _rel_selectors_of(self, atoms):
-    if not isinstance(self.session.table, TableView):
+    if not isinstance(self.session.__dict__.get('_table_view'), TableView):
         return PY_REL['selectors_of'](self, atoms)
     return sa_solver.rel_selectors_of(self, atoms)
 
 
 def _rel_eq_infinity(self, var, atom):
-    if not isinstance(self.session.table, TableView):
+    if not isinstance(self.session.__dict__.get('_table_view'), TableView):
         return PY_REL['_eq_infinity'](self, var, atom)
     return sa_solver.rel_eq_infinity(self, var, atom)
 
 
 def _rel_add_role(self, atom, g, kind):
-    if not isinstance(self.session.table, TableView):
+    if not isinstance(self.session.__dict__.get('_table_view'), TableView):
         return PY_REL['_add_role'](self, atom, g, kind)
     return sa_solver.rel_add_role(self, atom, g, kind)
 
 
 def _rel_apply_role(self, atom, info, kind, g):
-    if not isinstance(self.session.table, TableView):
+    if not isinstance(self.session.__dict__.get('_table_view'), TableView):
         return PY_REL['_apply_role'](self, atom, info, kind, g)
     return sa_solver.rel_apply_role(self, atom, info, kind, g)
 
 
 def _rel_tsource(self, u, k, g):
-    if not isinstance(self.session.table, TableView):
+    if not isinstance(self.session.__dict__.get('_table_view'), TableView):
         return PY_REL['_tsource'](self, u, k, g)
     return sa_solver.rel_tsource(self, u, k, g)
 
 
 def _rel_tvar(self, u, k):
-    if not isinstance(self.session.table, TableView):
+    if not isinstance(self.session.__dict__.get('_table_view'), TableView):
         return PY_REL['_tvar'](self, u, k)
     return sa_solver.rel_tvar(self, u, k)
 
 
 def _rel_share_guard(self, u):
-    if not isinstance(self.session.table, TableView):
+    if not isinstance(self.session.__dict__.get('_table_view'), TableView):
         return PY_REL['_share_guard'](self, u)
     return sa_solver.rel_share_guard(self, u)
 
 
 def _rel_congruent(self, node):
-    if not isinstance(self.session.table, TableView):
+    if not isinstance(self.session.__dict__.get('_table_view'), TableView):
         return PY_REL['_congruent'](self, node)
     return sa_solver.rel_congruent(self, node)
 
 
 def _rel_engage_transfer(self):
-    if not isinstance(self.session.table, TableView):
+    if not isinstance(self.session.__dict__.get('_table_view'), TableView):
         return PY_REL['_engage_transfer'](self)
     return sa_solver.rel_engage_transfer(self)
 
 
 def _rel_transfer_terms(self):
-    if not isinstance(self.session.table, TableView):
+    if not isinstance(self.session.__dict__.get('_table_view'), TableView):
         return PY_REL['_transfer_terms'](self)
     return sa_solver.rel_transfer_terms(self)
 
 
 def _rel_sync_transfer(self):
-    if not isinstance(self.session.table, TableView):
+    if not isinstance(self.session.__dict__.get('_table_view'), TableView):
         return PY_REL['sync_transfer'](self)
     return sa_solver.rel_sync_transfer(self)
 
 
 def _rel_xswitch(self, node, t):
-    if not isinstance(self.session.table, TableView):
+    if not isinstance(self.session.__dict__.get('_table_view'), TableView):
         return PY_REL['_xswitch'](self, node, t)
     return sa_solver.rel_xswitch(self, node, t)
 
 
 def _rel_congruence_pairs(self):
-    if not isinstance(self.session.table, TableView):
+    if not isinstance(self.session.__dict__.get('_table_view'), TableView):
         return PY_REL['_congruence_pairs'](self)
     return sa_solver.rel_congruence_pairs(self)
 
 
 # -- step 5c4: the rest of `Relations` (relations_core.rs, "step 5c4") -------------------------------------------------------
 def _rel_init(self, session, specs):
-    if not isinstance(session.table, TableView):
+    if not isinstance(session.__dict__.get('_table_view'), TableView):
         return PY_REL['__init__'](self, session, specs)
     return sa_solver.rel_init(self, session, specs)
 
@@ -595,7 +601,7 @@ def _rel_m(name, rname):
     rf = getattr(sa_solver, rname)
 
     def f(self, *a):
-        if not isinstance(self.session.table, TableView):
+        if not isinstance(self.session.__dict__.get('_table_view'), TableView):
             return PY_REL[name](self, *a)
         return rf(self, *a)
     f.__name__ = name
@@ -603,7 +609,7 @@ def _rel_m(name, rname):
 
 
 def _rel_process(self, user_atoms=()):
-    if not isinstance(self.session.table, TableView):
+    if not isinstance(self.session.__dict__.get('_table_view'), TableView):
         return PY_REL['process'](self, user_atoms)
     return sa_solver.rel_process(self, user_atoms)
 
@@ -690,31 +696,31 @@ PY_DISC = {}
 
 
 def _ses_ensure(self, node, demanded=None):
-    if not isinstance(self.table, TableView):
+    if not isinstance(self.__dict__.get('_table_view'), TableView):
         return PY_DISC['ensure'](self, node, demanded)
     return sa_solver.ses_ensure(self, node, demanded)
 
 
 def _ses_discover(self):
-    if not isinstance(self.table, TableView):
+    if not isinstance(self.__dict__.get('_table_view'), TableView):
         return PY_DISC['discover'](self)
     return sa_solver.ses_discover(self)
 
 
 def _ses_discover_raw(self, demanded=None):
-    if not isinstance(self.table, TableView):
+    if not isinstance(self.__dict__.get('_table_view'), TableView):
         return PY_DISC['_discover'](self, demanded)
     return sa_solver.ses_discover_raw(self, demanded)
 
 
 def _ses_incomplete(self):
-    if not isinstance(self.table, TableView):
+    if not isinstance(self.__dict__.get('_table_view'), TableView):
         return PY_DISC['incomplete'].fget(self)
     return sa_solver.ses_incomplete(self)
 
 
 def _ses_escalate(self, budget=None):
-    if not isinstance(self.table, TableView):
+    if not isinstance(self.__dict__.get('_table_view'), TableView):
         return PY_DISC['escalate'](self, budget)
     return sa_solver.ses_escalate(self, budget)
 
@@ -748,49 +754,49 @@ PY_LOOP = {}
 
 
 def _ses_emit_pattern(self, clauses, bases, ment=None):
-    if not isinstance(self.table, TableView):
+    if not isinstance(self.__dict__.get('_table_view'), TableView):
         return PY_LOOP['_emit_pattern'](self, clauses, bases, ment)
     return sa_solver.ses_emit_pattern(self, clauses, bases, ment)
 
 
 def _ses_flush(self, node=None):
-    if not isinstance(self.table, TableView):
+    if not isinstance(self.__dict__.get('_table_view'), TableView):
         return PY_LOOP['_flush'](self, node)
     return sa_solver.ses_flush(self, node)
 
 
 def _ses_compile(self, node, items):
-    if not isinstance(self.table, TableView):
+    if not isinstance(self.__dict__.get('_table_view'), TableView):
         return PY_LOOP['_compile'](self, node, items)
     return sa_solver.ses_compile(self, node, items)
 
 
 def _ses_compile_patterns(self, node, compiled, demanded):
-    if not isinstance(self.table, TableView):
+    if not isinstance(self.__dict__.get('_table_view'), TableView):
         return PY_LOOP['_compile_patterns'](self, node, compiled, demanded)
     return sa_solver.ses_compile_patterns(self, node, compiled, demanded)
 
 
 def _ses_compile_pending(self, node, demanded):
-    if not isinstance(self.table, TableView):
+    if not isinstance(self.__dict__.get('_table_view'), TableView):
         return PY_LOOP['_compile_pending'](self, node, demanded)
     return sa_solver.ses_compile_pending(self, node, demanded)
 
 
 def _ses_custom(self, atom):
-    if not isinstance(self.table, TableView):
+    if not isinstance(self.__dict__.get('_table_view'), TableView):
         return PY_LOOP['_custom'](self, atom)
     return sa_solver.ses_custom(self, atom)
 
 
 def _ses_visit(self, node, b, demanded):
-    if not isinstance(self.table, TableView):
+    if not isinstance(self.__dict__.get('_table_view'), TableView):
         return PY_LOOP['_visit'](self, node, b, demanded)
     return sa_solver.ses_visit(self, node, b, demanded)
 
 
 def _ses_link(self, d, node, v):
-    if not isinstance(self.table, TableView):
+    if not isinstance(self.__dict__.get('_table_view'), TableView):
         return PY_LOOP['_link'](self, d, node, v)
     return self.table.core.link_py(d, node, v)
 
@@ -830,7 +836,7 @@ def _q(name, rname):
     rf = getattr(sa_solver, rname)
 
     def f(self, *a):
-        if not isinstance(self.table, TableView):
+        if not isinstance(self.__dict__.get('_table_view'), TableView):
             return PY_QUERY[name](self, *a)
         return rf(self, *a)
     f.__name__ = name
@@ -838,7 +844,7 @@ def _q(name, rname):
 
 
 def _ses_query_literal(self, lit, assumptions=(), search=True):
-    if not isinstance(self.table, TableView):
+    if not isinstance(self.__dict__.get('_table_view'), TableView):
         return PY_QUERY['query_literal'](self, lit, assumptions, search)
     return sa_solver.ses_query_literal(self, lit, assumptions, search)
 
@@ -879,7 +885,7 @@ def _ses_init(self, engine_, scope):
 
 
 def _ses_assumption_lits(self, prop=None):
-    if not isinstance(self.table, TableView):
+    if not isinstance(self.__dict__.get('_table_view'), TableView):
         return PY_GLUE['assumption_lits'](self, prop)
     return sa_solver.ses_assumption_lits(self, prop)
 
@@ -888,7 +894,7 @@ def _g(name, rname):
     rf = getattr(sa_solver, rname)
 
     def f(self, *a):
-        if not isinstance(self.table, TableView):
+        if not isinstance(self.__dict__.get('_table_view'), TableView):
             return PY_GLUE[name](self, *a)
         return rf(self, *a)
     f.__name__ = name
@@ -1074,7 +1080,8 @@ _TH_PLANTS = ('th-gave-up-skip', 'th-exhausted-skip', 'th-first-only')
 #: solver from the core; see test_session_boundary.py
 _SB_PLANTS = ('sb-truncated-stale', 'sb-link-pending-stale', 'sb-neg-shared-stale', 'sb-sel-zero', 'sb-hold-zero',
               'sb-verdict-none', 'sb-fwd-skip-link', 'sb-solver-fresh', 'sc-frontier-drop', 'sc-pending-drop',
-              'sc-pending_c-drop', 'sc-demand-drop', 'sc-deferred-drop', 'sc-literals-drop', 'sc-groups-drop', 'sc-key-shared')
+              'sc-pending_c-drop', 'sc-demand-drop', 'sc-deferred-drop', 'sc-literals-drop', 'sc-groups-drop', 'sc-key-shared',
+              'sb-core-unset', 'sb-core-stale')
 
 
 def entry_native():

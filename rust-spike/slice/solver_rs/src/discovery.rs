@@ -15,10 +15,7 @@ use crate::relations_core::{
 use crate::ses_cont::{Ses, SD_DEMAND, SD_PENDING, SD_PENDING_C, SQ_DEFERRED, SQ_FRONTIER};
 use crate::session::{tick, SessionCore, SES_DISCOVER, SES_ENSURE, SES_ESCALATE, SES_INCOMPLETE};
 
-fn core_of<'py>(s: &Bound<'py, PyAny>) -> PyResult<Bound<'py, SessionCore>> {
-    let p = s.py();
-    Ok(s.getattr(intern!(p, "table"))?.getattr(intern!(p, "core"))?.cast_into::<SessionCore>()?)
-}
+use crate::session::core_of;
 
 /// `n in self.base`: the view's `__contains__` is `core.base_get(n) is not None`, which ticks `py:node`.
 fn in_base(c: &SessionCore, n: &Bound<'_, PyAny>) -> PyResult<bool> {

@@ -14,7 +14,7 @@ use pyo3::types::{PyBool, PyDict, PyList, PySet, PyTuple};
 use crate::compile::{self, block_lits, Cx, Def, Kind, Need, F, R};
 use crate::formula_py::PyP;
 
-const NAMES: [&str; 570] = [
+const NAMES: [&str; 571] = [
     "py:var", "py:dvar", "py:node", "py:compile", "py:literal", "py:table", "rs:visit", "rs:add_clause", "rs:ensure_vars",
     "rs:def_implications", "rs:neg_shared", "join", "rs:emit_callback", "refuse:depth", "refuse:convert", "refuse:object", "second:visit", "custom:own",
     "link:hit", "link:resolved", "link:none", "link:no_table", "link:second", "link:no_node",
@@ -101,6 +101,8 @@ const NAMES: [&str; 570] = [
     "sc:core", "sc:view", "sc:record",
     // a session dict's own keys (ses_cont.rs SesDict): Python's `hash()` and `==` on a key, each a call into Python, 568-569
     "sc:key_hash", "sc:key_eq",
+    // `core_of` through the `Session.table` property (a Python frame, session_live `_table_get`): a session without `_core`, 570
+    "sb:core_prop",
 ];
 const VAR: usize = 0;
 const DVAR: usize = 1;
@@ -529,6 +531,7 @@ pub(crate) const SC_VIEW: usize = 566;
 pub(crate) const SC_RECORD: usize = 567;
 pub(crate) const SC_KEY_HASH: usize = 568;
 pub(crate) const SC_KEY_EQ: usize = 569;
+pub(crate) const SB_CORE_PROP: usize = 570;
 
 /// Deeper formulas compile on Python, over this same table. Python's own limit depends on the caller's stack, so it isn't
 /// reproduced: its deepest shape is `Implies`, 3 frames a level (first failure at depth 330 from a bare stack, limit 1000), so
@@ -536,7 +539,7 @@ pub(crate) const SC_KEY_EQ: usize = 569;
 const FORMULA_DEPTH: u32 = 64;
 
 thread_local! {
-    static COUNTS: [Cell<u64>; 570] = const { [const { Cell::new(0) }; 570] };
+    static COUNTS: [Cell<u64>; 571] = const { [const { Cell::new(0) }; 571] };
     /// Each session's serial, for the link's memo: a pointer could alias a dead session's.
     static SERIAL: Cell<u64> = const { Cell::new(0) };
 }
@@ -713,11 +716,15 @@ struct SesScalars {
 /// Sub-part 5's plants (`sb_plant`, SLICE_SESSION_PLANT): 431-436 a scalar read natively as its initial value
 /// (`sb-truncated-stale`, `sb-link-pending-stale`, `sb-neg-shared-stale`, `sb-sel-zero`, `sb-hold-zero`, `sb-verdict-none`),
 /// 437 `sb-fwd-skip-link` (the direct `_link` not run), 438 `sb-solver-fresh` (`solver_of` gives a new solver),
-/// 439-445 `sc-<name>-drop` (ses_cont.rs: a session container's write is a no-op).
+/// 439-445 `sc-<name>-drop` (ses_cont.rs: a session container's write is a no-op), 446 `sc-key-shared` (ses_cont.rs),
+/// 447 `sb-core-unset` (`core_of` doesn't read `_core`: every read goes through the property), 448 `sb-core-stale`
+/// (`core_of` gives the first core it saw, whatever the session).
 static SB_PLANT: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(0);
-const SB_PLANTS: [&str; 16] = ["sb-truncated-stale", "sb-link-pending-stale", "sb-neg-shared-stale", "sb-sel-zero", "sb-hold-zero",
+const SB_PLANTS: [&str; 18] = ["sb-truncated-stale", "sb-link-pending-stale", "sb-neg-shared-stale", "sb-sel-zero", "sb-hold-zero",
     "sb-verdict-none", "sb-fwd-skip-link", "sb-solver-fresh", "sc-frontier-drop", "sc-pending-drop", "sc-pending_c-drop",
-    "sc-demand-drop", "sc-deferred-drop", "sc-literals-drop", "sc-groups-drop", "sc-key-shared"];
+    "sc-demand-drop", "sc-deferred-drop", "sc-literals-drop", "sc-groups-drop", "sc-key-shared", "sb-core-unset", "sb-core-stale"];
+const SB_CORE_UNSET: u16 = 447;
+const SB_CORE_STALE: u16 = 448;
 pub(crate) const SB_FWD_SKIP_LINK: u16 = 437;
 const SB_SOLVER_FRESH: u16 = 438;
 
@@ -919,9 +926,40 @@ pub(crate) struct RelS {
     pub(crate) l: [Vec<Py<PyAny>>; 4],
 }
 
-/// `s.table.core`.
+/// `s.table`, read from the session's `_table_view` (what the `table` property returns), so no Python frame; a session
+/// without one is read through `table`.
+pub(crate) fn table_of<'py>(s: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    let p = s.py();
+    if !sb_planted(SB_CORE_UNSET) {
+        if let Ok(t) = s.getattr(intern!(p, "_table_view")) {
+            return Ok(t);
+        }
+    }
+    tick(SB_CORE_PROP);
+    s.getattr(intern!(p, "table"))
+}
+
+thread_local! {
+    /// Plant 448's stale core.
+    static STALE_CORE: RefCell<Option<Py<SessionCore>>> = const { RefCell::new(None) };
+}
+
+/// `s.table.core`, read from the session's `_core` (session_live `_table_set` stores it beside the view): a plain instance
+/// attribute, so no Python frame. A session without one (no core: ref.py's copy; or a table set before `install()`) is read
+/// through `table`, counted `sb:core_prop`.
 pub(crate) fn core_of<'py>(s: &Bound<'py, PyAny>) -> PyResult<Bound<'py, SessionCore>> {
     let p = s.py();
+    if !sb_planted(SB_CORE_UNSET) {
+        if let Ok(c) = s.getattr(intern!(p, "_core")) {
+            if let Ok(c) = c.cast_into::<SessionCore>() {
+                if sb_planted(SB_CORE_STALE) {
+                    return Ok(STALE_CORE.with(|x| x.borrow_mut().get_or_insert_with(|| c.clone().unbind()).bind(p).clone()));
+                }
+                return Ok(c);
+            }
+        }
+    }
+    tick(SB_CORE_PROP);
     Ok(s.getattr(intern!(p, "table"))?.getattr(intern!(p, "core"))?.cast_into::<SessionCore>()?)
 }
 

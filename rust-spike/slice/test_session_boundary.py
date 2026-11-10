@@ -16,6 +16,11 @@ was replaced (`named`). Each mode runs in its own process (install() refuses onc
   was lost (workload scope: Python 3 sessions at query 5, Rust 2). Plant 446 `sc-key-shared` puts that back.
 Plants (SLICE_SESSION_PLANT, session.rs `sb_plant`): 431 `sb-truncated-stale`, 432 `sb-link-pending-stale`, 433
 `sb-neg-shared-stale`, 434 `sb-sel-zero`, 435 `sb-hold-zero`, 436 `sb-verdict-none`, 437 `sb-fwd-skip-link`, 438 `sb-solver-fresh`.
+- `core`: session.rs `core_of` and `table_of` read the session's `_core` and `_table_view` (plain instance attributes that
+  session_live `_table_set` stores), not the `table` property, whose getter `_table_get` is a Python frame per read. `tget`
+  counts `_table_get`'s calls over one set's asks (sys.setprofile); `sb:core_prop` (570) counts the reads that still go
+  through the property. Plant 447 `sb-core-unset` (no read of `_core`/`_table_view`): equal answers by construction, caught
+  by `sb:core_prop` and by `tget` rising. Plant 448 `sb-core-stale` (the first core seen, for every session): rows differ.
 """
 import json
 import os
@@ -29,6 +34,7 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 PLANTS = ('sb-truncated-stale', 'sb-link-pending-stale', 'sb-neg-shared-stale', 'sb-sel-zero', 'sb-hold-zero', 'sb-verdict-none',
           'sb-fwd-skip-link', 'sb-solver-fresh')
 KEY_PLANTS = ('sc-key-shared',)      # 446
+CORE_PLANTS = ('sb-core-stale',)     # 448; 447 `sb-core-unset` has its own test
 
 CHILD = r'''
 import json, os, sys
@@ -175,6 +181,35 @@ def keys():
 guard(keys)
 counts = {k: v for k, v in dict(sa_solver.session_counts()).items()
           if k.startswith(('sb:', 'sc:')) or k == 'rel:plant_fired'} if rust else {}
+
+
+def core():
+    """The docstring's `core`, after the counts are taken (the profile is this function's only)."""
+    made, init = [], Session.__init__
+
+    def recording(self, *args, **kw):
+        init(self, *args, **kw)
+        made.append(self)
+    code, n = session_live._table_get.__code__, [0]
+
+    def prof(frame, event, arg):
+        if event == 'call' and frame.f_code is code:
+            n[0] += 1
+    a, ps = CASES['mixed']
+    Session.__init__ = recording
+    sys.setprofile(prof)
+    try:
+        out = [repr(ask(p, a)) for p in ps]
+    finally:
+        sys.setprofile(None)
+        Session.__init__ = init
+    counts['tget'] = n[0]
+    rows['core'] = [out, len(made) > 0, all(s.__dict__['_core'] is s.table.core for s in made),
+                    all(s.__dict__['_table_view'] is s.table for s in made)]
+
+
+if rust:
+    guard(core)
 print(json.dumps(dict(rows=rows, counts=counts)))
 '''
 
@@ -205,7 +240,7 @@ def _differ(a, b):
 
 
 def _common(rows):
-    return {k: v for k, v in rows.items() if not k.startswith('dump:')}
+    return {k: v for k, v in rows.items() if not k.startswith('dump:') and k != 'core'}
 
 
 def test_cases_mean_something(py):
@@ -250,9 +285,22 @@ def test_counters_fire(rs):
     assert c['sb:scalar_core'] > 0 and c['sb:scalar_view'] > 0 and c['sb:scalar_record'] > 0 and c['sb:fwd_direct'] > 0
     assert c['sb:attr'] == 0 and c['sb:fwd_named'] == 0
     assert c.get('rel:plant_fired', 0) == 0
+    assert c['sb:core_prop'] == 0, 'a session was read through the table property'
 
 
-@pytest.mark.parametrize('plant', PLANTS + KEY_PLANTS)
+def test_core_read_without_the_property(py, rs):
+    """`core` (the docstring): every session carries `_core` and `_table_view`; with plant 447 the answers are the same and
+    the property is what gets read (`sb:core_prop` fires, `_table_get` runs more often)."""
+    assert rs['rows']['core'][1:] == [True, True, True]
+    assert rs['rows']['core'][0] == [py['rows'][f'ask:mixed:{i}'] for i in range(3)]
+    got = _child('rust', 'sb-core-unset')
+    assert got['counts']['rel:plant_fired'] > 0, 'the plant never fired'
+    assert got['counts']['sb:core_prop'] > 0
+    assert _differ(rs['rows'], got['rows']) == [], 'plant 447 changes only which attribute is read'
+    assert got['counts']['tget'] > rs['counts']['tget'], (got['counts']['tget'], rs['counts']['tget'])
+
+
+@pytest.mark.parametrize('plant', PLANTS + KEY_PLANTS + CORE_PLANTS)
 def test_plant_caught(rs, plant):
     got = _child('rust', plant)
     assert got['counts']['rel:plant_fired'] > 0, 'the plant never fired'
