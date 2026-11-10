@@ -24,16 +24,18 @@ tables are keyed with the types too (``typed``, satassume.sat.formula), and
 so are the process-wide tables of the relation atoms; there is one block of
 tests per table.
 """
+from decimal import Decimal
 from fractions import Fraction
 
 import pytest
-from sympy import Float, Integer, Q, S, Symbol
+from sympy import Float, Integer, Q, S, Symbol, srepr
 from sympy.assumptions import Predicate
 
 from satassume import DictCache, Engine
 from satassume import sympy_api as api
 from satassume.knowledge.extensions import Args
 from satassume.knowledge.templates.registry import registry
+from satassume.relations import sympy_atom
 from satassume.sat.formula import And, Implies, Not, P, typed, types_of
 from satassume.state import memos
 
@@ -269,3 +271,77 @@ def test_one_engine_cones(pair, door, order, emptied):
     finally:
         api.extensions.restore(registered)
     assert alone[0] != alone[1]
+
+
+# -- relation atoms ----------------------------------------------------------
+# relations._SYMPY_ATOMS (process-wide): ``Q.lt`` / ``Q.eq`` of a relation
+# atom, whose sides are sympified by type.  ``lt(True, s)`` became
+# ``Q.lt(1, s)`` after ``lt(S.One, s)`` and was then read as a bound, and
+# the bool reached code written for SymPy sides ('bool' object has no
+# attribute 'args'); ``lt(S.One, s)`` after ``lt(True, s)`` was not read.
+REL_PAIRS = {
+    'bool True, One': (True, S.One),
+    'Decimal 1, One': (Decimal(1), S.One),
+    'bool False, Zero': (False, S.Zero),
+}
+REL_DOORS = {
+    'ask': lambda e, v: e.ask(P('lt', Args((v, s))), P('lt', Args((Integer(2), s)))),
+    'ask, in the assumptions': lambda e, v: e.ask(P('positive', s), P('lt', Args((v, s)))),
+    'ask, equality in the assumptions': lambda e, v: e.ask(P('positive', s), P('eq', Args((s, v)))),
+    'verdict': lambda e, v: e.verdict(P('lt', Args((s, v)))),
+}
+ENGINES = ['a new Engine per ask', 'one Engine']
+
+
+def _as_alone(question, nodes, engines, make=Engine):
+    if engines == 'one Engine':
+        return _one_engine_as_alone(question, nodes, make)
+    alone = []
+    for v in nodes:
+        memos.PROCESS.clear()
+        alone.append(_answer(question, make(), v))
+    memos.PROCESS.clear()
+    assert [_answer(question, make(), v) for v in nodes] == alone
+    return alone
+
+
+@pytest.mark.parametrize("engines", ENGINES)
+@pytest.mark.parametrize("order", ORDERS)
+@pytest.mark.parametrize("door", list(REL_DOORS))
+@pytest.mark.parametrize("pair", list(REL_PAIRS))
+def test_relation_atoms_of_equal_sides_of_two_types(pair, door, order, engines, emptied):
+    _as_alone(REL_DOORS[door], _ordered(REL_PAIRS[pair], order), engines)
+
+
+@pytest.mark.parametrize("engines", ENGINES)
+@pytest.mark.parametrize("order", ORDERS)
+def test_true_against_one_in_a_relation_atom(order, engines, emptied):
+    """The reported case: each gets its own answer, and nothing is raised."""
+    alone = _as_alone(REL_DOORS['ask'], _ordered((True, S.One), order), engines)
+    assert sorted(alone, key=repr) == [None, True]
+
+
+@pytest.mark.parametrize("sides", [(True, S.One), (1.0, 1), (1.5, Fraction(3, 2)),
+                                   ((1, 2), (1.0, 2)), ((1, (2, 3)), (1, (2.0, 3)))])
+def test_relation_atom_key_goes_as_deep_as_sympify(sides, emptied):
+    """The value is ``Q.lt`` of the sympified sides, and ``sympify``
+    converts by type through tuples: equal atoms whose sides differ in type
+    at any depth of a tuple side are different entries."""
+    for a, b in (sides, sides[::-1]):
+        memos.PROCESS.clear()
+        pa, pb = P('lt', Args((a, s))), P('lt', Args((b, s)))
+        assert pa == pb and hash(pa) == hash(pb)
+        got = [sympy_atom(pa), sympy_atom(pb)]
+        assert [srepr(r) for r in got] == [srepr(Q.lt(a, s)), srepr(Q.lt(b, s))]
+        assert srepr(got[0]) != srepr(got[1])
+        assert sympy_atom(pa) is got[0] and sympy_atom(pb) is got[1]    # and each hits
+
+
+# Engine._failed: the sets whose session raised Uninterpreted (an engine
+# that does not leave unread relation atoms free)
+@pytest.mark.parametrize("order", ORDERS)
+def test_one_engine_failed_sets(order, emptied):
+    alone = _one_engine_as_alone(
+        lambda e, v: e.ask(P('positive', s), P('lt', Args((v, s)))),
+        _ordered((True, S.One), order), lambda: Engine(uninterpreted='none'))
+    assert set(alone) == {None, 'Uninterpreted'}     # one of the two is not read

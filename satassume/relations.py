@@ -355,7 +355,7 @@ from fractions import Fraction
 from typing import Any, Callable, List, NamedTuple, Optional
 
 from .knowledge.extensions import Args
-from .sat.formula import And, Not, P
+from .sat.formula import And, Not, P, typed
 from .knowledge.rules import BASIS_INDEX, NPRED, PRED_INDEX
 from .theories.lra.constfield import Undecided, sign
 from .sat.theory import EqualitySharing
@@ -548,14 +548,22 @@ _SYMPY_ATOMS = _PROCESS.table(f"{__name__}._SYMPY_ATOMS", "pure", 100_000)
 
 def sympy_atom(atom: P):
     """``Q.eq(a, b)`` / ``Q.lt(a, b)`` for a normalised relation atom
-    (memoized: a pure function of the atom)."""
-    r = _SYMPY_ATOMS.get(atom)
+    (memoized: a pure function of the atom and of the types of its sides,
+    which ``Q.eq`` and ``Q.lt`` sympify)."""
+    # keyed with the types (``typed``): ``lt(True, s)``, ``lt(1, s)``,
+    # ``lt(1.0, s)`` and ``lt(S.One, s)`` are equal atoms, and their sides
+    # sympify to ``true``, ``Integer(1)``, ``Float(1.0)`` and ``S.One``,
+    # of which the adapters read only some (#96).  The types go as deep
+    # as ``sympify`` converts by type: the two sides and, if a side is a
+    # tuple, its elements; a SymPy side is not looked into
+    key = typed(atom)
+    r = _SYMPY_ATOMS.get(key)
     if r is None:
         from sympy.assumptions import Q
         r = {"eq": Q.eq, "lt": Q.lt}[atom.pred](*atom.expr)
         if len(_SYMPY_ATOMS) >= _SYMPY_ATOMS.size:
             _SYMPY_ATOMS.clear()
-        _SYMPY_ATOMS[atom] = r
+        _SYMPY_ATOMS[key] = r
     return r
 
 
