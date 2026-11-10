@@ -1,7 +1,8 @@
 # HANDOFF sa-port-219 → land-only successor (6i(b) + 6i(c) stack, issue 323), 10 Nov ~06:50 UTC
 
 Branch **port/6i-c-stack** in ~/dev/sa-port-7 = 6i(b)'s tested c59bb1a (port/6i-b, on rust-slice c822173) + 6i(c)'s 4
-commits (ce1790c, 1ada5a0, HANDOFF-215, 59ebd3c's test → on the stack as ... 6f9c44a) + docs b95f03b + this handoff.
+commits cherry-picked (c81a3d8, 8228a8e code = 377e188, 1d452e0; edffe11 handoff-215; 6f9c44a test) + docs b95f03b + this
+handoff 05f2d8a (results/ and HANDOFF only after 6f9c44a).
 Tested source of the stack bar: **6f9c44a**. port/6i-c (59ebd3c) is 6i(c) alone on c822173, kept for a fallback.
 Architect (07:00): the stack lands 6i(b) + 6i(c) in one push; the separate 6i(b) land-only launch was cancelled.
 
