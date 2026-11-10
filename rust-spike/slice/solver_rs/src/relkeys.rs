@@ -15,10 +15,11 @@
 use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
+use pyo3::BoundObject;
 use pyo3::types::{PyDict, PyList, PySet, PyType};
 
 use crate::relations_core::{hooks, installed, planted, term_of};
-use crate::session::{self, tick, RelKeys, RelS, SessionCore, RS_NAMES};
+use crate::session::{self, tick, RelKeys, RelS, SessionCore, RD_NAMES, RS_NAMES};
 
 static BASIC: PyOnceLock<Py<PyType>> = PyOnceLock::new();
 
@@ -142,7 +143,7 @@ fn with_rel<T>(c: &SessionCore, rel: &Bound<'_, PyAny>, f: impl FnOnce(&mut RelS
     let i = match v.iter().position(|x| x.rel.is(rel)) {
         Some(i) => i,
         None => {
-            v.push(RelS { rel: rel.clone().unbind(), s: Default::default(), order: Default::default() });
+            v.push(RelS { rel: rel.clone().unbind(), s: Default::default(), order: Default::default(), d: Default::default() });
             v.len() - 1
         }
     };
@@ -156,6 +157,7 @@ impl SessionCore {
         with_rel(self, rel, |r| {
             r.s = Default::default();
             r.order = Default::default();
+            r.d = Default::default();
         });
     }
 
@@ -282,4 +284,344 @@ impl RelSetView {
 
 pub(crate) fn rs_view(core: &Bound<'_, SessionCore>, rel: &Bound<'_, PyAny>, k: usize) -> RelSetView {
     RelSetView { core: core.clone().unbind(), rel: rel.clone().unbind(), k }
+}
+
+
+// ---- the dicts (RD_NAMES): IndexMap<u32, V> semantics in `OrdMap`, V a Python object (the values stay as they are) ----
+
+/// Where an interned key of each dict came from (the ruling's split).
+const RD_ORIGIN: [usize; 15] = [
+    session::RK_INTERN_ENGINE, // adapters: spec names
+    session::RK_INTERN_INPUT,  // status: atoms
+    session::RK_INTERN_ENGINE, // _guards: (adapter, terms) the engine builds
+    session::RK_INTERN_ENGINE, // _link_lt: the link atoms the engine builds
+    session::RK_INTERN_INPUT,  // top: vocabulary-atom arguments of user formulas
+    session::RK_INTERN_INPUT,  // link_sel: linked terms
+    session::RK_INTERN_INPUT,  // atom_sel: atoms
+    session::RK_INTERN_INPUT,  // num_sel: number nodes
+    session::RK_INTERN_INPUT,  // _roles: atoms
+    session::RK_INTERN_INPUT,  // _info: atoms
+    session::RK_INTERN_ENGINE, // _link_of: the link atoms
+    session::RK_INTERN_INPUT,  // _tv: terms
+    session::RK_INTERN_ENGINE, // _tsrc: transfer sources
+    session::RK_INTERN_INPUT,  // _xside: sides
+    session::RK_INTERN_ENGINE, // _xheads: (func, nargs)
+];
+
+/// The plants, one per moved dict: `rd-<name>-drop` makes the dict's set a no-op on Rust (the view's too), 390-404.
+pub(crate) const RD_PLANT0: u16 = 390;
+
+/// An insertion-ordered map with Python dict order: setting a present key keeps its place; a deleted key set again goes last.
+#[derive(Default)]
+pub(crate) struct OrdMap {
+    idx: std::collections::HashMap<u32, usize>,
+    ent: Vec<Option<(u32, Py<PyAny>)>>,
+}
+
+impl OrdMap {
+    pub(crate) fn get(&self, k: u32) -> Option<&Py<PyAny>> {
+        self.idx.get(&k).and_then(|&i| self.ent[i].as_ref().map(|e| &e.1))
+    }
+    pub(crate) fn insert(&mut self, k: u32, v: Py<PyAny>) {
+        match self.idx.get(&k) {
+            Some(&i) => self.ent[i] = Some((k, v)),
+            None => {
+                self.idx.insert(k, self.ent.len());
+                self.ent.push(Some((k, v)));
+            }
+        }
+    }
+    pub(crate) fn remove(&mut self, k: u32) -> Option<Py<PyAny>> {
+        let i = self.idx.remove(&k)?;
+        let v = self.ent[i].take().map(|e| e.1);
+        if self.idx.is_empty() {
+            self.ent.clear();
+        }
+        v
+    }
+    pub(crate) fn len(&self) -> usize {
+        self.idx.len()
+    }
+    pub(crate) fn clear(&mut self) {
+        self.idx.clear();
+        self.ent.clear();
+    }
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (u32, &Py<PyAny>)> {
+        self.ent.iter().flatten().map(|(k, v)| (*k, v))
+    }
+    pub(crate) fn values(&self) -> impl Iterator<Item = &Py<PyAny>> {
+        self.iter().map(|e| e.1)
+    }
+}
+
+impl SessionCore {
+    fn rd_with<T>(&self, rel: &Bound<'_, PyAny>, k: usize, f: impl FnOnce(&OrdMap) -> T) -> Option<T> {
+        self.rels.borrow().iter().find(|r| r.rel.is(rel)).map(|r| f(&r.d[k]))
+    }
+
+    pub(crate) fn rd_get<'py>(&self, rel: &Bound<'py, PyAny>, k: usize, x: &Bound<'py, PyAny>) -> PyResult<Option<Bound<'py, PyAny>>> {
+        tick(session::RD_CORE);
+        let p = rel.py();
+        Ok(match rk_key(self, x, None)? {
+            Some(key) => self.rd_with(rel, k, |m| m.get(key).map(|v| v.bind(p).clone())).flatten(),
+            None => None,
+        })
+    }
+
+    pub(crate) fn rd_set(&self, rel: &Bound<'_, PyAny>, k: usize, x: &Bound<'_, PyAny>, v: &Bound<'_, PyAny>) -> PyResult<()> {
+        tick(session::RD_CORE);
+        let key = rk_key(self, x, Some(RD_ORIGIN[k]))?.expect("interned");
+        if planted(RD_PLANT0 + k as u16) {
+            return Ok(());
+        }
+        with_rel(self, rel, |r| r.d[k].insert(key, v.clone().unbind()));
+        Ok(())
+    }
+
+    pub(crate) fn rd_del(&self, rel: &Bound<'_, PyAny>, k: usize, x: &Bound<'_, PyAny>) -> PyResult<Option<Py<PyAny>>> {
+        tick(session::RD_CORE);
+        Ok(match rk_key(self, x, None)? {
+            Some(key) => with_rel(self, rel, |r| r.d[k].remove(key)),
+            None => None,
+        })
+    }
+
+    pub(crate) fn rd_len(&self, rel: &Bound<'_, PyAny>, k: usize) -> usize {
+        self.rd_with(rel, k, |m| m.len()).unwrap_or(0)
+    }
+
+    pub(crate) fn rd_clear(&self, rel: &Bound<'_, PyAny>, k: usize) {
+        tick(session::RD_CORE);
+        with_rel(self, rel, |r| r.d[k].clear());
+    }
+
+    /// The dict's (key object, value) pairs in insertion order.
+    pub(crate) fn rd_items<'py>(&self, p: Python<'py>, rel: &Bound<'py, PyAny>, k: usize) -> Vec<(Bound<'py, PyAny>, Bound<'py, PyAny>)> {
+        let keys = self.relkeys.borrow();
+        self.rd_with(rel, k, |m| m.iter().map(|(i, v)| (keys.objs[i as usize].bind(p).clone(), v.bind(p).clone())).collect())
+            .unwrap_or_default()
+    }
+}
+
+fn obj<'py, K: IntoPyObject<'py>>(p: Python<'py>, x: K) -> PyResult<Bound<'py, PyAny>> {
+    x.into_pyobject(p).map(|b| b.into_any().into_bound()).map_err(Into::into)
+}
+
+/// A moved dict as Rust sites see it: the core's, or Python's own dict on a `Relations` whose session has no core.
+pub(crate) enum RDict<'a, 'py> {
+    Core(Bound<'py, SessionCore>, &'a Bound<'py, PyAny>, usize),
+    Py(Bound<'py, PyDict>),
+}
+
+impl<'a, 'py> RDict<'a, 'py> {
+    pub(crate) fn of(rel: &'a Bound<'py, PyAny>, k: usize) -> PyResult<Self> {
+        let p = rel.py();
+        match session::core_of(&rel.getattr(intern!(p, "session"))?) {
+            Ok(c) => Ok(RDict::Core(c, rel, k)),
+            Err(_) => Ok(RDict::Py(rel.getattr(RD_NAMES[k])?.cast_into::<PyDict>()?)),
+        }
+    }
+
+    pub(crate) fn get_item<K: IntoPyObject<'py>>(&self, x: K) -> PyResult<Option<Bound<'py, PyAny>>> {
+        let x = &obj(self.py(), x)?;
+        match self {
+            RDict::Core(c, rel, k) => c.borrow().rd_get(rel, *k, x),
+            RDict::Py(d) => d.get_item(x),
+        }
+    }
+
+    /// `d[x]`, a KeyError when absent.
+    fn py(&self) -> Python<'py> {
+        match self {
+            RDict::Core(c, _, _) => c.py(),
+            RDict::Py(d) => d.py(),
+        }
+    }
+
+    pub(crate) fn item(&self, x: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+        self.get_item(x)?.ok_or_else(|| pyo3::exceptions::PyKeyError::new_err(x.clone().unbind()))
+    }
+
+    pub(crate) fn set_item<K: IntoPyObject<'py>, V: IntoPyObject<'py>>(&self, x: K, v: V) -> PyResult<()> {
+        let (x, v) = (&obj(self.py(), x)?, &obj(self.py(), v)?);
+        match self {
+            RDict::Core(c, rel, k) => c.borrow().rd_set(rel, *k, x, v),
+            RDict::Py(d) => d.set_item(x, v),
+        }
+    }
+
+    pub(crate) fn contains<K: IntoPyObject<'py>>(&self, x: K) -> PyResult<bool> {
+        Ok(self.get_item(x)?.is_some())
+    }
+
+    pub(crate) fn is_truthy(&self) -> PyResult<bool> {
+        Ok(self.len()? > 0)
+    }
+
+    /// Python's `d.get(x)`: the value or None.
+    pub(crate) fn get<K: IntoPyObject<'py>>(&self, x: K) -> PyResult<Bound<'py, PyAny>> {
+        let p = self.py();
+        Ok(self.get_item(x)?.unwrap_or_else(|| p.None().into_bound(p)))
+    }
+
+    pub(crate) fn len(&self) -> PyResult<usize> {
+        Ok(match self {
+            RDict::Core(c, rel, k) => c.borrow().rd_len(rel, *k),
+            RDict::Py(d) => d.len(),
+        })
+    }
+
+    pub(crate) fn clear(&self) {
+        match self {
+            RDict::Core(c, rel, k) => c.borrow().rd_clear(rel, *k),
+            RDict::Py(d) => d.clear(),
+        }
+    }
+
+    pub(crate) fn items(&self) -> PyResult<Vec<(Bound<'py, PyAny>, Bound<'py, PyAny>)>> {
+        match self {
+            RDict::Core(c, rel, k) => Ok(c.borrow().rd_items(rel.py(), rel, *k)),
+            RDict::Py(d) => Ok(d.iter().collect()),
+        }
+    }
+
+    pub(crate) fn values(&self) -> PyResult<Vec<Bound<'py, PyAny>>> {
+        Ok(self.items()?.into_iter().map(|e| e.1).collect())
+    }
+}
+
+/// The view Python reads a moved dict through (session_live installs it as `Relations.<name>`). Its writes are the record
+/// methods, for Python's own `Relations` methods (SLICE_REL=py over a core) and tests that seed a dict.
+#[pyclass(unsendable, frozen)]
+pub struct RelDictView {
+    core: Py<SessionCore>,
+    rel: Py<PyAny>,
+    k: usize,
+}
+
+impl RelDictView {
+    fn items_of<'py>(&self, py: Python<'py>) -> Vec<(Bound<'py, PyAny>, Bound<'py, PyAny>)> {
+        self.core.borrow(py).rd_items(py, self.rel.bind(py), self.k)
+    }
+}
+
+#[pymethods]
+impl RelDictView {
+    fn __contains__(&self, py: Python<'_>, x: &Bound<'_, PyAny>) -> PyResult<bool> {
+        tick(session::RD_VIEW);
+        Ok(self.core.borrow(py).rd_get(self.rel.bind(py), self.k, x)?.is_some())
+    }
+
+    fn __getitem__<'py>(&self, py: Python<'py>, x: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+        tick(session::RD_VIEW);
+        self.core.borrow(py).rd_get(self.rel.bind(py), self.k, x)?
+            .ok_or_else(|| pyo3::exceptions::PyKeyError::new_err(x.clone().unbind()))
+    }
+
+    #[pyo3(signature = (x, default=None))]
+    fn get<'py>(&self, py: Python<'py>, x: &Bound<'py, PyAny>, default: Option<Bound<'py, PyAny>>) -> PyResult<Bound<'py, PyAny>> {
+        tick(session::RD_VIEW);
+        Ok(match self.core.borrow(py).rd_get(self.rel.bind(py), self.k, x)? {
+            Some(v) => v,
+            None => default.unwrap_or_else(|| py.None().into_bound(py)),
+        })
+    }
+
+    fn __setitem__(&self, py: Python<'_>, x: &Bound<'_, PyAny>, v: &Bound<'_, PyAny>) -> PyResult<()> {
+        tick(session::RD_RECORD);
+        self.core.borrow(py).rd_set(self.rel.bind(py), self.k, x, v)
+    }
+
+    #[pyo3(signature = (x, default=None))]
+    fn setdefault<'py>(&self, py: Python<'py>, x: &Bound<'py, PyAny>, default: Option<Bound<'py, PyAny>>) -> PyResult<Bound<'py, PyAny>> {
+        if let Some(v) = self.core.borrow(py).rd_get(self.rel.bind(py), self.k, x)? {
+            tick(session::RD_VIEW);
+            return Ok(v);
+        }
+        let v = default.unwrap_or_else(|| py.None().into_bound(py));
+        self.__setitem__(py, x, &v)?;
+        Ok(v)
+    }
+
+    fn __delitem__(&self, py: Python<'_>, x: &Bound<'_, PyAny>) -> PyResult<()> {
+        tick(session::RD_RECORD);
+        match self.core.borrow(py).rd_del(self.rel.bind(py), self.k, x)? {
+            Some(_) => Ok(()),
+            None => Err(pyo3::exceptions::PyKeyError::new_err(x.clone().unbind())),
+        }
+    }
+
+    #[pyo3(signature = (x, *default))]
+    fn pop<'py>(&self, py: Python<'py>, x: &Bound<'py, PyAny>, default: &Bound<'py, pyo3::types::PyTuple>) -> PyResult<Bound<'py, PyAny>> {
+        tick(session::RD_RECORD);
+        match self.core.borrow(py).rd_del(self.rel.bind(py), self.k, x)? {
+            Some(v) => Ok(v.into_bound(py)),
+            None if !default.is_empty() => default.get_item(0),
+            None => Err(pyo3::exceptions::PyKeyError::new_err(x.clone().unbind())),
+        }
+    }
+
+    fn update(&self, py: Python<'_>, d: &Bound<'_, PyAny>) -> PyResult<()> {
+        for kv in d.call_method0(intern!(py, "items"))?.try_iter()? {
+            let (key, v): (Bound<'_, PyAny>, Bound<'_, PyAny>) = kv?.extract()?;
+            self.__setitem__(py, &key, &v)?;
+        }
+        Ok(())
+    }
+
+    fn clear(&self, py: Python<'_>) {
+        tick(session::RD_RECORD);
+        self.core.borrow(py).rd_clear(self.rel.bind(py), self.k);
+    }
+
+    fn __len__(&self, py: Python<'_>) -> usize {
+        tick(session::RD_VIEW);
+        self.core.borrow(py).rd_len(self.rel.bind(py), self.k)
+    }
+
+    fn __bool__(&self, py: Python<'_>) -> bool {
+        self.__len__(py) > 0
+    }
+
+    fn keys<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
+        tick(session::RD_VIEW);
+        PyList::new(py, self.items_of(py).into_iter().map(|e| e.0))
+    }
+
+    fn values<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
+        tick(session::RD_VIEW);
+        PyList::new(py, self.items_of(py).into_iter().map(|e| e.1))
+    }
+
+    fn items<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
+        tick(session::RD_VIEW);
+        let v: Vec<Bound<'py, pyo3::types::PyTuple>> = self.items_of(py).into_iter()
+            .map(|(a, b)| pyo3::types::PyTuple::new(py, [a, b])).collect::<PyResult<_>>()?;
+        PyList::new(py, v)
+    }
+
+    fn __iter__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        self.keys(py)?.into_any().try_iter().map(|i| i.into_any())
+    }
+
+    /// A Python dict of the items, for a test that compares.
+    fn copy<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let d = PyDict::new(py);
+        for (a, b) in self.items_of(py) {
+            d.set_item(a, b)?;
+        }
+        Ok(d)
+    }
+
+    fn __eq__(&self, py: Python<'_>, other: &Bound<'_, PyAny>) -> PyResult<bool> {
+        self.copy(py)?.eq(other)
+    }
+
+    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+        Ok(format!("RelDictView({}, {})", RD_NAMES[self.k], self.copy(py)?.repr()?))
+    }
+}
+
+pub(crate) fn rd_view(core: &Bound<'_, SessionCore>, rel: &Bound<'_, PyAny>, k: usize) -> RelDictView {
+    RelDictView { core: core.clone().unbind(), rel: rel.clone().unbind(), k }
 }

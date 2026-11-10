@@ -19,7 +19,7 @@ use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyList, PySet, PyString, PyTuple};
 
-use crate::relkeys::RSet;
+use crate::relkeys::{RDict, RSet};
 use crate::session::{self, tick, SessionCore};
 use crate::term::py::PyTermTable;
 
@@ -665,6 +665,14 @@ fn rel_plant(name: Option<&str>) -> PyResult<()> {
                 None => return Err(PyValueError::new_err(format!("no plant {x}"))),
             }
         }
+        // (iii)(b) rest: `rd-<dict>-drop` (relkeys.rs RD_PLANT0 + k, 390-404), the moved dict's set a no-op
+        Some(x) if x.starts_with("rd-") && x.ends_with("-drop") => {
+            let n = &x[3..x.len() - 5];
+            match crate::session::RD_NAMES.iter().position(|m| m.trim_start_matches('_') == n) {
+                Some(k) => crate::relkeys::RD_PLANT0 + k as u16,
+                None => return Err(PyValueError::new_err(format!("no plant {x}"))),
+            }
+        }
         Some(x) => return Err(PyValueError::new_err(format!("no plant {x}"))),
     };
     PLANT.store(v, Relaxed);
@@ -994,9 +1002,9 @@ fn rel_trichotomy<'py>(rel: &Bound<'py, PyAny>, var: i32, atom: &Bound<'py, PyAn
     let args = r.getattr(intern!(p, "Args"))?.call1((PyTuple::new(p, [&b, &a])?,))?;
     let rev = r.getattr(intern!(p, "P"))?.call1((intern!(p, "lt"), args))?;
     let Some(rvar) = c.custom_direct(&rev)? else { return Ok(()) };
-    let lk = rel.getattr(intern!(p, "_link_lt"))?;
-    let la = lk.call_method1(intern!(p, "get"), (atom,))?;
-    if !la.is_none() && la.is(&lk.call_method1(intern!(p, "get"), (&rev,))?) {
+    let lk = RDict::of(rel, crate::session::RD_LINK_LT)?;
+    let la = lk.get(atom)?;
+    if !la.is_none() && la.is(&lk.get(&rev)?) {
         return Ok(());
     }
     let eqa = r.getattr(intern!(p, "relation_atom"))?.call1((intern!(p, "eq"), &a, &b))?;
@@ -1028,7 +1036,7 @@ fn rel_mention_number<'py>(rel: &Bound<'py, PyAny>, e: &Bound<'py, PyAny>) -> Py
     let p = rel.py();
     tick(session::REL_MENTION);
     let h = hooks()?;
-    let num_sel = rel.getattr(intern!(p, "num_sel"))?;
+    let num_sel = RDict::of(rel, crate::session::RD_NUM_SEL)?;
     if num_sel.contains(e)? {
         return Ok(());
     }
@@ -1131,8 +1139,8 @@ fn guard<'py>(rel: &Bound<'py, PyAny>, s: &Bound<'py, PyAny>, c: &SessionCore, h
     tick(session::REL_GUARD);
     let tup = PyTuple::new(p, terms.try_iter()?.collect::<PyResult<Vec<_>>>()?)?;
     let key = PyTuple::new(p, [ad.clone(), tup.into_any()])?;
-    let memo = rel.getattr(intern!(p, "_guards"))?;
-    let got = memo.call_method1(intern!(p, "get"), (&key,))?;
+    let memo = RDict::of(rel, crate::session::RD_GUARDS)?;
+    let got = memo.get(&key)?;
     if !got.is_none() {
         return got.cast_into::<PyList>().map_err(Into::into);
     }
@@ -1223,7 +1231,7 @@ fn rel_interpret<'py>(rel: &Bound<'py, PyAny>, atom: &Bound<'py, PyAny>) -> PyRe
     let Some(var) = c.custom_direct(atom)? else { return Err(PyKeyError::new_err(atom.clone().unbind())) };
     let pred = atom.getattr(intern!(p, "pred"))?;
     let order = pred.eq(intern!(p, "lt"))?;
-    let link = if order { rel.getattr(intern!(p, "_link_lt"))?.call_method1(intern!(p, "get"), (atom,))? } else { p.None().into_bound(p) };
+    let link = if order { RDict::of(rel, crate::session::RD_LINK_LT)?.get(atom)? } else { p.None().into_bound(p) };
     if !link.is_none() {
         ensure(&s, &link, &["extended_real"])?;
     } else if order && rel_order_sides(rel, var, atom)? {
@@ -1295,9 +1303,9 @@ fn rel_interpret<'py>(rel: &Bound<'py, PyAny>, atom: &Bound<'py, PyAny>) -> PyRe
         c.emit_direct(p, &with([var, -t]))?;
     }
     let info = PyTuple::new(p, [twins.into_any(), lterms.into_any(), eterms.into_any()])?;
-    rel.getattr(intern!(p, "_info"))?.set_item(atom, &info)?;
+    RDict::of(rel, crate::session::RD_INFO)?.set_item(atom, &info)?;
     let cx = Cx { rel, s: &s, c: &c, h: &h };
-    for role in rel.getattr(intern!(p, "_roles"))?.call_method1(intern!(p, "get"), (atom, PyTuple::empty(p)))?.try_iter()? {
+    for role in RDict::of(rel, crate::session::RD_ROLES)?.get_item(atom)?.unwrap_or_else(|| PyTuple::empty(p).into_any()).try_iter()? {
         let (kind, g) = two(&role?)?;
         cx.apply_role(atom, info.as_any(), &kind, &g)?;
     }
@@ -1321,7 +1329,7 @@ fn rel_link<'py>(rel: &Bound<'py, PyAny>, e: &Bound<'py, PyAny>) -> PyResult<()>
     let atom = r.getattr(intern!(p, "relation_atom"))?;
     let gta = atom.call1((intern!(p, "lt"), &zero_obj, e))?;
     let lta = atom.call1((intern!(p, "lt"), e, &zero_obj))?;
-    let link_lt = rel.getattr(intern!(p, "_link_lt"))?;
+    let link_lt = RDict::of(rel, crate::session::RD_LINK_LT)?;
     link_lt.set_item(&gta, e)?;
     link_lt.set_item(&lta, e)?;
     let gt: i32 = rel.call_method1(intern!(p, "_atom_var"), (&gta,))?.extract()?;
@@ -1333,11 +1341,11 @@ fn rel_link<'py>(rel: &Bound<'py, PyAny>, e: &Bound<'py, PyAny>) -> PyResult<()>
     }
     let eq: i32 = rel.call_method1(intern!(p, "_atom_var"), (&eqa,))?.extract()?;
     let sel = fresh(&s, &c, true)?;
-    rel.getattr(intern!(p, "link_sel"))?.set_item(e, sel)?;
+    RDict::of(rel, crate::session::RD_LINK_SEL)?.set_item(e, sel)?;
     let g = -sel;
     // One guard object: `_tsource` drops repeats of it.
     let gl = PyList::new(p, [g])?;
-    let link_of = rel.getattr(intern!(p, "_link_of"))?;
+    let link_of = RDict::of(rel, crate::session::RD_LINK_OF)?;
     let cx = Cx { rel, s: &s, c: &c, h: &h };
     for f in [&gta, &lta, &eqa] {
         link_of.set_item(f, e)?;
@@ -1375,10 +1383,10 @@ fn rel_selectors_of<'py>(rel: &Bound<'py, PyAny>, atoms: &Bound<'py, PyAny>) -> 
     let h = hooks()?;
     let r = h.relations.bind(p);
     let (index, rels) = (r.getattr(intern!(p, "PRED_INDEX"))?, r.getattr(intern!(p, "RELATION_ATOMS"))?);
-    let sel = rel.getattr(intern!(p, "link_sel"))?.cast_into::<PyDict>()?;
-    let nsel = rel.getattr(intern!(p, "num_sel"))?.cast_into::<PyDict>()?;
-    let status = rel.getattr(intern!(p, "status"))?;
-    let asel = rel.getattr(intern!(p, "atom_sel"))?.cast_into::<PyDict>()?;
+    let sel = RDict::of(rel, crate::session::RD_LINK_SEL)?;
+    let nsel = RDict::of(rel, crate::session::RD_NUM_SEL)?;
+    let status = RDict::of(rel, crate::session::RD_STATUS)?;
+    let asel = RDict::of(rel, crate::session::RD_ATOM_SEL)?;
     let mut out = std::collections::BTreeSet::new();
     for a in atoms.try_iter()? {
         let a = a?;
@@ -1391,7 +1399,7 @@ fn rel_selectors_of<'py>(rel: &Bound<'py, PyAny>, atoms: &Bound<'py, PyAny>) -> 
                 out.insert(v.extract::<i32>()?);
             }
         } else if rels.contains(&pred)? {
-            if status.call_method1(intern!(p, "get"), (&a,))?.is_truthy()? {
+            if status.get(&a)?.is_truthy()? {
                 for e in a.getattr(intern!(p, "expr"))?.try_iter()? {
                     if let Some(v) = sel.get_item(e?)? {
                         out.insert(v.extract::<i32>()?);
@@ -1446,7 +1454,7 @@ fn head<'py>(e: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyTuple>> {
 }
 
 /// `x in cand or x in xside`.
-fn mergeable(cand: &RSet<'_, '_>, xside: &Bound<'_, PyAny>, x: &Bound<'_, PyAny>) -> PyResult<bool> {
+fn mergeable<'py>(cand: &RSet<'_, 'py>, xside: &RDict<'_, 'py>, x: &Bound<'py, PyAny>) -> PyResult<bool> {
     Ok(cand.contains(x)? || xside.contains(x)?)
 }
 
@@ -1462,9 +1470,10 @@ struct Cx<'a, 'py> {
     h: &'a Hooks,
 }
 
-impl<'py> Cx<'_, 'py> {
-    fn dict(&self, name: &Bound<'py, pyo3::types::PyString>) -> PyResult<Bound<'py, PyDict>> {
-        self.rel.getattr(name)?.cast_into::<PyDict>().map_err(Into::into)
+impl<'a, 'py> Cx<'a, 'py> {
+    /// A moved dict (state step part 2 (iii)(b), rest): the core's, or Python's on a session with no core.
+    fn dict(&self, k: usize) -> PyResult<RDict<'a, 'py>> {
+        RDict::of(self.rel, k)
     }
 
     /// State step, part 2 (ii): the core's copy of `s.solver`, not Python's attribute.
@@ -1490,7 +1499,7 @@ impl<'py> Cx<'_, 'py> {
     fn add_role(&self, atom: &Bound<'py, PyAny>, g: &Bound<'py, PyAny>, kind: &Bound<'py, PyAny>) -> PyResult<()> {
         let p = atom.py();
         tick(session::REL_ADD_ROLE);
-        let map = self.dict(intern!(p, "_roles"))?;
+        let map = self.dict(session::RD_ROLES)?;
         match map.get_item(atom)? {
             None => map.set_item(atom, PyList::new(p, [(kind, g)])?)?,
             Some(roles) => {
@@ -1506,7 +1515,7 @@ impl<'py> Cx<'_, 'py> {
         if planted(DROP_ADD_ROLE) {
             return Ok(());
         }
-        if let Some(info) = self.dict(intern!(p, "_info"))?.get_item(atom)? {
+        if let Some(info) = self.dict(session::RD_INFO)?.get_item(atom)? {
             self.apply_role(atom, &info, kind, g)?;
         }
         Ok(())
@@ -1547,7 +1556,7 @@ impl<'py> Cx<'_, 'py> {
         }
         let expr = atom.getattr(intern!(p, "expr"))?;
         if link {
-            self.tsource(&self.rel.getattr(intern!(p, "_link_of"))?.get_item(atom)?, SD, g)?;
+            self.tsource(&RDict::of(self.rel, crate::session::RD_LINK_OF)?.item(atom)?, SD, g)?;
             let first = expr.get_item(0)?;
             let side = if is_number(self.c, self.h, &first)? { first } else { expr.get_item(1)? };
             self.tsource(&side, SD, g)
@@ -1571,7 +1580,7 @@ impl<'py> Cx<'_, 'py> {
     fn tsource(&self, u: &Bound<'py, PyAny>, k: usize, g: &Bound<'py, PyAny>) -> PyResult<()> {
         let p = u.py();
         tick(session::REL_TSOURCE);
-        let map = self.dict(intern!(p, "_tsrc"))?;
+        let map = self.dict(session::RD_TSRC)?;
         let key = (u, k).into_pyobject(p)?;
         match map.get_item(&key)? {
             None => map.set_item(&key, PyList::new(p, [g])?)?,
@@ -1582,7 +1591,7 @@ impl<'py> Cx<'_, 'py> {
                 lst.call_method1(intern!(p, "append"), (g,))?;
             }
         }
-        if let Some(tv) = self.dict(intern!(p, "_tv"))?.get_item(u)? {
+        if let Some(tv) = self.dict(session::RD_TV)?.get_item(u)? {
             let v: i32 = tv.get_item(k)?.extract()?;
             if v != 0 {
                 if planted(DROP_TSOURCE) {
@@ -1600,7 +1609,7 @@ impl<'py> Cx<'_, 'py> {
     fn tvar(&self, u: &Bound<'py, PyAny>, k: usize) -> PyResult<i32> {
         let p = u.py();
         tick(session::REL_TVAR);
-        let map = self.dict(intern!(p, "_tv"))?;
+        let map = self.dict(session::RD_TV)?;
         let tv = match map.get_item(u)? {
             Some(t) => t,
             None => {
@@ -1615,7 +1624,7 @@ impl<'py> Cx<'_, 'py> {
         }
         let v = fresh(self.s, self.c, true)?;
         tv.set_item(k, v)?;
-        let tsrc = self.dict(intern!(p, "_tsrc"))?;
+        let tsrc = self.dict(session::RD_TSRC)?;
         if k == MC {
             for j in [SD, EN] {
                 let w: i32 = tv.get_item(j)?.extract()?;
@@ -1661,16 +1670,16 @@ impl<'py> Cx<'_, 'py> {
     fn congruent(&self, node: &Bound<'py, PyAny>) -> PyResult<bool> {
         let p = node.py();
         tick(session::REL_CONGRUENT);
-        let Some(others) = self.dict(intern!(p, "_xheads"))?.get_item(head(node)?)? else { return Ok(false) };
+        let Some(others) = self.dict(session::RD_XHEADS)?.get_item(head(node)?)? else { return Ok(false) };
         if others.len()? < 2 {
             return Ok(false);
         }
         if self.xfer()?.1.call_method1(intern!(p, "term_of"), (node,))?.is_none()
-            && !self.rel.getattr(intern!(p, "num_sel"))?.contains(node)?
+            && !RDict::of(self.rel, crate::session::RD_NUM_SEL)?.contains(node)?
         {
             return Ok(false);
         }
-        let (cand, xside) = (RSet::of(self.rel, session::RS_XCAND)?, self.rel.getattr(intern!(p, "_xside"))?);
+        let (cand, xside) = (RSet::of(self.rel, session::RS_XCAND)?, RDict::of(self.rel, crate::session::RD_XSIDE)?);
         let args = node.getattr(intern!(p, "args"))?;
         for o in others.try_iter()? {
             let o = o?;
@@ -1740,11 +1749,11 @@ impl<'py> Cx<'_, 'py> {
         let rel = self.rel;
         let (th, ad) = self.xfer()?;
         let mut visited = false;
-        let sides = rel.getattr(intern!(p, "_xside"))?;
+        let sides = RDict::of(rel, crate::session::RD_XSIDE)?;
         let n = sides.len()?;
         let from = self.c.relc_get(rel, session::XTERM) as usize;
         if from < n {
-            let new = sides.try_iter()?.skip(from).take(n - from).collect::<PyResult<Vec<_>>>()?;
+            let new = sides.items()?.into_iter().map(|e| e.0).skip(from).take(n - from).collect::<Vec<_>>();
             self.c.relc_put(rel, session::XTERM, n as i64);
             for e in &new {
                 if e.is_instance(&rational)? {
@@ -1773,7 +1782,7 @@ impl<'py> Cx<'_, 'py> {
                 new.call_method1(intern!(p, "extend"), (&extra,))?;
                 extra.call_method0(intern!(p, "clear"))?;
             }
-            let heads = self.dict(intern!(p, "_xheads"))?;
+            let heads = self.dict(session::RD_XHEADS)?;
             let counted = RSet::of(rel, session::RS_XCOUNTED)?;
             // A dict, as Python's: distinct by `==`, in insertion order.
             let grown = PyDict::new(p);
@@ -1795,7 +1804,7 @@ impl<'py> Cx<'_, 'py> {
                 let hn = self.c.relc_get(rel, session::XHN);
                 self.c.relc_put(rel, session::XHN, hn + 1);
                 for k in grown.as_any().try_iter()? {
-                    for e in heads.as_any().get_item(k?)?.try_iter()? {
+                    for e in heads.item(&k?)?.try_iter()? {
                         let e = e?;
                         if e.is_instance(&expr)? && !self.c.base_contains_direct(&e)? {
                             if planted(DROP_TERMS) {
@@ -1861,7 +1870,7 @@ impl<'py> Cx<'_, 'py> {
         self.c.relc_put(rel, session::XHSEEN, hn);
         let cand = RSet::of(rel, session::RS_XCAND)?;
         let part = RSet::of(rel, session::RS_XPART)?;
-        let xside = self.dict(intern!(p, "_xside"))?;
+        let xside = self.dict(session::RD_XSIDE)?;
         let (th, ad) = self.xfer()?;
         let solver = self.solver()?;
         let polar: i32 = r.getattr(intern!(p, "BASIS_INDEX"))?.get_item(intern!(p, "polar"))?.extract()?;
@@ -1924,9 +1933,9 @@ impl<'py> Cx<'_, 'py> {
         let p = self.rel.py();
         let rel = self.rel;
         tick(session::REL_CONGRUENCE_PAIRS);
-        let (xside, cand, done) = (rel.getattr(intern!(p, "_xside"))?, RSet::of(rel, session::RS_XCAND)?, RSet::of(rel, session::RS_XPAIRS)?);
-        for group in rel.getattr(intern!(p, "_xheads"))?.call_method0(intern!(p, "values"))?.try_iter()? {
-            let group = group?.cast_into::<PyList>()?;
+        let (xside, cand, done) = (RDict::of(rel, crate::session::RD_XSIDE)?, RSet::of(rel, session::RS_XCAND)?, RSet::of(rel, session::RS_XPAIRS)?);
+        for group in RDict::of(rel, crate::session::RD_XHEADS)?.values()? {
+            let group = group.cast_into::<PyList>()?;
             let n = group.len();
             if n < 2 {
                 continue;
@@ -2080,33 +2089,34 @@ fn rel_init<'py>(rel: &Bound<'py, PyAny>, session: &Bound<'py, PyAny>, specs: &B
     // state step, part 2 (iii)(b), rest: the moved sets (relkeys.rs) are the core's; a session with no core keeps Python's
     let has_core = session::core_of(session).is_ok();
     let pset = |name: &str| if has_core { Ok(()) } else { rel.setattr(name, PySet::empty(p)?) };
+    let pdict = |name: &str| if has_core { Ok(()) } else { rel.setattr(name, PyDict::new(p)) };
     set("session", proxy)?;
     set("specs", PyList::new(p, specs.try_iter()?.collect::<PyResult<Vec<_>>>()?)?.into_any())?;
-    set("adapters", PyDict::new(p).into_any())?;
-    set("status", PyDict::new(p).into_any())?;
+    pdict("adapters")?;
+    pdict("status")?;
     set("queue", PyList::empty(p).into_any())?;
     pset("linked")?;
     pset("_bounded")?;
-    set("_guards", PyDict::new(p).into_any())?;
-    set("_link_lt", PyDict::new(p).into_any())?;
-    set("top", PyDict::new(p).into_any())?;
+    pdict("_guards")?;
+    pdict("_link_lt")?;
+    pdict("top")?;
     set("active", PyBool::new(p, false).to_owned().into_any())?;
     set("sharing", r.getattr(intern!(p, "EqualitySharing"))?.call0()?)?;
     set("_pending_links", PyList::empty(p).into_any())?;
-    set("link_sel", PyDict::new(p).into_any())?;
-    set("atom_sel", PyDict::new(p).into_any())?;
-    set("num_sel", PyDict::new(p).into_any())?;
+    pdict("link_sel")?;
+    pdict("atom_sel")?;
+    pdict("num_sel")?;
     set("_xextra", PyList::empty(p).into_any())?;
     pset("_user_eq")?;
-    set("_roles", PyDict::new(p).into_any())?;
-    set("_info", PyDict::new(p).into_any())?;
-    set("_link_of", PyDict::new(p).into_any())?;
-    set("_tv", PyDict::new(p).into_any())?;
-    set("_tsrc", PyDict::new(p).into_any())?;
+    pdict("_roles")?;
+    pdict("_info")?;
+    pdict("_link_of")?;
+    pdict("_tv")?;
+    pdict("_tsrc")?;
     pset("_xpairs")?;
     pset("_aux_eq")?;
     pset("_link_eq")?;
-    set("_xside", PyDict::new(p).into_any())?;
+    pdict("_xside")?;
     // state step, part 2 (iii)(b): the scalar cursors are the core's (session.rs `relc`); a session with no core keeps
     // Python's attributes
     match session::core_of(session) {
@@ -2121,7 +2131,7 @@ fn rel_init<'py>(rel: &Bound<'py, PyAny>, session: &Bound<'py, PyAny>, specs: &B
         }
     }
     pset("_xpart")?;
-    set("_xheads", PyDict::new(p).into_any())?;
+    pdict("_xheads")?;
     pset("_xcounted")?;
     set("_xpend", PyList::empty(p).into_any())?;
     pset("_xcand")?;
@@ -2161,7 +2171,7 @@ fn rel_note_formula(rel: &Bound<'_, PyAny>, atoms: &Bound<'_, PyAny>) -> PyResul
                 if plant_on(DROP_NOTE_TOP) {
                     continue;
                 }
-                rel.getattr(intern!(p, "top"))?.set_item(&e, p.None())?;
+                RDict::of(rel, crate::session::RD_TOP)?.set_item(&e, p.None())?;
             }
         }
     }
@@ -2216,13 +2226,13 @@ fn rel_share(rel: &Bound<'_, PyAny>) -> PyResult<bool> {
         return Ok(false);
     }
     let h = hooks()?;
-    let adapters = rel.getattr(intern!(p, "adapters"))?;
+    let adapters = RDict::of(rel, crate::session::RD_ADAPTERS)?;
     if adapters.len()? < 2 {
         return Ok(false);
     }
     let builtins = p.import(intern!(p, "builtins"))?;
     let caller = p.import(intern!(p, "operator"))?.getattr(intern!(p, "methodcaller"))?.call1((intern!(p, "shared_terms"),))?;
-    let terms = builtins.getattr(intern!(p, "map"))?.call1((caller, adapters.call_method0(intern!(p, "values"))?))?;
+    let terms = builtins.getattr(intern!(p, "map"))?.call1((caller, PyList::new(p, adapters.values()?)?))?;
     let pairs = rel.getattr(intern!(p, "sharing"))?.call_method1(intern!(p, "update"), (terms,))?;
     let r = h.relations.bind(p);
     let zero_drop = plant_on(DROP_SHARE) || plant_on(DROP_SHARE_TRI);
@@ -2274,7 +2284,7 @@ fn rel_process<'py>(rel: &Bound<'py, PyAny>, user_atoms: Option<&Bound<'py, PyAn
     }
     let unlinked = PySet::empty(p)?;
     for a in &user {
-        let st = rel.getattr(intern!(p, "status"))?.call_method1(intern!(p, "get"), (a,))?;
+        let st = RDict::of(rel, crate::session::RD_STATUS)?.get(a)?;
         if st.is_truthy()? {
             for side in a.getattr(expr)?.try_iter()? {
                 rel.call_method1(intern!(p, "_link_later"), (side?,))?;
@@ -2316,7 +2326,7 @@ fn rel_process<'py>(rel: &Bound<'py, PyAny>, user_atoms: Option<&Bound<'py, PyAn
         if queue.is_truthy()? {
             let atom = queue.call_method0(intern!(p, "pop"))?;
             let ok = rel.call_method1(intern!(p, "_interpret"), (&atom,))?;
-            rel.getattr(intern!(p, "status"))?.set_item(&atom, &ok)?;
+            RDict::of(rel, crate::session::RD_STATUS)?.set_item(&atom, &ok)?;
             rel.setattr(intern!(p, "active"), true)?;
             if ok.is_truthy()? && unlinked.contains(&atom)? {
                 for side in atom.getattr(expr)?.try_iter()? {
@@ -2325,11 +2335,12 @@ fn rel_process<'py>(rel: &Bound<'py, PyAny>, user_atoms: Option<&Bound<'py, PyAn
             }
             continue;
         }
-        if rel.getattr(intern!(p, "active"))?.is_truthy()? && rel.getattr(intern!(p, "top"))?.is_truthy()? {
-            let top = rel.getattr(intern!(p, "top"))?;
-            rel.setattr(intern!(p, "top"), PyDict::new(p))?;
-            for e in top.try_iter()? {
-                let e = e?;
+        if rel.getattr(intern!(p, "active"))?.is_truthy()? && RDict::of(rel, crate::session::RD_TOP)?.is_truthy()? {
+            // `top = self.top; self.top = {}; for e in top:` (the keys taken, then the dict emptied)
+            let top = RDict::of(rel, crate::session::RD_TOP)?;
+            let keys: Vec<_> = top.items()?.into_iter().map(|e| e.0).collect();
+            top.clear();
+            for e in keys {
                 if number(rel, &h, &e)? {
                     rel.call_method1(intern!(p, "_mention_number"), (&e,))?;
                 } else {
@@ -2361,7 +2372,7 @@ fn rel_process<'py>(rel: &Bound<'py, PyAny>, user_atoms: Option<&Bound<'py, PyAn
         return Ok(());
     }
     for a in &user {
-        if !rel.getattr(intern!(p, "status"))?.call_method1(intern!(p, "get"), (a,))?.is_truthy()? {
+        if !RDict::of(rel, crate::session::RD_STATUS)?.get(a)?.is_truthy()? {
             let msg = format!("no theory interprets {}", a.str()?);
             return Err(PyErr::from_value(r.getattr(intern!(p, "Uninterpreted"))?.call1((msg,))?));
         }
@@ -2381,10 +2392,10 @@ fn rel_process<'py>(rel: &Bound<'py, PyAny>, user_atoms: Option<&Bound<'py, PyAn
 fn rel_adapter<'py>(rel: &Bound<'py, PyAny>, spec: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
     let p = rel.py();
     tick(session::REL_ADAPTER);
-    let adapters = rel.getattr(intern!(p, "adapters"))?;
+    let adapters = RDict::of(rel, crate::session::RD_ADAPTERS)?;
     let row = spec_row(spec)?;
     let name = row.name.bind(p);
-    let ad = adapters.call_method1(intern!(p, "get"), (name,))?;
+    let ad = adapters.get(name)?;
     if !ad.is_none() {
         return Ok(ad);
     }
@@ -2401,8 +2412,8 @@ fn rel_adapter<'py>(rel: &Bound<'py, PyAny>, spec: &Bound<'py, PyAny>) -> PyResu
 fn rel_atom_selector<'py>(rel: &Bound<'py, PyAny>, atom: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
     let p = rel.py();
     tick(session::REL_ATOM_SELECTOR);
-    let sels = rel.getattr(intern!(p, "atom_sel"))?;
-    let sel = sels.call_method1(intern!(p, "get"), (atom,))?;
+    let sels = RDict::of(rel, crate::session::RD_ATOM_SEL)?;
+    let sel = sels.get(atom)?;
     if !sel.is_none() {
         return Ok(sel);
     }
@@ -2435,11 +2446,11 @@ fn rel_note_sides<'py>(rel: &Bound<'py, PyAny>, atom: &Bound<'py, PyAny>, level:
     let p = rel.py();
     tick(session::REL_NOTE_SIDES);
     let h = hooks()?;
-    let xs = rel.getattr(intern!(p, "_xside"))?;
+    let xs = RDict::of(rel, crate::session::RD_XSIDE)?;
     for e in atom.getattr(intern!(p, "expr"))?.try_iter()? {
         let e = e?;
         let lv: i64 = if number(rel, &h, &e)? { 2 } else { level };
-        let had: i64 = xs.call_method1(intern!(p, "get"), (&e, 0))?.extract()?;
+        let had: i64 = match xs.get_item(&e)? { Some(v) => v.extract()?, None => 0 };
         if had < lv {
             if plant_on(DROP_NOTE_SIDES) {
                 continue;

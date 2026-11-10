@@ -14,7 +14,7 @@ use pyo3::types::{PyBool, PyDict, PyList, PySet, PyTuple};
 use crate::compile::{self, block_lits, Cx, Def, Kind, Need, F, R};
 use crate::formula_py::PyP;
 
-const NAMES: [&str; 423] = [
+const NAMES: [&str; 523] = [
     "py:var", "py:dvar", "py:node", "py:compile", "py:literal", "py:table", "rs:visit", "rs:add_clause", "rs:ensure_vars",
     "rs:def_implications", "rs:neg_shared", "join", "rs:emit_callback", "refuse:depth", "refuse:convert", "refuse:object", "second:visit", "custom:own",
     "link:hit", "link:resolved", "link:none", "link:no_table", "link:second", "link:no_node",
@@ -84,6 +84,9 @@ const NAMES: [&str; 423] = [
     "rc:core", "rc:view", "rc:record", "rk:intern:input", "rk:intern:engine", "rk:term", "rk:outlive", "rk:migrate", "rs:core", "rs:view", "rs:record", "rk:dict:hit", "reserved:359", "reserved:360", "reserved:361", "reserved:362", "reserved:363", "reserved:364", "reserved:365", "reserved:366", "reserved:367", "reserved:368", "reserved:369", "reserved:370", "reserved:371", "reserved:372", "reserved:373", "reserved:374", "reserved:375", "reserved:376", "reserved:377", "reserved:378", "reserved:379", "reserved:380", "reserved:381", "reserved:382", "reserved:383", "reserved:384", "reserved:385", "reserved:386", "reserved:387", "reserved:388", "reserved:389", "reserved:390", "reserved:391", "reserved:392", "reserved:393", "reserved:394", "reserved:395", "reserved:396", "reserved:397", "reserved:398", "reserved:399", "reserved:400", "reserved:401", "reserved:402", "reserved:403", "reserved:404", "reserved:405", "reserved:406", "reserved:407", "reserved:408", "reserved:409", "reserved:410", "reserved:411", "reserved:412", "reserved:413", "reserved:414", "reserved:415", "reserved:416", "reserved:417", "reserved:418", "reserved:419",
     // S2 (block.rs rule_tables): the engine's block from the generated tables, another block built in Rust, a failed check
     "rb:generated", "rb:built", "rb:check_error",
+    "reserved:423", "reserved:424", "reserved:425", "reserved:426", "reserved:427", "reserved:428", "reserved:429", "reserved:430", "reserved:431", "reserved:432", "reserved:433", "reserved:434", "reserved:435", "reserved:436", "reserved:437", "reserved:438", "reserved:439", "reserved:440", "reserved:441", "reserved:442", "reserved:443", "reserved:444", "reserved:445", "reserved:446", "reserved:447", "reserved:448", "reserved:449", "reserved:450", "reserved:451", "reserved:452", "reserved:453", "reserved:454", "reserved:455", "reserved:456", "reserved:457", "reserved:458", "reserved:459", "reserved:460", "reserved:461", "reserved:462", "reserved:463", "reserved:464", "reserved:465", "reserved:466", "reserved:467", "reserved:468", "reserved:469", "reserved:470", "reserved:471", "reserved:472", "reserved:473", "reserved:474", "reserved:475", "reserved:476", "reserved:477", "reserved:478", "reserved:479", "reserved:480", "reserved:481", "reserved:482", "reserved:483", "reserved:484", "reserved:485", "reserved:486", "reserved:487", "reserved:488", "reserved:489", "reserved:490", "reserved:491", "reserved:492", "reserved:493", "reserved:494", "reserved:495", "reserved:496", "reserved:497", "reserved:498", "reserved:499", "reserved:500", "reserved:501", "reserved:502", "reserved:503", "reserved:504", "reserved:505", "reserved:506", "reserved:507", "reserved:508", "reserved:509", "reserved:510", "reserved:511", "reserved:512", "reserved:513", "reserved:514", "reserved:515", "reserved:516", "reserved:517", "reserved:518", "reserved:519",
+    // state step part 2 (iii)(b), rest: Relations' dicts in the core (relkeys.rs RelDictView), 520-522
+    "rd:core", "rd:view", "rd:record",
 ];
 const VAR: usize = 0;
 const DVAR: usize = 1;
@@ -486,6 +489,9 @@ pub(crate) const RS_VIEW: usize = 356;
 pub(crate) const RS_RECORD: usize = 357;
 /// ... a lookup answered by the intern dict (a hash).
 pub(crate) const RK_DICT_HIT: usize = 358;
+pub(crate) const RD_CORE: usize = 520;
+pub(crate) const RD_VIEW: usize = 521;
+pub(crate) const RD_RECORD: usize = 522;
 pub(crate) const RB_GENERATED: usize = 420;
 pub(crate) const RB_BUILT: usize = 421;
 pub(crate) const RB_CHECK_ERROR: usize = 422;
@@ -496,7 +502,7 @@ pub(crate) const RB_CHECK_ERROR: usize = 422;
 const FORMULA_DEPTH: u32 = 64;
 
 thread_local! {
-    static COUNTS: [Cell<u64>; 423] = const { [const { Cell::new(0) }; 423] };
+    static COUNTS: [Cell<u64>; 523] = const { [const { Cell::new(0) }; 523] };
     /// Each session's serial, for the link's memo: a pointer could alias a dead session's.
     static SERIAL: Cell<u64> = const { Cell::new(0) };
 }
@@ -677,6 +683,25 @@ pub(crate) const RS_LINK_EQ: usize = 5;
 pub(crate) const RS_XPART: usize = 6;
 pub(crate) const RS_XCOUNTED: usize = 7;
 pub(crate) const RS_XCAND: usize = 8;
+/// State step part 2 (iii)(b), rest: `Relations`' dicts held in the core, insertion-ordered (relkeys.rs `OrdMap`, Python
+/// dict order: a re-set keeps its place, a delete then set goes last), keyed by RelKeys.
+pub(crate) const RD_NAMES: [&str; 15] = ["adapters", "status", "_guards", "_link_lt", "top", "link_sel", "atom_sel", "num_sel",
+                                          "_roles", "_info", "_link_of", "_tv", "_tsrc", "_xside", "_xheads"];
+pub(crate) const RD_ADAPTERS: usize = 0;
+pub(crate) const RD_STATUS: usize = 1;
+pub(crate) const RD_GUARDS: usize = 2;
+pub(crate) const RD_LINK_LT: usize = 3;
+pub(crate) const RD_TOP: usize = 4;
+pub(crate) const RD_LINK_SEL: usize = 5;
+pub(crate) const RD_ATOM_SEL: usize = 6;
+pub(crate) const RD_NUM_SEL: usize = 7;
+pub(crate) const RD_ROLES: usize = 8;
+pub(crate) const RD_INFO: usize = 9;
+pub(crate) const RD_LINK_OF: usize = 10;
+pub(crate) const RD_TV: usize = 11;
+pub(crate) const RD_TSRC: usize = 12;
+pub(crate) const RD_XSIDE: usize = 13;
+pub(crate) const RD_XHEADS: usize = 14;
 
 /// One `Relations`' sets, as RelKeys keys. Insertion order is kept beside each (`order`) for the test-only snapshot and the
 /// views' iteration; no engine code iterates these sets (grep at 022630c).
@@ -684,6 +709,7 @@ pub(crate) struct RelS {
     pub(crate) rel: Py<PyAny>,
     pub(crate) s: [std::collections::HashSet<u32>; 9],
     pub(crate) order: [Vec<u32>; 9],
+    pub(crate) d: [crate::relkeys::OrdMap; 15],
 }
 
 /// `s.table.core`.
@@ -1531,6 +1557,42 @@ impl SessionCore {
         }).collect()
     }
 
+    /// The view `Relations.<RD_NAMES[k]>` (relkeys.rs `RelDictView`).
+    fn rd_field(slf: &Bound<'_, Self>, rel: &Bound<'_, PyAny>, k: usize) -> PyResult<crate::relkeys::RelDictView> {
+        tick(RD_VIEW);
+        if k >= RD_NAMES.len() {
+            return Err(PyValueError::new_err("no such dict"));
+        }
+        Ok(crate::relkeys::rd_view(slf, rel, k))
+    }
+
+    /// The record method for `rel.<RD_NAMES[k]> = d` (Python's own `__init__`, `top = {}`): the core's dict becomes `d`.
+    fn set_rd(&self, rel: &Bound<'_, PyAny>, k: usize, d: &Bound<'_, PyAny>) -> PyResult<()> {
+        tick(RD_RECORD);
+        self.rd_clear(rel, k);
+        let items = d.call_method0(intern!(d.py(), "items"))?;
+        for kv in items.try_iter()? {
+            let (key, v): (Bound<'_, PyAny>, Bound<'_, PyAny>) = kv?.extract()?;
+            self.rd_set(rel, k, &key, &v)?;
+        }
+        Ok(())
+    }
+
+    /// Test-only snapshot export: every `Relations`' moved dicts, as (rel, {name: [(key, value) in insertion order]}).
+    fn rd_snapshot<'py>(&self, p: Python<'py>) -> PyResult<Vec<(Bound<'py, PyAny>, Bound<'py, PyDict>)>> {
+        let rels: Vec<Py<PyAny>> = self.rels.borrow().iter().map(|r| r.rel.clone_ref(p)).collect();
+        rels.into_iter().map(|r| {
+            let r = r.bind(p).clone();
+            let d = PyDict::new(p);
+            for (k, n) in RD_NAMES.iter().enumerate() {
+                let items: Vec<Bound<'py, PyTuple>> = self.rd_items(p, &r, k).into_iter()
+                    .map(|(a, b)| PyTuple::new(p, [a, b])).collect::<PyResult<_>>()?;
+                d.set_item(n, PyList::new(p, items)?)?;
+            }
+            Ok((r, d))
+        }).collect()
+    }
+
     /// RelKeys' size: (keys, by term id, by hash, dict-only).
     fn rk_stats(&self) -> (usize, usize, usize, bool) {
         let k = self.relkeys.borrow();
@@ -1586,6 +1648,11 @@ impl SessionCore {
         if let Ok(v) = self.rels.try_borrow() {
             for x in v.iter() {
                 visit.call(&x.rel)?;
+                for m in x.d.iter() {
+                    for v in m.values() {
+                        visit.call(v)?;
+                    }
+                }
             }
         }
         Ok(())

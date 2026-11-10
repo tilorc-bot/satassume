@@ -9,6 +9,7 @@
 use pyo3::exceptions::PyAssertionError;
 use pyo3::intern;
 use pyo3::prelude::*;
+use crate::relkeys::RDict;
 use pyo3::types::{PyBool, PyCFunction, PyDict, PyFrozenSet, PyList, PySet, PyTuple};
 
 use crate::relations_core::{
@@ -259,12 +260,12 @@ pub(crate) fn set_glue<'py>(s: &Bound<'py, PyAny>, a_all: &Bound<'py, PyAny>, xf
     let have = g.get_item(0)?;
     let xf = xfer.is_truthy()?;
     let len = |name: &Bound<'py, PyAny>| -> PyResult<usize> { name.len() };
-    let link_sel = rel.getattr(intern!(p, "link_sel"))?;
-    let num_sel = rel.getattr(intern!(p, "num_sel"))?;
-    let atom_sel = rel.getattr(intern!(p, "atom_sel"))?;
+    let link_sel = RDict::of(&rel, crate::session::RD_LINK_SEL)?;
+    let num_sel = RDict::of(&rel, crate::session::RD_NUM_SEL)?;
+    let atom_sel = RDict::of(&rel, crate::session::RD_ATOM_SEL)?;
     let m1 = (-1i64).into_pyobject(p)?.into_any();
-    let s0 = if g.get_item(2)?.is_truthy()? { (len(&link_sel)? + len(&num_sel)?).into_pyobject(p)?.into_any() } else { m1.clone() };
-    let s1 = if g.get_item(3)?.is_truthy()? { len(&atom_sel)?.into_pyobject(p)?.into_any() } else { m1.clone() };
+    let s0 = if g.get_item(2)?.is_truthy()? { (link_sel.len()? + num_sel.len()?).into_pyobject(p)?.into_any() } else { m1.clone() };
+    let s1 = if g.get_item(3)?.is_truthy()? { atom_sel.len()?.into_pyobject(p)?.into_any() } else { m1.clone() };
     let s2 = if xf { crate::session::core_of(s)?.borrow().xfer_obj(&rel, crate::session::XSEL) } else { p.None().into_bound(p) };
     let stamp = PyTuple::new(p, [s0, s1, s2])?;
     if stamp.as_any().eq(g.get_item(1)?)? {
@@ -287,8 +288,8 @@ pub(crate) fn set_glue<'py>(s: &Bound<'py, PyAny>, a_all: &Bound<'py, PyAny>, xf
         }
         have.call_method1(intern!(p, "__ior__"), (&new,))?;
     }
-    let (lsel, nsel, asel) = (rel.getattr(intern!(p, "link_sel"))?, rel.getattr(intern!(p, "num_sel"))?, rel.getattr(intern!(p, "atom_sel"))?);
-    let status = rel.getattr(intern!(p, "status"))?;
+    let (lsel, nsel, asel) = (RDict::of(&rel, crate::session::RD_LINK_SEL)?, RDict::of(&rel, crate::session::RD_NUM_SEL)?, RDict::of(&rel, crate::session::RD_ATOM_SEL)?);
+    let status = RDict::of(&rel, crate::session::RD_STATUS)?;
     let pred_index = em.getattr(intern!(p, "PRED_INDEX"))?;
     let ra = em.getattr(intern!(p, "RELATION_ATOMS"))?;
     let is_number = em.getattr(intern!(p, "_is_number"))?;
@@ -305,7 +306,7 @@ pub(crate) fn set_glue<'py>(s: &Bound<'py, PyAny>, a_all: &Bound<'py, PyAny>, xf
             if !asel.contains(&x)? {
                 ap = true;
             }
-            let st = status.call_method1(intern!(p, "get"), (&x,))?;
+            let st = status.get(&x)?;
             if !(st.is_instance_of::<PyBool>() && !st.is_truthy()?) {
                 for e in x.getattr(intern!(p, "expr"))?.try_iter()? {
                     let e = e?;
@@ -336,9 +337,9 @@ pub(crate) fn group_sel<'py>(s: &Bound<'py, PyAny>, key: &Bound<'py, PyAny>, ato
     let stamp = PyTuple::new(
         p,
         [
-            rel.getattr(intern!(p, "link_sel"))?.len()?.into_pyobject(p)?.into_any(),
-            rel.getattr(intern!(p, "atom_sel"))?.len()?.into_pyobject(p)?.into_any(),
-            rel.getattr(intern!(p, "num_sel"))?.len()?.into_pyobject(p)?.into_any(),
+            RDict::of(&rel, crate::session::RD_LINK_SEL)?.len()?.into_pyobject(p)?.into_any(),
+            RDict::of(&rel, crate::session::RD_ATOM_SEL)?.len()?.into_pyobject(p)?.into_any(),
+            RDict::of(&rel, crate::session::RD_NUM_SEL)?.len()?.into_pyobject(p)?.into_any(),
             crate::session::core_of(s)?.borrow().xfer_obj(&rel, crate::session::XSEL),
         ],
     )?;
