@@ -19,7 +19,7 @@ classified from the grep line alone.
 
 ## FLAGGED (1)
 
-**F1. `solver_rs/src/session.rs:850` -> `join_log.py:31` -> `join_summary.py:25`. Diagnostic only.**
+**F1. `solver_rs/src/session.rs:850` -> `join_log.py:30` -> `join_summary.py:25`. Diagnostic only.**
 `SessionCore::known` passes `self as *const Self as usize` to the join hook. `join_log.py` writes it as `session`
 in each row, and `join_summary.py:25` prints `distinct (session, node)` as the size of
 `{(worker, session, nid)}`. Rows outlive the sessions, and nothing holds a session for the log's life, so a later
