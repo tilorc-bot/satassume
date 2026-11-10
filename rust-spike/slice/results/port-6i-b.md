@@ -1,7 +1,7 @@
 # 6i, part (b): functions' slotted `_unary`, `nary` and `_in_unit_interval_units` on Rust (issue 323)
 
-sa-port-212 wrote the port (6829d06). sa-port-214 fixed the test cases, added the direct guard tests, ran the probe and the bar,
-and landed it.
+sa-port-212 wrote the port (6829d06). sa-port-214 fixed the test cases, added the direct guard tests, ran the probe and bar 1.
+sa-port-216 read bar 1, rebased onto db7130a, ran bar 2 and landed it.
 
 ## What moved
 - `term/fn_tpl.rs` (new) answers functions.py's slotted templates, dispatched as `Tpl::Slotted` (dispatch.rs:236-262, call
@@ -44,28 +44,117 @@ and landed it.
   compares the same way and may have the same hole. **Unchecked; a backend-PR-list item.**
 
 ## SHAs and landing
-- Base: rust-slice 80665b5. Tested: **fe250ff** (6829d06 + 4626fff + fe250ff). **Not landed:** the week reading was 90%
-  at 15:53 (`agent usage`), and the architect said at ~15:58: no landing until the reset (10 Nov 04:00 UTC). This goes on the
-  closing list. Branch port/6i-b is pushed.
-- Incoming diff: **empty** at 15:53. origin/rust-slice was still 80665b5, which is an ancestor of fe250ff. This was checked by
-  `git merge-base`, not by `bar.sh land`.
+- Base: rust-slice 80665b5 for the first bar. Tested there: **fe250ff** (6829d06 + 4626fff + fe250ff).
+- Held over the week rule (90% at 15:53 9 Nov; the architect: no landing until the 10 Nov 04:00 UTC reset). At 04:33Z 10
+  Nov the week read 2%.
+- rust-slice had moved 80665b5 → **db7130a** (the harness install-order fix and Q2's Rust handler plant, sa-port-218).
+  `bar.sh land fe250ff` without PUSH, after the rebase, gave **incoming diff: `rust-spike/slice/live.py` (34 lines),
+  `rust-spike/slice/test_live_handler_plant.py` (new, 66), and results/ only** (HANDOFF-sa-port-206/209,
+  harness-install-order.md). live.py is the harness every live and extra phase runs, so it is guarded source: the bar was
+  rerun on the rebased head **e817aa1** (code commits 469d6b1, 4d8f1ed, 186ae10 = 6829d06, 4626fff, fe250ff rebased; no
+  edits). The rebased Rust and Python source is byte-identical to fe250ff's apart from the incoming diff.
+- Tested for landing: **e817aa1** (bar 2 below). Landed: BAR2_LANDED.
 
-## The bar (pareto1, `~/sp19/sa-rust-ids-work/sa-port-214/bar-6ib` on fe250ff): RUNNING at handoff
-Started 15:18Z under a shared lease ('sa-port-214 6i(b) bar on fe250ff'), with machine run pid 1811453 on orion. The end
-marker is **pareto1:/home/tilo/sp19/sa-rust-ids-work/sa-port-214/bar-6ib/end.txt**. The wrapper is
-`~/sp19/sa-rust-ids-work/sa-port-214/run-bar-6ib.sh` (orion copy `~/sa-rust-ids-work/sa-port-214/run-bar-6ib.sh`).
-- Base suite rows: `~/sp19/sa-rust-ids-work/sa-port-208/bar-s2/suite`.
-- PLANTS: the six `fn-*`. WLS: the 11. SUITE_PLANTS: `zero`. TESTS: sa-port-208's list plus test_knowledge_fn_direct.py
-  and test_knowledge_rows.py. DIRECT: `relations_direct.py 300 0` and `dispatch_direct.py`. N: 6.
+## Bar 1 (pareto1, `~/sp19/sa-rust-ids-work/sa-port-214/bar-6ib` on fe250ff, base 80665b5)
+Run 15:18Z-16:16Z 9 Nov under a shared lease; every phase exited 0 (build, tests, suite, live, plants, extra, suiteplants,
+sum); seed1 was not run. `.so` sha256 0dc0110d…. Base suite rows: `sa-port-208/bar-s2/suite`. WLS: the 11. Tests phase:
+**811 passed, 4 skipped**, exit 0. DIRECT: `relations_direct.py 300 0` exit 0; `dispatch_direct.py` exit 0, BAD 0, with
+`registry:rust:_unary.<locals>.template` 6 and `nary` 1 reached. The summary is copied to
+`~/sa-rust-ids-work/sa-port-216/bar-6ib/sum.txt`, the fallback counts to `.../sa-port-216/bar-6ib/fb-cand.txt` (base:
+`.../sa-port-216/fb-s2.txt`, the S2 bar on bb92b07, by the same `fbcounts.py`).
+1. **Suite by id:** 5,991 passed, 127 failed, 23 skipped (plus 18 xfailed), over 6,159 ids. **Against base: new 0, gone 0,
+   changed outcome 0.** Passed splits into 5,990 with no handler firing and 1 with a firing:
+   `tests/test_invariants.py::test_ci_stream_reports_only_what_replays`, the named case.
+2. **Fresh dev and fuzz: answers and state MATCH** (Rust against Python, traced and untraced; Python against Python as the
+   control). dev answers_sha 31cd0945c07f02a6, fuzz 173502b6ef285ad6. **All 11 extra workloads MATCH**, Rust against Python,
+   each with its Python control MATCH.
+3. **Plants caught:** five of the six are caught by the live comparison on the workload that reaches them; table below.
+4. **Quiet handler firings on Rust: the handler multiset is the same as base.** 39 rows in 2 tests:
+   - 34 × `_consistent` AttributeError `'Solver' object has no attribute '_ok'`, in test_ci_stream_reports_only_what_replays;
+   - 4 × `_consistent` AttributeError `_rb_clauses`, in the same test;
+   - 1 × `Engine._build_context` RuntimeError "Already mutably borrowed", in test_protocol_on_fuzz (the named 46-stub cause).
 
-Read from the bar at 15:59Z:
-- phases build, tests, suite, live and plants exited 0;
-- tests: **811 passed, 4 skipped**;
-- DIRECT exited 0: dispatch_direct BAD 0, with `registry:rust:_unary.<locals>.template` 6 and `nary` 1 reached.
+   **engine.py:1906's catches (`ctx:caught`): 0 on all 13 workloads** (dev, fuzz and the 11 WLS, from each
+   `*-rust.session.json`). The live and extra handler files have 0 rows; TermFault in pytest.log: 0. These Rust-side zeros
+   were **void** at the ported `_build_context`/verdict sites: bar 1 ran the old live.py, which set the handler plant before
+   `backend.install()` (harness-install-order.md). Bar 2 runs the fixed live.py with `ctx-check-raise` as a live control.
+5. **Known differences in answers or read state: none.**
 
-Still running: extra (the 11 WLS), suiteplants and sum. **The bar's five items are not yet read:** the suite by id, MATCH,
-plants, handler multiset with ctx:caught, and fallbacks with kept shares. The successor reads them from sum.txt and fills in
-the sections below, in port-6i-a.md's form.
+### Plants (bar 1)
+`fired` reads the session report. sum.txt's "plant fired in the suite: 0" is **void for these plants**: the fn plants count
+in Common's counts, not in `rel:plant_fired` (as 6i(a)'s outer plants). The suite catch is read from changed outcomes.
+SUITE_PLANTS `zero` runs the suite only under plants that fired 0 on dev and fuzz.
+
+| plant | fired (bar) | caught by | suite (against the plain suite) |
+|---|---|---|---|
+| `fn-unary-drop-last` (340) | dev 31, f6 75, opaque 45, value 309, zero 5 | dev, f6, opaque, value DIFFER; zero MATCH (5 fires, no answer moved) | not run (fires on dev) |
+| `fn-nary-drop-last` (341) | f6 47 | f6 DIFFER | 14 changed (test_nan_arguments Falling/RisingFactorial, test_notmpl_elementary, test_notmpl_special) |
+| `fn-unit-interval-flip` (342) | f6 18 | f6 DIFFER | 1 changed (`test_sympy_api.py::test_function_closures`) |
+| `fn-value-drop` (343) | value 236 | value DIFFER | 1 changed, the planted-history test failed -> passed: the known id()-reuse flip, not a catch, so **void in the suite** |
+| `fn-genocchi-half-flip` (344) | value 50 | value DIFFER | 0 changed: **void in the suite** |
+| `fn-unary-shift` (345) | dev 2, f6 33, opaque 16, value 212 | dev, f6, opaque, value DIFFER | not run (fires on dev) |
+
+Every fn plant fires 0 on fuzz, budget, cert, core, loop, rootof, scope and wiring, and those all MATCH, as expected. No
+plant is void on every workload. Void cells: `fn-unary-drop-last` on zero (fires, MATCH); `fn-value-drop` and
+`fn-genocchi-half-flip` in the suite.
+
+BAR2_SECTION
+
+## Fallbacks to Python inside ported code (planner's fallback-reporting ruling, with its `ad:cbm_noid` addition)
+From bar 1's knowledge files by `fbcounts.py` (prefixes `registry:python:`, `fn:`, `ad:cbm_noid`, `rows:python:`,
+`registry:kept:`, `outer:`, `scaffold:`, `value:`, `realroots:`), against the S2 bar on bb92b07. **`_unary.<locals>.template`
+and `nary.<locals>.template` are gone from dispatch.rs:242's `registry:python` on every workload.** Every `rows:python`
+count (rows_tpl.rs:413's fallback to the kcl shells) equals the S2 bar's. **`ad:cbm_noid`: 0 on all 13 workloads.**
+
+| workload | `registry:python` before (S2 bar) → after | names removed | `fn:` firings on Rust (after) |
+|---|---|---|---|
+| dev | 126 → 95 | `_unary` 31 | `rust:unary` 31 |
+| f6 | 211 → 65 | `_unary` 97, `nary` 49 | `rust:unary` 75, `rust:nary` 47, `rust:unit_interval` 18 |
+| opaque | 101 → 42 | `_unary` 59 | `rust:unary` 45 |
+| value | 507 → 180 | `_unary` 327 | `rust:unary` 309, `rust:genocchi_half` 50, `value_units` 236, `value:sympy` 264 |
+| zero | 43 → 38 | `_unary` 5 | `rust:unary` 5 |
+| fuzz 38, rootof 27, core 35, scope 26, loop 31, wiring 75, cert 24, budget 469 | unchanged, by template | none | 0 |
+
+The `fn:` counters are fn_tpl.rs's own (per Rust template call), not dispatch's per-registry count, so the columns don't
+subtract one to one.
+
+After, by template (`registry:python`, dispatch.rs:242): `_load` (the registry load) and atoms' input-fact templates
+`symbol_units`/`constant_units` only, on every workload: dev 95 (`_load` 68, `constant_units` 12, `symbol_units` 15); f6 65
+(54, 4, 7); opaque 42 (39, -, 3); value 180 (29, 150, 1); zero 38 (29, 3, 6); fuzz 38 (30, 6, 2); rootof 27 (26, -, 1);
+core 35 (28, 1, 6); scope 26 (26); loop 31 (20, 5, 6); wiring 75 (35, -, 40); cert 24 (20, 1, 3); budget 469 (19, -, 450).
+
+Other prefixes that moved, each explained:
+- `registry:kept` rises on the kept (refused Float) queries, where the slotted templates now count as kept instead of
+  Python: f6 2 → 14 (`_unary` 11, `nary` 1), opaque 2 → 9 (`_unary` 7), value 6 → 15 (`_unary` 9). The same move 6i(a)
+  showed for multigamma. These are the named kept reason `refused`, whose shares equal base.
+- `scaffold:rebuilt` on value 221 → 269 (+48; `rebuilt:f6` the same): fn_tpl.rs's slot objects `x + c` and `x/2` are built
+  in the query's table and rebuilt in SymPy by `term_live.scaffold` (fn_tpl.rs:235), the temporary construction the
+  scaffolding ruling allows on the slice branch, checked against Rust's form (`scaffold:mismatch` unchanged: f6 2, the
+  `refused:scaffold` queries). It is 0 on every other workload's delta. **This step adds 48 scaffold rebuilds on value; the
+  count must reach zero before any backend PR.**
+
+What still falls back, and why:
+- dispatch.rs:242: `_load` is :200's registry load; `symbol_units`/`constant_units` are atoms' input-fact templates.
+- rows_tpl.rs:413: `Integer` and `const_value` (the named SymPy callback) on every workload, plus the kcl shells
+  (`_bound_split`, `_half_split`, `_imag_split`, `_mul_factor_sets`, `_quotient_templates`, `Add`, `Mul`,
+  `_pow_bound_templates`, `_unit_power_units`, `ipi_split`, `constant_value`) as before.
+- So dispatch.rs:242 and rows_tpl.rs:413 don't yet report 0 outside named callbacks; 6i(b)'s templates no longer fall back.
+
+## Kept reasons (planner ruling, 03:42 UTC 8 Nov), bar 1
+Every share equals base (the S2 bar).
+- Out-of-scope: dev 24/1,985 (1.21%); every other workload 0.
+- Refused:
+  - f6 13/2,902 (0.45%): `algebra: Float` 10, `lra: a callback on a derived term` 1, `scaffold: rebuilt form differs from
+    Rust` 2;
+  - value 15/3,742 (0.40%), all `algebra: Float`;
+  - opaque 7/2,546 (0.27%): `algebra: infinity or nan` 5, `algebra: holds an infinity, nan or Float` 2;
+  - wiring 1/6,512 (0.02%), `lra: a callback on a derived term`;
+  - dev, fuzz, rootof, core, scope, loop, zero, cert, budget: 0.
+
+## State: each container this step touches
+None new. fn_tpl.rs holds no static, cache or memo: each answer is a pattern built per call from the term's reads and goes
+into dispatch's per-query clause list. Rust's and Python's templates share `_common._CACHE` by pattern key (Python's
+existing cache, unchanged). The live state comparison MATCHes on all 13 workloads.
 
 ## Earlier evidence (orion, not the bar)
 - sa-port-212's quick live check on 6829d06: f6 and value MATCH, Rust against Python. All seven plant firings were caught:
@@ -114,20 +203,21 @@ gone from it on every workload.
 - **So the set is small and fixed, and the generator already includes it.** Reading the table in fn_tpl.rs removes the
   callback for the tagged classes. A subclass isn't in the table and would keep the callback. This is the later small item
   the ruling describes. Until it's done, the callback is a named one, with these fire counts: probe c1 on 6829d06, 2
-  passes: value 264, other workloads 0. The bar's per-workload counts are for the successor to read.
-- The TSV row for `_value_units` should read "offline table plus per-query callback on a miss" (planner). Strictly, today it
-  is "callback on every call; the table is unread". **Not yet edited in the TSV:** the successor does it with the count.
+  passes: value 264, other workloads 0. Bar 1 (fe250ff), `fn:value:sympy` per workload: **value 264; dev, fuzz, f6, rootof,
+  opaque, core, scope, loop, zero, wiring, cert, budget 0.**
+- The TSV row for `_value_units` (functions.py:421) now reads "offline table plus per-query callback on a miss" (planner),
+  noting that the table is unread today, so the callback fires on every call; port-ownership.md's section-2 note says the
+  same. **Later small item:** fn_tpl.rs reads the table, which removes the callback for the tagged classes.
 
-## Module count
-functions.py has 0 per-query Python on all 15 workloads. With `fn:value:sympy` ruled a named callback, it **counts**, with
-this footnote: "`fn:value:sympy`: `expr.func(c)` on Rust's value-at-integer facts, value 264 (2 passes), 0 elsewhere; the
-offline table covers it and is unread". The total is the current STATUS count plus one. The successor states it against
-STATUS once the bar is read.
+## Module count (STATUS "Counted modules", 19 of 32 at db7130a)
+functions.py has 0 per-query Python on all 15 workloads (the module-wide probe above, every function in the file, on fe250ff;
+the rebase brought no change to functions.py, fn_tpl.rs or dispatch.rs). With `fn:value:sympy` ruled a named callback, it
+**counts: 20 of 32**, with this footnote: "functions.py: keeps `fn:value:sympy`, `expr.func(c)` on Rust's value-at-integer
+facts, a named SymPy-semantics callback (value 264, 0 on the other 12 workloads; bar on fe250ff); offline_data.json's
+`value_units` table covers every pair it is called with and is unread; reading it in fn_tpl.rs removes the callback for
+the tagged classes." The other footnotes stand as in STATUS.
 
-## Not run / open at handoff
-- The bar's extra, suiteplants and sum phases (running). Every bar item is therefore unread, and nothing here is quoted as
-  met.
-- `bar.sh land` and the landing: held by the week rule.
+## Not run
 - Moved to "before any backend PR", none quoted as met:
   - the mutant 2, 5, 6, 7, 9 rerun and mutlive's control;
   - the boundary rescore and suite column;
@@ -135,13 +225,14 @@ STATUS once the bar is read.
   - the suite split with Python's counter;
   - `order:_rows`' evidence (not caught meanwhile);
   - the `_forms` guard test;
-  - history and seed reruns (the probe ran dev-seed1 and fuzz-seed1);
+  - history and seed reruns (the bars' seed1 phase not run; the probe ran dev-seed1 and fuzz-seed1);
   - forced moves;
   - the native path;
   - timing.
-- Not re-shown: a `ctx:caught` firing on a planted raise. Rust-side handler zeros are void at the ported
-  `_build_context`/verdict sites until the harness session's handler plant lands.
-- The dispatch_direct.py shared-cache question (above).
+- The module-wide probe was not rerun on e817aa1 (no functions.py or Rust change came in).
+- The dispatch_direct.py shared-cache question: `_common._CACHE` is shared by pattern key, so dispatch_direct.py's
+  side-by-side comparison may read one side's pattern on the other, as test_knowledge_fn_direct.py's first draft did.
+  **Unchecked; a backend-PR-list item.**
 
 Other notes, carried:
 - S's standing: S's gate is met except for the 46 named stub failures, one cause.
@@ -149,4 +240,5 @@ Other notes, carried:
 - `tests/test_relations.py::test_equality_sharing_is_needed_and_works` is unedited and still named needs-internals.
 - `tests/test_public_incremental.py::test_public_comparison_catches_a_planted_history_dependence` is the known id()-reuse
   failure (a28c548), unedited.
+- `test_performance_smoke_300_vars`: same outcome as base in bar 1's suite (changed outcome 0 overall); not chased.
 - **Speed not measured.**
