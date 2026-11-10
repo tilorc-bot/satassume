@@ -235,3 +235,37 @@ SET_DOORS = {
 def test_one_engine_set_verdicts(pair, door, order, emptied):
     alone = _one_engine_as_alone(SET_DOORS[door], _ordered(PAIRS[pair], order))
     assert alone[0] != alone[1]
+
+
+# Engine._kids, Engine._cones and Engine._qcones: the structural cones the
+# discovery budget is tested on.  A fact registered for the SymPy type only
+# puts two more symbols in the cone of the SymPy number (weight 3, the
+# Python number's 1); with a budget of 2 one is answered and the other is
+# over the budget.
+CONE_DOORS = {
+    'is_': lambda e, v: e.is_(v, 'positive'),
+    'is_many': lambda e, v: e.is_many(v, ['positive', 'zero']),
+    'ask': lambda e, v: e.ask(P('positive', v), P('real', s)),
+    'ask, no assumptions': lambda e, v: e.ask(P('positive', v)),
+    'ask, in the assumptions': lambda e, v: e.ask(P('real', s), P('positive', v)),
+    'verdict': lambda e, v: e.verdict(P('positive', v)),
+}
+
+
+@pytest.mark.parametrize("order", ORDERS)
+@pytest.mark.parametrize("door", list(CONE_DOORS))
+@pytest.mark.parametrize("pair", list(PAIRS))
+def test_one_engine_cones(pair, door, order, emptied):
+    py, sy = PAIRS[pair]
+    w1, w2 = Symbol('w1'), Symbol('w2')
+    question = CONE_DOORS[door]
+    registered = api.extensions.snapshot()
+    try:
+        api.extensions.register('prime', type(sy))(
+            lambda n: Implies(P('prime', n), And(P('positive', w1), P('positive', w2))))
+        alone = _one_engine_as_alone(
+            lambda e, v: (question(e, v), e.last_budget_limited),
+            _ordered((py, sy), order), lambda: Engine(discovery_budget=2))
+    finally:
+        api.extensions.restore(registered)
+    assert alone[0] != alone[1]

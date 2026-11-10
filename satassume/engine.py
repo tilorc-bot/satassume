@@ -1380,8 +1380,9 @@ class Engine:
         #: the structural cones of the discovery budget (``_struct``,
         #: ``_cone_info``, ``_query_cone``): object -> ``(kids, weight)``,
         #: object -> ``(cone or None, weight, has relation atom)``, formula
-        #: -> its cone record; functions of the object, the registry and
-        #: the settings, dropped with the other caches
+        #: -> its cone record; functions of the object, its type (the keys
+        #: are ``typed(object)``), the registry and the settings, dropped
+        #: with the other caches
         self._kids: Dict[Any, Any] = {}
         self._cones: Dict[Any, Any] = {}
         self._qcones: Dict[Any, Any] = {}
@@ -1631,7 +1632,12 @@ class Engine:
         escalation handles each), 0 for a custom or relation atom (no node
         of its own)."""
         kids = self._kids
-        r = kids.get(o)
+        # keyed with the type: the templates and the extension facts of
+        # ``o`` are chosen by it, and equal objects of two types (``1`` and
+        # ``S.One``) have different kids (#96); so are ``_cones`` and
+        # ``_qcones``, which are built from this
+        key = typed(o)
+        r = kids.get(key)
         if r is not None:
             return r
         if len(kids) >= 200_000:
@@ -1641,14 +1647,14 @@ class Engine:
             # an object of a cone that is a P is a custom or relation atom
             # (_kid maps vocabulary atoms to their argument)
             if o.pred in RELATION_ATOMS and self._relation_specs:
-                r = kids[o] = (glue_objects(o, self._relation_specs, self._glue_adapters), 0)
+                r = kids[key] = (glue_objects(o, self._relation_specs, self._glue_adapters), 0)
                 return r
             k = set()
             if ext is not None:
                 for f in ext.facts_for(o):
                     k.update(_kid(a) for a in atoms_of(f))
                 k.discard(o)
-            r = kids[o] = (k, 0)
+            r = kids[key] = (k, 0)
             return r
         args = getattr(o, "args", ())
         if len(args) > self._discovery_budget and (
@@ -1659,7 +1665,7 @@ class Engine:
             # built (#180 C-WIDEADD)
             k = {a for a in args if not (a.is_Atom and a.is_number)}
             if len(k) > self._discovery_budget:
-                r = kids[o] = (k, self._discovery_budget + 1)
+                r = kids[key] = (k, self._discovery_budget + 1)
                 return r
         constructing = self._constructing
         mine = o not in constructing
@@ -1682,7 +1688,7 @@ class Engine:
         for f in formulas:
             k.update(_kid(a) for a in atoms_of(f))
         k.discard(o)
-        r = kids[o] = (k, 2 if compiled and formulas else 1)
+        r = kids[key] = (k, 2 if compiled and formulas else 1)
         return r
 
     def _cone_info(self, d):
@@ -1693,7 +1699,8 @@ class Engine:
         rel)`` with ``w`` past the budget; ``rel``: the cone holds a relation
         atom (meaningful when it fits).  Memoized per engine."""
         cones = self._cones
-        r = cones.get(d)
+        key = typed(d)
+        r = cones.get(key)
         if r is not None:
             return r
         budget = self._discovery_budget
@@ -1709,7 +1716,7 @@ class Engine:
             total += w
             if type(o) is P and o.pred in RELATION_ATOMS:
                 rel = True
-            known = cones.get(o) if o is not d else None
+            known = cones.get(typed(o)) if o is not d else None
             if known is not None:
                 kc, _kw, krel = known
                 if kc is None:
@@ -1732,7 +1739,7 @@ class Engine:
         r = (None, max(total, budget + 1), rel) if over else (frozenset(seen), total, rel)
         if len(cones) >= 100_000:
             cones.clear()
-        cones[d] = r
+        cones[key] = r
         return r
 
     def _query_cone(self, f, link: bool):
@@ -1744,7 +1751,7 @@ class Engine:
         ``sums``: the sums under its sign atoms (``scope.affine_pair``);
         ``zs``: the arguments of its zero atoms (``relations.zero_args``).
         Memoized per engine."""
-        key = (f, link)
+        key = (typed(f), link)
         qc = self._qcones
         r = qc.get(key)
         if r is not None:
@@ -2014,9 +2021,7 @@ class Engine:
         if node in self._constructing:
             # re-entrant query from a template evaluating this very node
             return None
-        c = self._cones.get(node)
-        if c is None:
-            c = self._cone_info(node)
+        c = self._cone_info(node)
         if c[0] is None:
             return self._over_budget()
         facts = self.cache.facts(node)
@@ -2062,9 +2067,7 @@ class Engine:
                 todo.append(k)
         if not todo or node in self._constructing:
             return out
-        c = self._cones.get(node)
-        if c is None:
-            c = self._cone_info(node)
+        c = self._cone_info(node)
         if c[0] is None:
             for _ in todo:
                 self._over_budget()

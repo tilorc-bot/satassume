@@ -19,6 +19,7 @@ import itertools
 import pytest
 
 from satassume import Engine, DictCache, P, Implies, Not, And, Or, allargs
+from satassume.sat.formula import typed
 from satassume.sat.solver import BOTTOM, Solver
 
 
@@ -450,7 +451,7 @@ def test_cone_of_a_node_and_the_budget():
     assert eng._cone_info(('add', chain))[0] is None             # 4 > 3
     assert 'y' in c and chain not in eng._cone_info(('add', 'y'))[0]
     eng2 = _chain_engine(3)
-    eng2._kids[('r',)] = ({P('lt', ('y', 'w'))}, 1)
+    eng2._kids[typed(('r',))] = ({P('lt', ('y', 'w'))}, 1)
     assert eng2._cone_info(('r',))[2] is True
 
 
