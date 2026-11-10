@@ -41,7 +41,7 @@ import sys
 from typing import Any, Callable, Dict, Iterable, List, Tuple
 
 from ...state.epoch import bump as _bump
-from ...sat.formula import Formula, P
+from ...sat.formula import Formula, P, typed
 from ...state.memos import adopt as _adopt_memo
 from . import _common
 from ._common import Compiled
@@ -75,10 +75,11 @@ class TemplateRegistry:
     def __init__(self) -> None:
         self._by_class: Dict[type, List[Template]] = {}
         self._mro_cache: Dict[type, List[Template]] = {}
-        #: ``(type(expr), expr) -> (compiled, formulas)`` of
-        #: :meth:`clauses_for`; templates are pure functions of the
-        #: expression and are chosen by its type, so the result only changes
-        #: when templates are registered (which clears it)
+        #: ``typed(expr) -> (compiled, formulas)`` of :meth:`clauses_for`
+        #: (``(type(expr), expr)`` unless the node is a tuple); templates are
+        #: pure functions of the expression and are chosen by its type, so
+        #: the result only changes when templates are registered (which
+        #: clears it)
         self._clauses_cache: Dict[Any, Any] = {}
         #: built-in template modules not imported yet, as ``(classes,
         #: module name)``: the module registers templates for ``classes``
@@ -231,8 +232,10 @@ class TemplateRegistry:
         formulas.  Memoized per expression; the result must not be mutated."""
         # the key holds the type too: the templates are those of
         # ``type(expr)``, and equal nodes of two types (``1``, ``True`` and
-        # ``S.One``; ``1.5`` and ``Float(1.5)``) have different results (#96)
-        key = (type(expr), expr)
+        # ``S.One``; ``1.5`` and ``Float(1.5)``) have different results (#96).
+        # A tuple node is keyed with the types of its elements as well
+        # (``typed``): its template reads them, and ``(1, x) == (S.One, x)``
+        key = typed(expr)
         r = self._clauses_cache.get(key)
         if r is not None:
             return r

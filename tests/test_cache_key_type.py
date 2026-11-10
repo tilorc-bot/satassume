@@ -372,3 +372,63 @@ def test_zero_twin_holds_its_own_node(nodes, emptied):
     # the sides of a twin are in the atom's own order
     assert [{type(x) for x in t.expr} for t in twins] == [{type(S.Zero), type(v)} for v in nodes]
     assert all(zero_twin(v) is t for v, t in zip(nodes, twins))
+
+
+# TemplateRegistry.clauses_for, a tuple node: its templates are those of its
+# class, but a template reads the elements, and equal tuples of one class
+# have elements of two types (``(1, s) == (S.One, s)``).  The key is
+# ``typed(node)``, which reads the types through tuples at any depth.
+class _Pair(tuple):
+    """A node class of this file's own, for the template registered here."""
+
+
+def _head(t):
+    return t[0][0] if isinstance(t[0], tuple) else t[0]
+
+
+@pytest.fixture
+def pair_template():
+    """``positive(head) -> real(pair)`` for every ``_Pair``; removed
+    afterwards (the registry has no unregister, and nothing else has the
+    class)."""
+    registry.register(_Pair)(lambda t: Implies(P('positive', _head(t)), P('real', t)))
+    yield
+    registry._by_class.pop(_Pair, None)
+    registry._mro_cache.clear()
+    registry._clauses_cache.clear()
+
+
+PAIR_SHAPES = {
+    'element': lambda v: _Pair((v, s)),
+    'element of an element': lambda v: _Pair(((v,), s)),
+}
+PAIR_DOORS = {
+    'clauses_for': lambda e, t: type(registry.clauses_for(t)[1][0].args[0].expr),
+    'ask': lambda e, t: e.ask(P('real', t)),
+    'ask, in the assumptions': lambda e, t: e.ask(P('real', s), Not(P('real', t))),
+    'is_': lambda e, t: e.is_(t, 'real'),
+    'verdict': lambda e, t: e.verdict(Not(P('real', t))),
+}
+
+
+@pytest.mark.parametrize("order", ORDERS)
+@pytest.mark.parametrize("engines", ['a new Engine per ask', 'one Engine'])
+@pytest.mark.parametrize("door", list(PAIR_DOORS))
+@pytest.mark.parametrize("shape", list(PAIR_SHAPES))
+@pytest.mark.parametrize("pair", list(PAIRS))
+def test_tuple_nodes_with_elements_of_two_types(pair, shape, door, engines, order, emptied, pair_template):
+    nodes = [PAIR_SHAPES[shape](v) for v in _ordered(PAIRS[pair], order)]
+    # one key by ``==`` and one class: only the elements' types differ
+    assert nodes[0] == nodes[1] and hash(nodes[0]) == hash(nodes[1])
+    assert type(nodes[0]) is type(nodes[1]) and typed(nodes[0]) != typed(nodes[1])
+    question = PAIR_DOORS[door]
+    if engines == 'one Engine':
+        alone = _one_engine_as_alone(question, nodes)
+    else:
+        alone = []
+        for t in nodes:
+            memos.PROCESS.clear()
+            alone.append(_answer(question, Engine(), t))
+        memos.PROCESS.clear()
+        assert [_answer(question, Engine(), t) for t in nodes] == alone
+    assert alone[0] != alone[1]     # or one entry for both would do
