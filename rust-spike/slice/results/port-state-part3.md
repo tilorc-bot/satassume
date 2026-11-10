@@ -282,9 +282,196 @@ scope's row was added at 4d14638. On a Rust run the digest reads the handles thr
 rise by three reads per `Relations` and one per session) and `memo:native_items` ticks at each engine point.
 memo_check.`_canon` (a shared file) was changed for it. Details: results/digest-coverage.md, last section.
 
+## The landing bar (tested f252daf on rust-slice 0192b35; read by sa-port-249, gate items by sa-port-262)
+
+pareto1 `~/sp19/sa-rust-ids-work/sa-port-247/bar-part3`, 17:47Z-22:09Z 10 Nov, every phase exit 0, seed1 not run; .so sha256
+e9aaf5052540; base rows (iii)'s bar (`sa-port-236/bar-iii-b3`). Copies and tables: orion `~/sa-rust-ids-work/sa-port-249/bar`.
+The incoming diff at landing: none (rust-slice was still 0192b35, the branch's base; `bar.sh land f252daf` printed an empty
+stat), so tested = landed source; the commits after f252daf add only HANDOFF files and this file.
+
+**Suite.** 126 failed, 5992 passed, 23 skipped, 18 xfailed; 6159 ids; against the base new 0, gone 0, changed outcome 0.
+Passed 5992 = 5991 with no handler firing + 1 with a firing (tests/test_invariants.py::
+test_ci_stream_reports_only_what_replays). Handler rows 39 in 2 tests, the multiset the same as the base's (34 `_ok`,
+4 `_rb_clauses`, 1 `Already mutably borrowed` in test_transfer.py::test_protocol_on_fuzz). TermFault 0. ctx:caught 1,
+ctx:fallback 37, rv:consistent_caught 45, all equal to the base (the quiet catches of engine.py's complete check).
+ad:cbm_noid 293 (base bar 94; it varies between runs of one source; formula's fix) and 25 on twin, 0 on the other 15.
+
+**Slice tests.** 53 files, one process per file (bar.sh `TESTS_SPLIT=1`, f252daf: a shared-file change): not exit 0 only the
+known base failures test_cf_diff.py (exit 2, 1 error: a script), test_catch_count.py (3 failed) and test_handler_count.py
+(2 failed) (the last two need `-p rust_plugin -p handler_count`). test_term_live.py 20 passed, 1 skipped (it fails on the
+base). test_install_order.py 198 passed (the 191-entry install list, a test per entry, and
+test_install_order.py::test_engine_first_refused, plant 420); test_session_boundary.py 27 passed.
+
+**Workloads, digest on (`--check entry`).** All 16 MATCH Python against Rust (dev, fuzz, twin, scope, loop, zero, cert,
+budget, core, f6, opaque, rootof, value, wiring, transfer:7:60, transfer2:3:40); the Python against Python controls MATCH;
+0 handler rows on every Python and Rust run (so relevance.rs's AttributeError on an opaque Split adds no firing). The only
+differences inside the verdict are the known `_SPLIT`/`_CACHE` rows per engine point, equal to known_moved.json's (dev 80,
+fuzz 120, scope 7, twin 1, loop 17, zero 35, cert 3, budget 2, core 66, f6 117, opaque 102, rootof 208, value 150, wiring
+261, transfer:7:60 3, transfer2:3:40 2), and scope's known row.
+
+**Workloads, digest off (`--check plain`, answers only; the planner's gate addition of ~22:25Z 10 Nov; sa-port-262).** The
+digest (moved_digest.py:137) replaces `Relations._interpret` and `_link` with its trackers, so in the digest-on runs Rust
+calls them by name (session.rs `named`, `sb:fwd_named`) and not directly: those runs did not take the path a user gets.
+One run of all 16 with the digest off, on the bar's tree and .so (pareto1 `~/sp19/sa-rust-ids-work/sa-port-262/dgoff`,
+copy on orion without the .jsonl): **all 16 MATCH, answer_diff 0, 0 handler rows**, and plant 437 (sb-fwd-skip-link), which
+fired 0 on all 16 with the digest on, fires and is caught on 8.
+
+| workload (queries) | verdict, digest off | sb:fwd_direct off | sb:fwd_named off | sb:fwd_direct on | sb:fwd_named on | plant 437 fired (off) | plant verdict (answers changed) |
+|---|---|---|---|---|---|---|---|
+| dev (1,985) | MATCH | 4,634 | 0 | 2,758 | 1,876 | 375 | DIFFER (33) |
+| fuzz (3,000) | MATCH | 67,229 | 0 | 21,427 | 45,802 | 9,421 | DIFFER (96) |
+| twin (2) | MATCH | 38 | 0 | 12 | 26 | 6 | DIFFER (2) |
+| scope (169) | MATCH | 1,377 | 0 | 502 | 875 | 174 | DIFFER (1) |
+| loop (420) | MATCH | 2,284 | 0 | 2,284 | 0 | 0 | MATCH |
+| zero (854) | MATCH | 12,843 | 0 | 4,832 | 8,011 | 1,903 | DIFFER (166) |
+| cert (61) | MATCH | 698 | 0 | 243 | 455 | 81 | DIFFER (30) |
+| budget (28) | MATCH | 1,961 | 0 | 1,961 | 0 | 0 | MATCH |
+| core (1,636) | MATCH | 6,365 | 0 | 6,365 | 0 | 0 | MATCH |
+| f6 (2,902) | MATCH | 11,575 | 0 | 11,575 | 0 | 0 | MATCH |
+| opaque (2,546) | MATCH | 3,007 | 0 | 3,007 | 0 | 0 | MATCH |
+| rootof (5,187) | MATCH | 5,520 | 0 | 5,520 | 0 | 0 | MATCH |
+| value (3,742) | MATCH | 4,555 | 0 | 4,358 | 197 | 0 | MATCH |
+| wiring (6,512) | MATCH | 48,945 | 0 | 48,945 | 0 | 0 | MATCH |
+| transfer:7:60 (60) | MATCH | 2,183 | 0 | 1,069 | 1,114 | 198 | DIFFER (3) |
+| transfer2:3:40 (40) | MATCH | 1,989 | 0 | 1,032 | 957 | 148 | DIFFER (2) |
+
+On every workload direct (off) = direct + named (on): the digest moves calls from the direct branch to the by-name one and
+changes no count. sb:attr 0 on all 16, both ways. The suite has no digest: sb:fwd_named 0, sb:fwd_direct 1,657,074. The
+answers' hashes are the bar's (dev 31cd0945c07f02a6, fuzz 173502b6ef285ad6, scope 12e06b0586faee40). The digest that only
+observes is formula's next bar (RULINGS 14).
+
+**Subs twins (RULINGS 13; sa-port-255's repro.py, one process per row, a new Engine per ask, nothing cleared).** Run on
+orion on a worktree of each SHA with its own built .so (base 0192b35 .so bfc06f0cd68a, step f252daf .so a10068f4febd;
+`~/sa-rust-ids-work/sa-port-262/tw/rows-{base,step}.txt`). The rows are equal on base and step, so the difference is the
+base's and the step does not change it:
+
+| case | order | Python, base = step | Rust, base = step |
+|---|---|---|---|
+| oo:lra | 12 | [None, None] | [None, None] |
+| oo:lra | 21 | [True, True] | [True, None] |
+| one:lra | 12 | [None, None] | [None, True] |
+| one:lra | 21 | [True, True] | [True, None] |
+
+Single asks (orders 1 and 2) agree on both: [None] and [True] for each case. Known-difference rows: oo:lra 21,
+one:lra 12, one:lra 21.
+
+**Plants (22 in the bar; fired, then caught or not).** Caught on workloads: sb-core-stale, sb-hold-zero, sb-sel-zero,
+sb-solver-fresh, sb-verdict-none, sc-demand-drop (442), sc-frontier-drop (439) on 16 of 16; sc-pending_c-drop (441) 15 (twin
+fired 0); sc-literals-drop (444) 9; sc-groups-drop (445) 8; sc-deferred-drop (443) 6; sc-pending-drop (440) 5 (budget 145,
+core 150, f6 252, loop 598, wiring 571 fired); sb-link-pending-stale 5; sc-key-shared (446) 3 (dev, fuzz, scope);
+rk-class-split (409) on twin; th-exhausted-skip and th-first-only on dev, fuzz, transfer:7:60, transfer2:3:40; 450, 451, 453
+by the verdict and 452 by the guard in test_split_order.py / test_moved_digest.py. Not caught on a digest-on workload:
+sb-fwd-skip-link (437): fired 0 with the digest on (the cause above), caught digest-off on 8 workloads (table) and in the
+suite (fired 87,333, 216 ids changed); sb-core-unset (447): fired on all 16, equal answers by construction, caught by
+sb:core_prop and `_table_get` rising in test_session_boundary.py::test_core_read_without_the_property;
+sb-truncated-stale: fired on all 16, MATCH, caught only by test_session_boundary.py's trunc case (no workload has a
+truncated session whose stale flag changes an answer); sb-neg-shared-stale: workloads fired 0 on 14, MATCH on
+transfer2:3:40 (8) and transfer:7:60 (10), caught in the suite (fired 26,194, 24 ids changed); th-gave-up-skip (428):
+MATCH on all 16 (no workload has a theory that gave up; th:gave_up read dev 523, fuzz 7,996), caught in the suite (6 ids)
+and test_theory_flags.py. **Void:** the bar's "fired 0" for the three th-* plants is unmeasured (theory_flags.rs's
+`th_plant` does not feed plant_fired), not a zero. Suite under plants: rk-class-split 132 failed (6 changed, fired 681);
+sb-fwd-skip-link 330 (216); sb-neg-shared-stale 150 (24); sc-pending-drop 185 (59, fired 456); th-exhausted-skip 128 (2);
+th-first-only 131 (5); th-gave-up-skip 132 (6). tests/test_public_incremental.py::
+test_public_comparison_catches_a_planted_history_dependence goes passed -> failed in several plant suites: the known
+id()-reuse test; it passes in the plain suite, as on the base.
+
+**Counters, Rust runs of the bar (digest on).**
+
+| workload | sc:key_hash | sc:key_eq | sc:core | rk:intern:engine |
+|---|---|---|---|---|
+| dev | 28,951 | 0 | 66,462 | 4,067 |
+| fuzz | 478,541 | 1,193 | 908,133 | 93,286 |
+| budget | 46,412 | 0 | 53,922 | 0 |
+| cert | 6,513 | 0 | 12,904 | 902 |
+| core | 31,346 | 333 | 92,847 | 0 |
+| f6 | 56,852 | 0 | 156,933 | 0 |
+| loop | 14,880 | 16 | 36,879 | 0 |
+| opaque | 13,385 | 0 | 39,380 | 0 |
+| rootof | 32,384 | 0 | 76,703 | 0 |
+| scope | 10,220 | 0 | 22,079 | 1,953 |
+| transfer2:3:40 | 11,680 | 17 | 21,289 | 2,080 |
+| transfer:7:60 | 14,752 | 2 | 26,844 | 2,476 |
+| twin | 140 | 1 | 300 | 56 |
+| value | 25,145 | 0 | 59,710 | 1,183 |
+| wiring | 283,608 | 67 | 601,128 | 0 |
+| zero | 73,045 | 0 | 145,552 | 18,338 |
+| suite | 10,005,845 | 27,692 | 20,782,325 | 992,243 (base 994,158) |
+
+sb:attr, sb:core_prop (570), sc:view, sc:record, sb:scalar_record, th:py_helper, rk:outlive (session-lasting ids),
+rk:migrate, xf:record, bud:py_fallback: 0 on all 16 and in the suite; sb:scalar_view 0 on workloads, 23 in the suite.
+rk:intern:engine and rk:intern:input equal the base on its seven workloads. The digest's own view reads on a Rust run:
+memo:native_items dev 560, fuzz 840, scope 49; xf:session_view dev 918, fuzz 3,133; xf:rel_view dev 594, fuzz 9,054.
+
+**Fallbacks and kept shares per workload (RULINGS 7, 11; the bar's `*-rust.knowledge.json`, equal in the digest-off run).**
+scaffold:core:kept_product:mismatch is 0 on all 16 workloads. The suite's counts files hold no knowledge counters, so the
+mismatch and the two fallback rows are not measured in the suite.
+
+| workload | registry:python | rows:python | scaffold:core:kept_product | kept:out-of-scope | refused |
+|---|---|---|---|---|---|
+| dev | 95 | 521 | 33 | 24 of 1,985 | 0 |
+| fuzz | 38 | 272 | 0 | 0 | 0 |
+| twin | 34 | 0 | 0 | 0 | 0 |
+| scope | 33 | 64 | 0 | 0 | 0 |
+| loop | 31 | 129 | 2 | 0 | 0 |
+| zero | 38 | 72 | 0 | 0 | 0 |
+| cert | 24 | 208 | 0 | 0 | 0 |
+| budget | 469 | 80 | 0 | 0 | 0 |
+| core | 35 | 1,688 | 163 (`:none` 14) | 0 | 0 |
+| f6 | 65 | 760 | 82 | 0 | 13 |
+| opaque | 42 | 48 | 0 | 0 | 7 |
+| rootof | 27 | 16 | 0 | 0 | 0 |
+| value | 180 | 1,208 | 0 | 0 | 15 |
+| wiring | 75 | 478 | 10 | 0 | 1 |
+| transfer:7:60 | 55 | 144 | 2 | 0 | 0 |
+| transfer2:3:40 | 57 | 120 | 2 | 0 | 0 |
+
+On the base's seven workloads (dev, fuzz, scope, loop, zero, cert, budget) registry:python, rows:python, the mismatch and
+kept:out-of-scope are equal to (iii)'s bar; the base has no rows for the other nine. scope stays at 33 / 64 (the rise to
+these from 26 / 0 came with the corrected install order, faddcda; no further rise).
+
+**Group D (C API from Rust on Python-held state; RULINGS 12), shares.** sa-port-146's method (pysampler, 1 ms CPU time;
+dev 10 runs, fuzz 3; Rust mode), sampled 22:14Z 10 Nov on pareto1 under a shared lease for both trees, each with its own
+.so (orion `~/sa-rust-ids-work/sa-port-249/gd/run-{0192b35,f252daf}`: SUMMARY.md, SUMMARY-rel.md; the table by
+`~/sa-rust-ids-work/sa-port-262/gdt/dmods.py`, which counts relkeys.rs and ses_cont.rs, which sum202.py's (a) leaves out).
+
+| tree, workload | samples | all D | relations_core | session_glue | relkeys | ses_cont | session | discovery | compile_loop | query | context |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| base 0192b35 dev | 18,596 | 4,889 (26.3%) | 484 (2.60%) | 229 (1.23%) | 104 (0.56%) | none (no ses_cont.rs) | 235 (1.26%) | 271 (1.46%) | 796 (4.28%) | 141 (0.76%) | 151 (0.81%) |
+| step f252daf dev | 15,420 | 3,872 (25.1%) | 391 (2.54%) | 146 (0.95%) | 104 (0.67%) | 18 (0.12%) | 175 (1.13%) | 68 (0.44%) | 706 (4.58%) | 97 (0.63%) | 133 (0.86%) |
+| base 0192b35 fuzz | 45,620 | 16,133 (35.4%) | 2,564 (5.62%) | 398 (0.87%) | 684 (1.50%) | none | 1,066 (2.34%) | 1,062 (2.33%) | 2,199 (4.82%) | 224 (0.49%) | 261 (0.57%) |
+| step f252daf fuzz | 50,968 | 17,599 (34.5%) | 2,849 (5.59%) | 403 (0.79%) | 802 (1.57%) | 94 (0.18%) | 1,074 (2.11%) | 481 (0.94%) | 2,330 (4.57%) | 240 (0.47%) | 233 (0.46%) |
+
+- The session's own modules (session_glue + ses_cont + session + discovery): dev 735 (3.95%) -> 407 (2.64%), fuzz 2,526
+  (5.54%) -> 2,052 (4.03%). discovery's D falls most (its containers are native now); ses_cont's own D is the hash and
+  `==` of the Python key objects each session dict holds.
+- The relations path (sum202.py's (a)+(b)+(c)+(d)): dev 1,239 (6.7%) -> 981 (6.4%), fuzz 5,768 (12.6%) -> 6,432 (12.6%).
+- Sample counts on a shared lease (load 9 to 16) are not timings: fuzz's total is 12% higher on the step and dev's 17%
+  lower, which is the machine, not the trees, until the pinned medians say otherwise.
+- Conversion (term_live._convert) holds 39.7% of dev's samples and 16.4% of fuzz's at f252daf (base 38.8% / 16.5%).
+
+**Group D in seconds and the memo cost ([108]): NOT measured; owed, moved to formula's bar.** Both need pinned medians
+under a quiet lease on pareto1, and from 22:24Z 10 Nov the machine was held by another project's shared lease with no end
+time. Planner (~22:35Z 10 Nov, on report 93774a0): pinned timing is not one of the five landing-bar items, so part 3 lands
+without it; RULINGS 12's "first to land reports it" moves to formula's bar, for Group D in seconds and the memo cost
+together, and both stay on OWED until then. Ready for that run: pareto1 `~/sa-rust-ids-work/sa-port-249/gd/bench-{0192b35,
+f252daf}` (each tree with its .so), `gd/tools262/time262.sh` (one bench-container invocation, the two trees and Python and
+Rust mode alternating, dev and fuzz, 11 rounds, about 20 minutes), `~/sa-rust-ids-work/sa-port-262/gdt/onlease262.sh`
+(CPU 2, sa-eval-bench:1), and on orion `~/sa-rust-ids-work/sa-port-262/gdt/med262.py TIME.JSONL dmods.json` (medians, and
+seconds = all-D share x the Rust median, against sa-port-146's 0.158 s dev / 1.990 s fuzz at 034e6bc's medians 0.767 s /
+6.802 s). Unpinned rows, context only and not a result (job195's `--cpus 1` container, one run each, load 9 to 16): dev
+Rust mode 2.23 s at f252daf and 2.68 s at the base against Python's 1.01 s; fuzz Rust 15.3 s against Python's 16.7 s at
+f252daf. A one-round smoke test of time262.sh, also unpinned, gave dev Rust 2.57 s (base) and 2.46 s (step) against Python
+1.47 s and 0.96 s. If the pinned medians agree, Rust mode on dev is now slower than Python and about three times
+sa-port-146's 0.767 s: that is the size the memo-cost report has to explain.
+
 ## Not run
-At f252daf (this section's head): the landing bar is running on pareto1 (`~/sp19/sa-rust-ids-work/sa-port-247/bar-part3`,
-started 17:47Z 10 Nov), not read: the suite by id against (iii)'s base with handler rows, dev/fuzz and 14 more workloads
-Python against Rust with 22 plants, every slice test file one process per file. Also not run: the memo-cost timing on a
-quiet pareto1; Group D in seconds; "relations' reference held by the core" (the brief's item, not in this link's gate);
-the needs-internals list for the test readers in sub-part 1's table.
+At the landing (tested f252daf): Group D in seconds and the memo-cost timing (above; owed, formula's bar); seed1
+(PYTHONHASHSEED=1) in the bar; the fallback rows and scaffold:core:kept_product:mismatch in the suite (its counts files
+hold no knowledge counters; read on the 16 workloads only); the three th-* plants' fired counts (unmeasured, `th_plant`
+does not feed plant_fired); a workload on which th-gave-up-skip, sb-truncated-stale or sb-neg-shared-stale changes an
+answer (suite or test only); the count step for session_live / ses_cont (the module-wide probe on the landed SHA, all
+workloads plus the suite, with sc:key_hash listed: no count change without it); "relations' reference held by the
+core" (the brief's item, not in the gate); SesDict by term id and session_live's converted calls per function (the next
+part 3 step); relations_core.rs :786, :2270, :2332, :2468 still reading the `table` property (formula's, condition 2);
+the digest that observes without replacing `_interpret`/`_link` (formula's next bar, RULINGS 14); the needs-internals
+list for the test readers in sub-part 1's table.
