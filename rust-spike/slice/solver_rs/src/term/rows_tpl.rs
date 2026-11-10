@@ -84,6 +84,9 @@ pub const PLANTS: &[&str] = &[
     "rows-exp-const-key-none", // 6g(c8) ExpIpi: a constant argument keyed None
     "rows-round-skip",         // 6g(c9) PartsOfRound: no template
     "rows-round-key-none",     // 6g(c9) PartsOfRound: a constant `y` keyed None
+    "rows-number-id-shift",    // 6i(c) 370: a Rational with no id interned as c + 1 (the derived-number args of `c + t`)
+    "rows-product-first",      // 6i(c) 371: `kept_product(factors)` read as the first factor
+    "rows-pow-bound-args-swap",// 6i(c) 372: a Pow Python built read with base and exponent swapped
 ];
 
 /// 6g(c3): the shells whose args `split` passes as a tuple (the others take one argument).
@@ -1334,6 +1337,15 @@ struct QIds<'py> {
     ids: Bound<'py, PyAny>,
     objects: Bound<'py, PyAny>,
     n_input: usize,
+    /// 6i(c): the `_Query` (`term_live`'s `derived`/`rev` maps, as `term_id` and `scaffold` keep them).
+    q: Bound<'py, PyAny>,
+}
+
+/// 6i(c): a split's term: its object, no split (Python's `kept_product` is None), or the shell.
+enum Got<'py> {
+    Obj(Bound<'py, PyAny>),
+    NoSplit,
+    Shell,
 }
 
 impl<'py> QIds<'py> {
@@ -1341,30 +1353,110 @@ impl<'py> QIds<'py> {
         let Some(q) = c.query(py)? else { return Ok(None) };
         let table = q.getattr("table")?.cast_into::<PyTermTable>()?;
         let n_input = table.borrow().tt().n_input;
-        Ok(Some(QIds { table, ids: q.getattr("ids")?, objects: q.getattr("objects")?, n_input }))
+        Ok(Some(QIds { table, ids: q.getattr("ids")?, objects: q.getattr("objects")?, n_input, q }))
     }
 
-    /// The ids of `xs`, each an input term of its own class (`==` can join classes), or None.
-    fn ids(&self, xs: &Bound<'py, PyAny>) -> PyResult<Option<Vec<TermId>>> {
+    /// The ids of `xs`, each an input term of its own class (`==` can join classes), or None. 6i(c): a term Python already
+    /// learned (`q.derived`, of the class `q.rev` holds) and a Rational Rust doesn't hold yet (interned by value, recorded
+    /// in `q.derived`/`q.rev`) get theirs as `term_live.term_id` gives them (counted `rows:ids:derived`/`rows:ids:number`).
+    /// `c` None: input terms only (the callers before 6i(c)).
+    fn ids(&self, c: Option<&Common>, xs: &Bound<'py, PyAny>) -> PyResult<Option<Vec<TermId>>> {
         let mut out = Vec::new();
         for x in xs.try_iter()? {
             let x = x?;
             let i = self.ids.call_method1("get", (&x,))?;
-            if i.is_none() {
-                return Ok(None);
+            if !i.is_none() {
+                let i: u32 = i.extract()?;
+                if !self.objects.get_item(i)?.get_type().is(&x.get_type()) {
+                    return Ok(None);
+                }
+                out.push(TermId(i));
+                continue;
             }
-            let i: u32 = i.extract()?;
-            if !self.objects.get_item(i)?.get_type().is(&x.get_type()) {
-                return Ok(None);
-            }
+            let Some(c) = c else { return Ok(None) };
+            let Some(i) = self.learned(c, &x)? else { return Ok(None) };
             out.push(TermId(i));
         }
         Ok(if out.is_empty() { None } else { Some(out) })
     }
 
+    /// 6i(c): `term_live.term_id`'s `q.derived` lookup and its Rational case, for a term with no input id.
+    fn learned(&self, c: &Common, x: &Bound<'py, PyAny>) -> PyResult<Option<u32>> {
+        if !x.is_instance(&x.py().import("sympy")?.getattr("Basic")?)? {
+            return Ok(None);
+        }
+        let derived = self.q.getattr("derived")?;
+        let rev = self.q.getattr("rev")?;
+        let i = derived.call_method1("get", (x,))?;
+        if !i.is_none() {
+            let i: u32 = i.extract()?;
+            let o = rev.call_method1("get", (i,))?;
+            if o.is_none() || !o.get_type().is(&x.get_type()) {
+                return Ok(None);
+            }
+            c.bump("rows:ids:derived");
+            return Ok(Some(i));
+        }
+        if !x.getattr("is_Rational")?.is_truthy()? {
+            return Ok(None);
+        }
+        let (mut p, d): (num_bigint::BigInt, num_bigint::BigInt) = (x.getattr("p")?.extract()?, x.getattr("q")?.extract()?);
+        if c.plant == "rows-number-id-shift" {
+            c.fired();
+            p += &d;
+        }
+        let i = self.table.borrow_mut().number(p, d);
+        if (i as usize) >= self.n_input {
+            derived.set_item(x, i)?;
+            rev.call_method1("setdefault", (i, x))?;
+        }
+        c.bump("rows:ids:number");
+        Ok(Some(i))
+    }
+
     /// The SymPy object of an input id; None for a derived one (the shell's `scaffold`).
     fn obj(&self, t: TermId) -> PyResult<Option<Bound<'py, PyAny>>> {
-        Ok(if (t.0 as usize) < self.n_input { Some(self.objects.get_item(t.0)?) } else { None })
+        if (t.0 as usize) < self.n_input {
+            return Ok(Some(self.objects.get_item(t.0)?));
+        }
+        // 6i(c): a derived id Python already holds the object of (`scaffold`'s first lookup).
+        let o = self.q.getattr("rev")?.call_method1("get", (t.0,))?;
+        Ok(if o.is_none() { None } else { Some(o) })
+    }
+
+    /// 6i(c): `_coeff_term`'s `t`: one factor's object, or `kept_product(factors)`, built as domain.py builds it
+    /// (`Mul(*factors)`, kept only if it has exactly these factors): SymPy construction on the slice branch, counted
+    /// `scaffold:core:kept_product` and `:none`. A factor with no object goes to the shell.
+    fn rest(&self, c: &Common, t: &Rest) -> PyResult<Got<'py>> {
+        let fs = match t {
+            Rest::One(t) => return Ok(match self.obj(*t)? { Some(o) => Got::Obj(o), None => Got::Shell }),
+            Rest::Product(fs) => fs,
+        };
+        let mut objs = Vec::new();
+        for f in fs {
+            match self.obj(*f)? {
+                Some(o) => objs.push(o),
+                None => return Ok(Got::Shell),
+            }
+        }
+        let py = self.q.py();
+        c.bump("scaffold:core:kept_product");
+        if c.plant == "rows-product-first" {
+            c.fired();
+            return Ok(Got::Obj(objs[0].clone()));
+        }
+        let mul = py.import("sympy.core.mul")?.getattr("Mul")?;
+        let factors = PyTuple::new(py, &objs)?;
+        let o = mul.call1(factors.clone())?;
+        let counter = py.import("collections")?.getattr("Counter")?;
+        let kept = o.getattr("is_Mul")?.is_truthy()?
+            && o.getattr("args")?.len()? == objs.len()
+            && counter.call1((o.getattr("args")?,))?.eq(counter.call1((&factors,))?)?;
+        if !kept {
+            c.bump("scaffold:core:kept_product:none");
+            return Ok(Got::NoSplit);
+        }
+        Ok(Got::Obj(o))
     }
 
     fn one(&self, t: &Rest) -> PyResult<Option<Bound<'py, PyAny>>> {
@@ -1394,7 +1486,21 @@ fn direct_split<'py>(py: Python<'py>, c: &Common, name: &str, args: &Bound<'py, 
         n if ONE.contains(&n) => PyTuple::new(py, [args])?.into_any(),
         _ => args.clone(),
     };
-    let Some(ids) = q.ids(&of)? else { return Ok(None) };
+    let ids = match q.ids(Some(c), &of)? {
+        Some(ids) => ids,
+        // 6i(c): a Pow Python built (no id of its own) by its base and exponent, as `_pow_bound_templates` reads them.
+        None if name == "_pow_bound_templates" && args.getattr("args")?.len()? == 2 => {
+            let Some(ids) = q.ids(Some(c), &args.getattr("args")?)? else { return Ok(None) };
+            c.bump("rows:pow_bound:args");
+            let mut ids = ids;
+            if c.plant == "rows-pow-bound-args-swap" {
+                c.fired();
+                ids.reverse();
+            }
+            ids
+        }
+        None => return Ok(None),
+    };
     let r = {
         let tb = q.table.borrow();
         direct_rows(py, c, &q, tb.tt(), name, args, &ids)?
@@ -1514,14 +1620,21 @@ fn direct_rows<'py>(
             Ok(Some(Direct1::Quotient(Some((ao, vo, wo, number)))))
         }
         "_pow_bound_templates" => {
-            let Some((b, e)) = t.core_pow_bound_shape(ids[0]).map_err(refuse)? else {
+            // 6i(c): two ids are a Pow Python built, by its base and exponent (`direct_split`).
+            let shape = if ids.len() == 2 { t.core_pow_bound_parts(ids[0], ids[1]) } else { t.core_pow_bound_shape(ids[0]) };
+            let Some((b, e)) = shape.map_err(refuse)? else {
                 return Ok(Some(Direct1::PowBound(None)));
             };
             let bargs = t.row(b).args.to_vec();
             let Some((c0, (k, r))) = t.core_bound_split(&bargs).map_err(refuse)? else {
                 return Ok(Some(Direct1::PowBound(None)));
             };
-            let (Some(bo), Some(eo), Some(c0), Some(u)) = (q.obj(b)?, q.obj(e)?, q.obj(c0)?, q.one(&r)?) else { return Ok(None) };
+            let u = match q.rest(c, &r)? {
+                Got::Obj(o) => o,
+                Got::NoSplit => return Ok(Some(Direct1::PowBound(None))),
+                Got::Shell => return Ok(None),
+            };
+            let (Some(bo), Some(eo), Some(c0)) = (q.obj(b)?, q.obj(e)?, q.obj(c0)?) else { return Ok(None) };
             let c1 = match k {
                 Some(k) => match q.obj(k)? {
                     Some(o) => o,
@@ -1581,9 +1694,10 @@ fn direct_pow<'py>(
             let Some((mut k, s)) = t.core_pi_split(ids[0], imag).map_err(refuse)? else { return none() };
             let s = match &s {
                 None => py.None().into_bound(py),
-                Some(r) => match q.one(r)? {
-                    Some(o) => o,
-                    None => return Ok(None),
+                Some(r) => match q.rest(c, r)? {
+                    Got::Obj(o) => o,
+                    Got::NoSplit => return none(),
+                    Got::Shell => return Ok(None),
                 },
             };
             if c.plant == if imag { "rows-ipi-split-shift" } else { "rows-pi-split-shift" } {
@@ -1639,7 +1753,11 @@ fn direct_add<'py>(
             let Some((a0, terms)) = t.core_half_split(&ids).map_err(refuse)? else { return none() };
             let out = PyList::empty(py);
             for (a, (_c, r)) in &terms {
-                let Some(o) = q.one(r)? else { return Ok(None) };
+                let o = match q.rest(c, r)? {
+                    Got::Obj(o) => o,
+                    Got::NoSplit => return none(),
+                    Got::Shell => return Ok(None),
+                };
                 let a = if c.plant == "rows-half-parity" {
                     c.fired();
                     1 - *a
@@ -1652,7 +1770,12 @@ fn direct_add<'py>(
         }
         "_bound_split" => {
             let Some((c0, (k, r))) = t.core_bound_split(&ids).map_err(refuse)? else { return none() };
-            let (Some(c0), Some(u)) = (q.obj(c0)?, q.one(&r)?) else { return Ok(None) };
+            let u = match q.rest(c, &r)? {
+                Got::Obj(o) => o,
+                Got::NoSplit => return none(),
+                Got::Shell => return Ok(None),
+            };
+            let Some(c0) = q.obj(c0)? else { return Ok(None) };
             let k = match k {
                 Some(k) if c.plant == "rows-bound-coeff-one" => {
                     c.fired();
@@ -2005,7 +2128,7 @@ impl RowsTpl {
             let arg = args.get_item(0)?;
             let cr = c.borrow();
             let Some(q) = QIds::of(py, &cr)? else { drop(cr); return to_py("no-query") };
-            let Some(ids) = q.ids(PyTuple::new(py, [&arg])?.as_any())? else { drop(cr); return to_py("not-input") };
+            let Some(ids) = q.ids(None, PyTuple::new(py, [&arg])?.as_any())? else { drop(cr); return to_py("not-input") };
             let r = q.table.borrow_mut().tt_mut().f6_cosh_shift_split(ids[0]).map_err(refuse)?;
             cr.bump("rows:rust:_cosh_shift_split");
             match r {
