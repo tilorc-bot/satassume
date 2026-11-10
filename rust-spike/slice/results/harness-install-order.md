@@ -1,7 +1,7 @@
 # Harness: live.py installs the backend before any workload builds its engine (issue 323)
 
 sa-port-206, branch harness/install-order from rust-slice c3d0999; continued by sa-port-209 (rebased on 80665b5,
-plus the planner's Q2 handler plant, d77d3db). The planner's count-audit ruling (~12:30 9 Nov), item 1
+plus the planner's Q2 handler plant, d77d3db); landed db7130a by sa-port-218 (10 Nov). The planner's count-audit ruling (~12:30 9 Nov), item 1
 only: a harness-only change. Item 2, install() refreshing an engine built before it or refusing loudly, is owed to state
 part 3 and isn't touched here (no change under satassume/ or solver_rs/).
 
@@ -160,9 +160,11 @@ reach it. The other workloads weren't affected, since none of them builds an eng
 
 ## The bar and the landing
 
-**NOT LANDED: week at 90%** (architect, ~16:00Z 9 Nov: no landing until the reset, 10 Nov 04:00 UTC). The bar is clean on
-the tested source; the successor lands it after the reset (rebase, `bar.sh land`, read the incoming diff, rerun only if it
-touches guarded source).
+**LANDED db7130a** on rust-slice (sa-port-218, 2026-11-10T04:32:48Z, `PUSH=1 bar.sh land d77d3db`, log
+`~/sa-rust-ids-work/sa-port-218/land.txt` on orion), fast-forward 80665b5..db7130a. Tested source **d77d3db**; landed
+source db7130a differs from it only in results/ (this file and HANDOFF-sa-port-209.md); the push guard listed nothing.
+**Incoming diff: empty** (rust-slice was still 80665b5, the base the bar ran on; the rebase was a no-op), so by the
+planner's rebasing rule no rerun or short check was needed.
 
 Bar on pareto1, `~/sp19/sa-rust-ids-work/sa-port-209/bar-install-order`, 15:04Z-15:55Z, every phase exit 0 (seed1 not run).
 Tested source **d77d3db** (branch head after it changes only results/). .so sha256 5ee060a2…. BASE = S2's bar suite
@@ -195,7 +197,7 @@ Python's own path. Every template named already falls back on other workloads (b
 const_value 40 each), and the owners are as in port-6i-a.md. ad:cbm_noid 0 everywhere; ad:lra_not_expr scope 4 (the
 native not-an-Expr path, as before).
 
-Not landed, so no landed SHA and no incoming diff yet. At handoff, rust-slice was 80665b5, and the branch was rebased on it.
+Tested SHA d77d3db; landed SHA db7130a; incoming diff (80665b5..origin/rust-slice at landing) empty.
 
 ## Not run here
 
