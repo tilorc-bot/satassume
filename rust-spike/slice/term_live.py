@@ -43,6 +43,7 @@ from sympy.core.numbers import Rational
 
 from satassume import engine, relations, scope, sympy_api
 from satassume.knowledge.extensions import Args
+from satassume.knowledge.templates import _common
 from satassume.sat.formula import And, Not, P
 from satassume.state import memos
 from satassume.theories.euf import euf_adapter
@@ -145,6 +146,15 @@ class _Mark:
         self.cache = []
         self.facts = {}
         for _, _, t in memos.PROCESS.items():
+            # The pattern cache is not rolled back (the `_CACHE` fix, issue 323, sa-port-248). Rust's memo of compiled
+            # nodes (dispatch.rs `Dispatch.memo`, which stands in for `registry._clauses_cache`) and the native `_SPLIT`
+            # keep what the discarded run wrote, and they hold the run's patterns: the second run is served those nodes
+            # and never asks for their patterns again, so a `_CACHE` cut back to the mark stayed short of the keys Python
+            # holds (f6: `cosh(y + 1*I*pi)`, refused for an LRA callback on a derived term, left 1 key of Python's 6).
+            # Leaving the entries is safe because the key determines the value (cache_det.py): the entry the discarded
+            # run left is the one any later run would build. Plant 666 `mark-cuts-patterns` rolls it back as before.
+            if t is _common._CACHE and PLANT[0] != 'mark-cuts-patterns':
+                continue
             self._note(t)
         for t in (constfield._CONSTANTS, constfield._BY_KEY):
             self._note(t)

@@ -337,3 +337,59 @@ On 9a7d47f (rust-slice 0192b35). Ruling: the planner's `_CACHE` fix ruling of 10
   for. With the fix a second call is a `_CACHE` hit and adds no row; `common:atom:hit` counts them.
 - test_knowledge_value_units.py::test_with_no_query_rust_answers now compares a pattern with itself (Python's template
   hits the entry Rust filled). test_cache_fix.py:109 is the test that fills in both orders.
+
+## sa-port-248, 10 Nov: gate item 1 read; the detached job was not as expected; a third cause fixed. Unbarred, unlanded.
+On 32eb7e1 (rust-slice 0192b35). The job: `~/sa-rust-ids-work/sa-port-246/j1` (ended 20:18Z), scratch tree c170496 +
+e82147a + `_CACHE` values in its row + no known rows.
+
+### The job, read
+| part | expected | got |
+| --- | --- | --- |
+| digest, 20 workloads (`j1/dg/verdicts.txt`) | MATCH on all, no known rows | **16 MATCH, 4 DIFFER: f6, wiring, lra, scope** |
+| cache_det, 20 workloads, both backends (`j1/det`) | 0 mismatches | 0 mismatches on both. Hits Python / Rust: budget 477/449, cert 47/25, cls 26/1, core 1016/33, dev 211/20, f6 615/45, fuzz 241/1, ground 13/1, loop 31/3, lra 10859/4683, opaque 60/9, port 10/2, rootof 367/0, scope 25/2, transfer2:3:40 156/3, transfer:7:60 170/3, twin 0/2, value 554/214, wiring 59/40, zero 32/3. Rust's are fewer because the probe does not cover the templates Rust calls natively; a 0 proves nothing (rootof on Rust, twin on Python). Answers: 19 MATCH, lra DIFFER by `stats_diff` only (below) |
+| pycalls for knowledge_live.py, before 17241af / after (`j1/pc`, Rust) | `rust_compiled` equal, `_wrap` and `_derived_facts` 0 after | as expected. Module total before -> after: core 94 -> 88, dev 184 -> 160, fuzz 53 -> 46, transfer:7:60 76 -> 65, value 1818 -> 952, wiring 164 -> 125. `_wrap` 7, 25, 8, 10, 397, 40 -> 0; `_derived_facts` 1 (transfer), 234 (value) -> 0; `rust_compiled` 401 -> 401 (value); `rust_value_units` 250 -> 250; `rust_units` 151 -> 151. The one new call is `_WithRusts` (the class body, once per process). No per-query Python added |
+| suite with `-p cache_det` (`j1/suite-python`, `j1/suite-rust`) | Rust's failed ids = 244's 127 | Rust 129 failed + 5 errors, Python 8 failed. **The 127 are the same ids** (0 differences against `sa-port-244/q1/suite-rust`). The rest are test_cache_fix.py (7) and test_cbm_noid.py (6 on Python) run under the suite's plugin together with the probe plugin, where they are not meant to run: an invocation artifact, not failures of the fix. Both pass plain (9 passed with the new test file below). cache_det over the suite: 0 mismatches on both backends (Python 85 key families hit, Rust 84) |
+
+### f6, wiring, lra: `_CACHE` short on Rust. Third cause: the discarded run. Fixed
+`_CACHE` rows, Python / Rust: f6 93/90 from engine point 40, then 2 short to the end (208/206 keys), and `_SPLIT`
+716/720 then 16 over; wiring 61/57 from point 170 (99/95); lra 167/164 at point 0 (2130/2037, 93 keys). None is an
+atom key: `('mul', ...)`, `('pow', ...)`, `('cosh', ...)`, `('add_half', ...)`, one `('const', GoldenRatio)`.
+- First query: f6 1008, `Q.real(cosh(y + 1*I*pi))`, alone: Python 6 keys, Rust 1. Rust builds the five patterns
+  (`common:facts` 5), is then refused (`lra: a callback on a derived term`), and term_live's rollback (`_Mark`, term_live.py:158)
+  cuts `_CACHE` back to the mark. Rust's memo of compiled nodes (`Dispatch.memo`) is not rolled back, so the second run is
+  served the nodes and never asks for their patterns: the keys stay missing. Only the symbol's units are asked again
+  (a new pattern, and new `_SPLIT` rows beside the discarded run's: f6's 4 and 16 extra).
+- **Fix (term_live.py `_Mark.__init__`): the pattern cache is not rolled back.** The key determines the value (above), so
+  the entry a discarded run left is the one the next run builds; Rust's node memo and the native `_SPLIT` already keep
+  what the discarded run wrote and hold those patterns. The other way (roll back `Dispatch.memo` too) would rebuild every
+  pattern in the second run and leave the discarded run's rows in the native `_SPLIT`, which is not rolled back either:
+  more `_SPLIT` copies, not fewer. **This is a choice the planner may overrule.**
+- Plant 666 `mark-cuts-patterns` (term_live `PLANT`): rolls `_CACHE` back as before. Caught by
+  test_cache_rollback.py (2 tests, each run its own process through cache_rollback.py: f6 1008 and wiring 4264; with the
+  fix 9 keys = Python's 9 in order and `_SPLIT` 16 = 16; with the plant 4 keys).
+- After the fix, per query (`_CACHE` keys added by each query, Python against Rust, `--check plain`): f6 0 of 2900 differ,
+  wiring 0 of 6512, lra 0 of 1416. Digest: **f6 MATCH, wiring MATCH** (`~/sa-rust-ids-work/sa-port-248/dg1`).
+- **Not checked: term_discard.py** (`fresh.py --discard`) compares all of Python's state after the rollback with a copy
+  taken at the start; it will now list `_CACHE` as left. It needs the same exemption, or the other fix.
+
+### scope and lra: differences that are on base 0192b35
+- **scope**: `engine:splits` differs (3 rows each, other hashes), `moved_diff` 8. The same row with the same hashes on
+  0192b35 + e82147a (`sa-port-248/dgbase`): the digest extension shows a base difference. State part 3's 4d14638 is
+  their scope fix; expected to MATCH after the rebase. Not from this step.
+- **lra** (a workload no bar has run): besides `_CACHE`, `end_diff` 2, `stream_diff` 2, `lra_diff` 2 (first at query
+  204), `stats_diff` 1427 (first at query 73: Rust one `sessions`, `consistency_checks` and `set_checks` short; 25 such
+  steps over the run, some with `cache_hits` short too). **Both reproduce on the base tree 0192b35**: `live.py lra
+  --only 204,585,6 --check entry` gives end 2, stream 2, lra 2; `--only 73 --check plain` gives the stats row. Query 73
+  (`Q.eq(u, -4/3*sqrt(3)*0*u*n/pi)` given `Q.nonnegative(exp(2))`) is a refused query (`scaffold: rebuilt form differs
+  from Rust`): after the rollback the second run does one session and no consistency check where Python does one. My
+  reading, not shown: something the discarded run wrote outside Python's tables serves the second run. Answers are equal
+  on all 1500. **No owner yet.**
+
+### Running detached
+`~/sa-rust-ids-work/sa-port-248/j2` (job2.sh, started 20:42Z, end marker `j2/end.txt`): the digest on the 20 workloads in
+the scratch tree `sa-port-248/dg` (32eb7e1 + e82147a + cache-values.diff + no known rows + this fix), then plant 666 on
+f6 against Python (`j2/p666/verdict.txt`, expected DIFFER). Expected: 18 MATCH; scope and lra DIFFER as on base, with
+`_CACHE` equal at every point.
+
+### Not run
+Items 2 to 5 of the gate; the bar; the two-order reproductions; h2.py; the clear() test; D and E.
