@@ -8,6 +8,7 @@ commit. Scratch scripts and run output are in `~/sa-rust-ids-work/sa-port-250/` 
 | 1. `_INTERPRETED` first-seen object (Q1 (d)) | done, below |
 | 2. Cause of the four slice files that fail on base | done (sa-port-251), below |
 | 3. `PROCESS.clear()` and the Rust stores | done (sa-port-252), below |
+| `Subs` point-assumption read (a)-(d) | done (sa-port-252), below; findings only |
 
 ## Item 1: can `_INTERPRETED`'s first-seen object reach an answer after wiring.py's `==` change?
 
@@ -462,3 +463,81 @@ plants. The list is every `static` and `thread_local!` in `solver_rs/src` (rg) a
 - No answer was shown to change because of the surviving dispatch memo; only that it survives.
 - `Engine.memos` (per engine: engmemo.rs, factcache.rs) is not `PROCESS`'s and was not checked.
 - That a term table and its memo die with the query is read from py.rs:248 and adapters.rs:277, not measured.
+
+## The `Subs` point-assumption read (sa-port-252; findings only, nothing filed, no guard written)
+
+**Verdict: SymPy alone makes `Subs(f(x), x, z)` and `Subs(f(x), x, zp)` equal with equal hashes while `z != zp`.
+Python and the Rust backend give the same answers on all 8 queries tried; only one of the three `Subs` queries ran
+in Rust's own entry, the other two are kept on Python. The definite answers are wrong if `z` and `zp` are two
+symbols, which SymPy's own `z != zp` says. A guard is a decision for Tilo; none is written.**
+
+`z = Symbol('z')`, `zp = Symbol('z', positive=True)`, `S(p) = Subs(f(x), x, p)`. Scratch:
+`~/sa-rust-ids-work/sa-port-252/subs/` (`a_sympy_only.py`, `a.out`; `b_backends.py`, `b-py.out`, `b-rust.out`;
+`b_one.py`, `b-one.out`). SymPy 1.15.0.dev of `~/sa-rust-ids-work/sympy`, base 0192b35, orion.
+
+### (a) SymPy only (`a_sympy_only.py`, no satassume imported)
+
+| check | result |
+|---|---|
+| `z == zp`, hashes equal | False, False |
+| `S(z) == S(zp)`, hashes equal, `S(z) is S(zp)` | True, True, False |
+| `S(z).args == S(zp).args`; `.point` equal | False; False |
+| `_hashable_content()` of each | `(f(_z),)` and `(f(_z),)` |
+| `len({S(z), S(zp)})`; `{S(z): 1}.get(S(zp))` | 1; 1 |
+| `S(z).doit() == S(zp).doit()` | False (`f(z)` against `f(zp)`) |
+| other name, `S(z) == S(w)` | False |
+| `Symbol('n', integer=True)` against `Symbol('n', real=True)` as the point | True |
+| points `z + 1` against `zp + 1` | True |
+| variable absent from the expression, `Subs(f(x), y, z) == Subs(f(x), y, zp)` | False |
+
+Cause, by the output: `Subs` compares by `_hashable_content()`, which holds the expression over a placeholder
+symbol named after the point's printed form (`_z`), with no assumptions. The point itself is kept only for a
+variable that does not occur in the expression. So two points that print alike are one `Subs`.
+
+### (b) Python and Rust (`b_backends.py MODE`, one process each; Rust `sa_solver.so` sha256 `bfc06f0cd68a252a`, the clone's)
+
+| query | Python | Rust backend | where it ran under Rust (`b_one.py`, one query per process) |
+|---|---|---|---|
+| `ask(Q.positive(S(zp)), Q.positive(S(z)))` | True | True | Rust's entry (`converted` 1, `ent:ask` 1) |
+| `ask(Q.gt(S(zp), S(z)))` | False | False | kept on Python (`kept:args-eq-not-is` 1, `ent:ask` 0) |
+| `ask(Q.eq(S(zp), S(z)))` | True | True | kept on Python (`kept:args-eq-not-is` 1, `ent:ask` 0) |
+| `ask(Q.positive(f(zp)), Q.positive(f(z)))` | None | None | Rust's entry |
+| `ask(Q.gt(f(zp), f(z)))`, `ask(Q.eq(f(zp), f(z)))` | None, None | None, None | not isolated |
+| control, other name: `ask(Q.positive(S(w)), Q.positive(S(z)))` | None | None | not isolated |
+| control, same point: `ask(Q.positive(S(z)), Q.positive(S(z)))` | True | True | Rust's entry |
+
+No mismatch. Rust's own code answered the first query True, as Python does. The `gt` and `eq` queries never
+reached Rust's term path: a relation whose two sides are equal but not the same object is kept on Python.
+
+### (c) Is it unsound, and who else relies on it
+
+- From `f(z) > 0` for a free `z`, `f(zp) > 0` does not follow for another symbol `zp`. The same statements written
+  as `f(z)`, `f(zp)` give None, and so does the other-name control. So True (and False for `gt`, True for `eq`)
+  comes only from the two terms being merged, and is wrong whenever `z` and `zp` are distinct symbols. SymPy
+  treats them as distinct everywhere else (`z != zp`, `doit()` differs).
+- It is not specific to `positive`: any two points that print alike merge (`integer` against `real`, `z + 1`
+  against `zp + 1`).
+- Who relies on it: every container that keys a term by SymPy's `==` and hash, since a `Subs` is its own key.
+  Item 1's list of identity and `==` sites and sa-port-251's read of who follows a `Subs` term's arguments stand;
+  no new read was made here. Under Rust the query's term ids follow the same `==` (RULINGS 4), and query 1 shows
+  it.
+
+### (d) What a guard would cost (an estimate from the reads above; nothing written or measured)
+
+- An exact test exists: two `Subs` that are `==` are the same term only if their points are also `==` (after
+  SymPy's own alignment of the variables). It is exact against SymPy's `==` on the points, not a heuristic.
+- Where it would go: wherever a term is first keyed (the query's term table, and the process memos that key on a
+  node: `_FORMULAS`, `_clauses_cache`, `_SYMPY_ATOMS`, `_CLOSED`, the fact cache). A `dict` cannot be told to
+  use another equality, so the guard needs either a wrapper key for `Subs` nodes in each of those containers, in
+  Python and in Rust, or one pass over the query at entry that finds two `==` `Subs` with unequal points and then
+  refuses or answers None.
+- The entry pass is the cheap form: one walk per query for `Subs` nodes, nothing for a query without one. It is
+  exact as a detector and conservative as an answer. It does not cover a memo filled by an earlier query with the
+  other point; that needs the memo keys changed, or the same test on each memo hit.
+- Either form overrides SymPy's `==` for one class, in the reference and in Rust. Not implemented.
+
+### Limits
+
+- One-variable `Subs` over `f(x)` only; 8 queries; no two-order run of these on Rust.
+- (c)'s list of who relies on `==` is by the earlier reads, not a new one. (d) is an estimate.
+- Whether a process memo filled with `S(z)` changes a later query about `S(zp)` was not run.
