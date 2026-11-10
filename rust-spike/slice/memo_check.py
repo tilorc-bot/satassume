@@ -49,8 +49,14 @@ def _canon(x):
     if type(x) is object:      # a bare sentinel (`splits` keys): its repr carries an address
         return "<object>"
     if type(x).__name__ in ("Split", "_Split"):
-        return "Split" + _canon((x.whole, tuple(x.conjuncts), x.opaque, x.relational, x.keyless,
-                                 [(frozenset(k), tuple(i)) for k, i in x.comps], x.consistent, x.vocab))
+        # A split whose constructor raised part-way is still in `Engine.splits` with its later slots unset (seen on workload
+        # scope, on an engine built inside a query): an unset slot reads "<unset>" (moved_digest.py, issue 323).
+        g = [getattr(x, f, "<unset>") for f in ("whole", "conjuncts", "opaque", "relational", "keyless", "comps", "consistent", "vocab")]
+        if not isinstance(g[1], str):
+            g[1] = tuple(g[1])
+        if not isinstance(g[5], str):
+            g[5] = [(frozenset(k), tuple(i)) for k, i in g[5]]
+        return "Split" + _canon(tuple(g))
     return repr(x)
 
 

@@ -37,6 +37,8 @@ set_inert solve model conflict consistent entails entails_all stats""".split()
 SEARCH = {"propagate", "solve", "implied", "consistent", "entails", "entails_all"}
 COUNTERS = "props conflicts decisions learned restarts reductions ring_hits tdecisions late late_written".split()
 HOOKS = ("register_atom", "assert_lit", "check", "propagate", "decide", "push_level", "pop_level")
+#: A workload row `(f, CALL)` is asked as `f()` (twin_wl.py: rows with their own engines).
+CALL = "<call>"
 
 
 def show(x):
@@ -270,6 +272,9 @@ def load(wl):
     if wl == "scope":   # scope_wl.py: custom predicates registered, for `extension_atoms` (step scope)
         import scope_wl
         return scope_wl.queries()
+    if wl == "twin":    # twin_wl.py: two equal Function classes in one query, where plant rk-class-split fires (issue 323)
+        import twin_wl
+        return twin_wl.queries()
     if wl == "zero":    # zero_wl.py: zero twins under an application, for `_glue_of`'s twin branch (before 5c7)
         import zero_wl
         return zero_wl.queries()
@@ -401,6 +406,11 @@ def main():
                 return real(*a, **k)
             raise ValueError("planted")
         setattr(*plant, _planted)
+    # The moved containers' digest (moved_digest.py; issue 323), after the installs, on both modes: SLICE_MOVED=0 keeps it off.
+    moved = None
+    if args.check != "plain":
+        import moved_digest
+        moved = moved_digest.install(bool(backend))
     pairs = load(args.wl)
 
     q_detail, f_detail = None, None
@@ -442,7 +452,7 @@ def main():
                 T.detail = open(f_detail, "w")
             msg = ""
             try:
-                r = sympy_api.ask(p, a)
+                r = p() if type(a) is str and a == CALL else sympy_api.ask(p, a)
                 if r is not None and r is not True and r is not False:
                     r = "non-bool " + repr(r)
             except ValueError as e:
@@ -458,6 +468,13 @@ def main():
             caught = catch_count.take()
             if caught:
                 rec["caught"] = caught
+            if moved:
+                rec["moved"] = moved.session_rows()
+                mq = moved.query_rows()
+                if mq:
+                    rec["moved_q"] = mq
+                if pos % moved_digest.every() == moved_digest.every() - 1 or pos == len(order) - 1:
+                    rec["moved_eng"] = moved.engine_rows(eng)
             if args.check != "plain":
                 sess = []
                 for st in T.solvers:
@@ -523,6 +540,8 @@ def main():
                    theory_classes=sorted(c.__name__ for c in T.theory_classes),
                    lra_groups=lra_groups,
                    hashseed=os.environ.get("PYTHONHASHSEED"))
+        if moved:
+            tot["moved"] = moved.tot
         if backend:
             tot["backend_created"], tot["backend_dropped"] = backend.created, backend.dropped
             tot["so_sha"] = so_sha
