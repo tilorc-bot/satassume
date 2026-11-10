@@ -139,9 +139,18 @@ from sympy import (
 from sympy.assumptions.assume import AppliedPredicate
 
 from ._common import VOCAB
-# constant_value: the template's, also for the tests of the rows
-from ._rows_runtime import _TEXT_NAMES as _NUMBER_NAMES, constant_value, generator  # noqa: F401
+from ._rows_runtime import _TEXT_NAMES as _NUMBER_NAMES
 from ._rows_runtime import from_text as _from_text
+
+
+def __getattr__(name):
+    """``generator`` and ``constant_value`` (the template's, also for the
+    tests of the rows) are :mod:`.wiring`'s, looked up at each use, so a
+    backend that replaces them there is the one this module gives."""
+    if name in ('generator', 'constant_value'):
+        from . import wiring
+        return getattr(wiring, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 class Constant(Symbol):
@@ -379,7 +388,8 @@ def rules(head, table, module: str):
     ``table`` about ``head``: :func:`generator` of :func:`compile_rows`;
     ``module`` (the caller's ``__name__``) is the module the registry
     attributes the template to (``TemplateRegistry.lazy``)."""
-    return generator(head.__name__, *compile_rows(head, table), module)
+    from . import wiring
+    return wiring.generator(head.__name__, *compile_rows(head, table), module)
 
 
 def compile_rows(head, table):

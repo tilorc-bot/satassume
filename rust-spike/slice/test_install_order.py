@@ -23,13 +23,12 @@ import pytest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ALLOWED_HOLDERS = ('satassume.ref', 'satassume.sat.solver')
-#: Modules that keep Python's helpers by name after the install, each with its reason. limits and table are ruled; _rows is an
-#: OPEN FINDING (state part 3's report): the rows authoring layer (`_rows.rules` -> `generator`) holds Python's `generator` and
-#: `constant_value`; whether anything reaches it after the install at run time is unverified, so it is named, not cleared.
+#: Modules that keep Python's helpers by name after the install, each with its reason (limits and table are ruled). _rows held
+#: Python's `generator` and `constant_value` until state part 3 (planner's _rows ruling, ~06:47 10 Nov): it now looks them up in
+#: wiring at each use (test_rows_names_resolve_at_call_time), so it is no longer named.
 NAMED_HOLDERS = {
     'satassume.knowledge.templates.limits': 'kept on Python (planner, ownership ruling 7 Nov: limits.py stays on Python)',
     'satassume.knowledge.templates.table': "kept paths only (planner, 8 Nov: table.py counts whole, footnoted 'kept paths only')",
-    'satassume.knowledge.templates._rows': 'OPEN FINDING: rows authoring layer, run-time reach after install unverified',
 }
 RULED_PUBLIC = {('satassume.relations', 'relation_atom'), ('satassume.sympy_api', 'relation_atom')}
 
@@ -112,6 +111,9 @@ else:
                      "ObjectCache": isinstance(HeldObjectCache(), sa_solver.DictCache),
                      "relation_atom": hits[0] == 1}
     out["rows"] = rows
+    from satassume.knowledge.templates import _rows, wiring
+    out["rows_resolved"] = [_rows.generator is wiring.generator, _rows.constant_value is wiring.constant_value,
+                            getattr(wiring.generator, "__module__", None)]
 print("JSON" + json.dumps(out))
 ''' % (ALLOWED_HOLDERS + tuple(NAMED_HOLDERS),)
 
@@ -169,6 +171,12 @@ def test_install_list_is_not_empty_and_covers_the_public_names():
     names = {(r['module'], r['name']) for r in rows}
     assert len(rows) > 100
     assert {('satassume', 'DictCache'), ('satassume', 'ObjectCache'), ('satassume.relations', 'relation_atom')} <= names
+
+
+def test_rows_names_resolve_at_call_time():
+    """_rows' `generator`/`constant_value` are wiring's at the time of use, so the install's Rust ones (planner's _rows ruling)."""
+    gen_same, cv_same, gen_module = listed()['rows_resolved']
+    assert gen_same and cv_same and gen_module != 'satassume.knowledge.templates._rows_runtime', listed()['rows_resolved']
 
 
 def check_engine_first(out):
