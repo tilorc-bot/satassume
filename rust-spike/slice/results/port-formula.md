@@ -157,3 +157,66 @@ fires: 33, 82, 10, 2 in ce706d3) and `:unchecked` per workload: **not run**.
 The suite (so no three numbers and no handler multiset), fresh dev and fuzz answers and state, kept shares per reason,
 the after-probe, `rk:intern:engine`/`rk:intern:input` (RelKeys isn't on rust-slice at 59e9d15), the mismatch counter off
 core, and everything on the "before any backend PR" list.
+
+## sa-port-234, 10 Nov: the node cache and the `atoms_of` callbacks (B1-B7). Unbarred, unlanded.
+Rebased onto rust-slice 3203cb4 ((iii) landed, tested ba1ca22). rust-slice has since moved to 0192b35 (docs only): **not
+rebased onto it yet.** Commits: 7874c7d (cache, `to_f` on the node), a9b4073 (B1-B7).
+
+### What changed
+- `SessionCore.fnodes` (session.rs:643): each Formula object's node, by identity, the node holding the object. `convert`
+  (:1114) walks the node (`to_f` :1075), calling `pred_id`, `nid_in_formula`, `custom_in_formula` per atom occurrence in the
+  walk's order. A refused conversion (depth, class, read) returns None and Python compiles the formula.
+- B1-B5 (session_glue.rs:87, :185; compile_loop.rs:327, :376; query.rs:271, :287): `SessionCore::atoms_of` (:1062), the
+  cached node's atoms.
+- B6, B7 (scope_core.rs:259, :291; budget.rs:61, :373, :465-466): **no session exists there** (`theory_scope` runs before
+  the session is made, the cones are engine memos), which the inventory's "wait: cache" missed. They call
+  `formula::atoms_nosession` (formula.rs:420): one walk of the object in Rust, node dropped, counted `fm:nosession`. So no
+  Python `atoms_of` runs, but a formula the session also converts is **read more than once**, which the formula ruling's
+  "no Rust code reads a Python Formula object back" doesn't allow yet. Open, owner this step: the entry converts and hands
+  nodes down (or a per-query cache; the query's `_Query` is Python, term_live.py:72, so reaching it costs a Python call).
+- Counters 640-644: `fm:cache_hit`, `fm:to_f`, `fm:atoms_py`, `fm:atoms_node`, `fm:nosession`. All `fm:*` are in the session
+  report's `counts`. Plants 601-606 take the bar's channel (`SLICE_SESSION_PLANT`, counted in `rel:plant_fired`).
+- `scope:cb_atoms_of` reads 0 by construction (the tick is removed); test_scope_core.py:151-152 now says so.
+
+### Behaviour differences to name (none seen on a workload)
+- A Formula class outside the nine, or a wrong arity: before, Rust compiled it as `Bad` (TypeError from compile.rs) or
+  panicked on the arity; now Python compiles it (`refuse:convert`, `fm:refuse:class`).
+- A read error or depth refusal part-way: before, `to_f` had already taken node ids for the atoms before it; now nothing
+  is taken before Python's compiler runs.
+- A Formula whose `args` are reassigned after its first use in a session keeps its first reading under Rust (identity
+  cache; by the formula ruling's "converted once"). For the backend PR list as a contract difference.
+
+### Checked (short checks, **not the bar**)
+- test_formula_nodes.py 15 passed (python mode). Slice tests under Rust, all passed: test_scope_core 7, test_query_core 14,
+  test_compile_loop_core 13, test_cones_core 10, test_context_core 12 (3 skipped), test_entry_core 23,
+  test_relations_core 88, test_engmemo_core 11, test_procmemo_core 6, test_rs_core 15, test_rd_core 17, test_rl_core 6,
+  test_glue_plain 4, test_session_limits 242, test_relevance_core 34, test_discovery_core 10.
+- One Python and one Rust run, answers and state: dev MATCH (1,985), scope MATCH (169), budget MATCH (28), zero MATCH (854)
+  (`~/sa-rust-ids-work/sa-port-234/live-b/summary.txt`, on the build before the counter routing; no engine change after).
+- dev, one pass, from a plant run's report: `fm:convert` 3,413, `fm:cache_hit` 2,203, `fm:nosession` 2,383, `fm:atoms_py` 0;
+  `refuse:object` 17, `refuse:depth` 0, `refuse:convert` 0.
+
+### Plants on the workloads (dev so far)
+| plant | id | dev fired | dev verdict |
+|---|---|---|---|
+| `fm-atoms-drop-last` | 601 | 3,413 | caught: DIFFER (49 answers, 617 end states) |
+| `fm-atoms-no-dedupe` | 602 | 4,089 | **not caught**: MATCH. Caught only in test_formula_nodes.py |
+| `fm-args-reverse`, `fm-implies-swap`, `fm-ite-swap`, `fm-not-drop` | 603-606 | running when handed off | read `~/sa-rust-ids-work/sa-port-234/plants/*.cmp` |
+Plant 600 is unchanged from sa-port-231 (core only).
+
+### Not run
+The suite (no three numbers, no handler multiset), fuzz and the other nine workloads' answers and state, seed 1, kept
+shares, fallback rows (dispatch.rs:242, rows_tpl.rs:413, `ad:cbm_noid`), `rk:intern:engine`/`rk:intern:input`,
+`scaffold:core:kept_product:mismatch` off core, the digest extension, and the "before any backend PR" list. The
+**after-probe was started** (detached, all 13 workloads plus dev and fuzz at seed 1) and not read:
+`~/sa-rust-ids-work/sa-port-234/probe/probe-after/` (`end.txt` when done; `summ.py` beside it). Until it is read the
+"after" column of the table above is unfilled.
+
+### Inventory changes
+- B1-B5: done (unbarred). B6, B7: Python callback gone, repeat conversion open (above).
+- C1, C2: wait changed to **p3**. The by-name calls go through session_live.py's `_compile_formula`/`_formula_literal`
+  (:1264-1277), whose `_rust_call` decides the `emit` Rust calls back; part 3's branch has the helper for calling past a
+  session_live frame (session.rs `named`, ebdf52e).
+- New rows, owner this step: the `ad:cbm_noid` fix (per-query `==` class keys), the `_common._CACHE` fix, and (planner
+  ~15:23 10 Nov) the term_live wrappers falling back in tests/test_transfer.py::test_inequalities_restate_an_equality (42
+  calls into relations.py; cause **not read**; port-state-relations.md:627-629 on 0192b35). None started.
