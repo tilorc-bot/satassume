@@ -759,3 +759,134 @@ planner's and Tilo's call; nothing was changed.
   or not) was written and not run.
 - On a merged hit the census calls the function a second time, which can fill nested caches in a different order
   than SymPy would.
+
+## The two-order twins on base and main, Rust's None, twin `Function` classes, `1` against `One` (sa-port-256; read-only)
+
+**Verdict. (1) The Python/Rust two-order difference is on base 0192b35, in all four `Subs` point pairs, and Python's
+half is on main 9bafaa5 unchanged: no step introduced it. (2) Rust's None comes from no process memo. Its
+`_SYMPY_ATOMS` and `_FORMULAS` hold the same entries as Python's and `_FORMULAS` is hit the same way; Rust then
+answers from the term table it builds for each query from the query's own input (`term_live.py:938`), where Python
+answers from the first-seen twin's stored formula. Handing Rust's converter the other twin's query gives Python's
+answers in every differing cell. (3) Twin `Function` classes: 0 flips and 0 Python/Rust differences in 760 cells per
+backend. (4) `1` against `One`: custom facts that write a relation or custom atom with an int answer the same as with
+`One`; a fact or Engine query about the node `1` itself flips in two orders, the same on both backends, through
+`registry._clauses_cache` on Python and a store `PROCESS.clear()` does not empty on Rust.**
+
+Base: the clone at 3347809 (0192b35 plus this file only, `git diff --stat 0192b35 HEAD`: 1 file). Rust: the clone's
+`sa_solver.so`, sha256 `bfc06f0cd68a252a`, loaded as built, not rebuilt. Main: a detached worktree at 9bafaa5
+(removed after the runs), Python only, same SymPy 1.15.0.dev and Python 3.12.14, orion. Scratch
+`~/sa-rust-ids-work/sa-port-256/`: `repro.py` (255's), `h.py`, `h2.py` (the harness), `probe.py`, `hastrace.py`,
+`stk.py`, `swap.py`, `bits.py`, `fn/` (jobs, `out.txt`, `fnsum.py`'s summary), `subs-h.out`, `int-cond.out`.
+
+Quiet catches: `catch_count` was installed in every `h.py` / `h2.py` run. With `PLANT=1` both planted raises
+(`verdict<_consistent`, `complete_check`) were caught in 32 of 32 `Subs` runs, 16 per backend. Catches counted: **0** in
+those 32, 0 in the 1520 twin-class runs, 0 in the int runs. None of the None answers below is a quiet catch. 120
+twin-class outputs are `ValueError: inconsistent assumptions`, all from the one form built to be inconsistent, equal on
+both backends.
+
+### (1) Base and main (`repro.py MODE CASE ORDER`, `h.py`; one process each, a new `Engine` per ask, nothing cleared)
+
+Query 1 is `ask(Q.gt(t1, 0), Q.gt(t1, 1))` with `t1 = Subs(f(x), x, p1)`, query 2 the same with the twin point. Alone,
+every backend and tree: query 1 None, query 2 True.
+
+| pair (`p1` / `p2`) | Python base, 1 then 2 | Python base, 2 then 1 | Python main, 1 then 2 | Python main, 2 then 1 | Rust base, 1 then 2 | Rust base, 2 then 1 |
+|---|---|---|---|---|---|---|
+| `oo` / `Symbol('oo')` | [None, None] | [True, True] | [None, None] | [True, True] | [None, None] | [True, None] |
+| `1` / `Symbol('1')` | [None, None] | [True, True] | [None, None] | [True, True] | [None, True] | [True, None] |
+| `nan` / `Symbol('nan')` | [None, None] | [True, True] | [None, None] | [True, True] | [None, None] | [True, None] |
+| `1.5` / `Symbol('1.50000000000000')` | [None, None] | [True, True] | [None, None] | [True, True] | [None, None] | [True, None] |
+
+These are 255's rows (rule 13's `oo:lra` and `one:lra` among them), reproduced on the same tree. The backends differ
+in "2 then 1" for all four pairs and in "1 then 2" for the `1` pair. Main has no Rust backend.
+
+### (2) Where Rust's None comes from
+
+- **Not `_SYMPY_ATOMS`, not `_FORMULAS`** (`probe.py`, `oo`, 2 then 1). After the first ask both backends hold the same
+  registered entries: `_SYMPY_ATOMS` 4, `_FORMULAS` 2, `_KEYS` 2, `_CLOSED` 3 (Rust's as `NativeTable` views). In the
+  second ask `sympy_api._formula` is called twice on both backends and `to_formula` not at all: the stored formula of
+  the first-seen twin is returned on both. Rust's `_SYMPY_ATOMS` is looked up as a Python dict is (hash, then identity
+  or `==`; `procmemo.rs:1-9`, `:299`).
+- **Python never reads the second query's own term.** `hastrace.py` logs every `Basic.has` call with the twin its
+  receiver holds. In Python's second ask: 0 calls on `t1`, 1 on `t2` (`euf_adapter.py:135`). In Rust's second ask: 3
+  on `t1`, from `convert.py:296/298/300` under `term_live.py:938` (`_ask` -> `_convert` -> `convert.py:476` ->
+  `term_row`), and rows for `(oo,)` and `oo` as well (`stk.py`).
+- **The conversion decides** (`swap.py`, Rust: in the second ask `term_live._convert` is handed the other twin's
+  query; everything else gets the query asked):
+
+| Rust | as is | converter handed the other twin | Python |
+|---|---|---|---|
+| `oo`, 2 then 1 | [True, None] | [True, True] | [True, True] |
+| `1`, 2 then 1 | [True, None] | [True, True] | [True, True] |
+| `1`, 1 then 2 | [None, True] | [None, None] | [None, None] |
+| `oo`, 1 then 2 | [None, None] | [None, None] | [None, None] |
+
+- So Rust's answer in these runs is a function of the query's own input (the Q1 ruling's rule (a): an equal class is
+  represented by its first occurrence in the query's input), except where SymPy's `Basic.has` cache carries
+  (`oo`, `nan`, `1.5`, "1 then 2"). Python's is a function of which twin reached `_FORMULAS` first. The difference is
+  Python's process-wide `==`-keyed memo, not a Rust store keyed differently.
+- What the rows hold (`bits.py`): for the `1` pair `t1`'s row and `t2`'s have the same fact bits (`UNDEF`, `READ`) and
+  differ in the free-symbol list (0 against 1 symbol) and in their children; for `oo`, `t1` alone also has `BAD` and
+  `MAYBE_NAN`, and in "2 then 1" its `BAD` bit is off (the `has` cache) and the answer is still None. Forcing the
+  children's `BAD` off as well leaves None. Which reader of the row turns it into None was not isolated; the
+  free-symbol list is the one difference left in the `1` pair.
+
+### (3) Twin `Function` classes (`h.py`, `fn/jobs.txt`, `fnsum.py`)
+
+How twins were made, each shown distinct and equal in every run (`g1 is not g2`, `g1 == g2`, equal hash; the terms `==`,
+equal hash, different objects, different inner classes; 1520 of 1520 runs): `UndefinedFunction('g')` beside
+`Function('g')` with `clear_cache()` before the second term is built; `sympify(srepr(t1))` after `clear_cache()`;
+`Function('g')` twice under `SYMPY_USE_CACHE=no`. With the cache on and not cleared there is no twin:
+`UndefinedFunction('g')(w)`, `pickle.loads(pickle.dumps(t1))` and `sympify(srepr(t1))` all come back as `t1` itself.
+Twin classes cannot differ in content (`UndefinedFunction.__eq__` is the name and the assumptions), unlike `Subs` twins.
+
+- Single-twin queries: 10 forms (`repro.py`'s six, `Q.integer(t*w)`, `Q.nonnegative(t**2)`, `Q.positive(-t)`,
+  `Q.ge(Abs(t), 0)`, `Q.lt(t - w, 0)` variants) on `g(w)`, `g(g(w))`, `g(w) + 1`; orders 1, 2, 12, 21.
+- Mixed queries, both twins in one query: 16 forms (the above with one twin in the proposition and the other in the
+  assumptions, plus transitivity, `Q.eq(f(a), f(b))`, `Q.ne(a, b)`, two assumptions on different twins, and an
+  inconsistent pair `a > 1 & b < 0`) on `g(w)` and `g(g(w))`; asked as (t1, t2), (t2, t1), (t1, t1), (t2, t2), and
+  all four in one process in both directions.
+
+| 760 cells per backend (1520 processes) | result |
+|---|---|
+| cells where Python and Rust differ | 0 |
+| two-order sequences that differ from the alone answers (300 per backend) | 0 |
+| alone answers that differ between the twins, or between a mixed query and the all-`t1` query | 0 |
+
+The mixed inconsistent form raises `inconsistent assumptions` on both backends, so both treat the twins as one term.
+
+### (4) int `1` against `One` (`h2.py MODE int:<variant>io ORDER`; ask 1 uses int `1`, ask 2 `S.One`)
+
+`1 == S.One`, equal hash, and `P('lt', Args((1, s))) == P('lt', Args((S.One, s)))` with equal hash. `ask()` sympifies
+its arguments, so an int arrives only from a registered fact or through `Engine.ask` on `P` atoms.
+
+| variant | alone int / One | int then One | One then int | Python = Rust |
+|---|---|---|---|---|
+| control, no handler: `ask(Q.gt(s, 0), hbig(s))` | None / None | [None, None] | [None, None] | yes |
+| fact `hbig(s) -> P('lt', Args((1, s)))`, same query | True / True | [True, True] | [True, True] | yes |
+| the same plus `integer(1)`, `~zero(1)` in the fact | True / True | [True, True] | [True, True] | yes |
+| fact on `hpair(s, 1)` rebuilding its own atom as `P('hpair', Args((s, 1)))` | True / True | [True, True] | [True, True] | yes |
+| fact `hpair(s, 1) -> htwo(s, 1)`, `htwo` registered for `(Symbol, Integer)` | None / True | [None, True] | [True, None] | yes |
+| fact `hbig(s) & positive(1) -> positive(s)`, `ask(Q.positive(s), hbig(s))` | None / True | **[None, None]** | **[True, True]** | yes |
+| `Engine().ask(P('positive', 1), P('real', s))` | None / True | **[None, None]** | **[True, True]** | yes |
+
+- The last two flip: the first-seen of `1` and `One` decides the node's facts for both. The backends agree in every
+  cell, so this is history dependence, not a Python/Rust difference.
+- Carrier on Python: `registry._clauses_cache` alone (Engine form: clearing only it gives the alone answers, clearing
+  any one of the other 8 non-empty memos does not; `SYMPY_USE_CACHE=no` and `clear_cache()` change nothing).
+  `PROCESS.clear()` removes the flip on Python.
+- On Rust `PROCESS.clear()` does **not** remove it ([None, None] / [True, True] remain, both forms), and no
+  registered memo does. By item 3 above that is the dispatch memo standing in for `_clauses_cache`, which
+  `PROCESS.clear()` leaves on base and formula's c170496 is said to cover; it was not cleared directly here.
+- The fifth row is not a flip: an int `1` in a custom atom does not match a handler registered for `Integer`, alone
+  and in both orders, on both backends.
+- The `Subs` `1` / `Symbol('1')` pair is in (1).
+
+### Limits
+
+- The reader inside Rust's row was not isolated (above). `hastrace.py` walks each receiver and adds `has` calls of its
+  own; the answers under it are the table's.
+- Main: Python only, the `lra` form, 4 point pairs.
+- Twin classes: these forms and shapes only; eviction from SymPy's cache (1000 entries per function) as a source of
+  twins was not run, only `clear_cache()` and cache off. No twin class with `nan`/`oo` inside.
+- int: 7 variants, one symbol; the Rust carrier is inferred from `PROCESS.clear()` and item 3, not cleared by itself.
+- Not rerun: 255's other open points (the suite under `census.py`, `entry.py`).
