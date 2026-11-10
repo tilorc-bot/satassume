@@ -16,6 +16,7 @@ mod relevance;
 mod discovery;
 mod euf;
 mod euf_py;
+mod formula;
 mod formula_py;
 mod handle;
 // The rational helper is shared with the replay binary in lra/port, which keeps its frozen rational core.
@@ -640,6 +641,7 @@ fn sa_solver(m: &Bound<'_, PyModule>) -> PyResult<()> {
     adapters::register(m)?;
     payloads::register(m)?;
     formula_py::register(m)?;
+    formula::register(m)?;
     realroots::register(m)?;
     rows::register(m)?;
     session::register(m)?;

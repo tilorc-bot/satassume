@@ -1,0 +1,123 @@
+## budget: sat/formula.py [query] 13505
+      6385 sat/formula.py:Formula.__init__ [query]
+      6009 sat/formula.py:Not.__init__ [query]
+       810 sat/formula.py:atoms_of [query]
+       158 sat/formula.py:Implies.__init__ [query]
+       135 sat/formula.py:Formula.__hash__ [query]
+         8 sat/formula.py:Formula.__eq__ [query]
+   rust: {'em:key_eq': 146, 'pm:key_eq': 8154, 'scope:cb_atoms_of': 58, 'ses:assume_formula': 32, 'ses:compile': 342}
+   scaffold: {}
+## cert: sat/formula.py [query] 2688
+      1569 sat/formula.py:Formula.__hash__ [query]
+       856 sat/formula.py:atoms_of [query]
+       182 sat/formula.py:Formula.__init__ [query]
+        81 sat/formula.py:Not.__init__ [query]
+   rust: {'em:key_eq': 236, 'pm:key_eq': 3178, 'rel:note_formula': 244, 'scope:cb_atoms_of': 366, 'ses:assume_formula': 122}
+   scaffold: {}
+## core: sat/formula.py [query] 3175
+      2973 sat/formula.py:atoms_of [query]
+        81 sat/formula.py:Formula.__hash__ [query]
+        61 sat/formula.py:Formula.__init__ [query]
+        60 sat/formula.py:Not.__init__ [query]
+   rust: {'em:key_eq': 3474, 'pm:key_eq': 20272, 'rv:cb_formula': 36, 'scope:cb_atoms_of': 1216, 'ses:assume_formula': 600, 'ses:compile': 384}
+   scaffold: {'scaffold:core:kept_product': 163, 'scaffold:core:kept_product:none': 14}
+## dev-seed1: knowledge/compile.py [query] 42, sat/formula.py [kept] 55, sat/formula.py [query] 10977
+      6777 sat/formula.py:atoms_of [query]
+      4052 sat/formula.py:Formula.__hash__ [query]
+       125 sat/formula.py:Formula.__init__ [query]
+        37 sat/formula.py:atoms_of [kept]
+        23 knowledge/compile.py:_literal [query]
+        21 sat/formula.py:Not.__init__ [query]
+        17 knowledge/compile.py:formula_literal [query]
+        14 sat/formula.py:Formula.__hash__ [kept]
+   rust: {'em:key_eq': 5888, 'pm:key_eq': 14356, 'refuse:object': 34, 'rel:note_formula': 786, 'rv:cb_formula': 244, 'scope:cb_atoms_of': 3730, 'ses:assume_formula': 1666}
+   scaffold: {'scaffold:core:kept_product': 33}
+## dev: knowledge/compile.py [query] 42, sat/formula.py [kept] 55, sat/formula.py [query] 10977
+      6777 sat/formula.py:atoms_of [query]
+      4052 sat/formula.py:Formula.__hash__ [query]
+       125 sat/formula.py:Formula.__init__ [query]
+        37 sat/formula.py:atoms_of [kept]
+        23 knowledge/compile.py:_literal [query]
+        21 sat/formula.py:Not.__init__ [query]
+        17 knowledge/compile.py:formula_literal [query]
+        14 sat/formula.py:Formula.__hash__ [kept]
+   rust: {'em:key_eq': 5860, 'pm:key_eq': 14356, 'refuse:object': 34, 'rel:note_formula': 786, 'rv:cb_formula': 244, 'scope:cb_atoms_of': 3730, 'ses:assume_formula': 1666}
+   scaffold: {'scaffold:core:kept_product': 33}
+## f6: sat/formula.py [kept] 94, sat/formula.py [query] 1112
+      1086 sat/formula.py:atoms_of [query]
+        80 sat/formula.py:atoms_of [kept]
+        13 sat/formula.py:Formula.__init__ [query]
+        13 sat/formula.py:Not.__init__ [query]
+         7 sat/formula.py:Formula.__init__ [kept]
+         7 sat/formula.py:Not.__init__ [kept]
+   rust: {'em:key_eq': 222, 'pm:key_eq': 39054, 'rv:cb_formula': 16, 'scope:cb_atoms_of': 24, 'ses:assume_formula': 12, 'ses:compile': 474}
+   scaffold: {'scaffold:core:kept_product': 82}
+## fuzz-seed1: knowledge/compile.py [query] 205, sat/formula.py [query] 102045
+     52939 sat/formula.py:Formula.__hash__ [query]
+     39470 sat/formula.py:atoms_of [query]
+      6731 sat/formula.py:Formula.__init__ [query]
+      2727 sat/formula.py:Not.__init__ [query]
+       183 knowledge/compile.py:compile_formula [query]
+       178 sat/formula.py:Formula.__eq__ [query]
+        16 knowledge/compile.py:basis_formula [query]
+         3 knowledge/compile.py:_literal [query]
+   rust: {'em:key_eq': 30608, 'pm:key_eq': 242675, 'refuse:object': 60, 'rel:note_formula': 11128, 'rv:cb_formula': 630, 'scope:cb_atoms_of': 17404, 'ses:assume_formula': 5904}
+   scaffold: {}
+## fuzz: knowledge/compile.py [query] 205, sat/formula.py [query] 102045
+     52939 sat/formula.py:Formula.__hash__ [query]
+     39470 sat/formula.py:atoms_of [query]
+      6731 sat/formula.py:Formula.__init__ [query]
+      2727 sat/formula.py:Not.__init__ [query]
+       183 knowledge/compile.py:compile_formula [query]
+       178 sat/formula.py:Formula.__eq__ [query]
+        16 knowledge/compile.py:basis_formula [query]
+         3 knowledge/compile.py:_literal [query]
+   rust: {'em:key_eq': 30701, 'pm:key_eq': 242675, 'refuse:object': 60, 'rel:note_formula': 11128, 'rv:cb_formula': 630, 'scope:cb_atoms_of': 17404, 'ses:assume_formula': 5904}
+   scaffold: {}
+## loop: sat/formula.py [query] 9570
+      3811 sat/formula.py:atoms_of [query]
+      3394 sat/formula.py:Formula.__init__ [query]
+      2002 sat/formula.py:Implies.__init__ [query]
+       363 sat/formula.py:Formula.__hash__ [query]
+   rust: {'em:key_eq': 1654, 'pm:key_eq': 7504, 'scope:cb_atoms_of': 976, 'ses:assume_formula': 488, 'ses:compile': 2318}
+   scaffold: {'scaffold:core:kept_product': 2}
+## opaque: sat/formula.py [query] 216
+       216 sat/formula.py:atoms_of [query]
+   rust: {'em:key_eq': 672, 'pm:key_eq': 4320, 'rv:cb_formula': 4, 'scope:cb_atoms_of': 124, 'ses:assume_formula': 62}
+   scaffold: {}
+## rootof: sat/formula.py [query] 2579
+      2579 sat/formula.py:atoms_of [query]
+   rust: {'em:key_eq': 2944, 'pm:key_eq': 15372, 'rv:cb_formula': 4, 'scope:cb_atoms_of': 1474, 'ses:assume_formula': 736}
+   scaffold: {}
+## scope: knowledge/compile.py [query] 7, sat/formula.py [query] 4264
+      2290 sat/formula.py:atoms_of [query]
+       766 sat/formula.py:Formula.__init__ [query]
+       743 sat/formula.py:Implies.__init__ [query]
+       462 sat/formula.py:Formula.__hash__ [query]
+         3 sat/formula.py:Not.__init__ [query]
+         2 knowledge/compile.py:_def [query]
+         2 knowledge/compile.py:_literal [query]
+         2 knowledge/compile.py:compile_formula [query]
+   rust: {'em:key_eq': 1252, 'pm:key_eq': 3932, 'refuse:object': 2, 'rel:note_formula': 536, 'scope:cb_atoms_of': 2006, 'ses:assume_formula': 332}
+   scaffold: {}
+## value: sat/formula.py [query] 4298
+      4298 sat/formula.py:atoms_of [query]
+   rust: {'em:key_eq': 6114, 'pm:key_eq': 19466, 'rel:note_formula': 394, 'rv:cb_formula': 8, 'scope:cb_atoms_of': 1676, 'ses:assume_formula': 638}
+   scaffold: {}
+## wiring: sat/formula.py [query] 46187
+     33707 sat/formula.py:atoms_of [query]
+     11966 sat/formula.py:Formula.__hash__ [query]
+       277 sat/formula.py:Formula.__init__ [query]
+       223 sat/formula.py:Not.__init__ [query]
+        14 sat/formula.py:Implies.__init__ [query]
+   rust: {'em:key_eq': 37874, 'pm:key_eq': 192292, 'rv:cb_formula': 406, 'scope:cb_atoms_of': 19660, 'ses:assume_formula': 10008, 'ses:compile': 1000}
+   scaffold: {'scaffold:core:kept_product': 10}
+## zero: knowledge/compile.py [query] 288, sat/formula.py [query] 14604
+      7982 sat/formula.py:atoms_of [query]
+      6464 sat/formula.py:Formula.__hash__ [query]
+       194 knowledge/compile.py:_literal [query]
+       132 sat/formula.py:Formula.__init__ [query]
+        94 knowledge/compile.py:formula_literal [query]
+        26 sat/formula.py:Not.__init__ [query]
+   rust: {'em:key_eq': 5646, 'pm:key_eq': 26594, 'refuse:object': 188, 'rel:note_formula': 2194, 'rv:cb_formula': 74, 'scope:cb_atoms_of': 3758, 'ses:assume_formula': 1330}
+   scaffold: {}

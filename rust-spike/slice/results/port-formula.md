@@ -94,3 +94,66 @@ scaffold builds the rest with SymPy's `Mul` and `:none` counts the times SymPy's
 factors, which is Python's own `kept_product` returning None. Rust's `mul` isn't consulted there at all, so before this
 branch a Rust-versus-Python disagreement at that site was **unmeasured**, not zero. (The Python shells it replaced did
 compare, `knowledge_core_live.py:126-144`.) This branch adds the comparison; see the counter section once it has run.
+
+## Module-wide probe, before (base 59e9d15, pass 1, every function in the file)
+Python calls into sat/formula.py and knowledge/compile.py, per workload, on converted queries (`[query]`); kept queries
+in brackets. Full rows with the top functions and the Rust counters: `port-formula-probe-base.txt`. Tool:
+`~/sa-rust-ids-work/sa-port-231/probe/` (`count_formula.py`, sa-port-201's count7.py with `--trace` taking package paths;
+`runall.sh TAG CLONE`; `summ.py DIR [--callers]`). The Rust counters there are totals over the run's two passes.
+
+| workload | sat/formula.py | knowledge/compile.py | `scope:cb_atoms_of` | `rv:cb_formula` | `refuse:object` | `em:key_eq` | `pm:key_eq` |
+|---|---|---|---|---|---|---|---|
+| dev | 10,977 (kept 55) | 42 | 3,730 | 244 | 34 | 5,860 | 14,356 |
+| fuzz | 102,045 | 205 | 17,404 | 630 | 60 | 30,701 | 242,675 |
+| f6 | 1,112 (kept 94) | 0 | 24 | 16 | 0 | 222 | 39,054 |
+| value | 4,298 | 0 | 1,676 | 8 | 0 | 6,114 | 19,466 |
+| rootof | 2,579 | 0 | 1,474 | 4 | 0 | 2,944 | 15,372 |
+| core | 3,175 | 0 | 1,216 | 36 | 0 | 3,474 | 20,272 |
+| opaque | 216 | 0 | 124 | 4 | 0 | 672 | 4,320 |
+| scope | 4,264 | 7 | 2,006 | 0 | 2 | 1,252 | 3,932 |
+| loop | 9,570 | 0 | 976 | 0 | 0 | 1,654 | 7,504 |
+| zero | 14,604 | 288 | 3,758 | 74 | 188 | 5,646 | 26,594 |
+| wiring | 46,187 | 0 | 19,660 | 406 | 0 | 37,874 | 192,292 |
+| cert | 2,688 | 0 | 366 | 0 | 0 | 236 | 3,178 |
+| budget | 13,505 | 0 | 58 | 0 | 0 | 146 | 8,154 |
+
+dev and fuzz at hash seed 1 give the same sat/formula.py and compile.py numbers (`em:key_eq` differs by 28 and 93).
+**After: not run.** The code below isn't wired into the session, so these numbers can't have moved yet.
+
+## Code on this branch so far (unbarred)
+- `solver_rs/src/formula.rs` (new, registered in lib.rs): `convert(f, classes)` walks a Python Formula once and returns a
+  `FormulaNode`: the tree (`N`), each atom occurrence's own object with its `pred` and `expr`, and `atoms_of`'s result
+  (the first-seen objects, deduplicated by one dict lookup per occurrence, which is `P`'s hash and `==` as Python's `seen`
+  set runs them; a bare `P` hashes nothing, as in Python). It refuses, counted, where `to_f` refuses or where a `Bad` node
+  would change `atoms_of` (depth over 64; a Formula subclass outside the nine classes or a wrong arity; an `Exception`
+  from a read). Counters 630-639 (`formula_counts()`), plants 601-606 (`formula_plant(name)`).
+- `test_formula_nodes.py` (new, 15 tests, python mode like its neighbours): 410 formulas against Python's reading (atoms by
+  value and identity, tree, occurrences); the node unchanged after the object's `args` are emptied; the four refusals and a
+  BaseException going up.
+- `term/rows_tpl.rs`: `scaffold:core:kept_product:mismatch` and `:unchecked`. Python's answer is used as before; Rust's
+  verdict (its `mul`, as `core_kept_product`) is compared once the split's shared borrow of the table is released
+  (`QIds::check_products`; `rest` runs under that borrow and `mul` interns). Side effect to watch in the bar: the
+  comparison's `mul` can intern derived rows that weren't interned before.
+
+### Plant table
+| plant | id | fires | caught by |
+|---|---|---|---|
+| `rows-product-verdict-flip` | 600 | core: once per checked product | `scaffold:core:kept_product:mismatch` equals the fired count; answers unchanged |
+| `fm-atoms-drop-last` | 601 | yes | atoms comparison |
+| `fm-atoms-no-dedupe` | 602 | yes | atoms comparison |
+| `fm-args-reverse` | 603 | yes | tree comparison |
+| `fm-implies-swap` | 604 | yes | tree comparison |
+| `fm-ite-swap` | 605 | yes | tree comparison |
+| `fm-not-drop` | 606 | yes | tree comparison |
+
+None is void in test_formula_nodes.py. All of 601-606 are **void on the workloads**: the conversion isn't reached by any
+query until it is wired. Plant 600 has run on core only.
+
+### `scaffold:core:kept_product:mismatch`
+core: 0, with the scaffold firing (test_formula_nodes.py, one pass). dev, f6, wiring and loop (where the scaffold also
+fires: 33, 82, 10, 2 in ce706d3) and `:unchecked` per workload: **not run**.
+
+### Not run
+The suite (so no three numbers and no handler multiset), fresh dev and fuzz answers and state, kept shares per reason,
+the after-probe, `rk:intern:engine`/`rk:intern:input` (RelKeys isn't on rust-slice at 59e9d15), the mismatch counter off
+core, and everything on the "before any backend PR" list.

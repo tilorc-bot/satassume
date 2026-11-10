@@ -43,6 +43,8 @@ PLANTS += ('rows-exp-ipi-drop', 'rows-exp-const-key-none')
 PLANTS += ('rows-round-skip', 'rows-round-key-none')
 #: 6i(c) (term/rows_tpl.rs QIds: derived numbers, product rests, a Pow Python built, _mul_factor_sets' ct set), plants 370-373
 PLANTS += ('rows-number-id-shift', 'rows-product-first', 'rows-pow-bound-args-swap', 'rows-mul-ct-drop')
+# formula step (sa-port-231), plant 600: the control of scaffold:core:kept_product:mismatch
+PLANTS += ('rows-product-verdict-flip',)
 # 6i(a): outer_tpl.rs, plants 280-286
 PLANTS += ('outer-multigamma-p', 'outer-multigamma-value', 'outer-rootof-index', 'outer-accum-real', 'outer-idx-integer',
            'outer-quantity-positive', 'outer-random-real')

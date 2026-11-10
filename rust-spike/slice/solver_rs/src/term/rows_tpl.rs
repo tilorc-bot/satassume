@@ -88,6 +88,7 @@ pub const PLANTS: &[&str] = &[
     "rows-product-first",      // 6i(c) 371: `kept_product(factors)` read as the first factor
     "rows-pow-bound-args-swap",// 6i(c) 372: a Pow Python built read with base and exponent swapped
     "rows-mul-ct-drop",        // 6i(c) 373: `_mul_factor_sets`' ct set `(c, rest)` left out
+    "rows-product-verdict-flip",// formula step 600: Rust's `kept_product` verdict read flipped (the mismatch counter's control)
 ];
 
 /// 6g(c3): the shells whose args `split` passes as a tuple (the others take one argument).
@@ -1340,6 +1341,9 @@ struct QIds<'py> {
     n_input: usize,
     /// 6i(c): the `_Query` (`term_live`'s `derived`/`rev` maps, as `term_id` and `scaffold` keep them).
     q: Bound<'py, PyAny>,
+    /// Formula step: product rests whose Rust verdict is still to be compared (`check_products`): `rest` runs under the
+    /// split's shared borrow of the table and Rust's `mul` interns.
+    pending: std::cell::RefCell<Vec<(Vec<TermId>, Option<Bound<'py, PyAny>>)>>,
 }
 
 /// 6i(c): a split's term: its object, no split (Python's `kept_product` is None), or the shell.
@@ -1354,7 +1358,7 @@ impl<'py> QIds<'py> {
         let Some(q) = c.query(py)? else { return Ok(None) };
         let table = q.getattr("table")?.cast_into::<PyTermTable>()?;
         let n_input = table.borrow().tt().n_input;
-        Ok(Some(QIds { table, ids: q.getattr("ids")?, objects: q.getattr("objects")?, n_input, q }))
+        Ok(Some(QIds { table, ids: q.getattr("ids")?, objects: q.getattr("objects")?, n_input, q, pending: Default::default() }))
     }
 
     /// The ids of `xs`, each an input term of its own class (`==` can join classes), or None. 6i(c): a term Python already
@@ -1476,11 +1480,64 @@ impl<'py> QIds<'py> {
         let kept = o.getattr("is_Mul")?.is_truthy()?
             && o.getattr("args")?.len()? == objs.len()
             && counter.call1((o.getattr("args")?,))?.eq(counter.call1((&factors,))?)?;
+        // KEPT_PRODUCT ruling: Python's answer is the one used, and Rust's own `kept_product` (its `mul`, as
+        // `core_kept_product`) is compared with it. A disagreement is counted, never hidden by the fallback.
+        // It runs once the split's borrow of the table is back (`check_products`).
+        self.pending.borrow_mut().push((fs.clone(), kept.then(|| o.clone())));
         if !kept {
             c.bump("scaffold:core:kept_product:none");
             return Ok(Got::NoSplit);
         }
         Ok(Got::Obj(o))
+    }
+
+    /// The comparisons `rest` left, run when the table can be borrowed mutably.
+    fn check_products(&self, c: &Common) -> PyResult<()> {
+        let todo = std::mem::take(&mut *self.pending.borrow_mut());
+        for (fs, ours) in &todo {
+            self.check_product(c, fs, ours.as_ref())?;
+        }
+        Ok(())
+    }
+
+    /// Rust's `kept_product(factors)` against SymPy's (`ours`: the kept Mul, or None), as knowledge_core_live.py's shell
+    /// compared them: both None, or both kept and, where the Mul is an input term of its own class, the same id.
+    /// `scaffold:core:kept_product:mismatch` when they differ; `:unchecked` when Rust's `mul` refuses the product.
+    fn check_product(&self, c: &Common, fs: &[TermId], ours: Option<&Bound<'py, PyAny>>) -> PyResult<()> {
+        let theirs = {
+            let mut tb = self.table.borrow_mut();
+            let tt = tb.tt_mut();
+            match tt.mul(fs.to_vec()) {
+                Err(_) => {
+                    c.bump("scaffold:core:kept_product:unchecked");
+                    return Ok(());
+                }
+                Ok(t) => {
+                    let (mut a, mut b): (Vec<u32>, Vec<u32>) = (tt.row(t).args.iter().map(|x| x.0).collect(), fs.iter().map(|x| x.0).collect());
+                    a.sort_unstable();
+                    b.sort_unstable();
+                    (tt.class_of(t).kind == super::table::Kind::Mul && a == b).then_some(t.0)
+                }
+            }
+        };
+        let theirs = if c.plant == "rows-product-verdict-flip" {
+            c.fired();
+            if theirs.is_some() { None } else { Some(u32::MAX) }
+        } else {
+            theirs
+        };
+        let mut same = ours.is_some() == theirs.is_some();
+        if let (true, Some(o), Some(t)) = (same, ours, theirs) {
+            let i = self.ids.call_method1("get", (o,))?;
+            if !i.is_none() {
+                let i: u32 = i.extract()?;
+                same = !self.objects.get_item(i)?.get_type().is(&o.get_type()) || i == t;
+            }
+        }
+        if !same {
+            c.bump("scaffold:core:kept_product:mismatch");
+        }
+        Ok(())
     }
 
     fn one(&self, t: &Rest) -> PyResult<Option<Bound<'py, PyAny>>> {
@@ -1527,8 +1584,10 @@ fn direct_split<'py>(py: Python<'py>, c: &Common, name: &str, args: &Bound<'py, 
     };
     let r = {
         let tb = q.table.borrow();
-        direct_rows(py, c, &q, tb.tt(), name, args, &ids)?
+        direct_rows(py, c, &q, tb.tt(), name, args, &ids)
     };
+    q.check_products(c)?;
+    let r = r?;
     match r {
         Some(Direct1::Done(r)) => Ok(Some((r, None))),
         Some(Direct1::Quotient(None)) => Ok(Some((py.None().into_bound(py), Some(py.None().into_bound(py))))),
