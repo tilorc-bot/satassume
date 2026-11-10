@@ -475,3 +475,270 @@ core" (the brief's item, not in the gate); SesDict by term id and session_live's
 part 3 step); relations_core.rs :786, :2270, :2332, :2468 still reading the `table` property (formula's, condition 2);
 the digest that observes without replacing `_interpret`/`_link` (formula's next bar, RULINGS 14); the needs-internals
 list for the test readers in sub-part 1's table.
+
+## The count step: module-wide probe of session_live.py on landed 9151316 (sa-port-263)
+**Verdict: session_live.py does not count, and ses_cont does not count.** No function of session_live.py that runs on a
+converted query is a named callback or a conversion: 72 function rows are nonzero on the 16 workloads (40 to 70 per
+workload) and 73 in the suite, and `sc:key_hash` (one Python `hash()` per session-dict lookup, ses_cont.rs:88) is nonzero on
+all 16 workloads and in the suite. Owners are in the last table of this section.
+
+Method (RULINGS 1; rust-slice 9151316, source equal to tested f252daf). Every PY_START of a code object of
+rust-spike/slice/session_live.py, filed by the query state read from term_live's stack top as pycalls.py reads it.
+- Workloads: sa-port-262's pycalls.py run (orion `~/sa-rust-ids-work/sa-port-262/pyc/landed`, 22:33Z-22:34Z 10 Nov, 16
+  workloads, Rust, `--check plain`, all exit 0, every .err empty, .so a10068f4febd). Read, then run again by sa-port-263
+  with the nearest Python caller and the wrapped method name recorded (`~/sa-rust-ids-work/sa-port-263/p1/pc263.py`, output
+  `sa-port-263/wl`): per function, per state and in every sb:/sc: counter the second run equals the first on all 16
+  (`p1/cmp.py`). The tables below are the second run's. `_rel_m[x]`, `_q[x]`, `_g[x]`, `_ent[x]`, `_bud[x]` are the closure
+  wrappers split by the method they wrap.
+- Suite: pareto1 under a shared lease, a copy of the tree at 9151316 (`~/sp19/dev/sa-port-263-landed`) with the bar's
+  x86-64 .so of the same source (e9aaf5052540), `-p rust_plugin -p handler_count -p pc263_suite -n 6`
+  (`~/sp19/sa-rust-ids-work/sa-port-263/suite-probe`, copy on orion `sa-port-263/suite-probe`): 127 failed, 5,991 passed,
+  23 skipped, 18 xfailed. The bar had 126 / 5,992; the one more failure is
+  tests/test_public_incremental.py::test_public_comparison_catches_a_planted_history_dependence, the known id()-reuse
+  test; the other 126 failed ids are the bar's. A second pass without the probe (`suite-counts`, below) fails the same 127,
+  so the probe is not the cause.
+- `_census` (107,547 on the workloads, 0 in the suite) runs only because the probe sets SESSION_REPORT
+  (compile_loop.rs:432); it is the probe's instrument, not a call of a normal run. In the suite
+  `_complete_check` (35,166) and 4,000 of `verdict` are called by catch_count.py, the handler-count plugin's wrapper.
+- The four wrappers that Rust now calls directly (`_rel_interpret`, `_rel_link`, `_rel_share_guard`, `_ses_visit`) are 0
+  on all 16 workloads and in the suite, as `sb:fwd_named` 0 says.
+
+Per run (converted = calls into session_live.py on converted queries; kept = on queries Python answers):
+
+| run | queries | converted calls | nonzero functions | noquery | kept | sc:key_hash | sc:key_eq | sc:core | sc:view | sc:record | sb:attr | sb:fwd_named | sb:core_prop |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| fuzz | 3000 | 1,087,838 | 70 | 12,139 | 0 | 478,541 | 1,193 | 908,133 | 0 | 0 | 0 | 0 | 0 |
+| dev | 1985 | 89,347 | 70 | 6,555 | 464 | 28,951 | 0 | 66,462 | 0 | 0 | 0 | 0 | 0 |
+| zero | 854 | 210,350 | 70 | 3,331 | 0 | 73,045 | 0 | 145,552 | 0 | 0 | 0 | 0 | 0 |
+| loop | 420 | 34,957 | 40 | 1,751 | 0 | 14,880 | 16 | 36,879 | 0 | 0 | 0 | 0 | 0 |
+| scope | 169 | 29,003 | 63 | 819 | 0 | 10,220 | 0 | 22,079 | 0 | 0 | 0 | 0 | 0 |
+| budget | 28 | 12,694 | 43 | 255 | 0 | 46,412 | 0 | 53,922 | 0 | 0 | 0 | 0 | 0 |
+| cert | 61 | 14,669 | 57 | 387 | 0 | 6,513 | 0 | 12,904 | 0 | 0 | 0 | 0 | 0 |
+| twin | 2 | 756 | 62 | 152 | 0 | 140 | 1 | 300 | 0 | 0 | 0 | 0 | 0 |
+| core | 1636 | 85,497 | 42 | 6,683 | 0 | 31,346 | 333 | 92,847 | 0 | 0 | 0 | 0 | 0 |
+| f6 | 2902 | 134,694 | 43 | 11,751 | 520 | 56,852 | 0 | 156,933 | 0 | 0 | 0 | 0 | 0 |
+| opaque | 2546 | 59,366 | 44 | 10,327 | 210 | 13,385 | 0 | 39,380 | 0 | 0 | 0 | 0 | 0 |
+| rootof | 5187 | 124,168 | 42 | 20,085 | 0 | 32,384 | 0 | 76,703 | 0 | 0 | 0 | 0 | 0 |
+| value | 3742 | 120,270 | 65 | 15,061 | 354 | 25,145 | 0 | 59,710 | 0 | 0 | 0 | 0 | 0 |
+| wiring | 6512 | 506,690 | 43 | 26,191 | 42 | 283,608 | 67 | 601,128 | 0 | 0 | 0 | 0 | 0 |
+| transfer:7:60 | 60 | 30,456 | 68 | 383 | 0 | 14,752 | 2 | 26,844 | 0 | 0 | 0 | 0 | 0 |
+| transfer2:3:40 | 40 | 25,384 | 65 | 303 | 0 | 11,680 | 17 | 21,289 | 0 | 0 | 0 | 0 | 0 |
+| suite | n/a | 11,806,173 | 73 | 12,545,780 | 271,333 | 10,006,834 | 26,491 | 20,784,215 | 0 | 0 | 0 | 0 | 0 |
+
+Where the converted calls come from. The nearest Python caller of almost every call is another session_live.py wrapper,
+so the caller is Rust code that was entered through that wrapper and calls a `Session`, `Relations` or `Engine` method by
+name (or reads `table.new_nodes`, `table.base_of.get`, `len(table)`, `.table`), which runs a Python dispatch frame and goes
+straight back into Rust. The row names the Rust file the outer wrapper enters; the calling site itself can be in another
+Rust file reached from it (the `table.new_nodes` / `new_custom` / `base_of.get` reads under `_ses_ensure` and
+`_ses_discover` are compile_loop.rs:127-151 and :254-308).
+
+| calls come from | 16 workloads | functions | suite | functions |
+|---|---:|---:|---:|---:|
+| Rust under a `Relations` wrapper (relations_core.rs entered), calling back by name or reading a view | 689,217 | 20 | 5,040,907 | 20 |
+| Rust under a `Session`/`Engine` wrapper (compile.rs entered), calling back by name or reading a view | 106,743 | 2 | 321,701 | 2 |
+| Rust under a `Session`/`Engine` wrapper (compile_loop.rs entered), calling back by name or reading a view | 47,912 | 5 | 332,677 | 5 |
+| Rust under a `Session`/`Engine` wrapper (context.rs entered), calling back by name or reading a view | 72,251 | 8 | 259,739 | 8 |
+| Rust under a `Session`/`Engine` wrapper (discovery.rs entered), calling back by name or reading a view | 761,937 | 6 | 3,376,218 | 6 |
+| Rust under a `Session`/`Engine` wrapper (entry.rs entered), calling back by name or reading a view | 181,396 | 12 | 424,357 | 11 |
+| Rust under a `Session`/`Engine` wrapper (query.rs entered), calling back by name or reading a view | 157,706 | 14 | 1,010,321 | 14 |
+| Rust under a `Session`/`Engine` wrapper (session_glue.rs entered), calling back by name or reading a view | 146,541 | 11 | 447,011 | 11 |
+| session_live.py calling itself (TableView.bind) | 159,102 | 6 | 263,220 | 6 |
+| session_live.py calling itself (_dvar_public) | 404 | 1 | 3,935 | 1 |
+| session_live.py calling itself (_node) | 25,431 | 1 | 66,056 | 1 |
+| session_live.py calling itself (_rust_call) | 20,758 | 1 | 85,153 | 1 |
+| session_live.py calling itself (_table_set) | 26,517 | 1 | 43,870 | 1 |
+| entry frame: sympy_api.py (conversion code) calling an `Engine` method | 61,927 | 7 | 84,479 | 6 |
+| Python's compiler on a converted query (`_compile_formula`'s fallback) | 750 | 2 | 7,239 | 3 |
+| suite only: catch_count.py (Python) | 0 | 0 | 39,166 | 2 |
+| suite only: test_budget_cone.py (Python) | 0 | 0 | 13 | 1 |
+| suite only: test_history.py (Python) | 0 | 0 | 110 | 1 |
+| suite only: test_invariants.py (Python) | 0 | 0 | 1 | 1 |
+| instrument: `_census` (the probe sets SESSION_REPORT; compile_loop.rs:432) | 107,547 | 1 | 0 | 0 |
+| total | 2,566,139 | | 11,806,173 | |
+
+Per function on converted queries, 16 workloads and the suite:
+
+| function | fuzz | dev | zero | loop | scope | budget | cert | twin | core | f6 | opaque | rootof | value | wiring | transfer:7:60 | transfer2:3:40 | suite |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| `_table_get` | 218,742 | 10,775 | 46,702 | 2,483 | 4,472 | 533 | 2,411 | 164 | 2,293 | 3,449 | 2,396 | 5,152 | 9,548 | 11,454 | 7,379 | 6,654 | 2,364,823 |
+| `TableView.new_nodes` | 133,977 | 8,939 | 23,766 | 5,090 | 3,100 | 2,349 | 1,639 | 76 | 7,349 | 12,015 | 1,200 | 6,256 | 6,557 | 59,846 | 3,238 | 2,638 | 1,512,644 |
+| `_ses_ensure` | 84,724 | 5,204 | 14,541 | 700 | 1,710 | 175 | 1,037 | 42 | 1,945 | 2,891 | 2,396 | 5,152 | 3,853 | 35,630 | 2,498 | 1,919 | 1,233,651 |
+| `TableView.new_custom` | 108,970 | 5,246 | 19,502 | 1,403 | 3,267 | 194 | 1,344 | 60 | 492 | 233 | 31 | 368 | 1,698 | 5,504 | 2,332 | 1,787 | 907,711 |
+| `_rel_m[_adapter]` | 83,110 | 3,395 | 14,839 | 0 | 1,587 | 0 | 829 | 48 | 0 | 0 | 0 | 0 | 592 | 0 | 2,094 | 1,806 | 757,719 |
+| `_ses_discover` | 58,720 | 3,242 | 10,792 | 244 | 1,368 | 23 | 708 | 34 | 300 | 6 | 31 | 368 | 1,107 | 5,004 | 1,368 | 1,112 | 534,495 |
+| `_BaseOf.get` | 33,395 | 4,177 | 3,086 | 3,872 | 684 | 5,436 | 399 | 2 | 16,407 | 26,623 | 2,025 | 6,256 | 7,086 | 62,716 | 1,006 | 897 | 320,222 |
+| `_q[emit]` | 14,860 | 2,944 | 5,058 | 560 | 346 | 159 | 365 | 10 | 672 | 12 | 62 | 736 | 638 | 70,807 | 648 | 493 | 331,521 |
+| `TableView.__len__` | 33,176 | 3,286 | 3,297 | 2,798 | 958 | 290 | 606 | 2 | 11,342 | 19,824 | 1,730 | 6,319 | 5,785 | 15,119 | 920 | 819 | 303,774 |
+| `_ses_custom` | 36,397 | 1,494 | 6,278 | 0 | 989 | 0 | 374 | 20 | 0 | 0 | 0 | 0 | 197 | 0 | 916 | 809 | 332,038 |
+| `_rel_m[enqueue]` | 36,397 | 1,494 | 6,278 | 0 | 701 | 0 | 374 | 20 | 0 | 0 | 0 | 0 | 197 | 0 | 916 | 809 | 331,440 |
+| `_rel_m[_atom_var]` | 30,732 | 1,256 | 6,213 | 0 | 539 | 0 | 253 | 20 | 0 | 0 | 0 | 0 | 0 | 0 | 886 | 726 | 293,816 |
+| `_ses_query_literal` | 7,974 | 1,673 | 1,219 | 1,024 | 499 | 21 | 188 | 32 | 3,734 | 6,467 | 4,751 | 5,869 | 6,696 | 11,922 | 139 | 153 | 135,873 |
+| `_rel_m[_link_later]` | 17,762 | 912 | 3,183 | 0 | 224 | 0 | 343 | 10 | 0 | 0 | 0 | 0 | 394 | 0 | 394 | 365 | 126,025 |
+| `_rel_m[_note_sides]` | 11,212 | 432 | 2,612 | 0 | 185 | 0 | 81 | 8 | 0 | 0 | 0 | 0 | 394 | 0 | 434 | 415 | 120,434 |
+| `_ses_incomplete` | 8,208 | 2,145 | 1,756 | 812 | 501 | 36 | 183 | 6 | 1,906 | 2,301 | 2,232 | 1,409 | 1,704 | 13,402 | 143 | 71 | 96,067 |
+| `_rel_sync_transfer` | 5,441 | 170 | 3,127 | 0 | 52 | 0 | 0 | 8 | 0 | 0 | 0 | 0 | 592 | 0 | 314 | 165 | 109,864 |
+| `_census` | 16,537 | 2,476 | 2,804 | 2,284 | 490 | 1,961 | 223 | 8 | 6,365 | 11,549 | 2,996 | 5,520 | 4,343 | 48,942 | 573 | 476 | 0 |
+| `_node` | 867 | 839 | 336 | 384 | 144 | 6 | 27 | 30 | 1,629 | 2,885 | 2,365 | 4,784 | 5,287 | 5,627 | 102 | 119 | 66,056 |
+| `_q[query_lit]` | 867 | 839 | 336 | 384 | 144 | 6 | 27 | 30 | 1,629 | 2,885 | 2,365 | 4,784 | 5,287 | 5,627 | 102 | 119 | 66,056 |
+| `_rel_add_role` | 3,333 | 171 | 1,612 | 0 | 6 | 0 | 10 | 4 | 0 | 0 | 0 | 0 | 197 | 0 | 343 | 418 | 84,913 |
+| `_q[_ensure_twins]` | 5,602 | 1,605 | 1,309 | 488 | 334 | 29 | 122 | 4 | 594 | 8 | 61 | 736 | 834 | 9,818 | 113 | 58 | 67,142 |
+| `_ses_assumption_lits` | 5,602 | 1,605 | 1,309 | 488 | 334 | 29 | 122 | 4 | 594 | 8 | 61 | 736 | 834 | 9,818 | 113 | 58 | 66,989 |
+| `_rust_call` | 4,909 | 871 | 987 | 2,099 | 507 | 520 | 121 | 2 | 664 | 564 | 31 | 368 | 516 | 5,827 | 67 | 51 | 60,754 |
+| `_rel_m[_share]` | 8,009 | 504 | 1,794 | 0 | 274 | 0 | 132 | 6 | 0 | 0 | 0 | 0 | 394 | 0 | 187 | 104 | 66,666 |
+| `_q[_ensure_atoms]` | 4,909 | 871 | 987 | 244 | 219 | 23 | 121 | 2 | 300 | 6 | 31 | 368 | 516 | 5,004 | 67 | 51 | 59,698 |
+| `_ses_init` | 3,133 | 912 | 667 | 384 | 171 | 17 | 87 | 4 | 1,635 | 2,889 | 2,366 | 4,784 | 3,535 | 5,817 | 68 | 48 | 43,870 |
+| `_ses_solver_set` | 3,133 | 912 | 667 | 384 | 171 | 17 | 87 | 4 | 1,635 | 2,889 | 2,366 | 4,784 | 3,535 | 5,817 | 68 | 48 | 43,870 |
+| `_table_set` | 3,133 | 912 | 667 | 384 | 171 | 17 | 87 | 4 | 1,635 | 2,889 | 2,366 | 4,784 | 3,535 | 5,817 | 68 | 48 | 43,870 |
+| `TableView.bind` | 3,133 | 912 | 667 | 384 | 171 | 17 | 87 | 4 | 1,635 | 2,889 | 2,366 | 4,784 | 3,535 | 5,817 | 68 | 48 | 43,870 |
+| `_core_rules` | 3,133 | 912 | 667 | 384 | 171 | 17 | 87 | 4 | 1,635 | 2,889 | 2,366 | 4,784 | 3,535 | 5,817 | 68 | 48 | 43,870 |
+| `_ses_solver_get` | 3,133 | 912 | 667 | 384 | 171 | 17 | 87 | 4 | 1,635 | 2,889 | 2,366 | 4,784 | 3,535 | 5,817 | 68 | 48 | 43,870 |
+| `_Custom.__init__` | 3,133 | 912 | 667 | 384 | 171 | 17 | 87 | 4 | 1,635 | 2,889 | 2,366 | 4,784 | 3,535 | 5,817 | 68 | 48 | 43,870 |
+| `_BaseOf.__init__` | 3,133 | 912 | 667 | 384 | 171 | 17 | 87 | 4 | 1,635 | 2,889 | 2,366 | 4,784 | 3,535 | 5,817 | 68 | 48 | 43,870 |
+| `_Slots.__init__` | 3,133 | 912 | 667 | 384 | 171 | 17 | 87 | 4 | 1,635 | 2,889 | 2,366 | 4,784 | 3,535 | 5,817 | 68 | 48 | 43,870 |
+| `_Base.__init__` | 3,133 | 912 | 667 | 384 | 171 | 17 | 87 | 4 | 1,635 | 2,889 | 2,366 | 4,784 | 3,535 | 5,817 | 68 | 48 | 43,870 |
+| `_base_set` | 3,133 | 912 | 667 | 384 | 171 | 17 | 87 | 4 | 1,635 | 2,889 | 2,366 | 4,784 | 3,535 | 5,817 | 68 | 48 | 43,870 |
+| `_Custom.__contains__` | 2,445 | 137 | 1,014 | 0 | 6 | 0 | 10 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 248 | 278 | 62,667 |
+| `_ent[ent_clear_budget_flag]` | 2,998 | 1,197 | 740 | 384 | 169 | 28 | 61 | 2 | 1,634 | 2,902 | 2,606 | 4,784 | 3,717 | 6,512 | 60 | 40 | 37,238 |
+| `_rel_selectors_of` | 6,217 | 399 | 1,097 | 0 | 72 | 0 | 122 | 4 | 0 | 0 | 0 | 0 | 197 | 0 | 113 | 58 | 51,798 |
+| `_rel_m[note_formula]` | 5,564 | 392 | 1,097 | 0 | 268 | 0 | 122 | 4 | 0 | 0 | 0 | 0 | 197 | 0 | 113 | 58 | 50,499 |
+| `_rel_process` | 5,564 | 392 | 1,097 | 0 | 268 | 0 | 122 | 4 | 0 | 0 | 0 | 0 | 197 | 0 | 113 | 58 | 50,499 |
+| `_q[_relations]` | 5,564 | 392 | 1,097 | 0 | 268 | 0 | 122 | 4 | 0 | 0 | 0 | 0 | 197 | 0 | 113 | 58 | 50,499 |
+| `_compile_formula` | 2,952 | 827 | 665 | 2,099 | 454 | 513 | 61 | 2 | 664 | 564 | 31 | 368 | 319 | 5,827 | 64 | 40 | 36,355 |
+| `_bud[bud_within_budget]` | 3,127 | 834 | 724 | 244 | 166 | 37 | 61 | 2 | 308 | 8 | 31 | 369 | 638 | 5,005 | 64 | 40 | 39,389 |
+| `_ses_escalate` | 3,622 | 489 | 746 | 493 | 174 | 19 | 101 | 0 | 1,557 | 2,254 | 350 | 1,041 | 534 | 3,290 | 59 | 34 | 34,986 |
+| `_ent[ent_ask]` | 2,812 | 776 | 699 | 244 | 166 | 26 | 61 | 2 | 299 | 4 | 30 | 368 | 636 | 4,814 | 60 | 40 | 35,332 |
+| `_ent[ent_fresh_session]` | 2,952 | 827 | 665 | 244 | 166 | 16 | 61 | 2 | 300 | 6 | 31 | 368 | 319 | 5,004 | 64 | 40 | 35,299 |
+| `_g[assume_formula]` | 2,952 | 827 | 665 | 244 | 166 | 16 | 61 | 2 | 300 | 6 | 31 | 368 | 319 | 5,004 | 64 | 40 | 35,299 |
+| `_rel_m[wants_transfer]` | 6,088 | 351 | 925 | 0 | 21 | 0 | 122 | 2 | 0 | 0 | 0 | 0 | 197 | 0 | 113 | 58 | 37,902 |
+| `_rel_m[_atom_selector]` | 1,827 | 48 | 655 | 0 | 22 | 0 | 0 | 2 | 0 | 0 | 0 | 0 | 197 | 0 | 273 | 219 | 41,888 |
+| `_install_context.<locals>._context_session` | 2,772 | 776 | 699 | 244 | 166 | 12 | 61 | 2 | 299 | 4 | 30 | 368 | 636 | 4,814 | 60 | 40 | 33,932 |
+| `_g[link_set]` | 2,758 | 827 | 661 | 244 | 166 | 16 | 61 | 2 | 295 | 4 | 31 | 368 | 318 | 5,004 | 53 | 18 | 33,556 |
+| `_q[prepare_query]` | 2,605 | 776 | 643 | 244 | 166 | 13 | 61 | 2 | 294 | 2 | 30 | 368 | 318 | 4,814 | 49 | 18 | 31,548 |
+| `_rel_transfer_terms` | 1,722 | 66 | 1,125 | 0 | 22 | 0 | 0 | 4 | 0 | 0 | 0 | 0 | 394 | 0 | 120 | 67 | 36,454 |
+| `_install_context.<locals>._complete_check` | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 35,166 |
+| `_rel_init` | 3,018 | 197 | 556 | 0 | 135 | 0 | 61 | 2 | 0 | 0 | 0 | 0 | 198 | 0 | 64 | 40 | 26,852 |
+| `_q[_query_all]` | 1,037 | 667 | 74 | 552 | 303 | 1 | 0 | 2 | 1,777 | 2,531 | 2,492 | 2,809 | 1,878 | 6,073 | 33 | 8 | 8,952 |
+| `_formula_literal` | 1,957 | 44 | 322 | 0 | 53 | 7 | 60 | 0 | 0 | 0 | 0 | 0 | 197 | 0 | 3 | 11 | 24,399 |
+| `_q[literal_of]` | 1,957 | 44 | 322 | 0 | 53 | 7 | 60 | 0 | 0 | 0 | 0 | 0 | 197 | 0 | 3 | 11 | 24,399 |
+| `_rel_fresh` | 960 | 34 | 598 | 0 | 22 | 0 | 0 | 2 | 0 | 0 | 0 | 0 | 197 | 0 | 139 | 144 | 23,344 |
+| `_Custom.get` | 888 | 37 | 822 | 0 | 0 | 0 | 0 | 2 | 0 | 0 | 0 | 0 | 197 | 0 | 98 | 140 | 22,676 |
+| `_ent[ent_is]` | 783 | 433 | 1 | 140 | 3 | 2 | 121 | 0 | 1,335 | 2,896 | 2,360 | 4,416 | 3,081 | 1,360 | 0 | 0 | 7,563 |
+| `_rel_m[_eq_links]` | 888 | 34 | 598 | 0 | 0 | 0 | 0 | 2 | 0 | 0 | 0 | 0 | 197 | 0 | 95 | 140 | 22,246 |
+| `_rel_engage_transfer` | 911 | 34 | 550 | 0 | 11 | 0 | 0 | 2 | 0 | 0 | 0 | 0 | 198 | 0 | 64 | 40 | 18,741 |
+| `_ent[ent_record_relevant]` | 1,203 | 570 | 84 | 0 | 0 | 0 | 0 | 0 | 226 | 2 | 246 | 367 | 317 | 2,586 | 4 | 0 | 10,130 |
+| `_install_context.<locals>.verdict` | 315 | 58 | 25 | 0 | 0 | 4 | 0 | 0 | 9 | 4 | 1 | 1 | 2 | 191 | 4 | 0 | 4,000 |
+| `_dvar_public` | 120 | 21 | 144 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 101 | 18 | 3,935 |
+| `_ent[ent_is_many]` | 6 | 2 | 1 | 0 | 2 | 0 | 0 | 2 | 0 | 0 | 0 | 0 | 150 | 0 | 4 | 8 | 3,952 |
+| `_rel_mention_number` | 342 | 112 | 0 | 0 | 0 | 0 | 101 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1,030 |
+| `_ent[ent_record_cache_hit]` | 17 | 130 | 40 | 0 | 0 | 0 | 0 | 0 | 0 | 2 | 216 | 0 | 0 | 338 | 0 | 0 | 388 |
+| `_ses_flush` | 0 | 0 | 139 | 0 | 0 | 0 | 0 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 283 |
+| `_ent[ent_keep_budget_flag]` | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 60 | 0 | 0 | 0 | 0 | 0 | 14 |
+| `TableView.true_var` | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 2 |
+
+Per function, where its calls come from (same mapping as above):
+
+| function | 16 workloads | suite | called from (16 workloads) | called from (suite) |
+|---|---:|---:|---|---|
+| `_table_get` | 334,607 | 2,364,823 | relations_core.rs 288,014, session_live.py:_node 25,431, session_live.py:_rust_call 20,758, session_live.py:_dvar_public 404 | relations_core.rs 2,209,679, session_live.py:_rust_call 85,153, session_live.py:_node 66,056, session_live.py:_dvar_public 3,935 |
+| `TableView.new_nodes` | 278,035 | 1,512,644 | discovery.rs 277,751, compile_loop.rs 284 | discovery.rs 1,512,078, compile_loop.rs 566 |
+| `_ses_ensure` | 164,417 | 1,233,651 | relations_core.rs 100,874, query.rs 48,379, entry.rs 15,164 | relations_core.rs 632,842, query.rs 593,579, entry.rs 7,230 |
+| `TableView.new_custom` | 152,431 | 907,711 | discovery.rs 152,280, compile_loop.rs 151 | discovery.rs 907,374, compile_loop.rs 337 |
+| `_rel_m[_adapter]` | 108,300 | 757,719 | relations_core.rs 108,300 | relations_core.rs 757,719 |
+| `_ses_discover` | 84,427 | 534,495 | relations_core.rs 70,708, session_glue.rs 11,065, query.rs 2,654 | relations_core.rs 474,893, session_glue.rs 35,229, query.rs 24,373 |
+| `_BaseOf.get` | 174,067 | 320,222 | discovery.rs 174,067 | discovery.rs 320,222 |
+| `_q[emit]` | 98,370 | 331,521 | compile.rs 88,639, session_glue.rs 9,385, compile.py (Python) 346 | compile.rs 260,947, session_glue.rs 67,272, compile.py (Python) 3,302 |
+| `TableView.__len__` | 106,271 | 303,774 | discovery.rs 106,271 | discovery.rs 303,774 |
+| `_ses_custom` | 47,474 | 332,038 | discovery.rs 47,471, compile_loop.rs 3 | discovery.rs 332,020, compile_loop.rs 18 |
+| `_rel_m[enqueue]` | 47,186 | 331,440 | compile_loop.rs 47,186 | compile_loop.rs 331,440 |
+| `_rel_m[_atom_var]` | 40,625 | 293,816 | relations_core.rs 40,625 | relations_core.rs 293,816 |
+| `_ses_query_literal` | 52,361 | 135,873 | entry.rs 52,361 | entry.rs 135,873 |
+| `_rel_m[_link_later]` | 23,587 | 126,025 | relations_core.rs 23,587 | relations_core.rs 126,025 |
+| `_rel_m[_note_sides]` | 15,773 | 120,434 | relations_core.rs 15,773 | relations_core.rs 120,434 |
+| `_ses_incomplete` | 36,815 | 96,067 | context.rs 21,752, entry.rs 15,063 | context.rs 66,707, entry.rs 29,360 |
+| `_rel_sync_transfer` | 9,869 | 109,864 | query.rs 3,975, relations_core.rs 3,268, context.rs 2,626 | query.rs 43,853, relations_core.rs 34,847, context.rs 31,164 |
+| `_census` | 107,547 | 0 | discovery.rs 107,547 |  |
+| `_node` | 25,431 | 66,056 | query.rs 25,431 | query.rs 66,056 |
+| `_q[query_lit]` | 25,431 | 66,056 | entry.rs 17,435, query.rs 7,996 | entry.rs 58,602, query.rs 7,454 |
+| `_rel_add_role` | 6,094 | 84,913 | relations_core.rs 6,094 | relations_core.rs 84,913 |
+| `_q[_ensure_twins]` | 21,715 | 67,142 | query.rs 21,715 | query.rs 67,142 |
+| `_ses_assumption_lits` | 21,715 | 66,989 | context.rs 11,065, entry.rs 10,650 | context.rs 35,166, entry.rs 31,823 |
+| `_rust_call` | 18,104 | 60,754 | compile.rs 18,104 | compile.rs 60,754 |
+| `_rel_m[_share]` | 11,404 | 66,666 | relations_core.rs 11,404 | relations_core.rs 66,666 |
+| `_q[_ensure_atoms]` | 13,719 | 59,698 | session_glue.rs 11,065, query.rs 2,654 | session_glue.rs 35,299, query.rs 24,399 |
+| `_ses_init` | 26,517 | 43,870 | entry.rs 26,517 | entry.rs 43,870 |
+| `_ses_solver_set` | 26,517 | 43,870 | session_glue.rs 26,517 | session_glue.rs 43,870 |
+| `_table_set` | 26,517 | 43,870 | session_glue.rs 26,517 | session_glue.rs 43,870 |
+| `TableView.bind` | 26,517 | 43,870 | session_live.py:_table_set 26,517 | session_live.py:_table_set 43,870 |
+| `_core_rules` | 26,517 | 43,870 | session_live.py:TableView.bind 26,517 | session_live.py:TableView.bind 43,870 |
+| `_ses_solver_get` | 26,517 | 43,870 | session_live.py:TableView.bind 26,517 | session_live.py:TableView.bind 43,870 |
+| `_Custom.__init__` | 26,517 | 43,870 | session_live.py:TableView.bind 26,517 | session_live.py:TableView.bind 43,870 |
+| `_BaseOf.__init__` | 26,517 | 43,870 | session_live.py:TableView.bind 26,517 | session_live.py:TableView.bind 43,870 |
+| `_Slots.__init__` | 26,517 | 43,870 | session_live.py:TableView.bind 26,517 | session_live.py:TableView.bind 43,870 |
+| `_Base.__init__` | 26,517 | 43,870 | session_live.py:TableView.bind 26,517 | session_live.py:TableView.bind 43,870 |
+| `_base_set` | 26,517 | 43,870 | session_glue.rs 26,517 | session_glue.rs 43,870 |
+| `_Custom.__contains__` | 4,140 | 62,667 | relations_core.rs 4,140 | relations_core.rs 62,667 |
+| `_ent[ent_clear_budget_flag]` | 27,834 | 37,238 | sympy_api.py (Python) 27,834 | sympy_api.py (Python) 37,238 |
+| `_rel_selectors_of` | 8,279 | 51,798 | session_glue.rs 8,279 | session_glue.rs 51,798 |
+| `_rel_m[note_formula]` | 7,815 | 50,499 | query.rs 7,815 | query.rs 50,499 |
+| `_rel_process` | 7,815 | 50,499 | query.rs 7,815 | query.rs 50,499 |
+| `_q[_relations]` | 7,815 | 50,499 | session_glue.rs 3,983, query.rs 3,832 | session_glue.rs 25,760, query.rs 24,739 |
+| `_compile_formula` | 15,450 | 36,355 | session_glue.rs 11,065, discovery.rs 4,097, compile_loop.rs 288 | session_glue.rs 35,289, discovery.rs 750, compile_loop.rs 316 |
+| `_bud[bud_within_budget]` | 11,658 | 39,389 | entry.rs 11,044, context.rs 614 | entry.rs 35,389, context.rs 4,000 |
+| `_ses_escalate` | 14,763 | 34,986 | entry.rs 11,525, context.rs 3,238 | context.rs 18,561, entry.rs 16,425 |
+| `_ent[ent_ask]` | 11,037 | 35,332 | sympy_api.py (Python) 11,037 | sympy_api.py (Python) 35,221, test_history.py (Python) 110, test_invariants.py (Python) 1 |
+| `_ent[ent_fresh_session]` | 11,065 | 35,299 | context.rs 11,065 | context.rs 35,286, test_budget_cone.py (Python) 13 |
+| `_g[assume_formula]` | 11,065 | 35,299 | context.rs 11,065 | context.rs 35,299 |
+| `_rel_m[wants_transfer]` | 7,877 | 37,902 | session_glue.rs 7,877 | session_glue.rs 37,902 |
+| `_rel_m[_atom_selector]` | 3,243 | 41,888 | relations_core.rs 3,243 | relations_core.rs 41,888 |
+| `_install_context.<locals>._context_session` | 10,983 | 33,932 | entry.rs 10,983 | entry.rs 33,932 |
+| `_g[link_set]` | 10,826 | 33,556 | context.rs 10,826 | context.rs 33,556 |
+| `_q[prepare_query]` | 10,403 | 31,548 | entry.rs 10,403 | entry.rs 31,548 |
+| `_rel_transfer_terms` | 3,520 | 36,454 | relations_core.rs 3,520 | relations_core.rs 36,454 |
+| `_install_context.<locals>._complete_check` | 0 | 35,166 |  | catch_count.py (Python) 35,166 |
+| `_rel_init` | 4,271 | 26,852 | session_glue.rs 4,271 | session_glue.rs 26,852 |
+| `_q[_query_all]` | 20,237 | 8,952 | query.rs 20,237 | query.rs 8,952 |
+| `_formula_literal` | 2,654 | 24,399 | query.rs 2,654 | query.rs 24,399 |
+| `_q[literal_of]` | 2,654 | 24,399 | query.rs 2,407, entry.rs 247 | query.rs 24,094, entry.rs 305 |
+| `_rel_fresh` | 2,096 | 23,344 | relations_core.rs 2,096 | relations_core.rs 23,344 |
+| `_Custom.get` | 2,184 | 22,676 | relations_core.rs 2,184 | relations_core.rs 22,676 |
+| `_ent[ent_is]` | 16,931 | 7,563 | sympy_api.py (Python) 16,038, relations_core.rs 893 | relations_core.rs 6,075, sympy_api.py (Python) 1,488 |
+| `_rel_m[_eq_links]` | 1,954 | 22,246 | relations_core.rs 1,954 | relations_core.rs 22,246 |
+| `_rel_engage_transfer` | 1,810 | 18,741 | relations_core.rs 1,810 | relations_core.rs 18,741 |
+| `_ent[ent_record_relevant]` | 5,605 | 10,130 | sympy_api.py (Python) 5,605 | sympy_api.py (Python) 10,130 |
+| `_install_context.<locals>.verdict` | 614 | 4,000 | sympy_api.py (Python) 610, entry.rs 4 | catch_count.py (Python) 4,000 |
+| `_dvar_public` | 404 | 3,935 | compile.py (Python) 404 | compile.py (Python) 3,935 |
+| `_ent[ent_is_many]` | 175 | 3,952 | relations_core.rs 175 | relations_core.rs 3,952 |
+| `_rel_mention_number` | 555 | 1,030 | relations_core.rs 555 | relations_core.rs 1,030 |
+| `_ent[ent_record_cache_hit]` | 743 | 388 | sympy_api.py (Python) 743 | sympy_api.py (Python) 388 |
+| `_ses_flush` | 142 | 283 | query.rs 142 | query.rs 283 |
+| `_ent[ent_keep_budget_flag]` | 60 | 14 | sympy_api.py (Python) 60 | sympy_api.py (Python) 14 |
+| `TableView.true_var` | 0 | 2 |  | compile.py (Python) 2 |
+
+**Owners** (each nonzero function; proposed where no ruling names one):
+| what | functions | 16 workloads | suite | owner |
+|---|---|---:|---:|---|
+| Rust entered through a `Relations` wrapper calling back by name or reading a view | `_rel_m[_adapter]`, `[enqueue]`, `[_atom_var]`, `[_link_later]`, `[_note_sides]`, `[_share]`, `[_atom_selector]`, `[_eq_links]`, `_rel_add_role`, `_rel_transfer_terms`, `_rel_fresh`, `_rel_mention_number`, `_rel_engage_transfer`; and under them `_ses_ensure`, `_ses_discover`, `_Custom.get`, `_Custom.__contains__`, `_ent[ent_is]`, `_ent[ent_is_many]`, and most of `_table_get` (the `.table` property read at relations_core.rs :786, :2270, :2332, :2468) | 689,217 | 5,040,907 | the formula step: relations_core.rs is closed to part 3 (condition 2), and formula already holds the four `.table` sites |
+| Rust entered through a `Session` or `Engine` wrapper calling back by name or reading a view | `_ses_ensure`, `_ses_discover`, `_ses_incomplete`, `_ses_escalate`, `_ses_custom`, `_ses_flush`, `_ses_query_literal`, `_ses_assumption_lits`, `_ses_init`, every `_q[...]` and `_g[...]`, `_bud[bud_within_budget]`, `_ent[ent_fresh_session]`, `_install_context.<locals>._context_session`, `_rel_process`, `_rel_init`, `_rel_sync_transfer`, `_rel_selectors_of`, `_rel_m[wants_transfer]`, `_rel_m[note_formula]`, `_compile_formula`, `_formula_literal`, `TableView.new_nodes`, `new_custom`, `__len__`, `_BaseOf.get` | 1,474,486 | 6,172,024 | part 3's follow-up (ruled: session_live's converted calls per function) |
+| session_live.py calling itself | per `Session` built: `_table_set`, `TableView.bind`, `_core_rules`, `_ses_solver_get`, `_ses_solver_set`, `_base_set`, `_Custom.__init__`, `_BaseOf.__init__`, `_Slots.__init__`, `_Base.__init__`; `_table_get` under `_node` and `_rust_call`; `_rust_call`, `_node` | 232,212 | 462,234 | part 3's follow-up |
+| entry frames: sympy_api.py's `_engine_ask`, `_ask_general`, `_ask` calling an `Engine` method | `_ent[ent_clear_budget_flag]`, `[ent_is]`, `[ent_ask]`, `[ent_record_relevant]`, `[ent_record_cache_hit]`, `[ent_keep_budget_flag]`, `_install_context.<locals>.verdict` | 61,927 | 84,479 | needs a ruling: one Python frame per `Engine` method the conversion calls (`_ent` exists because a builtin does not bind as a method). Not a named callback or conversion today. Proposed: part 3's follow-up lists them as public-entry dispatch frames or replaces `_ent` by a Rust descriptor |
+| Python's compiler running on a converted query (`_compile_formula` falls back to `PY_COMPILE` when Rust's `compile` returns False: too deep or unreadable) | `_q[emit]` and `_dvar_public` from compile.py; `TableView.true_var` (suite, 2) | 750 (fuzz, dev, zero, transfer:7:60, transfer2:3:40) | 7,239 | a per-query fallback inside ported code, not read further here. Proposed: the formula step (it owns formula.rs and the compile path's node reading) |
+| instruments | `_census` (SESSION_REPORT); `_complete_check` and `verdict` from catch_count.py; `_ent[ent_ask]`, `_ent[ent_fresh_session]`, `verdict` called by three test files (124) | 107,547 | 39,290 | none: the probe's and the suite plugin's own calls |
+| ses_cont.rs: `sc:key_hash`, `sc:key_eq` (Python `hash()` and `==` per session-dict lookup) | counters 568, 569 | 1,127,854 / 1,629 | 10,006,834 / 26,491 | part 3's follow-up (ruled: SesDict by term id) |
+
+`sc:key_hash` / `sc:key_eq` in the suite are from a second pass on the same tree and .so with `-p plant_count` and without
+the probe (`sa-port-263/suite-counts`: 127 failed, 5991 passed, 23 skipped, 18 xfailed, 6 warnings in 207.68s (0:03:27)); the bar's suite on f252daf had 10,005,845 / 27,692.
+
+**Files the follow-up would touch**, against the formula step's files (its branch port/formula at 08a2004 against 0192b35,
+and the edits its line in the siblings file names):
+- SesDict by term id: ses_cont.rs (`sd_find`, :86), session.rs (counter names; where the id of a key comes from),
+  test_session_boundary.py. session.rs is formula's (153 lines changed on its branch).
+- session_live's converted calls: the by-name calling sites are in relations_core.rs (formula's, and closed to part 3),
+  query.rs, session_glue.rs, compile_loop.rs (formula's branch changes all three), entry.rs, context.rs, discovery.rs,
+  compile.rs (not on formula's branch), session.rs (`named`, `core_of`, `table_of`; formula's) and session_live.py
+  (formula edits :1001).
+- So neither half is clear of formula's files. Only the entry.rs / context.rs / discovery.rs / compile.rs sites and
+  ses_cont.rs itself are files formula does not change, and each still needs session.rs or session_live.py. The follow-up
+  waits for formula's bar to land.
+
+Not done in this link: no source change, no count change; the fallback in `_compile_formula` was counted, not read;
+the Rust calling site of each by-name call was read only by `rg` per method name, not site by site.
