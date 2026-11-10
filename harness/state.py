@@ -277,6 +277,8 @@ MODULE_CONFIG: frozenset = frozenset({
     ("satassume.sympy_api", "_engine"),           # the default engine itself
     ("satassume.state.memos", "_ADOPTED"),              # the adopted memos, registered by
                                                   # their modules at import
+    ("satassume.relations", "RELATION_ATOM_IMPL"),  # the backend's relation_atom, set by
+                                                  # install(); one slot, read at call time
 })
 
 
