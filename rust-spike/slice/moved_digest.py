@@ -35,6 +35,7 @@ in live.py's rows (`eng`).
 """
 import hashlib
 import os
+import sys
 import re
 
 RS = ('linked', '_bounded', '_user_eq', '_xpairs', '_aux_eq', '_link_eq', '_xpart', '_xcounted', '_xcand')
@@ -192,6 +193,9 @@ class Moved:
             if v[2]:
                 self._fill(k.rsplit(':', 1)[0] if k.startswith('process:') else k)
         self.tot['engine_points'] += 1
+        if os.environ.get('SPLIT_PROBE'):       # split_probe.py: the four process memos by content (issue 323)
+            import split_probe
+            split_probe.dump(show, self.tot['engine_points'])
         return out
 
 
@@ -201,4 +205,9 @@ def every():
 
 def install(rust):
     """None under SLICE_MOVED=0."""
+    if os.environ.get('SPLIT_PLANT'):       # split_probe.py's test-only plants 450, 451, 453 (issue 323)
+        import split_probe
+        split_probe.arm(rust)
+    else:
+        sys.modules.get('split_probe') and sys.modules['split_probe'].STATE.update(rust=rust)
     return None if os.environ.get('SLICE_MOVED', '1') == '0' else Moved(rust)
