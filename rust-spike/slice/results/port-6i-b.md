@@ -98,7 +98,83 @@ Every fn plant fires 0 on fuzz, budget, cert, core, loop, rootof, scope and wiri
 plant is void on every workload. Void cells: `fn-unary-drop-last` on zero (fires, MATCH); `fn-value-drop` and
 `fn-genocchi-half-flip` in the suite.
 
-BAR2_SECTION
+## Bar 2 (pareto1, `~/sp19/sa-rust-ids-work/sa-port-216/bar-6ib` on e817aa1, base db7130a)
+Run 04:34Z-05:54Z 10 Nov under a shared lease; every phase exited 0 (build, tests, suite, live, plants, extra, suiteplants,
+sum); seed1 was not run. `.so` sha256 0dc0110d…, the same as bar 1's (the rebase brought no Rust change). Base suite rows:
+`sa-port-209/bar-install-order/suite` (the harness bar on d77d3db, db7130a's source). WLS: the 11. PLANTS: the six fn-*
+plus `ctx-check-raise`, the live control for the Rust-side handler rows. Tests phase: **817 passed, 4 skipped**, exit 0 (bar
+1's list plus test_live_handler_plant.py). DIRECT: `relations_direct.py 300 0` exit 0; `dispatch_direct.py` exit 0, BAD 0,
+with `registry:rust:_unary.<locals>.template` 6 and `nary` 1 reached. Copies: `~/sa-rust-ids-work/sa-port-220/bar2`
+(sum.txt, knowledge, session and handler files); fallback counts `.../sa-port-220/fb-bar2.txt`, base `.../fb-base209.txt`
+(the harness bar's files by the same `fbcounts.py`); ctx counts by `.../sa-port-220/ctxcount.py`.
+1. **Suite by id:** 5,991 passed, 127 failed, 23 skipped (plus 18 xfailed), over 6,159 ids. **Against base: new 0, gone 0,
+   changed outcome 1:** `tests/test_public_incremental.py::test_public_comparison_catches_a_planted_history_dependence`
+   passed -> failed, the known id()-reuse failure (a28c548), not a Rust difference. It flips both ways between runs: in
+   this bar's suite plants it goes failed -> passed under `fn-nary-drop-last` and `fn-value-drop`, and stays failed under
+   the other two. Passed splits into 5,990 with no handler firing and 1 with a firing:
+   `tests/test_invariants.py::test_ci_stream_reports_only_what_replays`, the named case.
+2. **Fresh dev and fuzz: answers and state MATCH** (Rust against Python, traced and untraced; Python against Python as the
+   control). dev answers_sha 31cd0945c07f02a6, fuzz 173502b6ef285ad6, the same as bar 1. **All 11 extra workloads MATCH**,
+   Rust against Python, each with its Python control MATCH.
+3. **Plants caught:** the same five of six fn plants as bar 1, with the same fire counts, plus `ctx-check-raise` caught
+   (DIFFER) on all 13 workloads; table below.
+4. **Quiet handler firings on Rust: the handler multiset is the same as base** (ids whose caught rows differ: 0). 39 rows in
+   2 tests:
+   - 34 × `_consistent` AttributeError `'Solver' object has no attribute '_ok'`, in test_ci_stream_reports_only_what_replays;
+   - 4 × `_consistent` AttributeError `_rb_clauses`, in the same test;
+   - 1 × `Engine._build_context` RuntimeError "Already mutably borrowed", in test_protocol_on_fuzz (the named 46-stub cause).
+
+   **engine.py:1906's catches (`ctx:caught`): 0 on all 13 workloads** (from each `*-rust.session.json`). The live and extra
+   Rust handler files have 0 rows; TermFault in pytest.log: 0. **These zeros are not void:** bar 2 runs the fixed live.py,
+   and under `ctx-check-raise` the same sites catch every complete check on every workload, each catch also a handler row
+   (`Engine._build_context` ValueError "planted ctx-check-raise"):
+
+   | workload | complete checks (plain) | `ctx:caught` plain | `ctx:caught` under the plant = handler rows |
+   |---|---|---|---|
+   | dev | 833 | 0 | 833 |
+   | fuzz | 2,952 | 0 | 2,980 |
+   | f6 | 6 | 0 | 6 |
+   | value | 319 | 0 | 636 |
+   | rootof | 368 | 0 | 368 |
+   | opaque | 31 | 0 | 31 |
+   | core | 300 | 0 | 300 |
+   | scope | 166 | 0 | 166 |
+   | loop | 244 | 0 | 244 |
+   | zero | 665 | 0 | 718 |
+   | wiring | 5,004 | 0 | 5,004 |
+   | cert | 61 | 0 | 61 |
+   | budget | 16 | 0 | 16 |
+
+   (The last column is the planted run's own count of complete checks, which is higher than the plain run's on fuzz, value
+   and zero; cause not read. In every planted run `ctx:caught` equals its own `ctx:complete_check`.)
+5. **Known differences in answers or read state: none.**
+
+### Plants (bar 2)
+Same reading as bar 1: `fired` reads the session report; the suite catch is read from changed outcomes against this run's
+plain suite (sum.txt's "plant fired in the suite: 0" is void for the fn plants, which count in Common's counts).
+
+| plant | fired (bar) | caught by | suite (against the plain suite) |
+|---|---|---|---|
+| `fn-unary-drop-last` (340) | dev 31, f6 75, opaque 45, value 309, zero 5 | dev, f6, opaque, value DIFFER; zero MATCH (5 fires, no answer moved) | not run (fires on dev) |
+| `fn-nary-drop-last` (341) | f6 47 | f6 DIFFER | 15 changed: the same 14 as bar 1 (test_nan_arguments Falling/RisingFactorial, test_notmpl_elementary, test_notmpl_special) plus the planted-history test failed -> passed (the id()-reuse flip, not a catch) |
+| `fn-unit-interval-flip` (342) | f6 18 | f6 DIFFER | 1 changed (`test_sympy_api.py::test_function_closures`) |
+| `fn-value-drop` (343) | value 236 | value DIFFER | 1 changed, the planted-history test failed -> passed: the id()-reuse flip, so **void in the suite** |
+| `fn-genocchi-half-flip` (344) | value 50 | value DIFFER | 0 changed: **void in the suite** |
+| `fn-unary-shift` (345) | dev 2, f6 33, opaque 16, value 212 | dev, f6, opaque, value DIFFER | not run (fires on dev) |
+| `ctx-check-raise` (Q2 control) | dev 833, fuzz 2,980, f6 6, value 636, rootof 368, opaque 31, core 300, scope 166, loop 244, zero 718, wiring 5,004, cert 61, budget 16 | DIFFER on all 13 | not run (fires on dev) |
+
+Every fn plant fires 0 on fuzz, budget, cert, core, loop, rootof, scope and wiring, and those all MATCH. Void cells:
+`fn-unary-drop-last` on zero (fires, MATCH); `fn-value-drop` and `fn-genocchi-half-flip` in the suite.
+
+### Fallbacks and kept shares (bar 2)
+`fbcounts.py` on bar 2 against the harness bar on d77d3db (db7130a's source) gives **exactly bar 1's deltas** and nothing
+else: `registry:python` dev 126 → 95, f6 211 → 65, opaque 101 → 42, value 507 → 180, zero 43 → 38 (`_unary`/`nary` gone on
+every workload); `fn:` as in bar 1 (value: `rust:unary` 309, `rust:genocchi_half` 50, `value_units` 236, **`value:sympy`
+264**, 0 on the other 12); `registry:kept` f6 2 → 14, opaque 2 → 9, value 6 → 15; **value `scaffold:rebuilt` 221 → 269
+(+48)**. Every `rows:python` count (rows_tpl.rs:413) equals base; **`ad:cbm_noid` 0 on all 13 workloads.** Scope's counts
+differ from bar 1's (`registry:python` 26 → 33, `rows:python` 0 → 64) and equal the harness bar's: the install-order fix,
+not this step, puts scope's queries on Rust. Kept shares: **every share equals base**, the same numbers as bar 1's list
+below.
 
 ## Fallbacks to Python inside ported code (planner's fallback-reporting ruling, with its `ad:cbm_noid` addition)
 From bar 1's knowledge files by `fbcounts.py` (prefixes `registry:python:`, `fn:`, `ad:cbm_noid`, `rows:python:`,
