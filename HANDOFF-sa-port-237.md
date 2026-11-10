@@ -71,8 +71,8 @@ Kept shares equal to base: out-of-scope dev 24/1,985 (1.21%), 0 elsewhere; refus
   plants): core f9f2a582ea6ac149, f6 fc0c2f738a1f6dbf, opaque c7e1a7ca3a110ebb, rootof b4cc56a71a21baeb, value
   3ce3797a267d71a6: Python-Python control MATCH and Python-Rust MATCH, handler rows 0. `value` on Rust: rel:init 198,
   rk:term 2,956, rk:twin 0, rk:intern:input 394, rk:intern:engine 1,183, rk:outlive 0, ad:cbm_noid 0, ad:cb_factory 0,
-  ctx:caught 0; the other four reach no Relations (all 0). **wiring was still running at the landing** (it reaches no
-  Relations on the base: rel:init 0): read extra6/wiring.cmp and extra6/end.txt, and say which in the report.
+  ctx:caught 0; the other four reach no Relations (all 0). wiring a0df9fd43e5180c1 MATCH too (ended 15:13Z, after the
+  landing at 15:09Z; it reaches no Relations: rel:init 0). All six: stderr files empty.
 
 ### Condition (3) of the landing conditions: which case
 The bar's state comparison does **not** read the moved containers. live.py's `end` digest (:462-477) is
