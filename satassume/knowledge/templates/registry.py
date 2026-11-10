@@ -75,8 +75,9 @@ class TemplateRegistry:
     def __init__(self) -> None:
         self._by_class: Dict[type, List[Template]] = {}
         self._mro_cache: Dict[type, List[Template]] = {}
-        #: ``expr -> (compiled, formulas)`` of :meth:`clauses_for`; templates
-        #: are pure functions of the expression, so the result only changes
+        #: ``(type(expr), expr) -> (compiled, formulas)`` of
+        #: :meth:`clauses_for`; templates are pure functions of the
+        #: expression and are chosen by its type, so the result only changes
         #: when templates are registered (which clears it)
         self._clauses_cache: Dict[Any, Any] = {}
         #: built-in template modules not imported yet, as ``(classes,
@@ -228,7 +229,11 @@ class TemplateRegistry:
         formulas emitted by the templates matching ``type(expr)``.  This is
         what the engine uses; :meth:`facts_for` is the same information as
         formulas.  Memoized per expression; the result must not be mutated."""
-        r = self._clauses_cache.get(expr)
+        # the key holds the type too: the templates are those of
+        # ``type(expr)``, and equal nodes of two types (``1``, ``True`` and
+        # ``S.One``; ``1.5`` and ``Float(1.5)``) have different results (#96)
+        key = (type(expr), expr)
+        r = self._clauses_cache.get(key)
         if r is not None:
             return r
         compiled: List[Compiled] = []
@@ -239,7 +244,7 @@ class TemplateRegistry:
         cache = self._clauses_cache
         if len(cache) >= CLAUSES_CACHE_SIZE:
             cache.clear()
-        r = cache[expr] = (compiled, formulas)
+        r = cache[key] = (compiled, formulas)
         return r
 
     def classes(self) -> Iterable[type]:
