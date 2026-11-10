@@ -640,3 +640,121 @@ the 2160 pairs moved with it, in the regimes that keep SymPy's cache.
   those across pairs.
 - SymPy's own `Subs` equality on master is in the held note draft
   `~/sa-rust-ids-work/sa-port-254/NOTE-41.md` (not posted; Tilo decides).
+
+## The SymPy cache channel as a class (sa-port-255; read-only, findings only)
+
+**Verdict: one cached SymPy call is flagged with a two-order reproduction on both backends: `Basic.has`, which
+satassume uses as its `nan` / `oo` / `Float` guard. For two `==`-equal `Subs` terms whose points print alike
+(`oo` against `Symbol('oo')`), `has` returns the first-asked term's result, and
+`ask(Q.gt(t, 0), Q.gt(t, 1))` changes from True to None when the other term was asked first. This survives
+`PROCESS.clear()` and goes away only with `clear_cache()`. Two more cached calls return a different result for such
+terms (`sort_key`, the `Add`/`Mul` constructor) with no answer flip found. The other 17 reached are safe by their
+argument types or were never reached with such a pair. Separately, the Python reference flips the same queries in
+both orders through its own memos with SymPy's cache off, and the Rust backend does not: the two backends give
+different answers in these two-order runs.**
+
+Base: the clone at 114a3f9 (0192b35 plus results files). SymPy 1.15.0.dev of `~/sa-rust-ids-work/sympy`, Python
+3.12.14, orion. Rust: the clone's `sa_solver.so`, sha256 `bfc06f0cd68a252a`, not rebuilt. Scratch:
+`~/sa-rust-ids-work/sa-port-255/` (`census.py`, `summ.py`, `twins_wl.py`, `repro.py`, `c/`, `rust-lra.out`,
+`memo-one.out`, `sympy-only.out`).
+
+### Which cached SymPy calls are made at query time (`census.py`)
+
+`census.py` replaces `sympy.core.cache.cacheit` before SymPy's modules use it, with a cache of the same key
+(`functools._make_key`, `typed=True`), and records every cached call made while `sympy_api.ask` runs: the function,
+the satassume or slice line it was reached from, and every *merged hit* (a hit whose stored arguments are `==` to
+the call's but differ in structure). On a merged hit it runs the function again and compares the two results. Its
+cache is unbounded (SymPy's holds 1000 entries per function), so it merges at least as often as SymPy's.
+
+13 workloads (value, dev, fuzz, f6, rootof, opaque, core, scope, loop, zero, wiring, cert, budget), whole, both
+backends: 58084 asks, 26 runs, all exit 0. **20 cached functions are reached; merged hits: 0.** The workloads hold no
+`==`-equal pair of different structure, so that 0 says nothing about safety. The class was then put in by hand:
+`twins_wl.py`, 17 `Subs` pairs (points `z`/`z` positive, `oo`/`Symbol('oo')`, `nan`/`Symbol('nan')`,
+`1.5`/`Symbol('1.50000000000000')`, `1`/`Symbol('1')`; 4 shapes, 3 of 20 dropped as not `==`), 10 query forms, both
+orders, a new `Engine` per ask, 400 asks per backend.
+
+| twin run, merged hits (of which the result differs) | Python | Rust backend |
+|---|---|---|
+| nothing cleared: `Basic.has` | 0 | 240 (64) |
+| nothing cleared: `Expr.sort_key` | 0 | 40 (32) |
+| `PROCESS.clear()` before every ask: `Basic.has` | 892 (312) | 644 (264) |
+| `PROCESS.clear()` before every ask: `Expr.sort_key` | 864 (588) | 260 (252) |
+| `PROCESS.clear()` before every ask: `AssocOp.__new__` | 80 (40) | 64 (32) |
+
+Python's 0 with nothing cleared is not safety: its own memos hand SymPy the first-seen term before SymPy's cache
+is asked (below). These counts include the 6 twin-`Function` pairs' asks, which were void (see Limits).
+
+| cached function | reached from (Python reference; Rust backend) | between `==`-equal inputs | mark |
+|---|---|---|---|
+| `Basic.has` | `lra_adapter.py:247/293/376/406`, `euf_adapter.py:135`, `relations.py:1819`, `sympy_api.py:554`, `constfield.py:1390`; Rust: `convert.py:296/298/300` (the `F_NAN`, `F_BAD`, `F_FLOAT` bits), `session_live.py:505`, and the Python lines above where still called | differs: a `Subs` at `oo` has `oo`, its twin at `Symbol('oo')` does not; the first asked decides both | **flagged**, reproduction below |
+| `Expr.sort_key`, `Basic.sort_key`, `Atom.sort_key`, `Symbol.sort_key`, `Number.sort_key`, `NaN.sort_key` | `default_sort_key` at `relations.py:467`, `lra_adapter.py:324/348/412`; `str()` at `sympy_api.py:1134`, `constfield.py:1440`; Rust: `convert.py:356`, `term_live.py:891/957` | differs for the same pairs (the point's key); `z` against `z` positive does not (a Symbol's key is its name) | differs and reaches an order; **no flip found** (keeping only these caches gave the alone answers in the reproduction's form) |
+| `AssocOp.__new__` (`Add`, `Mul`) | `lhs - rhs` at `relations.py:2026/1385`, `-e` at `:704`, direct at `domain.py:482`, `wiring.py:316/320`, `lra_adapter.py:200/213`, `functions.py:93/95/96/335`; Rust: `session_live.py:533/869/1014`, `term_live.py:351`, `knowledge_live.py:467` | returns the first-built object: the difference built for query 2 holds query 1's `Subs` | differs and reaches a held term; **no flip found** alone (same control) |
+| `Pow.__new__`, `Application.__new__`, `DefinedFunction.__new__`, `Mul.as_coeff_mul`, `Basic._subs`, `Expr.expand`, `subfactorial._eval` | inside the constructors above, `expr.func(c)` at `functions.py:427`, `_rows_runtime.py:70`, `special.py:117`, `core.py:505` (`as_real_imag`), `ComplexRootOf.args` at `domain.py:451`, `engine.py:1663`, `sympy_api.py:756`; Rust: `session_live.py:1014/869`, `term_live.py:341`, `templates/__init__.py:159` | same mechanism as `AssocOp.__new__` if a twin reaches them | **not reached with a twin** in the twin run (0 merged hits); not shown safe |
+| `Integer.__new__`, `Rational.__new__`, `Symbol.__xnew_cached_`, `Symbol._canonical_assumptions`, `_get_postprocessors`, `_get_postprocessors_for_type` | `wiring.py:478`, `_rows_runtime.py:62`, and inside the above | arguments are ints, strings and classes | safe: the key is typed, so `1` and `One` do not share an entry, and equal arguments give the same number, symbol or class list |
+
+Not through `cacheit`, by reading only: `is_*` answers are stored on the object (`_assumptions`), so two `==`-equal
+objects do not share them unless a constructor cache or a satassume memo has already handed over the first-seen
+object; `free_symbols`, `atoms` and `args` are not cached.
+
+### Reproduction (`repro.py MODE CASE ORDER`; one process each, a new `Engine` per ask)
+
+`t1 = Subs(f(x), x, oo)`, `t2 = Subs(f(x), x, Symbol('oo'))`: `t1 == t2`, equal hash, different `srepr`. Query 1 is
+`ask(Q.gt(t1, 0), Q.gt(t1, 1))`, query 2 the same with `t2`. Alone, on both backends: query 1 None, query 2 True.
+
+| between the two asks | Python, 1 then 2 | Python, 2 then 1 | Rust, 1 then 2 | Rust, 2 then 1 |
+|---|---|---|---|---|
+| nothing cleared | [None, **None**] | [True, **True**] | [None, **None**] | [True, None] |
+| `PROCESS.clear()` | [None, **None**] | [True, None] | [None, **None**] | [True, None] |
+| `clear_cache()` | [None, **None**] | [True, **True**] | [None, True] | [True, None] |
+| both | [None, True] | [True, None] | [None, True] | [True, None] |
+| `SYMPY_USE_CACHE=no`, nothing cleared | [None, **None**] | [True, **True**] | [None, True] | [True, None] |
+
+- SymPy's cache alone carries "1 then 2" on both backends, and the carrier is `Basic.has`: after `PROCESS.clear()`,
+  clearing only `Basic.has`'s cache gives [None, True]; clearing every cache but that one gives [None, None] (Python
+  and Rust, points `oo` and `nan`). SymPy only (`sympy-only.out`): `t1.has(oo)` True, then `t2.has(oo)` True; after
+  `clear_cache()`, `t2.has(oo)` False, then `t1.has(oo)` False.
+- The `nan` pair behaves as `oo` in every cell. The `1.5` pair: Python as `oo` without clearing, and no flip
+  through `Basic.has` alone; Rust flips "1 then 2" only with nothing cleared (either clear removes it; cause not
+  read). The `1` pair: Python flips both orders through its memos only; Rust does not flip.
+- **Python's own memos carry both orders with SymPy's cache off.** With `SYMPY_USE_CACHE=no`, clearing any one of
+  the 15 registered process memos leaves the flip; keeping only `relations._SYMPY_ATOMS` or only
+  `sympy_api._FORMULAS` (clearing the other 14) keeps it. Each is keyed by `==` and returns what the first-seen term
+  gave. Item 1's verdict above ("no path to an answer") holds for equal objects that differ only in identity; it
+  does not hold for `Subs` twins that differ in content.
+- **The backends differ.** In "2 then 1" Python answers [True, True] and Rust [True, None], for all four point
+  pairs; for the `1` pair "1 then 2" is [None, None] on Python and [None, True] on Rust. Rust's answers are the
+  alone answers except where `Basic.has` carries.
+- The flip is a lost or gained answer, not a wrong one: `t > 1` gives `t > 0` either way. None is the guard
+  refusing a term that holds `oo`.
+- Other forms run on Python (`t + w > 1`, congruence, `Q.positive(t)`, `Q.eq(t, w)`, `Q.positive(t + 1)`; 4 point
+  pairs): no flip; they answer the same at both points.
+
+### `PROCESS.clear()` and SymPy's cache
+
+`Memos.clear()` (`satassume/state/memos.py:153`) empties the registered tables, the adopted containers and the
+native views. It does not touch SymPy's cache, and nothing under `satassume/` calls `clear_cache`.
+`test_process_memos_registered_and_cleared` (`tests/test_memos.py:126`) checks satassume's memos only, and passes
+as scoped.
+
+Should it? The table's second row is the evidence: after `PROCESS.clear()` the second query still answers None on
+both backends, so `PROCESS.clear()` alone does not return a process to its "alone" answers for these terms. Against
+clearing it there: SymPy's cache is the user's process-wide state, not satassume's, and `clear_cache()` itself makes
+twins (after it, `Function('g')(w)` is a new object equal to the old one). The alternatives are a guard that does
+not go through the cache at the `has` sites, or SymPy's `Subs` equality (the held note draft). Which one is the
+planner's and Tilo's call; nothing was changed.
+
+### Limits
+
+- Twin `Function` classes were not tested. With the cache on, `Function('g') is Function('g')` and
+  `g2(w) is g1(w)` (`sympy-only.out`), so my 6 twin-class pairs were one object each and their 0 merged hits is
+  void. Twin classes exist only after `clear_cache()` or eviction; that run was not made. By the key: `g1(w)` and
+  `g2(w)` have different types, so they share no entry at top level; nested (`g1(w) + 1`) they do, and the results
+  are equal in everything but identity.
+- int `1` against `One` was not run: reasoned from the typed key only.
+- The quiet-catch counter (`engine.py:1928`) was not run on `repro.py`; whether the None comes through a quiet
+  catch was not checked.
+- One query form flips. `sort_key` and `AssocOp.__new__` were cleared of a flip in that form only.
+- The suite was not run under the census (workloads only). `entry.py` (every SymPy entry point at query time, cached
+  or not) was written and not run.
+- On a merged hit the census calls the function a second time, which can fill nested caches in a different order
+  than SymPy would.
