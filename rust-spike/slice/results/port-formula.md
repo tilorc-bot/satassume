@@ -355,7 +355,7 @@ e82147a + `_CACHE` values in its row + no known rows.
 716/720 then 16 over; wiring 61/57 from point 170 (99/95); lra 167/164 at point 0 (2130/2037, 93 keys). None is an
 atom key: `('mul', ...)`, `('pow', ...)`, `('cosh', ...)`, `('add_half', ...)`, one `('const', GoldenRatio)`.
 - First query: f6 1008, `Q.real(cosh(y + 1*I*pi))`, alone: Python 6 keys, Rust 1. Rust builds the five patterns
-  (`common:facts` 5), is then refused (`lra: a callback on a derived term`), and term_live's rollback (`_Mark`, term_live.py:158)
+  (`common:facts` 5), is then refused (`lra: a callback on a derived term`), and term_live's rollback (`_Mark`, term_live.py:133)
   cuts `_CACHE` back to the mark. Rust's memo of compiled nodes (`Dispatch.memo`) is not rolled back, so the second run is
   served the nodes and never asks for their patterns: the keys stay missing. Only the symbol's units are asked again
   (a new pattern, and new `_SPLIT` rows beside the discarded run's: f6's 4 and 16 extra).
