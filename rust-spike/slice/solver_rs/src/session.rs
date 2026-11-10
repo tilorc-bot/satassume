@@ -81,7 +81,7 @@ const NAMES: [&str; 423] = [
     // 345-419 reserved (state part 2's numbering runs to 369; 6i(a)'s 370-419 are Common counts)
     "reserved:345", "reserved:346",
     // state step, part 2 (iii)(b): Relations' scalar cursors held in the core (`_xtcur`.. `_xsides_n`)
-    "rc:core", "rc:view", "rc:record", "reserved:350", "reserved:351", "reserved:352", "reserved:353", "reserved:354", "reserved:355", "reserved:356", "reserved:357", "reserved:358", "reserved:359", "reserved:360", "reserved:361", "reserved:362", "reserved:363", "reserved:364", "reserved:365", "reserved:366", "reserved:367", "reserved:368", "reserved:369", "reserved:370", "reserved:371", "reserved:372", "reserved:373", "reserved:374", "reserved:375", "reserved:376", "reserved:377", "reserved:378", "reserved:379", "reserved:380", "reserved:381", "reserved:382", "reserved:383", "reserved:384", "reserved:385", "reserved:386", "reserved:387", "reserved:388", "reserved:389", "reserved:390", "reserved:391", "reserved:392", "reserved:393", "reserved:394", "reserved:395", "reserved:396", "reserved:397", "reserved:398", "reserved:399", "reserved:400", "reserved:401", "reserved:402", "reserved:403", "reserved:404", "reserved:405", "reserved:406", "reserved:407", "reserved:408", "reserved:409", "reserved:410", "reserved:411", "reserved:412", "reserved:413", "reserved:414", "reserved:415", "reserved:416", "reserved:417", "reserved:418", "reserved:419",
+    "rc:core", "rc:view", "rc:record", "rk:intern:input", "rk:intern:engine", "rk:term", "rk:outlive", "rk:migrate", "rs:core", "rs:view", "rs:record", "rk:dict:hit", "reserved:359", "reserved:360", "reserved:361", "reserved:362", "reserved:363", "reserved:364", "reserved:365", "reserved:366", "reserved:367", "reserved:368", "reserved:369", "reserved:370", "reserved:371", "reserved:372", "reserved:373", "reserved:374", "reserved:375", "reserved:376", "reserved:377", "reserved:378", "reserved:379", "reserved:380", "reserved:381", "reserved:382", "reserved:383", "reserved:384", "reserved:385", "reserved:386", "reserved:387", "reserved:388", "reserved:389", "reserved:390", "reserved:391", "reserved:392", "reserved:393", "reserved:394", "reserved:395", "reserved:396", "reserved:397", "reserved:398", "reserved:399", "reserved:400", "reserved:401", "reserved:402", "reserved:403", "reserved:404", "reserved:405", "reserved:406", "reserved:407", "reserved:408", "reserved:409", "reserved:410", "reserved:411", "reserved:412", "reserved:413", "reserved:414", "reserved:415", "reserved:416", "reserved:417", "reserved:418", "reserved:419",
     // S2 (block.rs rule_tables): the engine's block from the generated tables, another block built in Rust, a failed check
     "rb:generated", "rb:built", "rb:check_error",
 ];
@@ -471,6 +471,21 @@ pub(crate) const GL_PLAIN: usize = 344;
 pub(crate) const RC_CORE: usize = 347;
 pub(crate) const RC_VIEW: usize = 348;
 pub(crate) const RC_RECORD: usize = 349;
+/// State step part 2 (iii)(b), RelKeys (planner ~04:50 10 Nov): a key interned with no query-table id, by where it came from.
+pub(crate) const RK_INTERN_INPUT: usize = 350;
+pub(crate) const RK_INTERN_ENGINE: usize = 351;
+/// ... a key that took the query table's term id (no hash).
+pub(crate) const RK_TERM: usize = 352;
+/// ... a session whose keys met a second query table, or a table after a table-less intern: it outlives its query.
+pub(crate) const RK_OUTLIVE: usize = 353;
+/// ... each term-id key re-interned by hash when its session turns out to outlive its query.
+pub(crate) const RK_MIGRATE: usize = 354;
+/// ... the moved sets' native reads and writes, the Python views, the record methods.
+pub(crate) const RS_CORE: usize = 355;
+pub(crate) const RS_VIEW: usize = 356;
+pub(crate) const RS_RECORD: usize = 357;
+/// ... a lookup answered by the intern dict (a hash).
+pub(crate) const RK_DICT_HIT: usize = 358;
 pub(crate) const RB_GENERATED: usize = 420;
 pub(crate) const RB_BUILT: usize = 421;
 pub(crate) const RB_CHECK_ERROR: usize = 422;
@@ -628,6 +643,47 @@ pub struct SessionCore {
     xfer: RefCell<Vec<RelX>>,
     /// State step, part 2 (iii)(b): each `Relations`' scalar cursors (`RC_NAMES`), Rust-native.
     relc: RefCell<Vec<RelC>>,
+    /// State step, part 2 (iii)(b), RelKeys: the session's keys for Relations' containers (relkeys.rs).
+    pub(crate) relkeys: RefCell<RelKeys>,
+    /// ... each `Relations`' sets (`RS_NAMES`), Rust-native.
+    pub(crate) rels: RefCell<Vec<RelS>>,
+}
+
+/// RelKeys (planner's ruling, ~04:50 10 Nov): a key is an index into `objs`, which holds a strong ref so `id()` can't be reused.
+/// A SymPy term with an id in the query's table takes it (`by_term`, no hash); any other key is interned once by hash (`dict`).
+/// `table` is the address of the one query table whose ids `by_term` holds. A session that meets a second table, or a table
+/// after it interned a term with none, outlives its query: its `by_term` keys move to `dict` and it stays dict-only.
+#[derive(Default)]
+pub(crate) struct RelKeys {
+    pub(crate) objs: Vec<Py<PyAny>>,
+    pub(crate) by_term: HashMap<u32, u32>,
+    pub(crate) table: Option<usize>,
+    pub(crate) dict_only: bool,
+    pub(crate) dict: Option<Py<PyDict>>,
+    /// SymPy terms interned by hash while in table mode (no row); a `by_term` miss checks `dict` only when there are some.
+    pub(crate) basic_dict: usize,
+    /// a term was interned while no query table was current
+    pub(crate) tableless: bool,
+}
+
+/// The moved sets of `Relations.__init__`, by index (state step part 2 (iii)(b), rest).
+pub(crate) const RS_NAMES: [&str; 9] = ["linked", "_bounded", "_user_eq", "_xpairs", "_aux_eq", "_link_eq", "_xpart", "_xcounted", "_xcand"];
+pub(crate) const RS_LINKED: usize = 0;
+pub(crate) const RS_BOUNDED: usize = 1;
+pub(crate) const RS_USER_EQ: usize = 2;
+pub(crate) const RS_XPAIRS: usize = 3;
+pub(crate) const RS_AUX_EQ: usize = 4;
+pub(crate) const RS_LINK_EQ: usize = 5;
+pub(crate) const RS_XPART: usize = 6;
+pub(crate) const RS_XCOUNTED: usize = 7;
+pub(crate) const RS_XCAND: usize = 8;
+
+/// One `Relations`' sets, as RelKeys keys. Insertion order is kept beside each (`order`) for the test-only snapshot and the
+/// views' iteration; no engine code iterates these sets (grep at 022630c).
+pub(crate) struct RelS {
+    pub(crate) rel: Py<PyAny>,
+    pub(crate) s: [std::collections::HashSet<u32>; 9],
+    pub(crate) order: [Vec<u32>; 9],
 }
 
 /// `s.table.core`.
@@ -1375,6 +1431,8 @@ impl SessionCore {
             session_xfer: RefCell::new(None),
             xfer: RefCell::new(vec![]),
             relc: RefCell::new(vec![]),
+            relkeys: RefCell::new(RelKeys::default()),
+            rels: RefCell::new(vec![]),
         })
     }
 
@@ -1445,6 +1503,40 @@ impl SessionCore {
     }
 
     /// Test-only snapshot export: every `Relations`' cursors the core holds, as (rel, {name: value}), in first-seen order.
+    /// State step part 2 (iii)(b), rest: the view `Relations.<RS_NAMES[k]>` (relkeys.rs `RelSetView`).
+    fn rs_field(slf: &Bound<'_, Self>, rel: &Bound<'_, PyAny>, k: usize) -> PyResult<crate::relkeys::RelSetView> {
+        tick(RS_VIEW);
+        if k >= RS_NAMES.len() {
+            return Err(PyValueError::new_err("no such set"));
+        }
+        Ok(crate::relkeys::rs_view(slf, rel, k))
+    }
+
+    /// The record method for `Relations.__init__`'s empty sets (Python's own `__init__` under SLICE_REL=py over this core).
+    fn set_rs_init(&self, rel: &Bound<'_, PyAny>) {
+        tick(RS_RECORD);
+        self.rs_init(rel);
+    }
+
+    /// Test-only snapshot export: every `Relations`' moved sets, as (rel, {name: [members in insertion order]}).
+    fn rs_snapshot<'py>(&self, p: Python<'py>) -> PyResult<Vec<(Bound<'py, PyAny>, Bound<'py, PyDict>)>> {
+        let rels: Vec<Py<PyAny>> = self.rels.borrow().iter().map(|r| r.rel.clone_ref(p)).collect();
+        rels.into_iter().map(|r| {
+            let r = r.bind(p).clone();
+            let d = PyDict::new(p);
+            for (k, n) in RS_NAMES.iter().enumerate() {
+                d.set_item(n, PyList::new(p, self.rs_items(p, &r, k))?)?;
+            }
+            Ok((r, d))
+        }).collect()
+    }
+
+    /// RelKeys' size: (keys, by term id, by hash, dict-only).
+    fn rk_stats(&self) -> (usize, usize, usize, bool) {
+        let k = self.relkeys.borrow();
+        (k.objs.len(), k.by_term.len(), k.objs.len() - k.by_term.len(), k.dict_only)
+    }
+
     fn relc_snapshot<'py>(&self, p: Python<'py>) -> PyResult<Vec<(Bound<'py, PyAny>, Bound<'py, PyDict>)>> {
         self.relc.borrow().iter().map(|x| {
             let d = PyDict::new(p);
@@ -1483,6 +1575,19 @@ impl SessionCore {
                 visit.call(&x.rel)?;
             }
         }
+        if let Ok(k) = self.relkeys.try_borrow() {
+            for o in k.objs.iter() {
+                visit.call(o)?;
+            }
+            if let Some(d) = &k.dict {
+                visit.call(d)?;
+            }
+        }
+        if let Ok(v) = self.rels.try_borrow() {
+            for x in v.iter() {
+                visit.call(&x.rel)?;
+            }
+        }
         Ok(())
     }
 
@@ -1497,6 +1602,12 @@ impl SessionCore {
             v.clear();
         }
         if let Ok(mut v) = self.relc.try_borrow_mut() {
+            v.clear();
+        }
+        if let Ok(mut k) = self.relkeys.try_borrow_mut() {
+            *k = RelKeys::default();
+        }
+        if let Ok(mut v) = self.rels.try_borrow_mut() {
             v.clear();
         }
     }

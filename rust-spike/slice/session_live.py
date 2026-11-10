@@ -249,6 +249,31 @@ def _rel_cview(name, k):
 _REL_CVIEWS = {n: k for k, n in enumerate(('_xtcur', '_xhn', '_xhseen', '_xslot', '_xterm', '_xnsides', '_xsides_n'))}
 
 
+def _rel_sview(name, k):
+    """State step, part 2 (iii)(b), rest: `Relations.linked` .. `_xcand`, read-only views of the core's sets (relkeys.rs
+    `RelSetView`; `add`/`update` on the view are the record methods). A `Relations` over a session with no core keeps Python's
+    own set. Assigning a whole set goes through the record method for `__init__` (empty) and then `update`."""
+    def get(self):
+        d = self.__dict__
+        if name in d:
+            return d[name]
+        return self.session.table.core.rs_field(self, k)
+
+    def put(self, v):
+        t = self.session.table
+        if isinstance(t, TableView):
+            t.core.set_rs_init(self) if k == 0 else None
+            t.core.rs_field(self, k).update(v)
+        else:
+            self.__dict__[name] = v
+    return property(get, put)
+
+
+#: The set views, by attribute (the order of session.rs `RS_NAMES`).
+_REL_SVIEWS = {n: k for k, n in enumerate(('linked', '_bounded', '_user_eq', '_xpairs', '_aux_eq', '_link_eq', '_xpart',
+                                            '_xcounted', '_xcand'))}
+
+
 def _node(self, node, demanded=None):
     c = self.table.core
     b = c.base_get(node)
@@ -1205,11 +1230,13 @@ def install():
     S.xfer = property(_xfer_get, _xfer_set)
     from satassume import relations
     R = relations.Relations
-    saved_v = {n: R.__dict__.get(n) for n in (*_REL_XVIEWS, *_REL_CVIEWS)}
+    saved_v = {n: R.__dict__.get(n) for n in (*_REL_XVIEWS, *_REL_CVIEWS, *_REL_SVIEWS)}
     for n, k in _REL_XVIEWS.items():
         setattr(R, n, _rel_xview(n, k))
     for n, k in _REL_CVIEWS.items():
         setattr(R, n, _rel_cview(n, k))
+    for n, k in _REL_SVIEWS.items():
+        setattr(R, n, _rel_sview(n, k))
     S.node, S.var, S.dvar, S._dvar = _node, _var, _dvar_public, _dvar_raw
     engine.VarTable, engine.compile_formula, engine.formula_literal = TableView, _compile_formula, _formula_literal
     undo_rel = _install_relations() if os.environ.get('SLICE_REL', 'rust') == 'rust' else None

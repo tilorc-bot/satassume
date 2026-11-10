@@ -19,6 +19,7 @@ use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyList, PySet, PyString, PyTuple};
 
+use crate::relkeys::RSet;
 use crate::session::{self, tick, SessionCore};
 use crate::term::py::PyTermTable;
 
@@ -28,6 +29,12 @@ pub(crate) struct Hooks {
     euf_adapter: Py<PyAny>,
     /// `session_live._fault(site, text)`: counts it and returns a `TermFault` to raise.
     fault: Py<PyAny>,
+}
+
+impl Hooks {
+    pub(crate) fn term_live(&self) -> &Py<PyAny> {
+        &self.term_live
+    }
 }
 
 static HOOKS: RwLock<Option<Arc<Hooks>>> = RwLock::new(None);
@@ -685,13 +692,13 @@ fn faulted<T>(p: Python<'_>, h: &Hooks, site: &str, r: PyResult<T>) -> PyResult<
 }
 
 /// A resolved term: the query's table and the id in it.
-struct Linked<'py> {
-    table: Bound<'py, PyTermTable>,
-    id: u32,
+pub(crate) struct Linked<'py> {
+    pub(crate) table: Bound<'py, PyTermTable>,
+    pub(crate) id: u32,
 }
 
 /// The current query's term id for the object `x`, or None. See the file's header.
-fn term_of<'py>(c: &SessionCore, h: &Hooks, x: &Bound<'py, PyAny>) -> PyResult<Option<Linked<'py>>> {
+pub(crate) fn term_of<'py>(c: &SessionCore, h: &Hooks, x: &Bound<'py, PyAny>) -> PyResult<Option<Linked<'py>>> {
     let p = x.py();
     tick(session::LINK_CALLS);
     if PLANT.load(Relaxed) == LINK_NONE {
@@ -986,7 +993,7 @@ fn rel_trichotomy<'py>(rel: &Bound<'py, PyAny>, var: i32, atom: &Bound<'py, PyAn
     }
     let eqa = r.getattr(intern!(p, "relation_atom"))?.call1((intern!(p, "eq"), &a, &b))?;
     if c.custom_direct(&eqa)?.is_none() {
-        rel.getattr(intern!(p, "_aux_eq"))?.call_method1(intern!(p, "add"), (&eqa,))?;
+        RSet::of(rel, session::RS_AUX_EQ)?.add(&eqa)?;
     }
     let eq: i32 = rel.call_method1(intern!(p, "_atom_var"), (&eqa,))?.extract()?;
     rel.call_method1(intern!(p, "_note_sides"), (&eqa, 2))?;
@@ -1126,9 +1133,9 @@ fn guard<'py>(rel: &Bound<'py, PyAny>, s: &Bound<'py, PyAny>, c: &SessionCore, h
     for u in terms.try_iter()? {
         let u = u?;
         if is_number(c, h, &u)? {
-            let bounded = rel.getattr(intern!(p, "_bounded"))?;
+            let bounded = RSet::of(rel, session::RS_BOUNDED)?;
             if !bounded.contains(&u)? {
-                bounded.call_method1(intern!(p, "add"), (&u,))?;
+                bounded.add(&u)?;
                 bound(rel, s, c, ad, &u)?;
             }
             if s.getattr(intern!(p, "engine"))?.call_method1(intern!(p, "is_"), (&u, intern!(p, "real")))?.is(PyBool::new(p, true)) {
@@ -1232,9 +1239,9 @@ fn rel_interpret<'py>(rel: &Bound<'py, PyAny>, atom: &Bound<'py, PyAny>) -> PyRe
                 ok = true;
                 if eq && ad.getattr_opt(intern!(p, "node_term"))?.is_some() {
                     eterms.call_method1(intern!(p, "extend"), (ad.call_method1(intern!(p, "interned"), (atom.getattr(intern!(p, "expr"))?,))?,))?;
-                    if !rel.getattr(intern!(p, "_aux_eq"))?.contains(atom)? {
+                    if !RSet::of(rel, session::RS_AUX_EQ)?.contains(atom)? {
                         rel.call_method1(intern!(p, "_note_sides"), (atom, 2))?;
-                    } else if rel.getattr(intern!(p, "_link_eq"))?.contains(atom)? {
+                    } else if RSet::of(rel, session::RS_LINK_EQ)?.contains(atom)? {
                         rel.call_method1(intern!(p, "_note_sides"), (atom, 1))?;
                     }
                 }
@@ -1313,8 +1320,8 @@ fn rel_link<'py>(rel: &Bound<'py, PyAny>, e: &Bound<'py, PyAny>) -> PyResult<()>
     let lt: i32 = rel.call_method1(intern!(p, "_atom_var"), (&lta,))?.extract()?;
     let eqa = r.getattr(intern!(p, "relation_atom"))?.call1((intern!(p, "eq"), e, &zero_obj))?;
     if c.custom_direct(&eqa)?.is_none() {
-        rel.getattr(intern!(p, "_aux_eq"))?.call_method1(intern!(p, "add"), (&eqa,))?;
-        rel.getattr(intern!(p, "_link_eq"))?.call_method1(intern!(p, "add"), (&eqa,))?;
+        RSet::of(rel, session::RS_AUX_EQ)?.add(&eqa)?;
+        RSet::of(rel, session::RS_LINK_EQ)?.add(&eqa)?;
     }
     let eq: i32 = rel.call_method1(intern!(p, "_atom_var"), (&eqa,))?.extract()?;
     let sel = fresh(&s, &c, true)?;
@@ -1431,7 +1438,7 @@ fn head<'py>(e: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyTuple>> {
 }
 
 /// `x in cand or x in xside`.
-fn mergeable(cand: &Bound<'_, PyAny>, xside: &Bound<'_, PyAny>, x: &Bound<'_, PyAny>) -> PyResult<bool> {
+fn mergeable(cand: &RSet<'_, '_>, xside: &Bound<'_, PyAny>, x: &Bound<'_, PyAny>) -> PyResult<bool> {
     Ok(cand.contains(x)? || xside.contains(x)?)
 }
 
@@ -1655,7 +1662,7 @@ impl<'py> Cx<'_, 'py> {
         {
             return Ok(false);
         }
-        let (cand, xside) = (self.rel.getattr(intern!(p, "_xcand"))?, self.rel.getattr(intern!(p, "_xside"))?);
+        let (cand, xside) = (RSet::of(self.rel, session::RS_XCAND)?, self.rel.getattr(intern!(p, "_xside"))?);
         let args = node.getattr(intern!(p, "args"))?;
         for o in others.try_iter()? {
             let o = o?;
@@ -1759,13 +1766,13 @@ impl<'py> Cx<'_, 'py> {
                 extra.call_method0(intern!(p, "clear"))?;
             }
             let heads = self.dict(intern!(p, "_xheads"))?;
-            let counted = rel.getattr(intern!(p, "_xcounted"))?;
+            let counted = RSet::of(rel, session::RS_XCOUNTED)?;
             // A dict, as Python's: distinct by `==`, in insertion order.
             let grown = PyDict::new(p);
             for e in new.try_iter()? {
                 let e = e?;
                 if !counted.contains(&e)? && e.is_instance(&basic)? && self.structural(&e)? {
-                    counted.call_method1(intern!(p, "add"), (&e,))?;
+                    counted.add(&e)?;
                     let k = head(&e)?;
                     match heads.get_item(&k)? {
                         None => heads.set_item(&k, PyList::new(p, [&e])?)?,
@@ -1844,8 +1851,8 @@ impl<'py> Cx<'_, 'py> {
         self.c.relc_put(rel, session::XSLOT, n as i64 + planted(RC_XSLOT_SKIP) as i64);
         self.c.relc_put(rel, session::XNSIDES, nside);
         self.c.relc_put(rel, session::XHSEEN, hn);
-        let cand = rel.getattr(intern!(p, "_xcand"))?;
-        let part = rel.getattr(intern!(p, "_xpart"))?;
+        let cand = RSet::of(rel, session::RS_XCAND)?;
+        let part = RSet::of(rel, session::RS_XPART)?;
         let xside = self.dict(intern!(p, "_xside"))?;
         let (th, ad) = self.xfer()?;
         let solver = self.solver()?;
@@ -1863,7 +1870,7 @@ impl<'py> Cx<'_, 'py> {
                     None => 0,
                 };
                 if lv == 2 || (self.structural(&node)? && self.congruent(&node)?) {
-                    cand.call_method1(intern!(p, "add"), (&node,))?;
+                    cand.add(&node)?;
                     changed = true;
                     let t = ad.call_method1(intern!(p, "node_term"), (&node,))?;
                     self.c.ensure_vars_direct(p, b + npred as i32 - 1)?;
@@ -1890,7 +1897,7 @@ impl<'py> Cx<'_, 'py> {
                     continue;
                 }
                 if lv == 1 && !part.contains(&node)? {
-                    part.call_method1(intern!(p, "add"), (&node,))?;
+                    part.add(&node)?;
                     let t = ad.call_method1(intern!(p, "node_term"), (&node,))?;
                     if !planted(DROP_SYNC_POLAR) {
                         solver.call_method1(intern!(p, "register_atom"), (&th, b + polar, (&t, polar, true), false))?;
@@ -1909,7 +1916,7 @@ impl<'py> Cx<'_, 'py> {
         let p = self.rel.py();
         let rel = self.rel;
         tick(session::REL_CONGRUENCE_PAIRS);
-        let (xside, cand, done) = (rel.getattr(intern!(p, "_xside"))?, rel.getattr(intern!(p, "_xcand"))?, rel.getattr(intern!(p, "_xpairs"))?);
+        let (xside, cand, done) = (rel.getattr(intern!(p, "_xside"))?, RSet::of(rel, session::RS_XCAND)?, RSet::of(rel, session::RS_XPAIRS)?);
         for group in rel.getattr(intern!(p, "_xheads"))?.call_method0(intern!(p, "values"))?.try_iter()? {
             let group = group?.cast_into::<PyList>()?;
             let n = group.len();
@@ -1943,7 +1950,7 @@ impl<'py> Cx<'_, 'py> {
                         diff.push((x, y));
                     }
                     if ok.is_none() || (ok == Some(true) && !diff.is_empty()) {
-                        done.call_method1(intern!(p, "add"), (&key,))?;
+                        done.add(&key)?;
                     }
                     if ok != Some(true) || diff.is_empty() {
                         continue;
@@ -2062,13 +2069,16 @@ fn rel_init<'py>(rel: &Bound<'py, PyAny>, session: &Bound<'py, PyAny>, specs: &B
     let r = h.relations.bind(p);
     let proxy = p.import(intern!(p, "weakref"))?.getattr(intern!(p, "proxy"))?.call1((session,))?;
     let set = |name: &str, v: Bound<'py, PyAny>| rel.setattr(name, v);
+    // state step, part 2 (iii)(b), rest: the moved sets (relkeys.rs) are the core's; a session with no core keeps Python's
+    let has_core = session::core_of(session).is_ok();
+    let pset = |name: &str| if has_core { Ok(()) } else { rel.setattr(name, PySet::empty(p)?) };
     set("session", proxy)?;
     set("specs", PyList::new(p, specs.try_iter()?.collect::<PyResult<Vec<_>>>()?)?.into_any())?;
     set("adapters", PyDict::new(p).into_any())?;
     set("status", PyDict::new(p).into_any())?;
     set("queue", PyList::empty(p).into_any())?;
-    set("linked", PySet::empty(p)?.into_any())?;
-    set("_bounded", PySet::empty(p)?.into_any())?;
+    pset("linked")?;
+    pset("_bounded")?;
     set("_guards", PyDict::new(p).into_any())?;
     set("_link_lt", PyDict::new(p).into_any())?;
     set("top", PyDict::new(p).into_any())?;
@@ -2079,31 +2089,34 @@ fn rel_init<'py>(rel: &Bound<'py, PyAny>, session: &Bound<'py, PyAny>, specs: &B
     set("atom_sel", PyDict::new(p).into_any())?;
     set("num_sel", PyDict::new(p).into_any())?;
     set("_xextra", PyList::empty(p).into_any())?;
-    set("_user_eq", PySet::empty(p)?.into_any())?;
+    pset("_user_eq")?;
     set("_roles", PyDict::new(p).into_any())?;
     set("_info", PyDict::new(p).into_any())?;
     set("_link_of", PyDict::new(p).into_any())?;
     set("_tv", PyDict::new(p).into_any())?;
     set("_tsrc", PyDict::new(p).into_any())?;
-    set("_xpairs", PySet::empty(p)?.into_any())?;
-    set("_aux_eq", PySet::empty(p)?.into_any())?;
-    set("_link_eq", PySet::empty(p)?.into_any())?;
+    pset("_xpairs")?;
+    pset("_aux_eq")?;
+    pset("_link_eq")?;
     set("_xside", PyDict::new(p).into_any())?;
     // state step, part 2 (iii)(b): the scalar cursors are the core's (session.rs `relc`); a session with no core keeps
     // Python's attributes
     match session::core_of(session) {
-        Ok(c) => c.borrow().relc_init(rel),
+        Ok(c) => {
+            c.borrow().relc_init(rel);
+            c.borrow().rs_init(rel);
+        }
         Err(_) => {
             for (n, v) in session::RC_NAMES.iter().zip(session::RC_INIT) {
                 set(n, v.into_pyobject(p)?.into_any())?;
             }
         }
     }
-    set("_xpart", PySet::empty(p)?.into_any())?;
+    pset("_xpart")?;
     set("_xheads", PyDict::new(p).into_any())?;
-    set("_xcounted", PySet::empty(p)?.into_any())?;
+    pset("_xcounted")?;
     set("_xpend", PyList::empty(p).into_any())?;
-    set("_xcand", PySet::empty(p)?.into_any())?;
+    pset("_xcand")?;
     let scope = session.getattr(intern!(p, "scope"))?;
     set("scope", scope.clone())?;
     if scope.getattr(intern!(p, "glue"))?.is_truthy()? {
@@ -2136,7 +2149,7 @@ fn rel_note_formula(rel: &Bound<'_, PyAny>, atoms: &Bound<'_, PyAny>) -> PyResul
         let index = h.relations.bind(p).getattr(intern!(p, "PRED_INDEX"))?;
         if index.contains(a.getattr(intern!(p, "pred"))?)? {
             let e = a.getattr(intern!(p, "expr"))?;
-            if !rel.getattr(intern!(p, "linked"))?.contains(&e)? {
+            if !RSet::of(rel, session::RS_LINKED)?.contains(&e)? {
                 if plant_on(DROP_NOTE_TOP) {
                     continue;
                 }
@@ -2157,9 +2170,9 @@ fn number(rel: &Bound<'_, PyAny>, h: &Hooks, e: &Bound<'_, PyAny>) -> PyResult<b
 fn link_later(rel: &Bound<'_, PyAny>, h: &Hooks, e: &Bound<'_, PyAny>) -> PyResult<()> {
     let p = rel.py();
     tick(session::REL_LINK_LATER);
-    let linked = rel.getattr(intern!(p, "linked"))?;
+    let linked = RSet::of(rel, session::RS_LINKED)?;
     if !linked.contains(e)? && !number(rel, h, e)? {
-        linked.call_method1(intern!(p, "add"), (e,))?;
+        linked.add(e)?;
         if plant_on(DROP_LINK_LATER) {
             return Ok(());
         }
@@ -2219,7 +2232,7 @@ fn rel_share(rel: &Bound<'_, PyAny>) -> PyResult<bool> {
         let eqa = r.getattr(intern!(p, "relation_atom"))?.call1((intern!(p, "eq"), &a, &b))?;
         let s = rel.getattr(intern!(p, "session"))?;
         if !s.getattr(intern!(p, "table"))?.getattr(intern!(p, "custom"))?.contains(&eqa)? {
-            rel.getattr(intern!(p, "_aux_eq"))?.call_method1(intern!(p, "add"), (&eqa,))?;
+            RSet::of(rel, session::RS_AUX_EQ)?.add(&eqa)?;
         }
         tick(session::REL_CB_ATOM_VAR);
         rel.call_method1(intern!(p, "_atom_var"), (&eqa,))?;
@@ -2274,9 +2287,9 @@ fn rel_process<'py>(rel: &Bound<'py, PyAny>, user_atoms: Option<&Bound<'py, PyAn
             tick(session::REL_CB_NOTE_SIDES);
             rel.call_method1(intern!(p, "_note_sides"), (a, 2))?;
             let var = s.getattr(intern!(p, "table"))?.getattr(intern!(p, "custom"))?.call_method1(intern!(p, "get"), (a,))?;
-            let user_eq = rel.getattr(intern!(p, "_user_eq"))?;
+            let user_eq = RSet::of(rel, session::RS_USER_EQ)?;
             if !var.is_none() && !user_eq.contains(a)? {
-                user_eq.call_method1(intern!(p, "add"), (a,))?;
+                user_eq.add(a)?;
                 if plant_on(DROP_PROC_EQ_LINKS) {
                     continue;
                 }
