@@ -176,7 +176,115 @@ budget 469/80, cert 24/208, equal on A and B; kept:out-of-scope dev 24, others 0
 needs a quiet lease and is not a bar item. The counts above (rk:term, rk:intern:*) are the per-query id work standing where
 cross-query memos were.
 
+## Sub-part 5: the session's own state in the core (after (iii); sa-port-230, -241, -242, -245, -247)
+
+Commits on port/state-part3 (rebased onto rust-slice 0192b35): 0414c4f first part, 02354d4 `Session.solver` write, 7a18df2
+containers, e82147a digest extension (test-only), 4d14638 scope fix, fd0fabb `core_of`, 4ce60ab container tests (test-only).
+
+**First part (0414c4f).** Rust's 15 reads of `Session.solver` go through session.rs `solver_of` (the core's copy; a session
+with no core is read by attribute, counted `sb:attr`). `truncated`, `_link_pending`, `_neg_shared`, `sel`, `n_hold` and
+`verdict` are SessionCore scalars; Python sees them through views (session_live `_ses_sview`) whose setters are the core's
+record methods. The writes of `defvars`, `_dv` and `_dv_node` are dropped. `_interpret`, `_link`, `_share_guard` and `_visit`
+are called directly from Rust (session.rs `named`: by name only when the method was replaced). Counters 559-564 (`sb:*`),
+plants 431-438.
+- Inventory correction: sub-part 1 listed `_neg_shared` as dead. It is not (session.rs `dvar_def` reads it), so it moved
+  with the other scalars.
+- OWED [100]: the two `truncated` sites are closed by 0414c4f.
+- The four wrappers `_rel_interpret`, `_rel_link`, `_rel_share_guard`, `_ses_visit` each do more than forward, so they are
+  kept for Python callers and listed, not deleted: each sends a session with no core to Python's own copy (ref.py), and each
+  is the by-name hook Rust calls when a test replaced the method or SLICE_REL/SLICE_LOOP=py is set. On converted queries
+  all four are 0 on all seven probe workloads. No unruled callback; no question was sent.
+
+**`Session.solver` written after bind (02354d4).** slice-5b (every slice test in one shared process: 8 failed, 34 errors,
+1257 passed) had one real change: a solver assigned to a session after `TableView.bind` no longer reached Rust. `Session.solver`
+is now a property whose setter records into the core (test_session_boundary.py `solver-write`). The other failures came from
+the shared process (install() refuses after another file's Engine) or missing `-p rust_plugin -p handler_count`, so slice
+test files run one process per file (bar.sh `TESTS_SPLIT=1`). test_glue_plain's rewrap test asserts the refusal;
+test_term_live's two stale `_Mark` tests were fixed (they fail the same on the base). The install list stays 191.
+
+**Containers (7a18df2, keys 4d14638).** `frontier`, `deferred` (sequences) and `pending`, `pending_c`, `demand`, `literals`,
+`_groups` (dicts) are held in SessionCore (ses_cont.rs); Rust's sites use them natively through `Ses`, Python through the
+views `SesSeqView`/`SesDictView` and the record methods behind an assignment. Counters 565-567 `sc:core`, `sc:view`,
+`sc:record`; plants 439-445 `sc-<name>-drop`.
+- The scope difference. On 7a18df2, workload scope differed with the digest off (query 5: Python 3 sessions, Rust 2, equal
+  answers). Bisect: d8f9146, 0414c4f and 02354d4 MATCH (171 sessions), so 7a18df2 was the cause. scope's custom fact passes
+  the int `1` to `relation_atom`, so `Session.demand` holds the int and `Relations._xside` holds SymPy's `One`; 7a18df2 keyed
+  the session's dicts by the session's RelKeys ids, so both shared one object per equal class, `_xside` gave back the int,
+  `_transfer_terms` saw no `Rational`, and `_number_basis(1)` with its `is_many` session was lost.
+- The fix: each session dict is a `SesDict`, keyed as the Python dict it replaces (`hash()`, then the same object or `==`)
+  and holding the key object first set in it. Nothing in ses_cont.rs reads or writes RelKeys; relkeys.rs has no diff against
+  rust-slice. Counters 568 `sc:key_hash`, 569 `sc:key_eq` (calls into Python on a key). Plant 446 `sc-key-shared` puts the
+  fault back: caught by workload scope and by test_session_boundary.py's `keys` case.
+- relevance.rs (a shared file): the extended digest then found that an opaque `Split` gave `comps == []` and
+  `consistent is None` on Rust where Python's `_Split` leaves them unset. Both getters now raise AttributeError on an opaque
+  split. No reader in satassume or the slice reads them there; the digest does.
+- Nothing was stopped on under condition 2.
+
+**`core_of` off the `table` property (fd0fabb).** session.rs `core_of` did `s.getattr("table")`, which runs session_live's
+property getter `_table_get`, a Python frame per read, and the count rose when the containers moved. `_table_set` now stores
+the core beside the view (`_core`, a plain instance attribute) and `core_of` reads it; `table_of` does the same for
+`_table_view` at the 11 other `getattr("table")` sites (compile_loop.rs 5, session_glue.rs 4, query.rs 2); compile_loop.rs
+and discovery.rs use session.rs's `core_of` in place of their copies; session_live's own 44 dispatch tests read `__dict__`.
+A session without the attribute is read through the property, counted 570 `sb:core_prop`. Plants 447 `sb-core-unset`
+(equal answers by construction; caught by `sb:core_prop` firing and `_table_get`'s count rising) and 448 `sb-core-stale`
+(rows differ).
+- Still reading the property from Rust, not touched under condition 2: relations_core.rs :786 (`s.table.core`), :2270,
+  :2332, :2468. (:742 and :2577 read a query's table, not a session's.) These and Python's own `.table` reads (`_node`,
+  the Relations field views) are what is left of `_table_get`.
+
+Module-wide probe of session_live.py (pycalls.py, every function, seven workloads, Rust, `--check plain`, all exit 0).
+`_table_get` and all Python calls into session_live.py on converted queries, at d8f9146 (before the containers), 7a18df2
+(containers) and fd0fabb (`core_of`):
+
+| workload | queries | `_table_get` d8f9146 -> 7a18df2 -> fd0fabb | converted calls d8f9146 -> 7a18df2 -> fd0fabb | sc:core | sc:key_hash | sc:key_eq |
+|---|---|---|---|---|---|---|
+| fuzz | 3000 | 2,079,683 -> 2,268,435 -> 218,742 | 3,009,742 -> 3,137,531 -> 1,087,838 | 908,133 | 478,541 | 1,193 |
+| dev | 1985 | 120,618 -> 149,444 -> 10,775 | 201,983 -> 228,016 -> 89,347 | 66,462 | 28,951 | 0 |
+| zero | 854 | 418,024 -> 455,128 -> 46,702 | 593,181 -> 618,776 -> 210,350 | 145,552 | 73,045 | 0 |
+| loop | 420 | 24,873 -> 39,288 -> 2,483 | 58,863 -> 71,762 -> 34,957 | 36,879 | 14,880 | 16 |
+| scope | 169 | 43,720 -> 50,202 -> 4,472 | 69,286 -> 74,649 -> 29,003 | 22,079 | 10,220 | 0 |
+| budget | 28 | 6,245 -> 9,430 -> 533 | 20,333 -> 21,591 -> 12,694 | 53,922 | 46,412 | 0 |
+| cert | 61 | 24,016 -> 27,541 -> 2,411 | 36,798 -> 39,799 -> 14,669 | 12,904 | 6,513 | 0 |
+
+`sb:core_prop`, `sb:attr`, `sb:fwd_named`, `sc:view` and `sc:record` are 0 on all seven at fd0fabb (each is shown to fire in
+test_session_boundary.py: `sb:core_prop` under plant 447, `sc:view`/`sc:record` on the default run and under
+SLICE_DISC=py SLICE_LOOP=py SLICE_GLUE=py). session_live.py still has 27 to 40 nonzero function names per workload on
+converted queries (largest at fd0fabb: `TableView`'s methods, `_table_get`, `_rel_m`, `_ses_ensure`), so the module does
+not count yet. `sc:key_hash` is a Python call per key lookup (160 per query on fuzz); not fixed in this step.
+Outputs: orion `~/sa-rust-ids-work/sa-port-241/pyc/before`, `sa-port-241/pyc/after` (read in `sa-port-242/pyc/after-summary.txt`),
+`sa-port-247/pyc/core`.
+
+**Container tests (4ce60ab), test_session_boundary.py, 27 passed.** Each container's content (keys with their class, values,
+in order), Python against Rust, after `_build_context` and after the asks for ten assumption sets, on a session cut by
+`escalate(1)` before and after, and at each `_visit` of a like session with a vocabulary function registered for `Add`
+(`frontier` and `pending` are empty between calls). The core's export `sc_snapshot` equals the views at each point; a write
+through a view and an assignment are read back from the core; one Rust run with SLICE_DISC=py SLICE_LOOP=py SLICE_GLUE=py
+gives Python's rows.
+
+| plant | container | fired in the test | rows that differ besides the container's content |
+|---|---|---|---|
+| 439 `sc-frontier-drop` | `frontier` | yes | answers: ask, ctx, trunc, solver dump |
+| 440 `sc-pending-drop` | `pending` | yes | none: content only; its native write is reached only with a registered vocabulary function under a demand |
+| 441 `sc-pending_c-drop` | `pending_c` | yes | answers: ask, ctx, trunc, solver dump |
+| 442 `sc-demand-drop` | `demand` | yes | solver dump, the keys case's session counts |
+| 443 `sc-deferred-drop` | `deferred` | yes | the cut session's row |
+| 444 `sc-literals-drop` | `literals` | yes | none: content only (a memo of compound formula -> literal) |
+| 445 `sc-groups-drop` | `_groups` | yes | answers: ask, ctx, solver dump |
+| 446 `sc-key-shared` | the dicts' keys | yes | the keys case; workload scope |
+
+Whether each fires and is caught on the workloads is the landing bar's plant table.
+
+**Digest extension (e82147a, test-only).** The moved containers' digest covers every container moved so far: the seven
+session containers and six scalars, the (ii) handles, the LRA slot per query, every engine a workload builds; 5c9a's native
+tables are checked in the process, not compared across backends (they exist on Rust only). known_moved.json holds the
+exact known `_SPLIT`/`_CACHE` rows per workload and engine point (known_moved.py writes them), inside the verdict;
+scope's row was added at 4d14638. On a Rust run the digest reads the handles through their views (`xf:*` view counters
+rise by three reads per `Relations` and one per session) and `memo:native_items` ticks at each engine point.
+memo_check.`_canon` (a shared file) was changed for it. Details: results/digest-coverage.md, last section.
+
 ## Not run
-The landing bar (suite by id against base with handler rows, dev/fuzz MATCH with planted bugs on the workloads; plants 428-430
-on dev/fuzz); the full suite on 042598c; sub-part 5 (waits for (iii)); the memo-cost timing; the needs-internals list for the
-test readers in sub-part 1's table (made with sub-part 5's moves).
+At f252daf (this section's head): the landing bar is running on pareto1 (`~/sp19/sa-rust-ids-work/sa-port-247/bar-part3`,
+started 17:47Z 10 Nov), not read: the suite by id against (iii)'s base with handler rows, dev/fuzz and 14 more workloads
+Python against Rust with 22 plants, every slice test file one process per file. Also not run: the memo-cost timing on a
+quiet pareto1; Group D in seconds; "relations' reference held by the core" (the brief's item, not in this link's gate);
+the needs-internals list for the test readers in sub-part 1's table.
