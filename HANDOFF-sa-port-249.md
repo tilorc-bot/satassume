@@ -101,7 +101,7 @@ STILL OPEN before landing: the Subs twins rows (below), [91] and the budget gate
 
 ## Running (detached; read the end marker)
 Group D samples, sa-port-146's method (pysampler, dev 10 runs, fuzz 3, plus one unsampled time row each for Rust and
-Python), started 22:3xZ under shared leases on pareto1 for f252daf and for the base 0192b35:
+Python), started 22:14Z under shared leases on pareto1 for f252daf and for the base 0192b35:
 orion ~/sa-rust-ids-work/sa-port-249/gd/run-f252daf.log and run-0192b35.log ("END exit N" is the last line); output
 pareto1 ~/sa-rust-ids-work/sa-port-249/gd/run-SHA/DONE-JOB. Tools: orion ~/sa-rust-ids-work/sa-port-249/gd/tools, copied
 from sa-port-225's with the paths changed (go195.sh, job195.sh, post195.sh). After DONE-JOB: `bash post195.sh SHA` on
