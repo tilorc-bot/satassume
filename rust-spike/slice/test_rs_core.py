@@ -10,7 +10,10 @@ Here, one process per run:
 - the class join (the state rule): a Python set joins `==`-equal members of different classes (`2` and `Integer(2)`); Rust's
   sets must never hold two `==` members, on the workloads and on a seeded case;
 - the record method: Python's writes through the views (`add`, `update`, `in`, `len`) read back as Python's would;
-- the plants (relkeys.rs RS_PLANT0, 269-277) each move the digest; the counters (rk:*, rs:*, 350-358) are read out.
+- the plants (relkeys.rs RS_PLANT0, 269-277) each move the digest; the counters (rk:*, rs:*, 350-358) are read out;
+- two equal classes (`_twin`, its own process): one query holding `f(0)` under two `==` `Function("f")` classes keys it once,
+  as Python's sets did; the plant `rk-class-split` (409) gives the second class's object its own key and is caught by the
+  answer and by the sets' digest against Python.
 """
 import hashlib
 import json
@@ -157,12 +160,72 @@ def _child(mode):
     print(json.dumps(out))
 
 
-def _run(mode, plant=None):
+def _twin(mode):
+    """One query that meets `f(u)` and `f(0)` under two equal `Function("f")` classes, the suite's order in small
+    (tests/test_history.py::test_fixed_repro_stays_fixed[T1-transfer-congruent-application] before
+    tests/test_ref.py::test_zero_under_an_application_is_an_equality[T1-transfer-congruent-application]).
+    Class A's query is built first and held, as test_ref's module constants are. SymPy's cache is then emptied (in the suite
+    the lru cache evicts `Function("f")`), so `Function("f")` is a second class B, `==` to A and hashing alike. B's query is
+    asked between a registry snapshot and its restore, as harness.checker.execute does: the restore is a new registry
+    version, and process-wide memos keep B's objects. Then A's held query is asked on a fresh engine: its session meets
+    A's objects from the query and B's from the memos."""
+    if mode == 'rust':
+        from test_relations_core import _rust
+        _rust()
+        import sa_solver
+    from sympy import Function, Q, Symbol
+    from sympy.core.cache import clear_cache
+    from satassume import sympy_api
+    from satassume.engine import DictCache, Engine
+    from satassume.knowledge.extensions import extensions
+    from satassume.relations import Relations
+    u = Symbol('u')
+    fa = Function('f')
+    pa, aa = Q.positive(fa(u)), Q.zero(u) & Q.positive(fa(0))
+    clear_cache()
+    fb = Function('f')
+    pb, ab = Q.positive(fb(u)), Q.zero(u) & Q.positive(fb(0))
+    out = dict(two_classes=[fa is not fb, fa == fb, hash(fa) == hash(fb), pa == pb, aa == ab,
+                            type(pa.arguments[0]) is fa, type(pb.arguments[0]) is fb])
+    snap = extensions.snapshot()
+    out['first'] = sympy_api.ask(pb, ab, engine=Engine(cache=DictCache(), uninterpreted='none'))
+    extensions.restore(snap)
+    made = []
+    init = Relations.__init__
+
+    def tracked(self, *a, **k):
+        r = init(self, *a, **k)
+        made.append((self, getattr(getattr(a[0], 'table', None), 'core', None) if mode == 'rust' else None))
+        return r
+    Relations.__init__ = tracked
+    before = dict(sa_solver.session_counts()) if mode == 'rust' else {}
+    out['answer'] = sympy_api.ask(pa, aa, engine=Engine(cache=DictCache(), uninterpreted='none'))
+    Relations.__init__ = init
+    # the nine sets, and the fifteen dicts' keys in insertion order (test_rd_core.py's snapshot)
+    import test_rd_core
+    rows = []
+    for rel, core in made:
+        if mode == 'rust':
+            sets = [d for r, d in core.rs_snapshot() if r is rel][0]
+            dicts = [d for r, d in core.rd_snapshot() if r is rel][0]
+        else:
+            sets = {n: rel.__dict__[n] for n in NAMES}
+            dicts = {n: list(rel.__dict__[n].items()) for n in test_rd_core.NAMES}
+        rows.append([[_norm(sets[n]) for n in NAMES], [[test_rd_core._r(k) for k, _ in dicts[n]] for n in test_rd_core.NAMES]])
+    out['rows'] = rows
+    out['filled'] = [sum(bool(x) for row in rows for x in row[i]) for i in (0, 1)]
+    if mode == 'rust':
+        after = dict(sa_solver.session_counts())
+        out['counts'] = {k: after.get(k, 0) - before.get(k, 0) for k in ('join', 'rk:twin', 'link:none', 'rel:plant_fired')}
+    print(json.dumps(out))
+
+
+def _run(mode, plant=None, child='child'):
     env = dict(os.environ, PYTHONPATH=os.pathsep.join([HERE, os.environ.get('PYTHONPATH', '')]))
     env.pop('SLICE_SESSION_PLANT', None)
     if plant:
         env['SLICE_SESSION_PLANT'] = plant
-    r = subprocess.run([sys.executable, os.path.abspath(__file__), 'child', mode], env=env, capture_output=True, text=True,
+    r = subprocess.run([sys.executable, os.path.abspath(__file__), child, mode], env=env, capture_output=True, text=True,
                        timeout=1800)
     assert r.returncode == 0, r.stderr[-3000:]
     return json.loads(r.stdout.strip().splitlines()[-1])
@@ -205,6 +268,33 @@ def test_a_later_table_at_a_dead_tables_address_is_a_second_table(rust):
     assert al == dict(al, b_in=False, a_in=True, len=1, outlive=1), al
 
 
+def test_two_equal_function_classes_key_as_one():
+    """Found by the bar of 0576370 (eight zero-twin ids of tests/test_scope.py, tests/test_ref.py and tests/test_zero_glue.py
+    answered None in the suite's order): `f(0)` of a second, equal `Function("f")` class has no row of its own class in the
+    query's table, so RelKeys interned it by hash beside the first class's term-id key, and the moved sets held as two
+    members what Python's sets held as one. On 0576370 the answer here is None and the rows differ from Python's."""
+    py, rust = _run('py', child='twin'), _run('rust', child='twin')
+    assert all(py['two_classes']) and all(rust['two_classes']), (py['two_classes'], rust['two_classes'])
+    assert rust['counts']['join'] > 0, rust['counts']    # the control: the session met both classes
+    assert py['first'] is True and py['answer'] is True and min(py['filled']) > 0, py
+    assert (rust['first'], rust['answer']) == (py['first'], py['answer']), (py['answer'], rust['answer'], rust['counts'])
+    assert rust['rows'] == py['rows'], (py['rows'], rust['rows'])
+    assert rust['counts']['rk:twin'] > 0, rust['counts']    # by taking the first class's id for the second's object
+
+
+def test_class_split_plant_is_caught():
+    """RelKeys keying the second class's object apart (plant `rk-class-split`, 409) loses the answer and moves the sets'
+    digest off Python's."""
+    py, got = _run('py', child='twin'), _run('rust', 'rk-class-split', child='twin')
+    assert got['counts']['rk:twin'] == 0 and got['counts']['join'] > 0 and got['counts']['rel:plant_fired'] > 0, got['counts']
+    assert got['answer'] != py['answer'], got
+    assert got['rows'] != py['rows'], got['rows']
+    # `_tv` (the transfer's values) is where the two keys show: `f(u)` and `f(0)` twice
+    import test_rd_core
+    tv = got['rows'][0][1][test_rd_core.NAMES.index('_tv')]
+    assert len(tv) > len(set(tv)), tv
+
+
 @pytest.mark.parametrize('plant', PLANTS)
 def test_plant_moves_the_digest(rust, plant):
     got = _run('rust', plant)
@@ -213,3 +303,5 @@ def test_plant_moves_the_digest(rust, plant):
 
 if __name__ == '__main__' and sys.argv[1:2] == ['child']:
     _child(sys.argv[2])
+elif __name__ == '__main__' and sys.argv[1:2] == ['twin']:
+    _twin(sys.argv[2])
