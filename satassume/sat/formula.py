@@ -102,6 +102,42 @@ FALSE = False
 Node = Any
 
 
+def types_of(o):
+    """The types in ``o`` that ``==`` does not compare: the type of a node
+    and, through tuples (``Args`` and plain ones, equal to each other when
+    their elements are), the types of the elements; for an atom those of
+    its expression; for a formula those of its arguments.  A frozenset is
+    read like a tuple, without an order.
+
+    Equal nodes can have different types (``1 == True == 1.0 == S.One``
+    with one hash, ``(1, x) == Args((S.One, x))``), and what is derived
+    from a node is chosen by its type (templates, handlers, ``sympify``),
+    so a memo whose value is derived from a node, an atom or a formula
+    has this in its key (:func:`typed`, #96).  Nothing below a node that
+    is not a tuple is read: two equal SymPy objects have the same class
+    and the same classes inside (``Basic.__eq__``)."""
+    if not isinstance(o, _INSIDE):
+        return type(o)
+    if isinstance(o, P):
+        return types_of(o.expr)
+    if isinstance(o, tuple):
+        return (type(o), *[types_of(a) for a in o])
+    if isinstance(o, frozenset):
+        return (type(o), frozenset([typed(a) for a in o]))
+    # a formula: its own class is compared by ``Formula.__eq__``
+    return tuple([types_of(a) for a in o.args])
+
+
+#: what :func:`types_of` reads inside of
+_INSIDE = (P, tuple, frozenset, Formula)
+
+
+def typed(o):
+    """The memo key of a node, an atom or a formula ``o``: ``(types_of(o),
+    o)``, which is ``(type(o), o)`` for a node that is not a tuple."""
+    return (types_of(o), o)
+
+
 def allargs(pred: str, args: Iterable[Node]):
     """``pred`` holds for every argument."""
     args = tuple(args)

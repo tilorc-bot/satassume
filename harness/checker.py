@@ -822,14 +822,14 @@ def audit_cache(items: Sequence[Item], config: EngineConfig, source: str = "",
                 apply_event(it)
             else:
                 outcome(it.prop, it.assum, eng)
-        store = {node: dict(facts) for node, facts in eng.cache.store.items()}
+        store = [(node, dict(facts)) for node, facts in eng.cache.items()]
         bad: List[Tuple[Any, str, bool, Optional[bool]]] = []
         nfacts = 0
         # what could not be checked (docs/agents.md, Gating rule 5): closed
         # number nodes (skipped whole, with their facts) and cached None
         # facts (nothing to compare a fresh engine's answer with)
         skip_number_nodes = skip_number_facts = skip_none_facts = 0
-        for node, facts in store.items():
+        for node, facts in store:
             if getattr(node, "is_number", False) and not getattr(node, "free_symbols", None):
                 skip_number_nodes += 1
                 skip_number_facts += len(facts)

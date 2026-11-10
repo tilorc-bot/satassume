@@ -18,8 +18,11 @@ Each case is asked in both orders from emptied process memos, with a new
 node), and each answer is compared with the one the same question gets alone
 from emptied memos.  What the answer about a Python number should be is not
 this test's subject: the expected answers are computed, not written down.
-One ``Engine`` asked about both nodes is not covered: its own tables
-(``Engine.cache`` and the memos of whole queries) are keyed by ``==`` too.
+
+The second half asks one ``Engine`` about both nodes of a pair.  Its own
+tables are keyed with the types too (``typed``, satassume.sat.formula), and
+so are the process-wide tables of the relation atoms; there is one block of
+tests per table.
 """
 from fractions import Fraction
 
@@ -27,11 +30,11 @@ import pytest
 from sympy import Float, Integer, Q, S, Symbol
 from sympy.assumptions import Predicate
 
-from satassume import Engine
+from satassume import DictCache, Engine
 from satassume import sympy_api as api
 from satassume.knowledge.extensions import Args
 from satassume.knowledge.templates.registry import registry
-from satassume.sat.formula import And, Implies, Not, P
+from satassume.sat.formula import And, Implies, Not, P, typed, types_of
 from satassume.state import memos
 
 s = Symbol('s')
@@ -124,3 +127,94 @@ def test_each_type_has_its_own_entry_and_hits_it(pair, emptied):
     assert first[0] is not first[1]
     assert [registry.clauses_for(v) for v in (py, sy)] == first
     assert all(registry.clauses_for(v) is r for v, r in zip((py, sy), first))
+
+
+# -- one Engine asked about both nodes of a pair -----------------------------
+# The engine's own tables: one block per table below.  The questions that
+# reach the table are asked of one Engine in both orders, and each answer is
+# compared with the same question asked alone of a new Engine from emptied
+# process memos.
+
+ORDERS = ['Python-first', 'SymPy-first']
+CUSTOM = 'cache_key_type_custom'
+
+
+def _answer(question, *args):
+    """The answer, or the name of what the question raised."""
+    try:
+        return question(*args)
+    except Exception as e:      # noqa: BLE001
+        return type(e).__name__
+
+
+def _one_engine_as_alone(question, nodes, make=Engine):
+    """Ask one engine about ``nodes`` in order; every answer must be the one
+    a new engine gives alone.  Returns the asked-alone answers."""
+    alone = []
+    for v in nodes:
+        memos.PROCESS.clear()
+        alone.append(_answer(question, make(), v))
+    memos.PROCESS.clear()
+    e = make()
+    assert [_answer(question, e, v) for v in nodes] == alone
+    return alone
+
+
+def _ordered(pair, order):
+    py, sy = pair
+    return [py, sy] if order == 'Python-first' else [sy, py]
+
+
+def test_types_of_reads_the_types_that_equality_ignores():
+    assert typed(1) == (int, 1) and typed(S.One) == (type(S.One), S.One)
+    assert len({typed(1), typed(True), typed(1.0), typed(Fraction(1)), typed(S.One)}) == 5
+    a, b = Args((1, s)), Args((S.One, s))
+    assert a == b == (1, s) and len({typed(a), typed(b), typed((1, s))}) == 3
+    assert P('lt', a) == P('lt', b) and typed(P('lt', a)) != typed(P('lt', b))
+    f, g = And(P('positive', 1), P('real', s)), And(P('positive', True), P('real', s))
+    assert f == g and typed(f) != typed(g)
+    # through tuples and frozensets, as deep as they go
+    assert typed(((1, 2), s)) != typed(((1.0, 2), s))
+    assert typed((1, (2, (3, s)))) != typed((1, (2, (3.0, s))))
+    assert typed(frozenset([1, s])) != typed(frozenset([True, s]))
+    # a SymPy node is not looked into, and equal keys stay equal
+    assert types_of(s + 1) is type(s + 1)
+    assert typed(P('positive', s + 1)) == typed(P('positive', 1 + s))
+    assert typed(Args((1, s))) == typed(Args((1, Symbol('s'))))
+
+
+# Engine.cache.store and Engine.custom_cache.store (DictCache)
+FACT_DOORS = {
+    'is_': lambda e, v: e.is_(v, 'positive'),
+    'is_many': lambda e, v: e.is_many(v, ['positive', 'integer', 'real']),
+    'is_, custom predicate': lambda e, v: e.is_(v, CUSTOM),
+}
+
+
+@pytest.mark.parametrize("order", ORDERS)
+@pytest.mark.parametrize("door", list(FACT_DOORS))
+@pytest.mark.parametrize("pair", list(PAIRS))
+def test_one_engine_fact_caches(pair, door, order, emptied):
+    registered = api.extensions.snapshot()
+    try:
+        # a custom predicate (answered from ``custom_cache``): it holds of
+        # every positive node
+        api.extensions.register(CUSTOM, object)(
+            lambda a: Implies(P('positive', a), P(CUSTOM, a)))
+        alone = _one_engine_as_alone(FACT_DOORS[door], _ordered(PAIRS[pair], order))
+    finally:
+        api.extensions.restore(registered)
+    assert alone[0] != alone[1]     # or one entry for both would do
+
+
+def test_fact_cache_has_an_entry_per_type(emptied):
+    cache = DictCache()
+    e = Engine(cache=cache)
+    assert e.is_(S.One, 'positive') is True and e.is_(1, 'positive') is None
+    assert cache.facts(S.One) == {'positive': True} and cache.facts(1) is None
+    cache.put(1, 'positive', False)             # seeded by hand
+    assert cache.get(1, 'positive') is False and cache.get(S.One, 'positive') is True
+    assert cache.get(True, 'positive') is None and cache.get(1.0, 'positive') is None
+    assert sorted(cache.items(), key=lambda nf: type(nf[0]).__name__) == [
+        (S.One, {'positive': True}), (1, {'positive': False})]
+    assert set(cache.store) == {typed(S.One), typed(1)}

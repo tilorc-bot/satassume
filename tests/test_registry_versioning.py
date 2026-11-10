@@ -334,12 +334,12 @@ def test_shared_cache_created_before_a_registration():
     assert old.is_(f(y), 'real') is None
     assert old.cache.get(f(y), 'real', "miss") == "miss"     # a None is not memoized
     assert old.is_(f(y), 'commutative') is True              # a fact of the old epoch
-    assert old.cache.store == {f(y): {'commutative': True}}
+    assert dict(old.cache.items()) == {f(y): {'commutative': True}}
     extensions.register('real', AppliedUndef)(undef_real)
     new = Engine(cache=old.cache)
     assert new.is_(f(y), 'real') is True
     assert new.stats["version_clears"] == 0                  # nothing of its own to drop
-    assert new.cache.store == {f(y): {'real': True}}         # the old epoch's fact was dropped
+    assert dict(new.cache.items()) == {f(y): {'real': True}}         # the old epoch's fact was dropped
     # the cache carries its own epoch: ``old`` drops its sessions and memos,
     # not what ``new`` derived into the shared cache under the current epoch
     hits = old.stats["cache_hits"]

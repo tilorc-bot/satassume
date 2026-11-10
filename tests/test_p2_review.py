@@ -48,10 +48,10 @@ def test_shared_cache_with_the_same_settings_shares_hits():
     a = Engine(cache=cache, templates=_declaring)
     b = Engine(cache=cache, templates=_declaring)
     assert a.is_('x', 'positive') is True
-    assert cache.store == {'x': {'positive': True}}
+    assert dict(cache.items()) == {'x': {'positive': True}}
     assert b.is_('x', 'positive') is True
     assert b.stats["cache_hits"] == 1 and b.stats["sessions"] == 0
-    assert cache.store == {'x': {'positive': True}}
+    assert dict(cache.items()) == {'x': {'positive': True}}
     assert a.is_('x', 'positive') is True and a.stats["cache_hits"] == 1
 
 

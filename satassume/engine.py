@@ -81,7 +81,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 from .knowledge.compile import VarTable, basis_formula, compile_formula, formula_literal
 from .state.epoch import EPOCH as _EPOCH, bump as _bump
 from .state.memos import Memos, adopt as _adopt_memo, owner_memos
-from .sat.formula import FALSE, Not, P, TRUE, atoms_of
+from .sat.formula import FALSE, Not, P, TRUE, atoms_of, typed
 from .relations import (RELATION_ATOMS, Relations, Uninterpreted, _is_number,
                         glue_atoms, glue_objects, link_objects, under_of,
                         zero_args, zero_twin)
@@ -204,9 +204,13 @@ class DictCache:
       is a pure memo of ``is_`` (a fresh engine's same query gives the
       same answer; the harness ``audit`` mode checks it).
 
-    The cache is keyed by the node (hash and ``==``), so structurally equal
-    nodes share facts, which is sound because a node's context-free facts
-    depend only on its structure and declared assumptions.
+    The cache is keyed by the node and its type (``store`` maps
+    ``typed(node)``, satassume.sat.formula, to the node's facts), so
+    structurally equal nodes of one type share facts, which is sound
+    because a node's context-free facts depend only on its structure, its
+    type and its declared assumptions.  The type is in the key because
+    equal nodes of two types (``1``, ``True`` and ``S.One``; ``1.5`` and
+    ``Float(1.5)``) have different templates, so different facts (#96).
 
     The memo key.  An entry is ``(node, pred)`` under the registry epoch
     and the engine settings the facts were derived under: the cache
@@ -239,7 +243,8 @@ class DictCache:
     """
 
     def __init__(self, maxsize: int = 200_000):
-        self.store: Dict[Node, Dict[str, Optional[bool]]] = {}
+        #: ``typed(node) -> {pred: value}``
+        self.store: Dict[Any, Dict[str, Optional[bool]]] = {}
         self.maxsize = maxsize
         #: the registry epoch the facts were derived under
         self._epoch = _EPOCH[0]
@@ -260,19 +265,25 @@ class DictCache:
         self._settings = settings
 
     def facts(self, node: Node) -> Optional[Dict[str, Optional[bool]]]:
-        return self.store.get(node)
+        return self.store.get(typed(node))
 
     def get(self, node: Node, pred: str, default=None):
-        d = self.store.get(node)
+        d = self.store.get(typed(node))
         return default if d is None else d.get(pred, default)
 
     def put(self, node: Node, pred: str, value: Optional[bool]) -> None:
-        d = self.store.get(node)
+        key = typed(node)
+        d = self.store.get(key)
         if d is None:
             if len(self.store) >= self.maxsize:
                 self.store.clear()
-            d = self.store[node] = {}
+            d = self.store[key] = {}
         d[pred] = value
+
+    def items(self):
+        """``(node, facts)`` of every entry (equal nodes of two types are
+        two entries)."""
+        return [(key[1], facts) for key, facts in self.store.items()]
 
 
 class AnswerMemo(dict):

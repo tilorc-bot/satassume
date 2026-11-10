@@ -48,7 +48,7 @@ def test_rule_closure_from_declared_fact():
     assert eng.is_('x', 'integer') is None
     # the memo holds the answers given, True/False only, nothing of the
     # closure that was not asked for; an answer, once given, is a free hit
-    assert cache.store['x'] == {'real': True, 'nonzero': True, 'negative': False,
+    assert cache.facts('x') == {'real': True, 'nonzero': True, 'negative': False,
                                'complex': True, 'imaginary': False}
     assert cache.get('x', 'extended_positive', 'missing') == 'missing'
     hits, sessions = eng.stats['cache_hits'], eng.stats['sessions']
@@ -70,11 +70,11 @@ def test_structural_template_and_child_facts_are_not_memoized():
     assert cache.get('y', 'nonzero', 'missing') == 'missing'
     assert cache.get('y', 'positive', 'missing') == 'missing'
     assert cache.get(('mul', 'x', 'y'), 'nonzero') is True
-    assert set(cache.store) == {('add', 'x', 'y'), ('mul', 'x', 'y')}
+    assert set(dict(cache.items())) == {('add', 'x', 'y'), ('mul', 'x', 'y')}
     sessions = eng.stats['sessions']
     assert eng.is_('y', 'nonzero') is True
     assert eng.stats['sessions'] == sessions + 1
-    assert cache.store['y'] == {'nonzero': True}
+    assert cache.facts('y') == {'nonzero': True}
     with pytest.raises(ValueError, match="removed"):
         eng.writeback = "provenance"
     assert eng.writeback == "root-only"
@@ -89,7 +89,7 @@ def test_unknown_stays_unknown_and_is_not_memoized():
     hits, sessions = eng.stats['cache_hits'], eng.stats['sessions']
     assert eng.is_(('add', 'x', 'y'), 'positive') is None
     assert eng.stats['cache_hits'] == hits and eng.stats['sessions'] == sessions + 1
-    assert ('add', 'x', 'y') not in cache.store
+    assert cache.facts(('add', 'x', 'y')) is None
 
 
 def test_contextual_query_does_not_pollute_cache():
@@ -144,7 +144,7 @@ def test_sessions_are_per_query_and_facts_persist():
     assert eng.stats['sessions'] == 12
     assert eng.is_('x', 'nonzero') is True
     assert eng.stats['sessions'] == 12
-    assert cache.store == {'x': {'positive': True, 'nonzero': True}}
+    assert dict(cache.items()) == {'x': {'positive': True, 'nonzero': True}}
 
 
 def test_contextual_queries_build_and_discard():
@@ -209,4 +209,4 @@ def test_exactlyone_helper():
     declaring = eng.templates
     eng = Engine(templates=lambda n: [f] if n == ('mul', 'x', 'y') else declaring(n), cache=cache)
     assert eng.is_(('mul', 'x', 'y'), 'imaginary') is True
-    assert cache.store == {('mul', 'x', 'y'): {'imaginary': True}}
+    assert dict(cache.items()) == {('mul', 'x', 'y'): {'imaginary': True}}

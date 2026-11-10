@@ -38,7 +38,7 @@ def test_memo_caches_the_answer_only():
     assert eng.is_(x + 1, "positive") is True
     # only the answer is memoized, under the queried node: nothing about the
     # argument, and no other fact of x + 1 (its vocabulary is not written)
-    assert eng.cache.store == {x + 1: {"positive": True}}
+    assert dict(eng.cache.items()) == {x + 1: {"positive": True}}
     assert eng.cache.get(x, "positive", "missing") == "missing"
     assert eng.is_(x, "positive") is True
     assert eng.cache.get(x + 1, "positive") is True
