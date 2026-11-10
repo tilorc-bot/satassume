@@ -146,8 +146,10 @@ def test_scope_funcs_agree():
     got = _call('funcs')
     assert got['bad'] == {}, got['seen']
     assert all(got['calls'].get(n, 0) > 0 for n in FUNCS), got['calls']
-    # Every counter fires, each callback included.
-    assert all(v > 0 for k, v in got['counts'].items() if k.startswith('scope:')), got['counts']
+    # Every counter fires, each callback included. `scope:cb_atoms_of` is the exception since the formula step: the atoms
+    # come from a conversion in Rust (formula.rs `atoms_nosession`), so that callback is gone and reads 0.
+    assert all(v > 0 for k, v in got['counts'].items() if k.startswith('scope:') and k != 'scope:cb_atoms_of'), got['counts']
+    assert got['counts']['scope:cb_atoms_of'] == 0, got['counts']
 
 
 PLANTS = [('scope-linked-empty', 'Scope'), ('linked-no-rel', 'linked_terms'), ('scope-no-affine', 'scope_of_atoms'),

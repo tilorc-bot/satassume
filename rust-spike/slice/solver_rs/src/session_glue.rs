@@ -80,7 +80,7 @@ pub(crate) fn assume_formula<'py>(s: &Bound<'py, PyAny>, f: &Bound<'py, PyAny>) 
     let p = s.py();
     let em = engine_mod(p)?;
     s.setattr(intern!(p, "assumption_formula"), f)?;
-    s.setattr(intern!(p, "_a_raw"), em.getattr(intern!(p, "atoms_of"))?.call1((f,))?)?;
+    s.setattr(intern!(p, "_a_raw"), crate::session::core_of(s)?.borrow().atoms_of(f)?)?;
     let raw = s.getattr(intern!(p, "_a_raw"))?;
     s.setattr(intern!(p, "_a_zs"), em.getattr(intern!(p, "zero_args"))?.call1((&raw,))?)?;
     s.setattr(intern!(p, "_a_under"), p.None())?;
@@ -178,7 +178,7 @@ pub(crate) fn assumption_lits<'py>(s: &Bound<'py, PyAny>, prop: &Bound<'py, PyAn
     let a_atoms = s.getattr(intern!(p, "_a_atoms"))?;
     let a_rel = a_atoms.is_truthy()?;
     let p_all: Bound<'py, PyAny> = if !prop.is_none() {
-        let atoms = em.getattr(intern!(p, "atoms_of"))?.call1((prop,))?;
+        let atoms = crate::session::core_of(s)?.borrow().atoms_of(prop)?;
         glue_of(s, &atoms)?
     } else {
         PyTuple::empty(p).into_any()

@@ -57,9 +57,9 @@ fn call_global<'py>(f: &Bound<'py, PyAny>, arg: &Bound<'py, PyAny>) -> PyResult<
 }
 
 /// `k.update(_kid(a) for a in atoms_of(f))`.
-fn add_kids_of(k: &Bound<'_, PySet>, f: &Bound<'_, PyAny>, atoms_of: &Bound<'_, PyAny>, kid: &Bound<'_, PyAny>) -> PyResult<()> {
-    for a in call_global(atoms_of, f)?.try_iter()? {
-        k.add(call_global(kid, &a?)?)?;
+fn add_kids_of(k: &Bound<'_, PySet>, f: &Bound<'_, PyAny>, kid: &Bound<'_, PyAny>) -> PyResult<()> {
+    for a in crate::formula::atoms_nosession(f)?.iter() {
+        k.add(call_global(kid, &a)?)?;
     }
     Ok(())
 }
@@ -88,7 +88,6 @@ pub(crate) fn struct_<'py>(eng: &Bound<'py, PyAny>, o: &Bound<'py, PyAny>, budge
     }
     let em = engine_mod(p)?;
     let ext = eng.getattr(intern!(p, "_extensions"))?;
-    let atoms_of = em.getattr(intern!(p, "atoms_of"))?;
     let kid = em.getattr(intern!(p, "_kid"))?;
     let zero = 0i64.into_pyobject(p)?.into_any();
     if o.is_instance(&em.getattr(intern!(p, "P"))?)? {
@@ -112,7 +111,7 @@ pub(crate) fn struct_<'py>(eng: &Bound<'py, PyAny>, o: &Bound<'py, PyAny>, budge
         if !ext.is_none() {
             tick(BUD_CB_EXT);
             for f in ext.call_method1(intern!(p, "facts_for"), (o,))?.try_iter()? {
-                add_kids_of(&k, &f?, &atoms_of, &kid)?;
+                add_kids_of(&k, &f?, &kid)?;
             }
             k.discard(o)?;
         }
@@ -196,7 +195,7 @@ pub(crate) fn struct_<'py>(eng: &Bound<'py, PyAny>, o: &Bound<'py, PyAny>, budge
         }
     }
     for f in formulas.try_iter()? {
-        add_kids_of(&k, &f?, &atoms_of, &kid)?;
+        add_kids_of(&k, &f?, &kid)?;
     }
     k.discard(o)?;
     let w: i64 = if compiled.is_truthy()? && formulas.is_truthy()? && !planted(CONE_STRUCT_WEIGHT_ONE) { 2 } else { 1 };
@@ -371,7 +370,7 @@ pub(crate) fn query_cone<'py>(eng: &Bound<'py, PyAny>, f: &Bound<'py, PyAny>, li
         return Ok(r);
     }
     let em = engine_mod(p)?;
-    let atoms = global(&em, intern!(p, "atoms_of"), f)?;
+    let atoms = crate::formula::atoms_nosession(f)?.into_any();
     let specs = eng.getattr(intern!(p, "_relation_specs"))?;
     let src = if specs.is_truthy()? { global(&em, intern!(p, "glue_atoms"), &atoms)? } else { atoms.clone() };
     let kid = em.getattr(intern!(p, "_kid"))?;
@@ -462,9 +461,9 @@ fn within_budget(eng: &Bound<'_, PyAny>, prop: &Bound<'_, PyAny>, assumptions: O
         let za = ra.get_item(4)?.cast_into::<PyTuple>()?;
         if (!zp.is_empty() || !za.is_empty()) && specs {
             let em = engine_mod(p)?;
-            let (ao, uo, zt) = (intern!(p, "atoms_of"), intern!(p, "under_of"), intern!(p, "zero_twin"));
-            let up = global(&em, uo, &global(&em, ao, prop)?)?;
-            let ua = global(&em, uo, &global(&em, ao, a)?)?;
+            let (uo, zt) = (intern!(p, "under_of"), intern!(p, "zero_twin"));
+            let up = global(&em, uo, &crate::formula::atoms_nosession(prop)?.into_any())?;
+            let ua = global(&em, uo, &crate::formula::atoms_nosession(a)?.into_any())?;
             let keys = PyDict::new(p);
             for e in zp.iter().chain(za.iter()) {
                 keys.set_item(e, p.None())?;

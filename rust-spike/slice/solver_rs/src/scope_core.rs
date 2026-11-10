@@ -249,7 +249,6 @@ fn extension_atoms<'py>(p: Python<'py>, h: &Hooks, atoms: &Bound<'py, PyAny>, ex
             stack.push(a);
         }
     }
-    let atoms_of = global(p, h, intern!(p, "atoms_of"))?;
     while let Some(a) = stack.pop() {
         if seen.contains(&a)? {
             continue;
@@ -257,9 +256,7 @@ fn extension_atoms<'py>(p: Python<'py>, h: &Hooks, atoms: &Bound<'py, PyAny>, ex
         seen.add(&a)?;
         tick(session::SCOPE_CB_FACTS_FOR);
         for f in extensions.call_method1(intern!(p, "facts_for"), (&a,))?.try_iter()? {
-            tick(session::SCOPE_CB_ATOMS_OF);
-            for b in atoms_of.call1((f?,))?.try_iter()? {
-                let b = b?;
+            for b in crate::formula::atoms_nosession(&f?)?.iter() {
                 out.append(&b)?;
                 if custom_pred(&b, &index, &rel)? && !planted(relations_core::EXT_SHALLOW) {
                     stack.push(b);
@@ -283,7 +280,6 @@ fn scope_theory_scope<'py>(assumptions: &Bound<'py, PyAny>, proposition: &Bound<
     let h = hooks()?;
     tick(session::SCOPE_THEORY_SCOPE);
     let atoms = PyList::empty(p);
-    let atoms_of = global(p, &h, intern!(p, "atoms_of"))?;
     let pt = pyo3::types::PyBool::new(p, true);
     for (k, f) in [assumptions, proposition].into_iter().enumerate() {
         if f.is_none() || f.is(&*pt) {
@@ -292,9 +288,8 @@ fn scope_theory_scope<'py>(assumptions: &Bound<'py, PyAny>, proposition: &Bound<
         if k == 0 && planted(relations_core::THEORY_NO_ASSUME) {
             continue;
         }
-        tick(session::SCOPE_CB_ATOMS_OF);
-        for a in atoms_of.call1((f,))?.try_iter()? {
-            atoms.append(a?)?;
+        for a in crate::formula::atoms_nosession(f)?.iter() {
+            atoms.append(a)?;
         }
     }
     if let Some(ext) = extensions.filter(|e| !e.is_none()) {

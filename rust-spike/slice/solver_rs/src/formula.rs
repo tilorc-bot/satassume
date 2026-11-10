@@ -58,7 +58,7 @@ pub(crate) struct Occ {
     pub atom: u32,
 }
 
-const NAMES: [&str; 14] = [
+const NAMES: [&str; 15] = [
     "fm:convert",       // 630: conversions run
     "fm:nodes",         // 631: nodes built
     "fm:atom_occ",      // 632: atom occurrences read (`.pred`, `.expr`)
@@ -73,6 +73,7 @@ const NAMES: [&str; 14] = [
     "fm:to_f",          // 641: a node walked into ids for the compiler
     "fm:atoms_py",      // 642: Python's `atoms_of` called for a refused formula
     "fm:atoms_node",    // 643: an engine `atoms_of` site answered from the session's node
+    "fm:nosession",     // 644: an engine `atoms_of` site with no session at hand: converted there, kept by nothing
 ];
 const CONVERT: usize = 0;
 const NODES: usize = 1;
@@ -88,6 +89,7 @@ pub(crate) const CACHE_HIT: usize = 10;
 pub(crate) const TO_F: usize = 11;
 pub(crate) const ATOMS_PY: usize = 12;
 pub(crate) const ATOMS_NODE: usize = 13;
+const NOSESSION: usize = 14;
 
 /// Plants 601-606, each the control of one comparison in test_formula_nodes.py.
 const PLANTS: [&str; 6] = [
@@ -100,7 +102,9 @@ const PLANTS: [&str; 6] = [
 ];
 
 thread_local! {
-    static COUNTS: [Cell<u64>; 14] = const { [const { Cell::new(0) }; 14] };
+    static COUNTS: [Cell<u64>; 15] = const { [const { Cell::new(0) }; 15] };
+    /// The nine classes for a site with no session: `SessionRules`' list (session_live.py `_core_rules`), read once.
+    static CLASSES: std::cell::RefCell<Option<Rc<Vec<Py<PyAny>>>>> = const { std::cell::RefCell::new(None) };
     /// 0: none; else 1 + the index into `PLANTS`.
     static PLANT: Cell<u8> = const { Cell::new(0) };
 }
@@ -113,6 +117,8 @@ fn planted(i: u8) -> bool {
     let on = PLANT.with(|c| c.get()) == i + 1;
     if on {
         tick(PLANT_FIRED);
+        // the bar's channel: its plants phase reads `rel:plant_fired` from the session report
+        crate::session::tick(crate::session::REL_PLANT);
     }
     on
 }
@@ -386,20 +392,59 @@ pub(crate) fn convert_or(f: &Bound<'_, PyAny>, classes: &[Py<PyAny>]) -> PyResul
     Ok(Ok(FNode { root, occ: w.occ, atoms: PyTuple::new(p, firsts)?.unbind(), bad: w.bad, source: f.clone().unbind(), nodes: w.nodes }))
 }
 
+fn classes(p: Python<'_>) -> PyResult<Rc<Vec<Py<PyAny>>>> {
+    if let Some(c) = CLASSES.with(|c| c.borrow().clone()) {
+        return Ok(c);
+    }
+    let fm = p.import(intern!(p, "satassume.sat.formula"))?;
+    let mut v = Vec::with_capacity(9);
+    for n in ["P", "And", "Or", "Not", "Implies", "Equivalent", "Exclusive", "ITE"] {
+        v.push(fm.getattr(n)?.unbind());
+    }
+    v.push(p.import(intern!(p, "satassume.knowledge.compile"))?.getattr(intern!(p, "_Lit"))?.unbind());
+    let c = Rc::new(v);
+    CLASSES.with(|x| *x.borrow_mut() = Some(c.clone()));
+    Ok(c)
+}
+
+/// Python's own `atoms_of`, for a formula the conversion refuses (`fm:atoms_py`).
+pub(crate) fn atoms_py<'py>(f: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyTuple>> {
+    let p = f.py();
+    tick(ATOMS_PY);
+    let a = p.import(intern!(p, "satassume.sat.formula"))?.getattr(intern!(p, "atoms_of"))?.call1((f,))?;
+    Ok(a.cast_into::<PyTuple>()?)
+}
+
+/// `atoms_of(f)` where no session is at hand (`theory_scope`, the cones): one walk of the object here, and the node is
+/// dropped. Counted (`fm:nosession`): a formula the session also converts is read twice until the entry hands nodes down.
+pub(crate) fn atoms_nosession<'py>(f: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyTuple>> {
+    let p = f.py();
+    tick(NOSESSION);
+    match convert_or(f, &classes(p)?)? {
+        Ok(n) => Ok(n.atoms_of(p)),
+        Err(_) => atoms_py(f),
+    }
+}
+
 #[pyfunction]
 fn formula_convert(f: &Bound<'_, PyAny>, classes: Vec<Py<PyAny>>) -> PyResult<Option<FNode>> {
     convert(f, &classes)
 }
 
-#[pyfunction]
-fn formula_counts<'py>(p: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
-    let d = PyDict::new(p);
+/// The step's counters into `d` (`formula_counts()`, and the session report's `counts`).
+pub(crate) fn counts_into(d: &Bound<'_, PyDict>) -> PyResult<()> {
     COUNTS.with(|c| {
         for (i, n) in NAMES.iter().enumerate() {
             d.set_item(*n, c[i].get())?;
         }
-        Ok::<_, PyErr>(())
-    })?;
+        Ok(())
+    })
+}
+
+#[pyfunction]
+fn formula_counts<'py>(p: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+    let d = PyDict::new(p);
+    counts_into(&d)?;
     Ok(d)
 }
 
@@ -421,6 +466,12 @@ fn formula_plants() -> Vec<&'static str> {
 }
 
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    // The bar's channel (bar.sh's plants phase): SLICE_SESSION_PLANT=fm-..., read once as the module loads.
+    if let Ok(n) = std::env::var("SLICE_SESSION_PLANT") {
+        if let Some(i) = PLANTS.iter().position(|x| *x == n) {
+            PLANT.with(|c| c.set(1 + i as u8));
+        }
+    }
     m.add_class::<FNode>()?;
     m.add_function(wrap_pyfunction!(formula_convert, m)?)?;
     m.add_function(wrap_pyfunction!(formula_counts, m)?)?;

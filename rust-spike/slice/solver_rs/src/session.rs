@@ -557,6 +557,7 @@ fn session_counts<'py>(p: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
         }
         Ok::<_, PyErr>(())
     })?;
+    formula::counts_into(&d)?;
     Ok(d)
 }
 
@@ -1333,11 +1334,7 @@ impl SessionCore {
                 formula::tick(formula::ATOMS_NODE);
                 Ok(n.atoms_of(p))
             }
-            Err(_) => {
-                formula::tick(formula::ATOMS_PY);
-                let a = p.import(intern!(p, "satassume.sat.formula"))?.getattr(intern!(p, "atoms_of"))?.call1((f,))?;
-                Ok(a.cast_into::<PyTuple>()?)
-            }
+            Err(_) => formula::atoms_py(f),
         }
     }
 

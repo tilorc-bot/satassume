@@ -325,7 +325,7 @@ pub(crate) fn custom(s: &Bound<'_, PyAny>, atom: &Bound<'_, PyAny>) -> PyResult<
             s.setattr(intern!(p, "relations"), &rel)?;
             let af = s.getattr(intern!(p, "assumption_formula"))?;
             if !af.is_none() {
-                rel.call_method1(intern!(p, "note_formula"), (eng.getattr(intern!(p, "atoms_of"))?.call1((af,))?,))?;
+                rel.call_method1(intern!(p, "note_formula"), (core_of(s)?.borrow().atoms_of(&af)?,))?;
             }
         }
         if !planted(DROP_CUSTOM_REL) {
@@ -370,11 +370,11 @@ pub(crate) fn visit(s: &Bound<'_, PyAny>, node: &Bound<'_, PyAny>, b: i32, deman
     }
     let has_formulas = formulas.is_truthy()?;
     let items = if has_formulas {
-        let atoms_of = eng.getattr(intern!(p, "atoms_of"))?;
+        let core = core_of(s)?;
         let mut v = Vec::new();
         for f in formulas.try_iter()? {
             let f = f?;
-            let a = atoms_of.call1((&f,))?;
+            let a = core.borrow().atoms_of(&f)?.into_any();
             v.push(PyTuple::new(p, [f, a])?);
         }
         Some(PyList::new(p, v)?)
