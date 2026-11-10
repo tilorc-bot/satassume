@@ -1,22 +1,27 @@
 //! State part 3, sub-part 5 (issue 323): `Session`'s own containers held natively in the session core.
 //!
-//! `pending`, `pending_c`, `demand`, `literals` and `_groups` are insertion-ordered maps (relkeys.rs `OrdMap`) keyed by the
-//! session's RelKeys ids (`rk_key`: a node's term id in the query's table where it has one, a hash and `==` otherwise), their
-//! values the Python objects Python put there (lists, sets, a literal). `frontier` and `deferred` are sequences of nodes, the
+//! `pending`, `pending_c`, `demand`, `literals` and `_groups` are insertion-ordered maps of their own (`SesDict`), keyed as the
+//! Python dicts they replace: by the key's `hash()` and `==`, each dict holding the key object first set in it (a present key
+//! set again keeps its object and its place; a deleted key set again goes last, with the new object). Their values are the
+//! Python objects Python put there (lists, sets, a literal). `frontier` and `deferred` are sequences of nodes, the
 //! objects themselves. The owner is the session, so the record (`SesCont`) sits in `SessionCore` beside (iii)'s per-`Relations`
 //! records. Rust sites read and write through `Ses`; Python reads `Session.<name>` through `SesDictView`/`SesSeqView`
 //! (session_live installs them), whose writes are the record methods. A session with no core (`satassume/ref.py`, a test's
 //! stand-in) keeps Python's own containers: `Ses::Py`, counted `sb:attr`.
 //!
-//! `_groups`' keys None and True are the engine's own constants and take two reserved keys, so they are never interned.
+//! The keys are NOT the session's RelKeys ids. 7a18df2 keyed these dicts by `rk_key`, which made a session dict and a
+//! `Relations` dict share one object per equal class: on workload scope `demand` holds the int `1` a custom fact passes
+//! (`relation_atom('lt', s, 1)`) and `_xside` holds SymPy's `One`; `1 == One` with equal hashes, so `_xside` gave back the
+//! int, `_transfer_terms` no longer saw a `Rational`, and `_number_basis(1)` (one `is_many` session) was lost. Python's dicts
+//! are separate, so these are too; nothing here reads or writes RelKeys (but plant 446, which puts the fault back). Each `hash()` and `==` on a key is a call into
+//! Python, counted `sc:key_hash` and `sc:key_eq` (an identical object is found without `==`, as a dict finds it).
 
 use std::collections::VecDeque;
 
 use pyo3::intern;
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyDict, PyList, PyTuple};
+use pyo3::types::{PyDict, PyList, PyTuple};
 
-use crate::relkeys::{rk_key, OrdMap};
 use crate::session::{self, sb_planted, tick, SessionCore};
 
 /// The dicts, by index, as Python named them.
@@ -31,71 +36,105 @@ pub(crate) const SQ_NAMES: [&str; 2] = ["frontier", "deferred"];
 pub(crate) const SQ_FRONTIER: usize = 0;
 pub(crate) const SQ_DEFERRED: usize = 1;
 
-/// Where an interned key of each dict came from (the RelKeys ruling's split): nodes and formulas converted from the user's
-/// terms; `_groups`' keys other than None and True are a caller's.
-const SD_ORIGIN: [usize; 5] = [
-    session::RK_INTERN_INPUT,
-    session::RK_INTERN_INPUT,
-    session::RK_INTERN_INPUT,
-    session::RK_INTERN_INPUT,
-    session::RK_INTERN_ENGINE,
-];
-
 /// The plants (`sb_plant`): `sc-<name>-drop` makes the container's write a no-op on Rust (the view's too). 439-445.
+/// `sc-key-shared` (446) also interns a dict's key in the session's RelKeys when it is set, as 7a18df2 did: the fault this
+/// file's header describes, which workload scope catches.
 const SD_PLANT: [u16; 5] = [440, 441, 442, 444, 445];
 const SQ_PLANT: [u16; 2] = [439, 443];
+const KEY_SHARED_PLANT: u16 = 446;
 
-const KEY_NONE: u32 = u32::MAX;
-const KEY_TRUE: u32 = u32::MAX - 1;
+struct Entry {
+    hash: isize,
+    key: Py<PyAny>,
+    val: Py<PyAny>,
+}
+
+/// One dict: entries in insertion order (a deleted one leaves a hole), and the entries of each hash.
+#[derive(Default)]
+struct SesDict {
+    idx: std::collections::HashMap<isize, Vec<usize>>,
+    ent: Vec<Option<Entry>>,
+    live: usize,
+}
+
+impl SesDict {
+    fn unlink(&mut self, i: usize) -> Option<Entry> {
+        let e = self.ent.get_mut(i)?.take()?;
+        if let Some(b) = self.idx.get_mut(&e.hash) {
+            b.retain(|&j| j != i);
+            if b.is_empty() {
+                self.idx.remove(&e.hash);
+            }
+        }
+        self.live -= 1;
+        if self.live == 0 {
+            self.ent.clear();
+        }
+        Some(e)
+    }
+}
 
 #[derive(Default)]
 pub(crate) struct SesCont {
-    d: [OrdMap; 5],
+    d: [SesDict; 5],
     q: [VecDeque<Py<PyAny>>; 2],
 }
 
-fn key_of(c: &SessionCore, k: usize, x: &Bound<'_, PyAny>, intern: bool) -> PyResult<Option<u32>> {
-    if k == SD_GROUPS {
-        if x.is_none() {
-            return Ok(Some(KEY_NONE));
-        }
-        if x.is(&PyBool::new(x.py(), true)) {
-            return Ok(Some(KEY_TRUE));
-        }
-    }
-    rk_key(c, x, if intern { Some(SD_ORIGIN[k]) } else { None })
-}
-
-fn key_obj<'py>(p: Python<'py>, c: &SessionCore, key: u32) -> Bound<'py, PyAny> {
-    match key {
-        KEY_NONE => p.None().into_bound(p),
-        KEY_TRUE => PyBool::new(p, true).to_owned().into_any(),
-        _ => c.relkeys.borrow().objs[key as usize].bind(p).clone(),
-    }
-}
-
 impl SessionCore {
+    /// The entry of the key `x` in dict `k` and `x`'s hash: the dict's rule, the same hash and then the same object or `==`
+    /// (the held key on the left). No borrow is held while Python's `__hash__` and `__eq__` run.
+    fn sd_find(&self, k: usize, x: &Bound<'_, PyAny>) -> PyResult<(Option<usize>, isize)> {
+        let p = x.py();
+        tick(session::SC_KEY_HASH);
+        let hash = x.hash()?;
+        let cand: Vec<(usize, Py<PyAny>)> = match self.sc.borrow().d[k].idx.get(&hash) {
+            Some(b) => b.iter().filter_map(|&i| self.sc.borrow().d[k].ent[i].as_ref().map(|e| (i, e.key.clone_ref(p)))).collect(),
+            None => return Ok((None, hash)),
+        };
+        for (i, key) in cand {
+            let same = key.is(x) || {
+                tick(session::SC_KEY_EQ);
+                key.bind(p).eq(x)?
+            };
+            // `==` ran Python: the entry counts only if it is still this key's
+            if same && self.sc.borrow().d[k].ent.get(i).and_then(|e| e.as_ref()).is_some_and(|e| e.key.is(&key)) {
+                return Ok((Some(i), hash));
+            }
+        }
+        Ok((None, hash))
+    }
+
     pub(crate) fn sd_get<'py>(&self, k: usize, x: &Bound<'py, PyAny>) -> PyResult<Option<Bound<'py, PyAny>>> {
         tick(session::SC_CORE);
         let p = x.py();
-        Ok(match key_of(self, k, x, false)? {
-            Some(key) => self.sc.borrow().d[k].get(key).map(|v| v.bind(p).clone()),
+        Ok(match self.sd_find(k, x)?.0 {
+            Some(i) => self.sc.borrow().d[k].ent[i].as_ref().map(|e| e.val.bind(p).clone()),
             None => None,
         })
     }
 
     pub(crate) fn sd_set(&self, k: usize, x: &Bound<'_, PyAny>, v: &Bound<'_, PyAny>) -> PyResult<()> {
         tick(session::SC_CORE);
-        let key = key_of(self, k, x, true)?.expect("interned");
+        let (at, hash) = self.sd_find(k, x)?;
         if sb_planted(SD_PLANT[k]) {
             return Ok(());
+        }
+        if sb_planted(KEY_SHARED_PLANT) {
+            crate::relkeys::rk_key(self, x, Some(session::RK_INTERN_INPUT))?;
         }
         // the old value is dropped after the borrow ends
         let old = {
             let mut sc = self.sc.borrow_mut();
-            let old = sc.d[k].get(key).map(|o| o.clone_ref(x.py()));
-            sc.d[k].insert(key, v.clone().unbind());
-            old
+            let d = &mut sc.d[k];
+            match at.and_then(|i| d.ent[i].as_mut()) {
+                Some(e) => Some(std::mem::replace(&mut e.val, v.clone().unbind())),
+                None => {
+                    d.idx.entry(hash).or_default().push(d.ent.len());
+                    d.ent.push(Some(Entry { hash, key: x.clone().unbind(), val: v.clone().unbind() }));
+                    d.live += 1;
+                    None
+                }
+            }
         };
         drop(old);
         Ok(())
@@ -103,8 +142,11 @@ impl SessionCore {
 
     pub(crate) fn sd_del(&self, k: usize, x: &Bound<'_, PyAny>) -> PyResult<Option<Py<PyAny>>> {
         tick(session::SC_CORE);
-        Ok(match key_of(self, k, x, false)? {
-            Some(key) => self.sc.borrow_mut().d[k].remove(key),
+        Ok(match self.sd_find(k, x)?.0 {
+            Some(i) => {
+                let e = self.sc.borrow_mut().d[k].unlink(i);
+                e.map(|e| e.val)
+            }
             None => None,
         })
     }
@@ -112,13 +154,20 @@ impl SessionCore {
     /// `d.popitem()`: the last key set, with its value.
     pub(crate) fn sd_popitem<'py>(&self, p: Python<'py>, k: usize) -> Option<(Bound<'py, PyAny>, Bound<'py, PyAny>)> {
         tick(session::SC_CORE);
-        let (key, v) = self.sc.borrow_mut().d[k].pop_last()?;
-        Some((key_obj(p, self, key), v.into_bound(p)))
+        let e = {
+            let mut sc = self.sc.borrow_mut();
+            let d = &mut sc.d[k];
+            let i = d.ent.iter().rposition(|e| e.is_some())?;
+            let e = d.unlink(i);
+            d.ent.truncate(i.min(d.ent.len()));
+            e
+        }?;
+        Some((e.key.into_bound(p), e.val.into_bound(p)))
     }
 
     pub(crate) fn sd_len(&self, k: usize) -> usize {
         tick(session::SC_CORE);
-        self.sc.borrow().d[k].len()
+        self.sc.borrow().d[k].live
     }
 
     pub(crate) fn sd_clear(&self, k: usize) {
@@ -129,8 +178,7 @@ impl SessionCore {
 
     /// The dict's (key object, value) pairs in insertion order.
     pub(crate) fn sd_items<'py>(&self, p: Python<'py>, k: usize) -> Vec<(Bound<'py, PyAny>, Bound<'py, PyAny>)> {
-        let kv: Vec<(u32, Py<PyAny>)> = self.sc.borrow().d[k].iter().map(|(i, v)| (i, v.clone_ref(p))).collect();
-        kv.into_iter().map(|(i, v)| (key_obj(p, self, i), v.into_bound(p))).collect()
+        self.sc.borrow().d[k].ent.iter().flatten().map(|e| (e.key.bind(p).clone(), e.val.bind(p).clone())).collect()
     }
 
     pub(crate) fn sq_push(&self, k: usize, x: &Bound<'_, PyAny>) {

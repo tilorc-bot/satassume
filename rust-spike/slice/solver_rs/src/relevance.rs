@@ -434,7 +434,6 @@ pub struct Split {
     /// (indices of components) -> their conjunction (a SymPy Boolean, True if empty, `whole` if all).
     parts: HashMap<Vec<usize>, Py<PyAny>>,
     /// Whether the whole set is known consistent (None: not checked).
-    #[pyo3(get)]
     consistent: Option<bool>,
     /// A term of the set has a vocabulary predicate registered for its class (None: not computed).
     #[pyo3(get)]
@@ -528,9 +527,28 @@ impl Split {
         self.part_of(py, &mine)
     }
 
+    /// Python's `_Split.__init__` returns at the first opaque conjunct, before it sets `comps`, `parts` and `consistent`:
+    /// those slots are unset on an opaque split and reading one raises AttributeError. The same here (issue 323, state
+    /// part 3: the moved digest read `comps` as `[]` and `consistent` as None on Rust, unset on Python, on workload scope).
+    fn unset(&self, name: &str) -> PyResult<()> {
+        if self.opaque {
+            return Err(pyo3::exceptions::PyAttributeError::new_err(format!("'Split' object has no attribute '{name}'")));
+        }
+        Ok(())
+    }
+
+    #[getter]
+    fn consistent(&self) -> PyResult<Option<bool>> {
+        if self.consistent.is_none() {
+            self.unset("consistent")?;
+        }
+        Ok(self.consistent)
+    }
+
     /// `[(keys, conjunct indices)]`, as Python's `comps` (a copy).
     #[getter]
     fn comps<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
+        self.unset("comps")?;
         let items = self
             .comps
             .iter()

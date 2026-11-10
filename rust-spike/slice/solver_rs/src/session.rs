@@ -14,7 +14,7 @@ use pyo3::types::{PyBool, PyDict, PyList, PySet, PyTuple};
 use crate::compile::{self, block_lits, Cx, Def, Kind, Need, F, R};
 use crate::formula_py::PyP;
 
-const NAMES: [&str; 568] = [
+const NAMES: [&str; 570] = [
     "py:var", "py:dvar", "py:node", "py:compile", "py:literal", "py:table", "rs:visit", "rs:add_clause", "rs:ensure_vars",
     "rs:def_implications", "rs:neg_shared", "join", "rs:emit_callback", "refuse:depth", "refuse:convert", "refuse:object", "second:visit", "custom:own",
     "link:hit", "link:resolved", "link:none", "link:no_table", "link:second", "link:no_node",
@@ -99,6 +99,8 @@ const NAMES: [&str; 568] = [
     "sb:attr", "sb:fwd_direct", "sb:fwd_named", "sb:scalar_core", "sb:scalar_view", "sb:scalar_record",
     // ... the session's containers in the core (ses_cont.rs): a native use, Python's view, Python's record method, 565-567
     "sc:core", "sc:view", "sc:record",
+    // a session dict's own keys (ses_cont.rs SesDict): Python's `hash()` and `==` on a key, each a call into Python, 568-569
+    "sc:key_hash", "sc:key_eq",
 ];
 const VAR: usize = 0;
 const DVAR: usize = 1;
@@ -525,6 +527,8 @@ pub(crate) const SB_SCALAR_RECORD: usize = 564;
 pub(crate) const SC_CORE: usize = 565;
 pub(crate) const SC_VIEW: usize = 566;
 pub(crate) const SC_RECORD: usize = 567;
+pub(crate) const SC_KEY_HASH: usize = 568;
+pub(crate) const SC_KEY_EQ: usize = 569;
 
 /// Deeper formulas compile on Python, over this same table. Python's own limit depends on the caller's stack, so it isn't
 /// reproduced: its deepest shape is `Implies`, 3 frames a level (first failure at depth 330 from a bare stack, limit 1000), so
@@ -532,7 +536,7 @@ pub(crate) const SC_RECORD: usize = 567;
 const FORMULA_DEPTH: u32 = 64;
 
 thread_local! {
-    static COUNTS: [Cell<u64>; 568] = const { [const { Cell::new(0) }; 568] };
+    static COUNTS: [Cell<u64>; 570] = const { [const { Cell::new(0) }; 570] };
     /// Each session's serial, for the link's memo: a pointer could alias a dead session's.
     static SERIAL: Cell<u64> = const { Cell::new(0) };
 }
@@ -711,9 +715,9 @@ struct SesScalars {
 /// 437 `sb-fwd-skip-link` (the direct `_link` not run), 438 `sb-solver-fresh` (`solver_of` gives a new solver),
 /// 439-445 `sc-<name>-drop` (ses_cont.rs: a session container's write is a no-op).
 static SB_PLANT: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(0);
-const SB_PLANTS: [&str; 15] = ["sb-truncated-stale", "sb-link-pending-stale", "sb-neg-shared-stale", "sb-sel-zero", "sb-hold-zero",
+const SB_PLANTS: [&str; 16] = ["sb-truncated-stale", "sb-link-pending-stale", "sb-neg-shared-stale", "sb-sel-zero", "sb-hold-zero",
     "sb-verdict-none", "sb-fwd-skip-link", "sb-solver-fresh", "sc-frontier-drop", "sc-pending-drop", "sc-pending_c-drop",
-    "sc-demand-drop", "sc-deferred-drop", "sc-literals-drop", "sc-groups-drop"];
+    "sc-demand-drop", "sc-deferred-drop", "sc-literals-drop", "sc-groups-drop", "sc-key-shared"];
 pub(crate) const SB_FWD_SKIP_LINK: u16 = 437;
 const SB_SOLVER_FRESH: u16 = 438;
 

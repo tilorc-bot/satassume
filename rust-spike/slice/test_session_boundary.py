@@ -9,6 +9,11 @@ was replaced (`named`). Each mode runs in its own process (install() refuses onc
 - `trunc`: a session cut by `escalate(1)`, its scalars and its complete check (UNKNOWN when truncated).
 - `solver-write`: a solver assigned after the session was built is the one the complete check runs on.
 - `view`: on Rust, the views equal the core's own export (`ses_snapshot`), and a write through a view is read back natively.
+- `keys:*`: each session dict holds its own key objects (ses_cont.rs `SesDict`: `hash()` and `==`, as the Python dict it
+  replaces). scope_wl's query 5: a custom fact passes the int `1` to `relation_atom`, so `demand` holds the int and
+  `Relations._xside` holds SymPy's `One`; `_transfer_terms` asks `_number_basis` only for a `Rational`, one `is_many`
+  session. 7a18df2 keyed the session dicts by the session's RelKeys ids, `_xside` then gave back the int and that session
+  was lost (workload scope: Python 3 sessions at query 5, Rust 2). Plant 446 `sc-key-shared` puts that back.
 Plants (SLICE_SESSION_PLANT, session.rs `sb_plant`): 431 `sb-truncated-stale`, 432 `sb-link-pending-stale`, 433
 `sb-neg-shared-stale`, 434 `sb-sel-zero`, 435 `sb-hold-zero`, 436 `sb-verdict-none`, 437 `sb-fwd-skip-link`, 438 `sb-solver-fresh`.
 """
@@ -23,6 +28,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 PLANTS = ('sb-truncated-stale', 'sb-link-pending-stale', 'sb-neg-shared-stale', 'sb-sel-zero', 'sb-hold-zero', 'sb-verdict-none',
           'sb-fwd-skip-link', 'sb-solver-fresh')
+KEY_PLANTS = ('sc-key-shared',)      # 446
 
 CHILD = r'''
 import json, os, sys
@@ -137,7 +143,38 @@ def solver_write():
 
 
 rows['solver-write'] = guard(solver_write)
-counts = {k: v for k, v in dict(sa_solver.session_counts()).items() if k.startswith('sb:') or k == 'rel:plant_fired'} if rust else {}
+
+
+def keys():
+    """scope_wl's query 5 (the docstring's `keys:*`), last: scope_wl registers custom predicates for the process."""
+    import scope_wl
+    from sympy import S
+    from satassume import sympy_api
+    q, a = scope_wl.queries()[5]
+    eng = sympy_api.default_engine()
+    made, init = [], Session.__init__
+
+    def recording(self, *args, **kw):
+        made.append(self)
+        return init(self, *args, **kw)
+    Session.__init__ = recording
+    before = dict(eng.stats)
+    try:
+        rows['keys:ask'] = repr(ask(q, a))
+    finally:
+        Session.__init__ = init
+    kind = lambda ks: [[type(k).__name__, repr(k)] for k in ks]
+    rows['keys:stats'] = [eng.stats[k] - before[k] for k in ('queries', 'sessions', 'searches')]
+    rows['keys:demand'] = [kind(s.demand.keys()) for s in made]
+    rows['keys:xside'] = [kind(s.relations._xside.keys()) for s in made if s.relations is not None]
+    rows['keys:xbasis'] = sorted(kind(eng._xbasis.keys()))
+    d = made[0].demand
+    rows['keys:lookup'] = [S.One in d, 1 in d, d.get(S.One) == d.get(1), S.Half in d, kind(k for k, _ in d.items())]
+
+
+guard(keys)
+counts = {k: v for k, v in dict(sa_solver.session_counts()).items()
+          if k.startswith(('sb:', 'sc:')) or k == 'rel:plant_fired'} if rust else {}
 print(json.dumps(dict(rows=rows, counts=counts)))
 '''
 
@@ -191,6 +228,18 @@ def test_views_are_the_core(rs):
     assert v[3] == [], 'defvars/_dv/_dv_node are no longer written on a Rust session'
 
 
+def test_each_dict_holds_its_own_keys(py, rs):
+    """`keys:*` (the docstring): the int in `demand`, `One` in `_xside`, and `_number_basis(1)`'s session, on both."""
+    r = py['rows']
+    assert r['keys:ask'] == 'False' and r['keys:stats'][1] == 3, r['keys:stats']
+    assert ['int', '1'] in r['keys:demand'][0] and ['One', '1'] in r['keys:xside'][0]
+    assert r['keys:xbasis'] == [['One', '1'], ['Zero', '0']]
+    assert r['keys:lookup'][:4] == [True, True, True, False]
+    assert {k: v for k, v in rs['rows'].items() if k.startswith('keys:')} == {k: v for k, v in r.items() if k.startswith('keys:')}
+    c = rs['counts']
+    assert c['sc:key_hash'] > 0 and c['sc:key_eq'] > 0
+
+
 def test_solver_write_reaches_rust(py, rs):
     """`Session.solver` is read from the core (`solver_of`); the attribute's record method keeps the core's copy current."""
     assert py['rows']['solver-write'] == [True, ['raise', 'RuntimeError'], 'Raises'] == rs['rows']['solver-write']
@@ -203,7 +252,7 @@ def test_counters_fire(rs):
     assert c.get('rel:plant_fired', 0) == 0
 
 
-@pytest.mark.parametrize('plant', PLANTS)
+@pytest.mark.parametrize('plant', PLANTS + KEY_PLANTS)
 def test_plant_caught(rs, plant):
     got = _child('rust', plant)
     assert got['counts']['rel:plant_fired'] > 0, 'the plant never fired'

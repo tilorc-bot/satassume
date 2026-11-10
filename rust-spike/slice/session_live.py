@@ -1074,7 +1074,7 @@ _TH_PLANTS = ('th-gave-up-skip', 'th-exhausted-skip', 'th-first-only')
 #: solver from the core; see test_session_boundary.py
 _SB_PLANTS = ('sb-truncated-stale', 'sb-link-pending-stale', 'sb-neg-shared-stale', 'sb-sel-zero', 'sb-hold-zero',
               'sb-verdict-none', 'sb-fwd-skip-link', 'sb-solver-fresh', 'sc-frontier-drop', 'sc-pending-drop',
-              'sc-pending_c-drop', 'sc-demand-drop', 'sc-deferred-drop', 'sc-literals-drop', 'sc-groups-drop')
+              'sc-pending_c-drop', 'sc-demand-drop', 'sc-deferred-drop', 'sc-literals-drop', 'sc-groups-drop', 'sc-key-shared')
 
 
 def entry_native():
