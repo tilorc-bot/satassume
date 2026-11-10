@@ -35,6 +35,7 @@ from satassume import DictCache, Engine
 from satassume import sympy_api as api
 from satassume.knowledge.extensions import Args
 from satassume.knowledge.templates.registry import registry
+from satassume import relations
 from satassume.relations import sympy_atom, zero_twin
 from satassume.sat.formula import And, Implies, Not, P, typed, types_of
 from satassume.state import memos
@@ -335,6 +336,17 @@ def test_relation_atom_key_goes_as_deep_as_sympify(sides, emptied):
         assert [srepr(r) for r in got] == [srepr(Q.lt(a, s)), srepr(Q.lt(b, s))]
         assert srepr(got[0]) != srepr(got[1])
         assert sympy_atom(pa) is got[0] and sympy_atom(pb) is got[1]    # and each hits
+
+
+def test_relation_atom_key_reads_the_sides_only(emptied):
+    """The pair of an atom is an ``Args`` or a plain tuple, and the value
+    does not depend on which: one entry for both, as before the types
+    were in the key."""
+    for v in (S.Zero, 1, True):
+        a, b = P('lt', Args((s, v))), P('lt', (s, v))
+        assert a == b and typed(a) != typed(b)
+        assert sympy_atom(a) is sympy_atom(b)
+    assert len(relations._SYMPY_ATOMS) == 3
 
 
 # Engine._failed: the sets whose session raised Uninterpreted (an engine

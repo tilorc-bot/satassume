@@ -355,7 +355,7 @@ from fractions import Fraction
 from typing import Any, Callable, List, NamedTuple, Optional
 
 from .knowledge.extensions import Args
-from .sat.formula import And, Not, P, typed
+from .sat.formula import And, Not, P, typed, types_of
 from .knowledge.rules import BASIS_INDEX, NPRED, PRED_INDEX
 from .theories.lra.constfield import Undecided, sign
 from .sat.theory import EqualitySharing
@@ -550,13 +550,15 @@ def sympy_atom(atom: P):
     """``Q.eq(a, b)`` / ``Q.lt(a, b)`` for a normalised relation atom
     (memoized: a pure function of the atom and of the types of its sides,
     which ``Q.eq`` and ``Q.lt`` sympify)."""
-    # keyed with the types (``typed``): ``lt(True, s)``, ``lt(1, s)``,
-    # ``lt(1.0, s)`` and ``lt(S.One, s)`` are equal atoms, and their sides
-    # sympify to ``true``, ``Integer(1)``, ``Float(1.0)`` and ``S.One``,
-    # of which the adapters read only some (#96).  The types go as deep
-    # as ``sympify`` converts by type: the two sides and, if a side is a
-    # tuple, its elements; a SymPy side is not looked into
-    key = typed(atom)
+    # keyed with the types of the sides (``types_of``): ``lt(True, s)``,
+    # ``lt(1, s)``, ``lt(1.0, s)`` and ``lt(S.One, s)`` are equal atoms,
+    # and their sides sympify to ``true``, ``Integer(1)``, ``Float(1.0)``
+    # and ``S.One``, of which the adapters read only some (#96).  The
+    # types go as deep as ``sympify`` converts by type: the two sides and,
+    # if a side is a tuple, its elements; a SymPy side is not looked into.
+    # The class of the pair itself (``Args`` or a plain tuple) is not in
+    # the key: the value is the same for both
+    key = (tuple([types_of(a) for a in atom.expr]), atom)
     r = _SYMPY_ATOMS.get(key)
     if r is None:
         from sympy.assumptions import Q
