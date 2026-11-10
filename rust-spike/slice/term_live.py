@@ -72,7 +72,7 @@ class TermFault(BaseException):
 
 class _Query:
     """One `_ask`'s table. `kept` is a reason, or None when the table is there."""
-    __slots__ = ('table', 'ids', 'objects', 'kept', 'counts', 'raised', 'derived', 'rev', 'memo', 'ints', 'int_ids')
+    __slots__ = ('table', 'ids', 'objects', 'kept', 'counts', 'raised', 'derived', 'rev', 'memo', 'ints', 'int_ids', 'classes')
 
     def __init__(self, c):
         # Derived terms this query has met: {SymPy term: id} and {id: SymPy term}. Apart from `ids`, which other consumers
@@ -82,10 +82,13 @@ class _Query:
         self.ints, self.int_ids = {}, {}
         # The per-query form of a cross-query memo (ruling on memos): `_under_apps`, `zero_twin`. Dies with the query.
         self.memo = {}
+        # The query's own class table, {class: class id} by the classes' hash and `==` (convert._Walk.classes): `same_class`.
+        self.classes = None
         if isinstance(c, convert.Kept):
             self.kept, self.table, self.ids, self.objects, self.counts, self.raised = c.reason, None, None, None, {}, ()
         else:
             self.kept = None
+            self.classes = c.classes
             self.table = sa_solver.TermTable(c.tables)
             self.ids, self.objects, self.counts = c.ids, c.objects, c.counts
             self.raised = c.raised
@@ -99,6 +102,7 @@ class _Refused(_Query):
     def __init__(self):
         self.derived, self.rev = {}, {}
         self.ints, self.int_ids = {}, {}
+        self.classes = None
         self.kept, self.table, self.ids, self.objects, self.counts, self.raised = 'refused', None, None, None, {}, ()
 
 
@@ -242,7 +246,7 @@ def _key_consumer(site, real):
             return r
         i = q.ids.get(e)
         # `==` can join classes (Float against Integer), so a row counts only for its own class.
-        if i is None or type(q.objects[i]) is not type(e):
+        if i is None or not same_class(q, q.objects[i], e):
             COUNTS['key:not-input:' + site] += 1
             return r
         COUNTS['key:asked:' + site] += 1
@@ -267,6 +271,28 @@ KEY_BAD = []
 #: Slice C's: 'le-swap', 'no-ext', 'is-number-false', 'affine-false', 'linked-drop', 'under-empty', 'interned-reversed',
 #: 'plan-drop', 'plan-pred', 'twin-one'. State step (iii)(a): plant 265 'int-as-number' (`_int_id`; counter 346 `term:int:*`).
 PLANT = [None]
+
+
+def same_class(q, a, b):
+    """Whether `a` and `b` are of one class to query `q`. The same class object, or two class objects with one id in the
+    query's own class table (`q.classes`, keyed by the classes' hash and `==` when the input was converted): two
+    `Function('f')` are one class to SymPy and two objects, and which object a process-wide memo hands back follows history
+    (`ad:cbm_noid`, results/cbm-noid-cause.md). The table is the query's, never the process's, and a class the query's input
+    doesn't hold has no id, so it is one class only with itself. Every site that takes a row for a term asks here; Rust's
+    sites ask `term::same_class`, the same rule."""
+    ta, tb = type(a), type(b)
+    if ta is tb:
+        return True
+    if sa_solver.class_is_plant():      # plant 661 (one plant for Rust's half and this one): the identity compare back
+        return False
+    c = q.classes
+    try:
+        i = c.get(ta) if c is not None else None
+        same = i is not None and c.get(tb) == i
+    except TypeError:                   # an unhashable class: no id
+        same = False
+    COUNTS['class:eq' if same else 'class:differs'] += 1
+    return same
 #: SLICE_TERM_CHECK: at each answer from Rust, also run Python's own function and compare, counted as `check:same:<site>` and
 #: `check:differs:<site>`, with the first few in `CHECK_BAD`. It builds in SymPy, so it's for evidence, never for a number
 #: that's quoted: the answer returned is Rust's either way.
@@ -290,7 +316,7 @@ def term_id(q, e, site):
     i = q.ids.get(e) if isinstance(e, Basic) else None
     if i is not None:
         # `==` can join classes (Float against Integer), so a row counts only for its own class.
-        return i if type(q.objects[i]) is type(e) else None
+        return i if same_class(q, q.objects[i], e) else None
     if not isinstance(e, Basic):
         if type(e) is int and site in _INT_SITES:
             return _int_id(q, e, site)
@@ -298,7 +324,7 @@ def term_id(q, e, site):
         return None
     i = q.derived.get(e)
     if i is not None:
-        return i if type(q.rev[i]) is type(e) else None
+        return i if same_class(q, q.rev[i], e) else None
     cls = type(e)
     if isinstance(e, Rational):
         i = q.table.number(e.p, e.q)
@@ -354,7 +380,7 @@ def scaffold(q, i, site):
         COUNTS['scaffold:rebuilt:' + site] += 1
         # Rust's form: the same class, and the same args in the same order, each of its own class.
         if (type(o).__name__ != name or len(o.args) != len(kids) or PLANT[0] == 'scaffold-form'
-                or any(x != y or type(x) is not type(y) for x, y in zip(o.args, kids))):
+                or any(x != y or not same_class(q, x, y) for x, y in zip(o.args, kids))):
             _scaffold_bad(i, o, 'rebuilt form differs from Rust')
     k = q.ids.get(o)
     if k is None:

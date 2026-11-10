@@ -318,7 +318,9 @@ impl<'py> Reader<'_, 'py> {
         if let Ok(Some(i)) = self.ids.get_item(e) {
             let i: u32 = i.extract()?;
             let o = self.objects.get_item(i)?;
-            return Ok(if o.get_type().is(&e.get_type()) { Some(i) } else { None });
+            // plant 660 puts the identity compare back at this site alone
+            let same = if crate::formula::class_is_planted() { o.get_type().is(&e.get_type()) } else { crate::formula::same_class(&self.q, &o, e)? };
+            return Ok(if same { Some(i) } else { None });
         }
         tick(session::AD_LRA_TERM_ID_PY);
         let got = self.live.term_id.bind(p).call1((&self.q, e, site))?;

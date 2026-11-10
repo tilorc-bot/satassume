@@ -239,7 +239,7 @@ fn multigamma<'py>(c: &Common, expr: &Bound<'py, PyAny>) -> PyResult<Option<Boun
         None
     } else {
         let i: u32 = i.extract()?;
-        if objects.get_item(i)?.get_type().is(&x.get_type()) { Some(TermId(i)) } else { None }
+        if crate::formula::same_class(&q, &objects.get_item(i)?, &x)? { Some(TermId(i)) } else { None }
     };
     let Some(xi) = xi else {
         c.bump("outer:python:multigamma_templates:derived-x");

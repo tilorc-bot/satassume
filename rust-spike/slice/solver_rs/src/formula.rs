@@ -58,7 +58,7 @@ pub(crate) struct Occ {
     pub atom: u32,
 }
 
-const NAMES: [&str; 15] = [
+const NAMES: [&str; 17] = [
     "fm:convert",       // 630: conversions run
     "fm:nodes",         // 631: nodes built
     "fm:atom_occ",      // 632: atom occurrences read (`.pred`, `.expr`)
@@ -74,6 +74,8 @@ const NAMES: [&str; 15] = [
     "fm:atoms_py",      // 642: Python's `atoms_of` called for a refused formula
     "fm:atoms_node",    // 643: an engine `atoms_of` site answered from the session's node
     "fm:nosession",     // 644: an engine `atoms_of` site with no session at hand: converted there, kept by nothing
+    "cls:eq",           // 670: `same_class`: two class objects with one id in the query's class table
+    "cls:differs",      // 671: `same_class`: two class objects, not one class to the query
 ];
 const CONVERT: usize = 0;
 const NODES: usize = 1;
@@ -92,17 +94,19 @@ pub(crate) const ATOMS_NODE: usize = 13;
 const NOSESSION: usize = 14;
 
 /// Plants 601-606, each the control of one comparison in test_formula_nodes.py.
-const PLANTS: [&str; 6] = [
+const PLANTS: [&str; 8] = [
     "fm-atoms-drop-last",  // 601: `atoms` without its last atom
     "fm-atoms-no-dedupe",  // 602: every occurrence its own atom
     "fm-args-reverse",     // 603: `And`/`Or` arguments reversed
     "fm-implies-swap",     // 604: `Implies(a, b)` read as `Implies(b, a)`
     "fm-ite-swap",         // 605: `ITE(c, a, b)` read as `ITE(c, b, a)`
     "fm-not-drop",         // 606: `Not(a)` read as `a`
+    "ad-lra-class-is",     // 660: adapters.rs `Reader.id` compares the row's class by identity again (sa-port-235's)
+    "class-is",            // 661: `same_class` by identity again, at every site, Rust's and term_live's
 ];
 
 thread_local! {
-    static COUNTS: [Cell<u64>; 15] = const { [const { Cell::new(0) }; 15] };
+    static COUNTS: [Cell<u64>; 17] = const { [const { Cell::new(0) }; 17] };
     /// The nine classes for a site with no session: `SessionRules`' list (session_live.py `_core_rules`), read once.
     static CLASSES: std::cell::RefCell<Option<Rc<Vec<Py<PyAny>>>>> = const { std::cell::RefCell::new(None) };
     /// 0: none; else 1 + the index into `PLANTS`.
@@ -121,6 +125,57 @@ fn planted(i: u8) -> bool {
         crate::session::tick(crate::session::REL_PLANT);
     }
     on
+}
+
+const CLS_EQ: usize = 15;
+const CLS_DIFFERS: usize = 16;
+pub(crate) const AD_LRA_CLASS_IS: u8 = 6;
+const CLASS_IS: u8 = 7;
+
+/// Plant 660, for adapters.rs.
+pub(crate) fn class_is_planted() -> bool {
+    planted(AD_LRA_CLASS_IS)
+}
+
+/// term_live.py's `same_class`, the same rule: whether `a` and `b` are of one class to query `q` (a term_live `_Query`).
+/// The same class object, or two class objects with one id in the query's own class table (`q.classes`, keyed by the
+/// classes' hash and `==` when the input was converted). Two `Function('f')` are one class to SymPy and two objects, and
+/// which object a process-wide memo hands back follows history (`ad:cbm_noid`). The table is the query's, never the
+/// process's; a class the input doesn't hold has no id and is one class only with itself.
+pub(crate) fn same_class<'py>(q: &Bound<'py, PyAny>, a: &Bound<'py, PyAny>, b: &Bound<'py, PyAny>) -> PyResult<bool> {
+    let (ta, tb) = (a.get_type(), b.get_type());
+    if ta.is(&tb) {
+        return Ok(true);
+    }
+    if planted(CLASS_IS) {
+        return Ok(false);
+    }
+    let p = q.py();
+    let c = q.getattr(pyo3::intern!(p, "classes"))?;
+    let mut same = false;
+    if !c.is_none() {
+        let get = |t: &Bound<'py, pyo3::types::PyType>| -> PyResult<Option<Bound<'py, PyAny>>> {
+            match c.call_method1(pyo3::intern!(p, "get"), (t,)) {
+                Ok(i) => Ok(if i.is_none() { None } else { Some(i) }),
+                // an unhashable class: no id
+                Err(e) if e.is_instance_of::<pyo3::exceptions::PyTypeError>(p) => Ok(None),
+                Err(e) => Err(e),
+            }
+        };
+        if let Some(i) = get(&ta)? {
+            if let Some(j) = get(&tb)? {
+                same = i.eq(j)?;
+            }
+        }
+    }
+    tick(if same { CLS_EQ } else { CLS_DIFFERS });
+    Ok(same)
+}
+
+/// Plant 661 for term_live.py's `same_class` (one plant, both halves): whether it is on, counted as fired.
+#[pyfunction]
+fn class_is_plant() -> bool {
+    planted(CLASS_IS)
 }
 
 enum Stop {
@@ -477,5 +532,6 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(formula_counts, m)?)?;
     m.add_function(wrap_pyfunction!(formula_plant, m)?)?;
     m.add_function(wrap_pyfunction!(formula_plants, m)?)?;
+    m.add_function(wrap_pyfunction!(class_is_plant, m)?)?;
     Ok(())
 }

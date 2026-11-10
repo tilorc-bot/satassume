@@ -86,7 +86,7 @@ def install(shadow, counts, fault_cls, mismatch):
         out = []
         for x in xs:
             i = q.ids.get(x)
-            if i is not None and type(q.objects[i]) is not type(x):
+            if i is not None and not term_live.same_class(q, q.objects[i], x):
                 i = None
             if i is None and isinstance(x, (Add, Mul)):
                 i = term_live.term_id(q, x, 'core')        # a derived Add or Mul of terms with ids: a row as it is

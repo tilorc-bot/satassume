@@ -151,7 +151,7 @@ def test_source_is_the_object_and_is_never_read_again():
     assert n.nodes == 6
 
 
-@pytest.mark.parametrize('plant', sa_solver.formula_plants())
+@pytest.mark.parametrize('plant', [n for n in sa_solver.formula_plants() if n.startswith('fm-')])   # 660, 661: test_cbm_noid.py
 def test_each_plant_fires_and_is_caught(plant):
     fs = cases()
     c0 = sa_solver.formula_counts()['fm:plant_fired']

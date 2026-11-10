@@ -1372,7 +1372,7 @@ impl<'py> QIds<'py> {
             let i = self.ids.call_method1("get", (&x,))?;
             if !i.is_none() {
                 let i: u32 = i.extract()?;
-                if !self.objects.get_item(i)?.get_type().is(&x.get_type()) {
+                if !crate::formula::same_class(&self.q, &self.objects.get_item(i)?, &x)? {
                     return Ok(None);
                 }
                 out.push(TermId(i));
@@ -1396,7 +1396,7 @@ impl<'py> QIds<'py> {
         if !i.is_none() {
             let i: u32 = i.extract()?;
             let o = rev.call_method1("get", (i,))?;
-            if o.is_none() || !o.get_type().is(&x.get_type()) {
+            if o.is_none() || !crate::formula::same_class(&self.q, &o, x)? {
                 return Ok(None);
             }
             c.bump("rows:ids:derived");
@@ -1531,7 +1531,7 @@ impl<'py> QIds<'py> {
             let i = self.ids.call_method1("get", (o,))?;
             if !i.is_none() {
                 let i: u32 = i.extract()?;
-                same = !self.objects.get_item(i)?.get_type().is(&o.get_type()) || i == t;
+                same = !crate::formula::same_class(&self.q, &self.objects.get_item(i)?, o)? || i == t;
             }
         }
         if !same {

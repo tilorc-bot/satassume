@@ -269,7 +269,7 @@ def install(shadow=False, data=None):
                 COUNTS[kind + ':no-query'] += 1
                 r = kn.units(_derived_facts(kn, value, is_symbol))
             # `==` can join classes (const_key's Float against Integer), so a row counts only for its own class.
-            elif i is not None and type(q.objects[i]) is type(value):
+            elif i is not None and term_live.same_class(q, q.objects[i], value):
                 COUNTS[kind + ':input'] += 1
                 r = kn.symbol_units(q.table, i) if is_symbol else kn.constant_units(q.table, i)
             else:

@@ -198,7 +198,7 @@ impl Slotted {
                 return Ok(None);
             }
             let i: u32 = i.extract()?;
-            Ok(if objects.get_item(i)?.get_type().is(&a.get_type()) { Some(TermId(i)) } else { None })
+            Ok(if crate::formula::same_class(&q, &objects.get_item(i)?, a)? { Some(TermId(i)) } else { None })
         };
         let mut want = Vec::new();
         for (i, k) in ts {
