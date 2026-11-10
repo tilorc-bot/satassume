@@ -234,9 +234,38 @@ the read works on its own copy of the rows and puts the atom's own object where 
 
   | workload | queries | answers changed | probe events | Pow keys built |
   |---|---|---|---|---|
-@@WL@@
+  | dev | 1,985 | 0 | 0 | 8 |
+  | fuzz | 3,000 | 0 | 0 | 0 |
+  | ground | 18 | 0 | 0 | 0 |
+  | port | 19 | 0 | 0 | 0 |
+  | lra | 1,500 | 0 | 0 | 56 |
+  | loop | 420 | 0 | 0 | 7 |
+  | scope | 169 | 0 | 0 | 0 |
+  | zero | 854 | 0 | 0 | 0 |
+  | cert | 61 | 0 | 0 | 0 |
+  | budget | 28 | 0 | 0 | 0 |
+  | f6 | 2,902 | 0 | 0 | 1 |
+  | value | 3,742 | 0 | 0 | 0 |
+  | rootof | 5,187 | 0 | 0 | 0 |
+  | core | 1,636 | 0 | 0 | 276 |
+  | opaque | 2,546 | 0 | 0 | 17 |
+  | wiring | 6,512 | 0 | 0 | 27 |
 
-  Suite (`tests` plus test_cbm_noid.py, probe loaded; Python, then Rust): @@SUITE@@
+  **0 answers changed on all 16 workloads.** Where no Pow key was built (fuzz, ground, port, scope, zero, cert, budget,
+  value, rootof) the probe's site never ran, so its 0 says nothing there and the answer comparison is the measure.
+
+  Suite (`tests` plus test_cbm_noid.py, probe loaded; Python, then Rust): **0 events in `tests` on both backends.**
+
+  | backend | suite result (17241af, `q1/suite-*`, orion, `-n 4`) | Pow keys built | events | events' tests |
+  |---|---|---|---|---|
+  | Python | 6,120 passed, 0 failed, 29 skipped, 18 xfailed | 3,690 | 2 | test_cbm_noid.py's own `==` test (the probe fires) |
+  | Rust | 5,999 passed, 127 failed, 23 skipped, 18 xfailed | 445 | 4 | test_cbm_noid.py's `==` test and its plant-663 test |
+
+  So no answer of the suite can differ from the reference before the change, and the suite's tests agree (Python: none
+  failed). **No answer changed anywhere measured**, so nothing went to the architect under the ruling's "if any change".
+  Rust's 127 failed is the count of the landed base's bar (port-state-relations.md: 5,991 passed, 127 failed; the 8 more
+  passed are test_cbm_noid.py's 8 tests); **the ids were not compared with the base's rows** (the bar does that), and
+  the handler multiset, `caught` rows and `ad:cbm_noid` by test file were not read from this run.
 
 ### 1 (c) Q1 (c): `Engine.cache.store` keys
 test_cbm_noid.py `test_cache_store_key_is_the_first_equal_object`: two equal, distinct constants (`sin(k)`, `log(k)`) on
