@@ -541,3 +541,102 @@ reached Rust's term path: a relation whose two sides are equal but not the same 
 - One-variable `Subs` over `f(x)` only; 8 queries; no two-order run of these on Rust.
 - (c)'s list of who relies on `==` is by the earlier reads, not a new one. (d) is an estimate.
 - Whether a process memo filled with `S(z)` changes a later query about `S(zp)` was not run.
+
+## The `Subs` history check: `==`-equal `Subs` at different points, two orders (sa-port-254)
+
+**Verdict: no flip found. 0 of 2160 pairs change any answer with what was asked first, on the Python backend and on
+the Rust backend, and the two backends agree on every answer. The first-seen object does stand in for the other in a
+memo (counted below), but no answer follows it: satassume never reads inside a `Subs`, so an answer depends on the
+point only where the point is also written outside the `Subs`, and that part is never merged. A measurement on my own
+queries, not a proof. The wrong definite answers of the point-assumption read above are still there, in both orders:
+they come from the merge inside one query, not from history.**
+
+Base: the clone at 1daf7f1 (0192b35 plus results files). SymPy 1.15.0.dev of `~/sa-rust-ids-work/sympy`, Python
+3.12.14, orion. Rust: the clone's `sa_solver.so`, sha256 `bfc06f0cd68a252a` (built 18:18Z 10 Nov, after the last
+change under `solver_rs/`, ba1ca22; not rebuilt; each run prints the file it loaded). Scratch:
+`~/sa-rust-ids-work/sa-port-254/hist/` (`subs3.py MODE OUT.json`, `cmp3.py`, `probe.py`, `repro.py`).
+
+### Runs (`subs3.py`, one process per backend and batch)
+
+- Point pairs (5): `z` against `zp` (positive), `n` integer against `n` real, `z + 1` against `zp + 1`, `z` against
+  `zn` (negative), `zp` against `zn`. Shapes (12): `Subs(g, a, p)` for `g` in `f(a)`, `a`, `a**2`, `a**a`, `Abs(a)`,
+  `exp(a)`, `f(a) + a`, `a + 1`, `a*w`, `floor(a)`, plus `Subs(f(a), a, p) + 1` and
+  `Subs(a**2, a, p)**Subs(a**2, a, p)`. Every pair of terms is asserted `==` with equal hash, unequal points and
+  different `srepr`; each is built after `clear_cache()`.
+- Batch 1, 20 forms, 1200 pairs: the point occurs only inside the `Subs` (8 forms such as `ask(Q.positive(t))`), or
+  also in the assumptions (8 forms such as `ask(Q.gt(t, 0), Q.gt(p, 0))`), or both points' terms are in one query
+  (4 forms: `ask(Q.positive(t), Q.positive(o))`, `ask(Q.gt(t, o))`, `ask(Q.eq(t, o))`,
+  `ask(Q.positive(t), Q.negative(o))`).
+- Batch 2 (`FORMSET=free`), 16 forms, 960 pairs: the point is also a free term of the query, so the answer can
+  depend on it. 12 forms with one point, such as `ask(Q.positive(t*p), Q.positive(t))`,
+  `ask(Q.integer(t + p), Q.integer(t))`, `ask(Q.positive(t), Q.eq(t, p))`; 4 forms with the other point's term,
+  such as `ask(Q.positive(o), Q.eq(t, p))`.
+- Per pair, 18 answers: each query alone from emptied state (`PROCESS.clear()`, `clear_cache()`, a new default
+  engine, a new `Engine`), then both orders under four regimes, each starting from emptied state: the default engine
+  kept; a new `Engine` per ask; a new `Engine` plus `clear_cache()` between the two asks (process memos kept); a new
+  `Engine` plus `PROCESS.clear()` between the two asks (SymPy's cache kept). A flip is any ask in a pair whose
+  answer differs from the same query alone.
+
+| | Python | Rust backend |
+|---|---|---|
+| batch 1: pairs with any flip | 0 of 1200 | 0 of 1200 |
+| batch 2: pairs with any flip | 0 of 960 | 0 of 960 |
+| answers differing between the backends (18 per pair) | 0 of 2160 pairs | |
+| `_INTERPRETED` answered a key first stored as the other point's object | 2568 + 6208 | 1974 + 520 |
+| exceptions raised to the caller | 648 + 0 | 648 + 0 |
+| exceptions caught at `engine.py:1928` or in `_consistent` (`catch_count.py`) | 0 | 0 |
+| Rust: `term_live` converted / kept on Python (`kept:args-eq-not-is`); `ent:ask` | | 16581 / 3340; 8755 and 15841 / 1440; 17281 |
+
+- Can the set show a flip? Batch 1 mostly cannot, and its 0 is weak: all 960 pairs of its 16 one-point forms answer
+  None at both points (or raise, below), whatever the shape, so there is nothing for an earlier query to change.
+  `probe.py` shows why: a `Subs` is opaque to satassume, and even `ask(Q.positive(Subs(a, a, 2)))` is None. Batch 2
+  was added for that: in 543 of its 960 pairs the two points give different answers alone (402 of the 720 one-point
+  pairs, 141 of the 240 with both terms), so an answer carried over from the other point would show. None did.
+- The 648 exceptions are all `ValueError: inconsistent assumptions` from three batch-1 forms that assume
+  `Q.positive(p)`, `Q.gt(p, 0)` or `Q.gt(p, 1)` for the negative point `zn` (72 queries, 9 asks each). They are the
+  same in every order and on both backends, and say nothing about `Subs`.
+- The quiet-catch counter was shown to fire in each run: a planted `ValueError` in `_complete_check` was reached
+  once and recorded once, on both backends, before the zero was read.
+- That first-seen order can flip an answer on this base at all: `~/sa-rust-ids-work/sa-port-251/item0/repro.py r1`
+  on the clone gives `same` True, `distinct` None, `same,distinct` [True, True], `distinct,same` [None, None]
+  (item 0's `x**x` flip, `hist/control.out`). That is another script; no planted flip was put through `subs3.py`.
+
+### What the merge still does inside one query
+
+Batch 1's four both-point forms give a definite answer for all 480 queries (240 True, 240 False) at every point
+pair, and batch 2's four give 165 definite answers of 480. Each is definite only because the two terms are one key.
+These are the unsound answers of the read above, unchanged by order.
+
+### Minimal reproductions (`repro.py MODE CASE ORDER`; output in `hist/repro.out`)
+
+One process each, a new `Engine` per ask, nothing cleared between the two asks. `S(p) = Subs(f(x), x, p)`; query 1
+is at `z`, query 2 at `zp`.
+
+| case | queries | 1 alone | 2 alone | 1 then 2 | 2 then 1 |
+|---|---|---|---|---|---|
+| A, point also free | `ask(Q.positive(S(p)), Q.eq(S(p), p))` | None | True | [None, True] | [True, None] |
+| B, point only inside | `ask(Q.positive(S(p)), Q.real(S(p)))` | None | None | [None, None] | [None, None] |
+| C, both terms | 1: `ask(Q.positive(S(zp)), Q.eq(S(z), z))`; 2: `ask(Q.positive(S(z)), Q.eq(S(zp), zp))` | None | True | [None, True] | [True, None] |
+
+Python and Rust give the same 12 lines. Case C's True is the merge: from `S(zp) = zp > 0` it concludes
+`S(z) > 0`.
+
+### Other finding, SymPy only: SymPy's own cache is first-seen for these terms
+
+With `a = S(z)`, `b = S(zp)` and `neg = Lambda(x, -x)`, `a.subs(f, neg)` followed by `b.subs(f, neg)` returns
+`Subs(-x, x, z)` for both; with `b` first, both have the point `zp`; with `SYMPY_USE_CACHE=no` each keeps its own
+(`~/sa-rust-ids-work/sa-port-254/note/d_cache.py`, SymPy master 6f70679a, no satassume imported). So a caller that
+calls a cached SymPy method on a `Subs` gets a history-dependent result from SymPy itself. No satassume answer in
+the 2160 pairs moved with it, in the regimes that keep SymPy's cache.
+
+### Limits
+
+- One-variable `Subs` only; 36 forms; points that are symbols or a symbol plus 1. Two-variable `Subs`, nested
+  `Subs`, and points that print alike for other reasons (`Symbol('pi')` against `pi`: `==` checked in `probe.py`,
+  not put through the two-order run) were not run.
+- History inside a pair only: one earlier query, the same form at the other point. A long mixed history (other
+  forms first, memo eviction) was not run.
+- `PROCESS.clear()` does not empty the Rust dispatch memo or `RULE_MASKS` (item 3), so under Rust "alone" keeps
+  those across pairs.
+- SymPy's own `Subs` equality on master is in the held note draft
+  `~/sa-rust-ids-work/sa-port-254/NOTE-41.md` (not posted; Tilo decides).
