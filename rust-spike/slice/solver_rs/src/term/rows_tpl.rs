@@ -87,6 +87,7 @@ pub const PLANTS: &[&str] = &[
     "rows-number-id-shift",    // 6i(c) 370: a Rational with no id interned as c + 1 (the derived-number args of `c + t`)
     "rows-product-first",      // 6i(c) 371: `kept_product(factors)` read as the first factor
     "rows-pow-bound-args-swap",// 6i(c) 372: a Pow Python built read with base and exponent swapped
+    "rows-mul-ct-drop",        // 6i(c) 373: `_mul_factor_sets`' ct set `(c, rest)` left out
 ];
 
 /// 6g(c3): the shells whose args `split` passes as a tuple (the others take one argument).
@@ -1398,7 +1399,27 @@ impl<'py> QIds<'py> {
             return Ok(Some(i));
         }
         if !x.getattr("is_Rational")?.is_truthy()? {
-            return Ok(None);
+            // `term_id`'s Add or Mul Python built of terms with ids: a row with its args as they are.
+            let sp = x.py().import("sympy")?;
+            let (add, mul) = (sp.getattr("Add")?, sp.getattr("Mul")?);
+            let ty = x.get_type();
+            let is_add = ty.is(&add);
+            if !(is_add || ty.is(&mul)) || !x.getattr("is_commutative")?.is(&pyo3::types::PyBool::new(x.py(), true)) {
+                return Ok(None);
+            }
+            let Some(args) = self.ids(Some(c), &x.getattr("args")?)? else { return Ok(None) };
+            let i = {
+                let mut tb = self.table.borrow_mut();
+                let tt = tb.tt_mut();
+                if is_add { tt.raw_add(args) } else { tt.raw_mul(args) }
+            }
+            .0;
+            if (i as usize) >= self.n_input {
+                derived.set_item(x, i)?;
+                rev.call_method1("setdefault", (i, x))?;
+            }
+            c.bump("rows:ids:learned");
+            return Ok(Some(i));
         }
         let (mut p, d): (num_bigint::BigInt, num_bigint::BigInt) = (x.getattr("p")?.extract()?, x.getattr("q")?.extract()?);
         if c.plant == "rows-number-id-shift" {
@@ -1421,7 +1442,10 @@ impl<'py> QIds<'py> {
         }
         // 6i(c): a derived id Python already holds the object of (`scaffold`'s first lookup).
         let o = self.q.getattr("rev")?.call_method1("get", (t.0,))?;
-        Ok(if o.is_none() { None } else { Some(o) })
+        if !o.is_none() {
+            return Ok(Some(o));
+        }
+        Ok(None)
     }
 
     /// 6i(c): `_coeff_term`'s `t`: one factor's object, or `kept_product(factors)`, built as domain.py builds it
@@ -1587,12 +1611,23 @@ fn direct_rows<'py>(
             // `[expr.args, (c, rest), ((c,) if c != 1 else ()) + (I, pi, s)]`; a product rest (`kept_product`) goes to
             // the shell, and every ct set has one (it is the Mul's other >= 2 factors).
             let (ct, ipi) = t.core_mul_factor_sets(ids[0]).map_err(refuse)?;
-            if ct.is_some() {
-                return Ok(None);
-            }
             let out = PyList::new(py, [args.getattr("args")?])?;
+            // 6i(c): the ct set `(c, kept_product(args[1:]))`, its rest built as `QIds::rest` does.
+            if let Some((k, fs)) = ct {
+                let Some(ko) = q.obj(k)? else { return Ok(None) };
+                match q.rest(c, &Rest::Product(fs))? {
+                    Got::Obj(_) if c.plant == "rows-mul-ct-drop" => c.fired(),
+                    Got::Obj(r) => out.append((ko, r))?,
+                    Got::NoSplit => {}
+                    Got::Shell => return Ok(None),
+                }
+            }
             if let Some((k, r)) = ipi {
-                let Some(s) = q.one(&r)? else { return Ok(None) };
+                let s = match q.rest(c, &r)? {
+                    Got::Obj(o) => o,
+                    Got::NoSplit => return Ok(Some(Direct1::Done(out.into_any()))),
+                    Got::Shell => return Ok(None),
+                };
                 if s.getattr("is_Mul")?.is_truthy()? && c.plant == "rows-mul-ipi-drop" {
                     c.fired();
                 } else if s.getattr("is_Mul")?.is_truthy()? {
