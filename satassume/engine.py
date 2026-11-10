@@ -1389,9 +1389,10 @@ class Engine:
         #: (``relations.glue_objects``), by spec name
         self._glue_adapters: Dict[str, Any] = {}
         #: assumption formulas whose session construction raised
-        #: ``Uninterpreted`` -> its message (see :meth:`_context_session`)
+        #: ``Uninterpreted`` -> its message (see :meth:`_context_session`);
+        #: keyed by ``typed(formula)``, as ``_verdict``
         self._failed: Dict[Any, str] = {}
-        #: assumption formula -> its verdict (``CONSISTENT``,
+        #: ``typed(assumption formula)`` -> its verdict (``CONSISTENT``,
         #: ``INCONSISTENT`` or ``UNKNOWN``), from one complete check per set
         #: (see :meth:`_context_session`); bounded, cleared with the sessions
         self._verdict: Dict[Any, str] = {}
@@ -1853,7 +1854,7 @@ class Engine:
         (``_failed``, ``_verdict``) and raised again without a build."""
         if self._epoch != _EPOCH[0]:
             self._check_version()
-        if self._verdict.get(assumptions) is INCONSISTENT:
+        if self._verdict.get(typed(assumptions)) is INCONSISTENT:
             # the construction below would raise this again (it is the same
             # every time, see _build_context); the memo only saves the work
             raise InconsistentAssumptions("inconsistent assumptions")
@@ -1870,7 +1871,11 @@ class Engine:
         atoms and the registry epoch, which the caller has just compared);
         otherwise the set's verdict is recorded (``_verdict``)."""
         failed = self._failed
-        msg = failed.get(assumptions)
+        # both memos are keyed by the set with the types of its nodes
+        # (``typed``): equal sets about equal nodes of two types (``1`` and
+        # ``S.One``) have different sessions, so different verdicts (#96)
+        key = typed(assumptions)
+        msg = failed.get(key)
         if msg is not None:
             raise Uninterpreted(msg)
         try:
@@ -1878,12 +1883,12 @@ class Engine:
         except Uninterpreted as e:
             if len(failed) >= 10_000:
                 failed.clear()
-            failed[assumptions] = str(e)
+            failed[key] = str(e)
             raise
         verdicts = self._verdict
         if len(verdicts) >= 20_000:
             verdicts.clear()
-        verdicts[assumptions] = s.verdict
+        verdicts[key] = s.verdict
         return s, lits
 
     def _build_context(self, assumptions, proposition=None) -> Tuple[Session, List[int]]:
@@ -1954,7 +1959,7 @@ class Engine:
             return UNKNOWN
         if not self._within_budget(assumptions):
             return UNKNOWN
-        v = self._verdict.get(assumptions)
+        v = self._verdict.get(typed(assumptions))
         if v is not None:
             return v
         return self._build_context_memoized(assumptions)[0].verdict

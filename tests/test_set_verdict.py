@@ -12,6 +12,7 @@ from sympy import Q, cos, sin, symbols
 
 from satassume import P
 from satassume.engine import CONSISTENT, INCONSISTENT, UNKNOWN
+from satassume.sat.formula import typed
 from satassume.sympy_api import DictCache, Engine, ask
 
 
@@ -101,7 +102,7 @@ def test_setting_change_drops_the_verdict_memo():
     g = _formula(Q.positive(x) & Q.gt(x*y, 1), True, True)
     eng = Engine()
     v = eng.verdict(g)
-    assert eng._verdict.get(g) is v and eng.stats["set_checks"] == 1
+    assert eng._verdict.get(typed(g)) is v and eng.stats["set_checks"] == 1
     eng.discovery_budget = 200
     assert not eng._verdict and eng.stats["version_clears"] == 1
     assert eng.verdict(g) is Engine(discovery_budget=200).verdict(g)

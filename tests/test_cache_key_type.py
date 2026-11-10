@@ -218,3 +218,20 @@ def test_fact_cache_has_an_entry_per_type(emptied):
     assert sorted(cache.items(), key=lambda nf: type(nf[0]).__name__) == [
         (S.One, {'positive': True}), (1, {'positive': False})]
     assert set(cache.store) == {typed(S.One), typed(1)}
+
+
+# Engine._verdict, the memo of the assumption sets (Engine._failed, its
+# other half, is with the relation atoms below)
+SET_DOORS = {
+    'verdict': lambda e, v: e.verdict(Not(P('positive', v))),
+    'verdict, set of two': lambda e, v: e.verdict(And(P('real', s), Not(P('positive', v)))),
+    'ask, inconsistent assumptions': lambda e, v: e.ask(P('real', s), Not(P('positive', v))),
+}
+
+
+@pytest.mark.parametrize("order", ORDERS)
+@pytest.mark.parametrize("door", list(SET_DOORS))
+@pytest.mark.parametrize("pair", list(PAIRS))
+def test_one_engine_set_verdicts(pair, door, order, emptied):
+    alone = _one_engine_as_alone(SET_DOORS[door], _ordered(PAIRS[pair], order))
+    assert alone[0] != alone[1]

@@ -25,7 +25,7 @@ from sympy.core.function import AppliedUndef  # noqa: E402
 from satassume import DictCache, Engine  # noqa: E402
 from satassume.state.epoch import EPOCH  # noqa: E402
 from satassume.knowledge.extensions import Extensions, extensions  # noqa: E402
-from satassume.sat.formula import Implies, Not, P  # noqa: E402
+from satassume.sat.formula import Implies, Not, P, typed  # noqa: E402
 from satassume.sympy_api import ask  # noqa: E402
 from satassume.knowledge.templates.registry import registry  # noqa: E402
 
@@ -213,11 +213,11 @@ def test_contextual_answers_follow_the_registry():
     eng = fresh()
     a = P('positive', y)
     assert eng.ask(P('real', f(y)), a) is True
-    assert not eng._context_sessions and a in eng._verdict
+    assert not eng._context_sessions and typed(a) in eng._verdict
     extensions.unregister('real')
     assert eng.ask(P('real', f(y)), a) is None
     assert eng.ask(P('real', f(y)), a) == fresh().ask(P('real', f(y)), a)
-    assert not eng._context_sessions and a in eng._verdict
+    assert not eng._context_sessions and typed(a) in eng._verdict
     assert eng.stats["version_clears"] == 1
 
 
