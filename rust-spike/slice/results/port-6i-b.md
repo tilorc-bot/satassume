@@ -53,7 +53,13 @@ sa-port-216 read bar 1, rebased onto db7130a, ran bar 2 and landed it.
   harness-install-order.md). live.py is the harness every live and extra phase runs, so it is guarded source: the bar was
   rerun on the rebased head **e817aa1** (code commits 469d6b1, 4d8f1ed, 186ae10 = 6829d06, 4626fff, fe250ff rebased; no
   edits). The rebased Rust and Python source is byte-identical to fe250ff's apart from the incoming diff.
-- Tested for landing: **e817aa1** (bar 2 below). Landed: BAR2_LANDED.
+- Bar 2 on **e817aa1** (below) is clean, but not landed: before it could land, rust-slice moved db7130a → **c822173**
+  (state part 2 (iii)(a) + (b) first move, sa-port-221, report 5a3c218). The rebase is clean (no conflicts). `bar.sh land
+  e817aa1` without PUSH gave an incoming diff of `satassume/relations.py` (+15), `rust-spike/slice/session_live.py`,
+  `term_live.py`, `solver_rs/src/{relations_core,session}.rs`, `term/{algebra,py,relations,table}.rs`, the tests
+  `test_relc_core.py` (new) and `test_term_ids.py`, `harness/state.py` (+2), and results/handoffs. That is guarded source, so
+  **bar 3 runs on the rebased head** (6i(b)'s code commits are unedited by the rebase).
+- Tested for landing: BAR3_TESTED (bar 3 below). Landed: BAR3_LANDED.
 
 ## Bar 1 (pareto1, `~/sp19/sa-rust-ids-work/sa-port-214/bar-6ib` on fe250ff, base 80665b5)
 Run 15:18Z-16:16Z 9 Nov under a shared lease; every phase exited 0 (build, tests, suite, live, plants, extra, suiteplants,
@@ -175,6 +181,8 @@ every workload); `fn:` as in bar 1 (value: `rust:unary` 309, `rust:genocchi_half
 differ from bar 1's (`registry:python` 26 → 33, `rows:python` 0 → 64) and equal the harness bar's: the install-order fix,
 not this step, puts scope's queries on Rust. Kept shares: **every share equals base**, the same numbers as bar 1's list
 below.
+
+BAR3_SECTION
 
 ## Fallbacks to Python inside ported code (planner's fallback-reporting ruling, with its `ad:cbm_noid` addition)
 From bar 1's knowledge files by `fbcounts.py` (prefixes `registry:python:`, `fn:`, `ad:cbm_noid`, `rows:python:`,
