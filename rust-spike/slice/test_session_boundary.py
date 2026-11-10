@@ -16,6 +16,16 @@ was replaced (`named`). Each mode runs in its own process (install() refuses onc
   was lost (workload scope: Python 3 sessions at query 5, Rust 2). Plant 446 `sc-key-shared` puts that back.
 Plants (SLICE_SESSION_PLANT, session.rs `sb_plant`): 431 `sb-truncated-stale`, 432 `sb-link-pending-stale`, 433
 `sb-neg-shared-stale`, 434 `sb-sel-zero`, 435 `sb-hold-zero`, 436 `sb-verdict-none`, 437 `sb-fwd-skip-link`, 438 `sb-solver-fresh`.
+- `cont:*`: the seven session containers held in the core (ses_cont.rs: `frontier`, `deferred`, `pending`, `pending_c`,
+  `demand`, `literals`, `_groups`): each one's content, keys with their class and values, in order, after `_build_context`
+  and after the asks, and on `trunc`'s session before and after `escalate(1)` (where `pending`, `pending_c` and `deferred`
+  are not empty), Python against Rust. `cont:mid`, `mid`: `frontier` and `pending` are empty between calls, so they are
+  read at each `_visit` of a like session (sizes at every visit, the first contents where each is not empty); that session
+  has a vocabulary function registered for `Add`, whose formulas a demand parks in `pending` until `escalate`. `cview` (Rust): the core's own export (`sc_snapshot`) equals the views each time,
+  and a write through a view or an assignment is read back from the core. `test_python_methods_on_the_views`: one Rust
+  run with SLICE_DISC=py SLICE_LOOP=py SLICE_GLUE=py, Python's own methods working on the views.
+  Plants 439-445 `sc-<name>-drop` (the container's write is a no-op): each fires and is caught; `test_container_plants`
+  also says which kind of row caught it (an answer, or only the container's content).
 - `core`: session.rs `core_of` and `table_of` read the session's `_core` and `_table_view` (plain instance attributes that
   session_live `_table_set` stores), not the `table` property, whose getter `_table_get` is a Python frame per read. `tget`
   counts `_table_get`'s calls over one set's asks (sys.setprofile); `sb:core_prop` (570) counts the reads that still go
@@ -35,6 +45,10 @@ PLANTS = ('sb-truncated-stale', 'sb-link-pending-stale', 'sb-neg-shared-stale', 
           'sb-fwd-skip-link', 'sb-solver-fresh')
 KEY_PLANTS = ('sc-key-shared',)      # 446
 CORE_PLANTS = ('sb-core-stale',)     # 448; 447 `sb-core-unset` has its own test
+#: 439-445, by container (session.rs SB_PLANTS' order)
+CONT_PLANTS = {'frontier': 'sc-frontier-drop', 'pending': 'sc-pending-drop', 'pending_c': 'sc-pending_c-drop',
+               'demand': 'sc-demand-drop', 'deferred': 'sc-deferred-drop', 'literals': 'sc-literals-drop',
+               '_groups': 'sc-groups-drop'}
 
 CHILD = r'''
 import json, os, sys
@@ -61,6 +75,33 @@ rows = {}
 
 def scal(s):
     return [bool(s.truncated), bool(s._link_pending), bool(s._neg_shared), s.sel, s.n_hold, s.verdict, len(s.table)]
+
+
+SEQ, DCT = ('frontier', 'deferred'), ('pending', 'pending_c', 'demand', 'literals', '_groups')
+
+
+def rnd(v):
+    if isinstance(v, (set, frozenset)):
+        return [type(v).__name__, sorted(map(repr, v))]
+    if isinstance(v, dict):
+        return ['dict', [[rnd(k), rnd(u)] for k, u in v.items()]]
+    if isinstance(v, (list, tuple)):
+        return [type(v).__name__, [rnd(u) for u in v]]
+    return [type(v).__name__, repr(v)]
+
+
+def cont(s, get=None):
+    """Each container's content, in its own order: a sequence's items, a dict's (key, value) pairs, each with its class."""
+    get = get or (lambda n: getattr(s, n))
+    out = {n: [rnd(v) for v in get(n)] for n in SEQ}
+    out.update({n: [[rnd(k), rnd(v)] for k, v in get(n).items()] for n in DCT})
+    return out
+
+
+def csnap(s):
+    """Rust: the core's own export against the views."""
+    sn = s.table.core.sc_snapshot()
+    rows.setdefault('cview', []).append(cont(s, sn.__getitem__) == cont(s))
 
 
 def guard(f):
@@ -96,11 +137,14 @@ for name, (a, ps) in CASES.items():
         fa = _formula(a, rel, True)
         s, lits = e._build_context(fa)
         out.append(scal(s))
+        cs = rows[f'cont:{name}'] = [cont(s)]
         out.append(e.verdict(fa))
         for p in ps:
             out.append(repr(e._ask(s, lits, _formula(p, rel), True)))
             out.append(scal(s))
+        cs.append(cont(s))
         if rust:
+            csnap(s)
             import hashlib
             rows[f'dump:{name}'] = hashlib.sha256(repr(s.solver.dump()).encode()).hexdigest()[:16]
         return out
@@ -113,9 +157,12 @@ def trunc():
     lits = s.assume_formula(And(P('positive', (x + y)**2 + sin(z)), Or(P('integer', x * y), P('zero', w - 1))))
     s.ensure((x + y) * sin(w) + z**2, ['positive'])
     s.ensure(log(x) + gamma(y) + x**y, ['positive'])
+    cs = rows['cont:trunc'] = [cont(s)]
     s.escalate(1)
+    cs.append(cont(s))
     out = [scal(s), e._complete_check(s, list(lits))]
     if rust:
+        csnap(s)
         c = s.table.core
         snap = dict(c.ses_snapshot())
         rows['view'] = [snap == dict(truncated=s.truncated, _link_pending=s._link_pending, _neg_shared=s._neg_shared, sel=s.sel,
@@ -126,6 +173,24 @@ def trunc():
         rows['view'].append([c.ses_snapshot()['truncated'], c.ses_snapshot()['verdict'], c.ses_snapshot()['n_hold'], s.verdict, s.n_hold])
         rows['view'].append(e._complete_check(s, list(lits)))
         rows['view'].append(sorted(k for k in ('defvars', '_dv', '_dv_node') if hasattr(s, k)))
+        # a write through a view, and an assignment (the record method), read back from the core
+        from collections import deque
+        t = Session(CoreEngine())
+        t.frontier = deque([x, y])
+        t.frontier.append(z)
+        t.deferred.extend([w, x])
+        t.deferred.pop()
+        t.demand = {x: {'positive'}}
+        t.demand[y] = {'real'}
+        t.pending.setdefault(z, []).append(1)
+        t.pending_c[w] = [(1, 2)]
+        del t.pending_c[w]
+        t.literals.update({x: 3})
+        t._groups[None] = [4]
+        t._groups[True] = [5]
+        sn = t.table.core.sc_snapshot()
+        rows['cview-write'] = cont(t, sn.__getitem__)
+        csnap(t)
     return out
 
 
@@ -210,12 +275,51 @@ def core():
 
 if rust:
     guard(core)
+
+
+def mid():
+    """`frontier` and `pending` are empty between calls, so they are read at each `_visit` of `trunc`'s session (Rust calls
+    a replaced `_visit` by name, which is why this runs after the counts are taken): the sizes at every visit, and the
+    first three contents with a non-empty frontier and with a non-empty `pending`."""
+    sizes, fr, pe = [], [], []
+    orig = Session._visit
+
+    def visiting(self, node, b, demanded):
+        sizes.append([len(self.frontier), len(self.pending)])
+        if sizes[-1][0] and len(fr) < 3:
+            fr.append(cont(self))
+        if sizes[-1][1] and len(pe) < 3:
+            pe.append(cont(self))
+        return orig(self, node, b, demanded)
+    # a vocabulary function registered for `Add`: its formulas are items, parked in `pending` under a demand that leaves
+    # them out (test_discovery_core.py's `registered`); last in the process, the registration stays
+    from sympy import Add
+    from satassume.knowledge.extensions import register
+    register('even', Add)(lambda n: And(P('even', n.args[0]), P('even', n.args[1])))
+    Session._visit = visiting
+    last = []
+    try:
+        s = Session(CoreEngine())
+        s.assume_formula(And(P('positive', (x + y)**2 + sin(z)), Or(P('integer', x * y), P('zero', w - 1))))
+        s.ensure((x + y) * sin(w) + z**2, ['positive'])
+        s.ensure(log(x) + gamma(y) + x**y, ['positive'])
+        s.ensure(sin(x + y) + z, ['negative'])
+        last.append(cont(s))
+        s.escalate(1)
+        last.append(cont(s))
+    finally:
+        Session._visit = orig
+        rows['mid'] = sizes
+        rows['cont:mid'] = fr + pe + last
+
+
+guard(mid)
 print(json.dumps(dict(rows=rows, counts=counts)))
 '''
 
 
-def _child(mode, plant=None):
-    env = dict(os.environ, PYTHONHASHSEED='0')
+def _child(mode, plant=None, **more):
+    env = dict(os.environ, PYTHONHASHSEED='0', **more)
     env.pop('SLICE_SESSION_PLANT', None)
     if plant:
         env['SLICE_SESSION_PLANT'] = plant
@@ -240,7 +344,7 @@ def _differ(a, b):
 
 
 def _common(rows):
-    return {k: v for k, v in rows.items() if not k.startswith('dump:') and k != 'core'}
+    return {k: v for k, v in rows.items() if not k.startswith(('dump:', 'cview')) and k != 'core'}
 
 
 def test_cases_mean_something(py):
@@ -286,6 +390,48 @@ def test_counters_fire(rs):
     assert c['sb:attr'] == 0 and c['sb:fwd_named'] == 0
     assert c.get('rel:plant_fired', 0) == 0
     assert c['sb:core_prop'] == 0, 'a session was read through the table property'
+    assert c['sc:core'] > 0 and c['sc:view'] > 0 and c['sc:record'] > 0
+
+
+def test_containers_mean_something(py, rs):
+    """Every container is non-empty somewhere, on Python (so a drop plant has something to drop), and Rust's export equals
+    its views at every point."""
+    r = py['rows']
+    for n in CONT_PLANTS:
+        assert any(c[n] for k, v in r.items() if k.startswith('cont:') for c in v), f'{n} is empty everywhere'
+    t0, t1 = r['cont:trunc']
+    assert t0['pending_c'] and t0['deferred'] and t0 != t1, 'escalate(1) changes nothing'
+    assert any(a for a, _ in r['mid']) and any(b for _, b in r['mid']), 'no visit sees a frontier or a pending node'
+    assert rs['rows']['cview'] and all(rs['rows']['cview'])
+    w = rs['rows']['cview-write']
+    assert [v[1] for v in w['frontier']] == ['x', 'y', 'z'] and [v[1] for v in w['deferred']] == ['w']
+    assert [k[1] for k, _ in w['demand']] == ['x', 'y'] and w['pending_c'] == [] and len(w['pending']) == 1
+    assert [k for k, _ in w['_groups']] == [['NoneType', 'None'], ['bool', 'True']] and len(w['literals']) == 1
+
+
+def test_python_methods_on_the_views(py):
+    """SLICE_DISC=py SLICE_LOOP=py SLICE_GLUE=py: Python's own discovery, loop and glue methods on a Rust session read and
+    write the containers through the views and the record methods; rows as Python's."""
+    got = _child('rust', SLICE_DISC='py', SLICE_LOOP='py', SLICE_GLUE='py')
+    assert _differ(py['rows'], _common(got['rows'])) == []
+    assert all(got['rows']['cview'])
+    c = got['counts']
+    assert c['sc:view'] > 100 and c['sc:record'] > 0, (c['sc:view'], c['sc:record'])
+
+
+@pytest.mark.parametrize('name', sorted(CONT_PLANTS))
+def test_container_plants(rs, name):
+    """439-445: the container's writes dropped. Fired, and caught by the container's own content row; `kinds` says whether
+    an answer (ask, ctx, trunc, dump) differs too (printed for the report: pytest -s, or -rA)."""
+    got = _child('rust', CONT_PLANTS[name])
+    assert got['counts']['rel:plant_fired'] > 0, 'the plant never fired'
+    diff = _differ(rs['rows'], got['rows'])
+    assert any(k.startswith('cont:') and rs['rows'][k] != got['rows'].get(k) and
+               any(a[name] != b[name] for a, b in zip(rs['rows'][k], got['rows'].get(k) or [{name: None}] * 2))
+               for k in diff), f'{name}: no content row differs'
+    kinds = sorted({k.split(':')[0] for k in diff})
+    print(f'PLANT {CONT_PLANTS[name]}: fired {got["counts"]["rel:plant_fired"]}, differing rows by kind '
+          f'{ {x: sum(k.split(":")[0] == x for k in diff) for x in kinds} }')
 
 
 def test_core_read_without_the_property(py, rs):
