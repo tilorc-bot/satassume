@@ -298,6 +298,29 @@ _REL_DVIEWS = {n: k for k, n in enumerate(('adapters', 'status', '_guards', '_li
                                             '_roles', '_info', '_link_of', '_tv', '_tsrc', '_xside', '_xheads'))}
 
 
+
+def _rel_lview(name, k):
+    """State step, part 2 (iii)(b), rest: `Relations.queue`, `_pending_links`, `_xextra`, `_xpend`, views of the core's lists
+    (relkeys.rs `RelListView`; its writes are the record methods). A `Relations` over a session with no core keeps Python's own
+    list. `specs` stays Python's: configuration, never written after `__init__`."""
+    def get(self):
+        d = self.__dict__
+        if name in d:
+            return d[name]
+        return self.session.table.core.rl_field(self, k)
+
+    def put(self, v):
+        t = self.session.table
+        if isinstance(t, TableView):
+            t.core.set_rl(self, k, v)
+        else:
+            self.__dict__[name] = v
+    return property(get, put)
+
+
+#: The list views, by attribute (the order of session.rs `RL_NAMES`).
+_REL_LVIEWS = {n: k for k, n in enumerate(('queue', '_pending_links', '_xextra', '_xpend'))}
+
 def _node(self, node, demanded=None):
     c = self.table.core
     b = c.base_get(node)
@@ -967,7 +990,13 @@ _REL_STATE_PLANTS = ('ad-lra-not-expr',
                      'rc-xterm-stale', 'rc-hseen-stale', 'rc-xslot-skip',
                      # (iii)(b) rest (relkeys.rs RS_PLANT0, 269-277): one per moved set, its add a no-op
                      'rs-linked-drop', 'rs-bounded-drop', 'rs-user_eq-drop', 'rs-xpairs-drop', 'rs-aux_eq-drop',
-                     'rs-link_eq-drop', 'rs-xpart-drop', 'rs-xcounted-drop', 'rs-xcand-drop')
+                     'rs-link_eq-drop', 'rs-xpart-drop', 'rs-xcounted-drop', 'rs-xcand-drop',
+                     # (iii)(b) rest (relkeys.rs RD_PLANT0, 390-404): one per moved dict, its set a no-op
+                     'rd-adapters-drop', 'rd-status-drop', 'rd-guards-drop', 'rd-link_lt-drop', 'rd-top-drop', 'rd-link_sel-drop',
+                     'rd-atom_sel-drop', 'rd-num_sel-drop', 'rd-roles-drop', 'rd-info-drop', 'rd-link_of-drop', 'rd-tv-drop',
+                     'rd-tsrc-drop', 'rd-xside-drop', 'rd-xheads-drop',
+                     # (iii)(b) rest (relkeys.rs RL_PLANT0, 405-408): one per moved list, its push a no-op
+                     'rl-queue-drop', 'rl-pending_links-drop', 'rl-xextra-drop', 'rl-xpend-drop')
 #: S2 (block.rs rule_tables, relations_core.rs 320-323): see test_rule_tables.py
 _RULE_BLOCK_PLANTS = ('rb-gen-model-flip', 'rb-built-model-drop', 'rb-gen-any', 'rb-check-skip')
 
@@ -1257,7 +1286,7 @@ def install():
     S.xfer = property(_xfer_get, _xfer_set)
     from satassume import relations
     R = relations.Relations
-    saved_v = {n: R.__dict__.get(n) for n in (*_REL_XVIEWS, *_REL_CVIEWS, *_REL_SVIEWS, *_REL_DVIEWS)}
+    saved_v = {n: R.__dict__.get(n) for n in (*_REL_XVIEWS, *_REL_CVIEWS, *_REL_SVIEWS, *_REL_DVIEWS, *_REL_LVIEWS)}
     for n, k in _REL_XVIEWS.items():
         setattr(R, n, _rel_xview(n, k))
     for n, k in _REL_CVIEWS.items():
@@ -1266,6 +1295,8 @@ def install():
         setattr(R, n, _rel_sview(n, k))
     for n, k in _REL_DVIEWS.items():
         setattr(R, n, _rel_dview(n, k))
+    for n, k in _REL_LVIEWS.items():
+        setattr(R, n, _rel_lview(n, k))
     S.node, S.var, S.dvar, S._dvar = _node, _var, _dvar_public, _dvar_raw
     engine.VarTable, engine.compile_formula, engine.formula_literal = TableView, _compile_formula, _formula_literal
     undo_rel = _install_relations() if os.environ.get('SLICE_REL', 'rust') == 'rust' else None

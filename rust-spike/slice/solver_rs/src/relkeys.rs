@@ -19,7 +19,7 @@ use pyo3::BoundObject;
 use pyo3::types::{PyDict, PyList, PySet, PyType};
 
 use crate::relations_core::{hooks, installed, planted, term_of};
-use crate::session::{self, tick, RelKeys, RelS, SessionCore, RD_NAMES, RS_NAMES};
+use crate::session::{self, tick, RelKeys, RelS, SessionCore, RD_NAMES, RL_NAMES, RS_NAMES};
 
 static BASIC: PyOnceLock<Py<PyType>> = PyOnceLock::new();
 
@@ -143,7 +143,7 @@ fn with_rel<T>(c: &SessionCore, rel: &Bound<'_, PyAny>, f: impl FnOnce(&mut RelS
     let i = match v.iter().position(|x| x.rel.is(rel)) {
         Some(i) => i,
         None => {
-            v.push(RelS { rel: rel.clone().unbind(), s: Default::default(), order: Default::default(), d: Default::default() });
+            v.push(RelS { rel: rel.clone().unbind(), s: Default::default(), order: Default::default(), d: Default::default(), l: Default::default() });
             v.len() - 1
         }
     };
@@ -158,6 +158,7 @@ impl SessionCore {
             r.s = Default::default();
             r.order = Default::default();
             r.d = Default::default();
+            r.l = Default::default();
         });
     }
 
@@ -624,4 +625,217 @@ impl RelDictView {
 
 pub(crate) fn rd_view(core: &Bound<'_, SessionCore>, rel: &Bound<'_, PyAny>, k: usize) -> RelDictView {
     RelDictView { core: core.clone().unbind(), rel: rel.clone().unbind(), k }
+}
+
+// ---- the lists (RL_NAMES): `Vec<Py<PyAny>>`, the items stay Python objects (atoms, terms, `(node, base)` pairs) ----
+
+/// The plants, one per moved list: `rl-<name>-drop` makes the list's push a no-op on Rust (the view's too), 405-408.
+pub(crate) const RL_PLANT0: u16 = 405;
+
+impl SessionCore {
+    fn rl_with<T>(&self, rel: &Bound<'_, PyAny>, k: usize, f: impl FnOnce(&Vec<Py<PyAny>>) -> T) -> Option<T> {
+        self.rels.borrow().iter().find(|r| r.rel.is(rel)).map(|r| f(&r.l[k]))
+    }
+
+    pub(crate) fn rl_push(&self, rel: &Bound<'_, PyAny>, k: usize, x: &Bound<'_, PyAny>) {
+        tick(session::RL_CORE);
+        if planted(RL_PLANT0 + k as u16) {
+            return;
+        }
+        with_rel(self, rel, |r| r.l[k].push(x.clone().unbind()));
+    }
+
+    pub(crate) fn rl_pop<'py>(&self, rel: &Bound<'py, PyAny>, k: usize) -> Option<Bound<'py, PyAny>> {
+        tick(session::RL_CORE);
+        let p = rel.py();
+        with_rel(self, rel, |r| r.l[k].pop()).map(|v| v.into_bound(p))
+    }
+
+    pub(crate) fn rl_len(&self, rel: &Bound<'_, PyAny>, k: usize) -> usize {
+        self.rl_with(rel, k, |v| v.len()).unwrap_or(0)
+    }
+
+    pub(crate) fn rl_clear(&self, rel: &Bound<'_, PyAny>, k: usize) {
+        tick(session::RL_CORE);
+        with_rel(self, rel, |r| r.l[k].clear());
+    }
+
+    /// The items, in order.
+    pub(crate) fn rl_items<'py>(&self, p: Python<'py>, rel: &Bound<'py, PyAny>, k: usize) -> Vec<Bound<'py, PyAny>> {
+        self.rl_with(rel, k, |v| v.iter().map(|x| x.bind(p).clone()).collect()).unwrap_or_default()
+    }
+
+    /// `xs[:] = items` (a whole replacement, no plant: it is not a push).
+    pub(crate) fn rl_replace(&self, rel: &Bound<'_, PyAny>, k: usize, items: Vec<Bound<'_, PyAny>>) {
+        tick(session::RL_CORE);
+        with_rel(self, rel, |r| r.l[k] = items.into_iter().map(|x| x.unbind()).collect());
+    }
+}
+
+/// A moved list as Rust sites see it: the core's, or Python's own list on a `Relations` whose session has no core.
+pub(crate) enum RList<'a, 'py> {
+    Core(Bound<'py, SessionCore>, &'a Bound<'py, PyAny>, usize),
+    Py(Bound<'py, PyList>),
+}
+
+impl<'a, 'py> RList<'a, 'py> {
+    pub(crate) fn of(rel: &'a Bound<'py, PyAny>, k: usize) -> PyResult<Self> {
+        let p = rel.py();
+        match session::core_of(&rel.getattr(intern!(p, "session"))?) {
+            Ok(c) => Ok(RList::Core(c, rel, k)),
+            Err(_) => Ok(RList::Py(rel.getattr(RL_NAMES[k])?.cast_into::<PyList>()?)),
+        }
+    }
+
+    pub(crate) fn push(&self, x: &Bound<'py, PyAny>) -> PyResult<()> {
+        match self {
+            RList::Core(c, rel, k) => {
+                c.borrow().rl_push(rel, *k, x);
+                Ok(())
+            }
+            RList::Py(l) => l.append(x),
+        }
+    }
+
+    /// `xs.pop()`, None when empty (callers test truth first, as Python's do).
+    pub(crate) fn pop(&self) -> PyResult<Option<Bound<'py, PyAny>>> {
+        match self {
+            RList::Core(c, rel, k) => Ok(c.borrow().rl_pop(rel, *k)),
+            RList::Py(l) => if l.is_empty() { Ok(None) } else { l.call_method0(intern!(l.py(), "pop")).map(Some) },
+        }
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        match self {
+            RList::Core(c, rel, k) => c.borrow().rl_len(rel, *k),
+            RList::Py(l) => l.len(),
+        }
+    }
+
+    pub(crate) fn is_truthy(&self) -> bool {
+        self.len() > 0
+    }
+
+    pub(crate) fn items(&self) -> Vec<Bound<'py, PyAny>> {
+        match self {
+            RList::Core(c, rel, k) => c.borrow().rl_items(rel.py(), rel, *k),
+            RList::Py(l) => l.iter().collect(),
+        }
+    }
+
+    pub(crate) fn clear(&self) -> PyResult<()> {
+        match self {
+            RList::Core(c, rel, k) => {
+                c.borrow().rl_clear(rel, *k);
+                Ok(())
+            }
+            RList::Py(l) => l.call_method0(intern!(l.py(), "clear")).map(|_| ()),
+        }
+    }
+
+    /// `xs[:] = items`.
+    pub(crate) fn replace(&self, items: Vec<Bound<'py, PyAny>>) -> PyResult<()> {
+        match self {
+            RList::Core(c, rel, k) => {
+                c.borrow().rl_replace(rel, *k, items);
+                Ok(())
+            }
+            RList::Py(l) => l.set_slice(0, l.len(), PyList::new(l.py(), items)?.as_any()),
+        }
+    }
+}
+
+/// The view Python reads a moved list through (session_live installs it as `Relations.<name>`). Its writes are the record
+/// methods, for Python's own `Relations` methods (SLICE_REL=py over a core) and tests that seed a list.
+#[pyclass(unsendable, frozen)]
+pub struct RelListView {
+    core: Py<SessionCore>,
+    rel: Py<PyAny>,
+    k: usize,
+}
+
+impl RelListView {
+    fn items_of<'py>(&self, py: Python<'py>) -> Vec<Bound<'py, PyAny>> {
+        self.core.borrow(py).rl_items(py, self.rel.bind(py), self.k)
+    }
+}
+
+#[pymethods]
+impl RelListView {
+    fn append(&self, py: Python<'_>, x: &Bound<'_, PyAny>) {
+        tick(session::RL_RECORD);
+        self.core.borrow(py).rl_push(self.rel.bind(py), self.k, x);
+    }
+
+    fn extend(&self, py: Python<'_>, xs: &Bound<'_, PyAny>) -> PyResult<()> {
+        let v: Vec<Bound<'_, PyAny>> = xs.try_iter()?.collect::<PyResult<_>>()?;
+        for x in v {
+            self.append(py, &x);
+        }
+        Ok(())
+    }
+
+    /// `xs.pop()`: the last item only (the only form `Relations` uses).
+    fn pop<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        tick(session::RL_RECORD);
+        self.core.borrow(py).rl_pop(self.rel.bind(py), self.k)
+            .ok_or_else(|| pyo3::exceptions::PyIndexError::new_err("pop from empty list"))
+    }
+
+    fn clear(&self, py: Python<'_>) {
+        tick(session::RL_RECORD);
+        self.core.borrow(py).rl_clear(self.rel.bind(py), self.k);
+    }
+
+    /// `xs[:] = items`: only the whole slice (the only form `Relations` uses).
+    fn __setitem__(&self, py: Python<'_>, i: &Bound<'_, PyAny>, items: &Bound<'_, PyAny>) -> PyResult<()> {
+        let whole = i.cast::<pyo3::types::PySlice>().ok()
+            .map(|s| s.getattr("start").ok().is_some_and(|x| x.is_none()) && s.getattr("stop").ok().is_some_and(|x| x.is_none())
+                && s.getattr("step").ok().is_some_and(|x| x.is_none()))
+            .unwrap_or(false);
+        if !whole {
+            return Err(pyo3::exceptions::PyTypeError::new_err("RelListView: only xs[:] = items"));
+        }
+        tick(session::RL_RECORD);
+        let v: Vec<Bound<'_, PyAny>> = items.try_iter()?.collect::<PyResult<_>>()?;
+        self.core.borrow(py).rl_replace(self.rel.bind(py), self.k, v);
+        Ok(())
+    }
+
+    fn __getitem__<'py>(&self, py: Python<'py>, i: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+        tick(session::RL_VIEW);
+        PyList::new(py, self.items_of(py))?.as_any().get_item(i)
+    }
+
+    fn __len__(&self, py: Python<'_>) -> usize {
+        tick(session::RL_VIEW);
+        self.core.borrow(py).rl_len(self.rel.bind(py), self.k)
+    }
+
+    fn __bool__(&self, py: Python<'_>) -> bool {
+        self.__len__(py) > 0
+    }
+
+    /// Over a copy of the items, taken when iteration starts.
+    fn __iter__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        tick(session::RL_VIEW);
+        PyList::new(py, self.items_of(py))?.into_any().try_iter().map(|i| i.into_any())
+    }
+
+    /// A Python list of the items, for a test that compares.
+    fn copy<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
+        PyList::new(py, self.items_of(py))
+    }
+
+    fn __eq__(&self, py: Python<'_>, other: &Bound<'_, PyAny>) -> PyResult<bool> {
+        self.copy(py)?.eq(other)
+    }
+
+    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+        Ok(format!("RelListView({}, {})", RL_NAMES[self.k], self.copy(py)?.repr()?))
+    }
+}
+
+pub(crate) fn rl_view(core: &Bound<'_, SessionCore>, rel: &Bound<'_, PyAny>, k: usize) -> RelListView {
+    RelListView { core: core.clone().unbind(), rel: rel.clone().unbind(), k }
 }

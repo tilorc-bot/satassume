@@ -19,7 +19,7 @@ use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyList, PySet, PyString, PyTuple};
 
-use crate::relkeys::{RDict, RSet};
+use crate::relkeys::{RDict, RList, RSet};
 use crate::session::{self, tick, SessionCore};
 use crate::term::py::PyTermTable;
 
@@ -665,6 +665,14 @@ fn rel_plant(name: Option<&str>) -> PyResult<()> {
                 None => return Err(PyValueError::new_err(format!("no plant {x}"))),
             }
         }
+        // (iii)(b) rest: `rl-<list>-drop` (relkeys.rs RL_PLANT0 + k, 405-408), the moved list's push a no-op
+        Some(x) if x.starts_with("rl-") && x.ends_with("-drop") => {
+            let n = &x[3..x.len() - 5];
+            match crate::session::RL_NAMES.iter().position(|m| m.trim_start_matches('_') == n) {
+                Some(k) => crate::relkeys::RL_PLANT0 + k as u16,
+                None => return Err(PyValueError::new_err(format!("no plant {x}"))),
+            }
+        }
         // (iii)(b) rest: `rd-<dict>-drop` (relkeys.rs RD_PLANT0 + k, 390-404), the moved dict's set a no-op
         Some(x) if x.starts_with("rd-") && x.ends_with("-drop") => {
             let n = &x[3..x.len() - 5];
@@ -1052,7 +1060,7 @@ fn rel_mention_number<'py>(rel: &Bound<'py, PyAny>, e: &Bound<'py, PyAny>) -> Py
     let sel = fresh(&s, &c, true)?;
     num_sel.set_item(e, sel)?;
     Cx { rel, s: &s, c: &c, h: &h }.tsource(e, IE, PyList::new(p, [-sel])?.as_any())?;
-    rel.getattr(intern!(p, "_xextra"))?.call_method1(intern!(p, "append"), (e,))?;
+    RList::of(rel, session::RL_XEXTRA)?.push(e)?;
     Ok(())
 }
 
@@ -1774,13 +1782,13 @@ impl<'a, 'py> Cx<'a, 'py> {
             }
         }
         let new = ad.call_method1(intern!(p, "terms_since"), (self.c.relc_get(rel, session::XTCUR),))?;
-        let extra = rel.getattr(intern!(p, "_xextra"))?;
-        if new.is_truthy()? || extra.is_truthy()? {
+        let extra = RList::of(rel, session::RL_XEXTRA)?;
+        if new.is_truthy()? || extra.is_truthy() {
             let cur = self.c.relc_get(rel, session::XTCUR);
             self.c.relc_put(rel, session::XTCUR, cur + new.len()? as i64);
-            if extra.is_truthy()? {
-                new.call_method1(intern!(p, "extend"), (&extra,))?;
-                extra.call_method0(intern!(p, "clear"))?;
+            if extra.is_truthy() {
+                new.call_method1(intern!(p, "extend"), (PyList::new(p, extra.items())?,))?;
+                extra.clear()?;
             }
             let heads = self.dict(session::RD_XHEADS)?;
             let counted = RSet::of(rel, session::RS_XCOUNTED)?;
@@ -1854,11 +1862,11 @@ impl<'a, 'py> Cx<'a, 'py> {
         let npred: usize = r.getattr(intern!(p, "NPRED"))?.extract()?;
         let sy = p.import(intern!(p, "sympy"))?;
         let (basic, rational, nan) = (sy.getattr(intern!(p, "Basic"))?, sy.getattr(intern!(p, "Rational"))?, sy.getattr(intern!(p, "nan"))?);
-        let pend = rel.getattr(intern!(p, "_xpend"))?;
+        let pend = RList::of(rel, session::RL_XPEND)?;
         while i < n {
             if let Some(node) = self.c.block_direct(p, i) {
                 if node.is_instance(&basic)? && !node.call_method1(intern!(p, "has"), (&nan,))?.is_truthy()? {
-                    pend.call_method1(intern!(p, "append"), ((&node, i),))?;
+                    pend.push(pyo3::types::PyTuple::new(p, [node.clone(), i.into_pyobject(p)?.into_any()])?.as_any())?;
                 }
                 i += npred;
             } else {
@@ -1875,11 +1883,11 @@ impl<'a, 'py> Cx<'a, 'py> {
         let solver = self.solver()?;
         let polar: i32 = r.getattr(intern!(p, "BASIS_INDEX"))?.get_item(intern!(p, "polar"))?.extract()?;
         let mut changed = true;
-        while changed && pend.is_truthy()? {
+        while changed && pend.is_truthy() {
             changed = false;
             let keep = PyList::empty(p);
-            for entry in pend.try_iter()? {
-                let entry = entry?;
+            for entry in pend.items() {
+                let entry = entry;
                 let (node, b) = two(&entry)?;
                 let b: i32 = b.extract()?;
                 let lv: i64 = match xside.get_item(&node)? {
@@ -1923,7 +1931,7 @@ impl<'a, 'py> Cx<'a, 'py> {
                 }
                 keep.append(&entry)?;
             }
-            pend.set_item(pyo3::types::PySlice::full(p), &keep)?;
+            pend.replace(keep.iter().collect())?;
         }
         self.congruence_pairs()
     }
@@ -2090,11 +2098,12 @@ fn rel_init<'py>(rel: &Bound<'py, PyAny>, session: &Bound<'py, PyAny>, specs: &B
     let has_core = session::core_of(session).is_ok();
     let pset = |name: &str| if has_core { Ok(()) } else { rel.setattr(name, PySet::empty(p)?) };
     let pdict = |name: &str| if has_core { Ok(()) } else { rel.setattr(name, PyDict::new(p)) };
+    let plist = |name: &str| if has_core { Ok(()) } else { rel.setattr(name, PyList::empty(p)) };
     set("session", proxy)?;
     set("specs", PyList::new(p, specs.try_iter()?.collect::<PyResult<Vec<_>>>()?)?.into_any())?;
     pdict("adapters")?;
     pdict("status")?;
-    set("queue", PyList::empty(p).into_any())?;
+    plist("queue")?;
     pset("linked")?;
     pset("_bounded")?;
     pdict("_guards")?;
@@ -2102,11 +2111,11 @@ fn rel_init<'py>(rel: &Bound<'py, PyAny>, session: &Bound<'py, PyAny>, specs: &B
     pdict("top")?;
     set("active", PyBool::new(p, false).to_owned().into_any())?;
     set("sharing", r.getattr(intern!(p, "EqualitySharing"))?.call0()?)?;
-    set("_pending_links", PyList::empty(p).into_any())?;
+    plist("_pending_links")?;
     pdict("link_sel")?;
     pdict("atom_sel")?;
     pdict("num_sel")?;
-    set("_xextra", PyList::empty(p).into_any())?;
+    plist("_xextra")?;
     pset("_user_eq")?;
     pdict("_roles")?;
     pdict("_info")?;
@@ -2133,7 +2142,7 @@ fn rel_init<'py>(rel: &Bound<'py, PyAny>, session: &Bound<'py, PyAny>, specs: &B
     pset("_xpart")?;
     pdict("_xheads")?;
     pset("_xcounted")?;
-    set("_xpend", PyList::empty(p).into_any())?;
+    plist("_xpend")?;
     pset("_xcand")?;
     let scope = session.getattr(intern!(p, "scope"))?;
     set("scope", scope.clone())?;
@@ -2148,12 +2157,11 @@ fn rel_init<'py>(rel: &Bound<'py, PyAny>, session: &Bound<'py, PyAny>, specs: &B
 
 #[pyfunction]
 fn rel_enqueue(rel: &Bound<'_, PyAny>, atom: &Bound<'_, PyAny>) -> PyResult<()> {
-    let p = rel.py();
     tick(session::REL_ENQUEUE);
     if plant_on(DROP_ENQUEUE) {
         return Ok(());
     }
-    rel.getattr(intern!(p, "queue"))?.call_method1(intern!(p, "append"), (atom,))?;
+    RList::of(rel, session::RL_QUEUE)?.push(atom)?;
     Ok(())
 }
 
@@ -2186,7 +2194,6 @@ fn number(rel: &Bound<'_, PyAny>, h: &Hooks, e: &Bound<'_, PyAny>) -> PyResult<b
 }
 
 fn link_later(rel: &Bound<'_, PyAny>, h: &Hooks, e: &Bound<'_, PyAny>) -> PyResult<()> {
-    let p = rel.py();
     tick(session::REL_LINK_LATER);
     let linked = RSet::of(rel, session::RS_LINKED)?;
     if !linked.contains(e)? && !number(rel, h, e)? {
@@ -2194,7 +2201,7 @@ fn link_later(rel: &Bound<'_, PyAny>, h: &Hooks, e: &Bound<'_, PyAny>) -> PyResu
         if plant_on(DROP_LINK_LATER) {
             return Ok(());
         }
-        rel.getattr(intern!(p, "_pending_links"))?.call_method1(intern!(p, "append"), (e,))?;
+        RList::of(rel, session::RL_PENDING_LINKS)?.push(e)?;
     }
     Ok(())
 }
@@ -2322,9 +2329,7 @@ fn rel_process<'py>(rel: &Bound<'py, PyAny>, user_atoms: Option<&Bound<'py, PyAn
     }
     loop {
         s.call_method0(intern!(p, "discover"))?;
-        let queue = rel.getattr(intern!(p, "queue"))?;
-        if queue.is_truthy()? {
-            let atom = queue.call_method0(intern!(p, "pop"))?;
+        if let Some(atom) = RList::of(rel, session::RL_QUEUE)?.pop()? {
             let ok = rel.call_method1(intern!(p, "_interpret"), (&atom,))?;
             RDict::of(rel, crate::session::RD_STATUS)?.set_item(&atom, &ok)?;
             rel.setattr(intern!(p, "active"), true)?;
@@ -2348,9 +2353,7 @@ fn rel_process<'py>(rel: &Bound<'py, PyAny>, user_atoms: Option<&Bound<'py, PyAn
                 }
             }
         }
-        let pending = rel.getattr(intern!(p, "_pending_links"))?;
-        if pending.is_truthy()? {
-            let e = pending.call_method0(intern!(p, "pop"))?;
+        if let Some(e) = RList::of(rel, session::RL_PENDING_LINKS)?.pop()? {
             rel.call_method1(intern!(p, "_link"), (e,))?;
             continue;
         }

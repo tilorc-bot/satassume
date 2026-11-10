@@ -270,7 +270,7 @@ pub(crate) fn relations(s: &Bound<'_, PyAny>, f: &Bound<'_, PyAny>) -> PyResult<
     let rel = s.getattr(intern!(p, "relations"))?;
     let atoms = engine_mod(p)?.getattr(intern!(p, "atoms_of"))?.call1((f,))?;
     rel.call_method1(intern!(p, "note_formula"), (&atoms,))?;
-    if rel.getattr(intern!(p, "active"))?.is_truthy()? || rel.getattr(intern!(p, "queue"))?.is_truthy()? {
+    if rel.getattr(intern!(p, "active"))?.is_truthy()? || crate::relkeys::RList::of(&rel, crate::session::RL_QUEUE)?.is_truthy() {
         let g = crate::session_glue::glue_of(s, &atoms)?;
         if !planted(DROP_REL_PROCESS) {
             rel.call_method1(intern!(p, "process"), (g,))?;

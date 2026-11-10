@@ -14,7 +14,7 @@ use pyo3::types::{PyBool, PyDict, PyList, PySet, PyTuple};
 use crate::compile::{self, block_lits, Cx, Def, Kind, Need, F, R};
 use crate::formula_py::PyP;
 
-const NAMES: [&str; 523] = [
+const NAMES: [&str; 526] = [
     "py:var", "py:dvar", "py:node", "py:compile", "py:literal", "py:table", "rs:visit", "rs:add_clause", "rs:ensure_vars",
     "rs:def_implications", "rs:neg_shared", "join", "rs:emit_callback", "refuse:depth", "refuse:convert", "refuse:object", "second:visit", "custom:own",
     "link:hit", "link:resolved", "link:none", "link:no_table", "link:second", "link:no_node",
@@ -87,6 +87,8 @@ const NAMES: [&str; 523] = [
     "reserved:423", "reserved:424", "reserved:425", "reserved:426", "reserved:427", "reserved:428", "reserved:429", "reserved:430", "reserved:431", "reserved:432", "reserved:433", "reserved:434", "reserved:435", "reserved:436", "reserved:437", "reserved:438", "reserved:439", "reserved:440", "reserved:441", "reserved:442", "reserved:443", "reserved:444", "reserved:445", "reserved:446", "reserved:447", "reserved:448", "reserved:449", "reserved:450", "reserved:451", "reserved:452", "reserved:453", "reserved:454", "reserved:455", "reserved:456", "reserved:457", "reserved:458", "reserved:459", "reserved:460", "reserved:461", "reserved:462", "reserved:463", "reserved:464", "reserved:465", "reserved:466", "reserved:467", "reserved:468", "reserved:469", "reserved:470", "reserved:471", "reserved:472", "reserved:473", "reserved:474", "reserved:475", "reserved:476", "reserved:477", "reserved:478", "reserved:479", "reserved:480", "reserved:481", "reserved:482", "reserved:483", "reserved:484", "reserved:485", "reserved:486", "reserved:487", "reserved:488", "reserved:489", "reserved:490", "reserved:491", "reserved:492", "reserved:493", "reserved:494", "reserved:495", "reserved:496", "reserved:497", "reserved:498", "reserved:499", "reserved:500", "reserved:501", "reserved:502", "reserved:503", "reserved:504", "reserved:505", "reserved:506", "reserved:507", "reserved:508", "reserved:509", "reserved:510", "reserved:511", "reserved:512", "reserved:513", "reserved:514", "reserved:515", "reserved:516", "reserved:517", "reserved:518", "reserved:519",
     // state step part 2 (iii)(b), rest: Relations' dicts in the core (relkeys.rs RelDictView), 520-522
     "rd:core", "rd:view", "rd:record",
+    // state step part 2 (iii)(b), rest: Relations' lists in the core (relkeys.rs RelListView), 523-525
+    "rl:core", "rl:view", "rl:record",
 ];
 const VAR: usize = 0;
 const DVAR: usize = 1;
@@ -492,6 +494,9 @@ pub(crate) const RK_DICT_HIT: usize = 358;
 pub(crate) const RD_CORE: usize = 520;
 pub(crate) const RD_VIEW: usize = 521;
 pub(crate) const RD_RECORD: usize = 522;
+pub(crate) const RL_CORE: usize = 523;
+pub(crate) const RL_VIEW: usize = 524;
+pub(crate) const RL_RECORD: usize = 525;
 pub(crate) const RB_GENERATED: usize = 420;
 pub(crate) const RB_BUILT: usize = 421;
 pub(crate) const RB_CHECK_ERROR: usize = 422;
@@ -502,7 +507,7 @@ pub(crate) const RB_CHECK_ERROR: usize = 422;
 const FORMULA_DEPTH: u32 = 64;
 
 thread_local! {
-    static COUNTS: [Cell<u64>; 523] = const { [const { Cell::new(0) }; 523] };
+    static COUNTS: [Cell<u64>; 526] = const { [const { Cell::new(0) }; 526] };
     /// Each session's serial, for the link's memo: a pointer could alias a dead session's.
     static SERIAL: Cell<u64> = const { Cell::new(0) };
 }
@@ -702,6 +707,14 @@ pub(crate) const RD_TV: usize = 11;
 pub(crate) const RD_TSRC: usize = 12;
 pub(crate) const RD_XSIDE: usize = 13;
 pub(crate) const RD_XHEADS: usize = 14;
+/// State step part 2 (iii)(b), rest: `Relations`' work lists held in the core, `Vec`s of Python objects (atoms, terms,
+/// `(node, base)` pairs). `specs` stays Python's list: it's the engine's configuration (the default specs or a user's), read
+/// only by iteration and never written after `__init__`.
+pub(crate) const RL_NAMES: [&str; 4] = ["queue", "_pending_links", "_xextra", "_xpend"];
+pub(crate) const RL_QUEUE: usize = 0;
+pub(crate) const RL_PENDING_LINKS: usize = 1;
+pub(crate) const RL_XEXTRA: usize = 2;
+pub(crate) const RL_XPEND: usize = 3;
 
 /// One `Relations`' sets, as RelKeys keys. Insertion order is kept beside each (`order`) for the test-only snapshot and the
 /// views' iteration; no engine code iterates these sets (grep at 022630c).
@@ -710,6 +723,7 @@ pub(crate) struct RelS {
     pub(crate) s: [std::collections::HashSet<u32>; 9],
     pub(crate) order: [Vec<u32>; 9],
     pub(crate) d: [crate::relkeys::OrdMap; 15],
+    pub(crate) l: [Vec<Py<PyAny>>; 4],
 }
 
 /// `s.table.core`.
@@ -1593,6 +1607,39 @@ impl SessionCore {
         }).collect()
     }
 
+    /// The view `Relations.<RL_NAMES[k]>` (relkeys.rs `RelListView`).
+    fn rl_field(slf: &Bound<'_, Self>, rel: &Bound<'_, PyAny>, k: usize) -> PyResult<crate::relkeys::RelListView> {
+        tick(RL_VIEW);
+        if k >= RL_NAMES.len() {
+            return Err(PyValueError::new_err("no such list"));
+        }
+        Ok(crate::relkeys::rl_view(slf, rel, k))
+    }
+
+    /// The record method for `rel.<RL_NAMES[k]> = xs` (Python's own `__init__`): the core's list becomes `xs`.
+    fn set_rl(&self, rel: &Bound<'_, PyAny>, k: usize, xs: &Bound<'_, PyAny>) -> PyResult<()> {
+        tick(RL_RECORD);
+        let v: Vec<Bound<'_, PyAny>> = xs.try_iter()?.collect::<PyResult<_>>()?;
+        self.rl_clear(rel, k);
+        for x in v {
+            self.rl_push(rel, k, &x);
+        }
+        Ok(())
+    }
+
+    /// Test-only snapshot export: every `Relations`' moved lists, as (rel, {name: [item, ...]}).
+    fn rl_snapshot<'py>(&self, p: Python<'py>) -> PyResult<Vec<(Bound<'py, PyAny>, Bound<'py, PyDict>)>> {
+        let rels: Vec<Py<PyAny>> = self.rels.borrow().iter().map(|r| r.rel.clone_ref(p)).collect();
+        rels.into_iter().map(|r| {
+            let r = r.bind(p).clone();
+            let d = PyDict::new(p);
+            for (k, n) in RL_NAMES.iter().enumerate() {
+                d.set_item(n, PyList::new(p, self.rl_items(p, &r, k))?)?;
+            }
+            Ok((r, d))
+        }).collect()
+    }
+
     /// RelKeys' size: (keys, by term id, by hash, dict-only).
     fn rk_stats(&self) -> (usize, usize, usize, bool) {
         let k = self.relkeys.borrow();
@@ -1650,6 +1697,11 @@ impl SessionCore {
                 visit.call(&x.rel)?;
                 for m in x.d.iter() {
                     for v in m.values() {
+                        visit.call(v)?;
+                    }
+                }
+                for l in x.l.iter() {
+                    for v in l {
                         visit.call(v)?;
                     }
                 }

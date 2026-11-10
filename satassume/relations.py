@@ -946,7 +946,10 @@ class Relations:
                         self._link_later(side)
                 continue
             if self.active and self.top:
-                top, self.top = self.top, {}
+                # taken then cleared, not rebound: under the Rust core `self.top`
+                # is a view of the core's dict, and a rebind would empty `top` too
+                top = list(self.top)
+                self.top.clear()
                 for e in top:
                     if _is_number(e):
                         self._mention_number(e)
