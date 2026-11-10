@@ -52,3 +52,8 @@ budget, **between gate items**: item 1 is done as far as it can be before state 
 - A wiring.py edit needs `gen_offline_data.py` rerun, or Rust refuses the offline file at load.
 - test_formula_nodes.py fails with "knowledge_live is already installed" if run under run_suite.sh's plugin; run it plain.
 - Plants 664-669, 607-629 and counters 673-679, 645-659 are free.
+- From sa-port-242 (state part 3), received ~17:00Z 10 Nov: the digest extension is taken and pushed, e82147a on
+  port/state-part3 (one test-only commit: c931c16 + 0e41490 + 76d81e0, extended per the planner's (A)/(B) rulings). **Do
+  not write it again.** known_moved.json holds the exact `_SPLIT`/`_CACHE` rows per workload and engine point and
+  known_moved.py writes them; the `_CACHE` fix (gate item 2) changes those rows, so regenerate them with known_moved.py
+  and switch `_SPLIT` to exact as the planner ruled. Not acted on here: item 2 is not started.
