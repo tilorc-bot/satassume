@@ -28,14 +28,14 @@ from decimal import Decimal
 from fractions import Fraction
 
 import pytest
-from sympy import Float, Integer, Q, S, Symbol, srepr
+from sympy import Float, Function, Integer, Q, S, Symbol, srepr
 from sympy.assumptions import Predicate
 
 from satassume import DictCache, Engine
 from satassume import sympy_api as api
 from satassume.knowledge.extensions import Args
 from satassume.knowledge.templates.registry import registry
-from satassume.relations import sympy_atom
+from satassume.relations import sympy_atom, zero_twin
 from satassume.sat.formula import And, Implies, Not, P, typed, types_of
 from satassume.state import memos
 
@@ -345,3 +345,30 @@ def test_one_engine_failed_sets(order, emptied):
         lambda e, v: e.ask(P('positive', s), P('lt', Args((v, s)))),
         _ordered((True, S.One), order), lambda: Engine(uninterpreted='none'))
     assert set(alone) == {None, 'Uninterpreted'}     # one of the two is not read
+
+
+# relations._ZERO_TWINS (process-wide): the twin ``eq(e, 0)`` of ``zero(e)``
+# holds ``e`` itself.  SymPy numbers have no twin, so the equal keys of two
+# types are Python numbers.
+f = Function('f')
+ZERO_DOORS = {
+    'ask': lambda e, v: e.ask(P('zero', v), P('positive', f(0))),
+    'verdict': lambda e, v: e.verdict(And(P('zero', v), P('positive', f(0)))),
+    'verdict, negated': lambda e, v: e.verdict(And(Not(P('zero', v)), P('real', f(0)))),
+}
+
+
+@pytest.mark.parametrize("engines", ENGINES)
+@pytest.mark.parametrize("door", list(ZERO_DOORS))
+@pytest.mark.parametrize("nodes", [(0, False), (False, 0)])
+def test_zero_twins_of_equal_python_numbers(nodes, door, engines, emptied):
+    alone = _as_alone(ZERO_DOORS[door], list(nodes), engines)
+    assert alone[0] != alone[1]
+
+
+@pytest.mark.parametrize("nodes", [(1, True, 1.0), (1.0, True, 1), (0, False), (False, 0)])
+def test_zero_twin_holds_its_own_node(nodes, emptied):
+    twins = [zero_twin(v) for v in nodes]
+    # the sides of a twin are in the atom's own order
+    assert [{type(x) for x in t.expr} for t in twins] == [{type(S.Zero), type(v)} for v in nodes]
+    assert all(zero_twin(v) is t for v, t in zip(nodes, twins))

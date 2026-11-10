@@ -623,14 +623,19 @@ def under_of(atoms) -> frozenset:
 
 
 def zero_twin(e) -> P:
-    """The twin ``eq(e, 0)`` of ``zero(e)`` (memoized per ``e``)."""
-    tw = _ZERO_TWINS.get(e)
+    """The twin ``eq(e, 0)`` of ``zero(e)`` (memoized per ``e`` and its
+    type)."""
+    # keyed with the type (``typed``): the twin holds ``e`` itself, and
+    # equal Python numbers of two types (``1``, ``True``, ``1.0``; SymPy
+    # numbers have no twin, ``zero_args``) are different sides (#96)
+    key = typed(e)
+    tw = _ZERO_TWINS.get(key)
     if tw is None:
         from sympy import S
         tw = relation_atom("eq", e, S.Zero)
         if len(_ZERO_TWINS) >= 100_000:
             _ZERO_TWINS.clear()
-        _ZERO_TWINS[e] = tw
+        _ZERO_TWINS[key] = tw
     return tw
 
 
