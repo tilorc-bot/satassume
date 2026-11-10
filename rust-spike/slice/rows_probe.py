@@ -17,7 +17,7 @@ Plants (state part 3's range 420-449), wrong values, by SLICE_SESSION_PLANT:
 424/425 sit on `_rows`' name; 426/427 on the slot install() fills, so a `_rows` name that resolves at call time sees them
 and a binding held from before the install doesn't.
 
-Use: `pytest -p rows_probe ...` with ROWS_PROBE_OUT=DIR (rows.PID.jsonl, one line per test with any count), or
+Use: `pytest -p rows_probe ...` with ROWS_PROBE_OUT=DIR (rowsprobe.PID.jsonl, one line per test with any count), or
 `rows_probe.py OUT.json [live.py args...]` for one live.py pass.
 """
 import json
@@ -121,7 +121,7 @@ try:
         yield
         d = os.environ.get('ROWS_PROBE_OUT')
         if d and any(COUNTS.values()):
-            with open(os.path.join(d, f'rows.{os.getpid()}.jsonl'), 'a') as fh:
+            with open(os.path.join(d, f'rowsprobe.{os.getpid()}.jsonl'), 'a') as fh:
                 fh.write(json.dumps({'id': item.nodeid, 'counts': report()}) + '\n')
 except ImportError:
     pass
