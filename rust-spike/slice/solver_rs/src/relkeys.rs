@@ -96,7 +96,9 @@ pub(crate) fn rk_key(c: &SessionCore, x: &Bound<'_, PyAny>, origin: Option<usize
                 k.tableless = true;
             }
         } else if let Some(l) = term_of(c, &h, x)? {
-            let t = l.table.as_ptr() as usize;
+            // the table's serial, not its address: a session that outlives its query can meet a new table at the dead one's
+            // address, and would then read its old term ids as the new table's
+            let t = l.table.try_borrow()?.serial();
             let mut k = c.relkeys.borrow_mut();
             if k.tableless || k.table.is_some_and(|u| u != t) {
                 go_dict_only(p, &mut k)?;

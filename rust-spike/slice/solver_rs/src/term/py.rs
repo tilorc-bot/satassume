@@ -91,8 +91,19 @@ fn lra_counts<'py>(py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
     Ok(d)
 }
 
+/// The last field is the table's serial (`serial()`): RelKeys tells a session's query table from a later one by it, never by
+/// address, because a dead table's address is reused (the two test_scope.py failures on the bar of 1a6d38a).
 #[pyclass(name = "TermTable", unsendable)]
-pub struct PyTermTable(TermTable, HashMap<(u8, u32, u32, bool), LraMemo>, HashMap<(u64, u32), (Py<PyAny>, u32)>);
+pub struct PyTermTable(TermTable, HashMap<(u8, u32, u32, bool), LraMemo>, HashMap<(u64, u32), (Py<PyAny>, u32)>, u64);
+
+static TABLE_SERIAL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+impl PyTermTable {
+    /// Unique per table for the process's life (1, 2, ...).
+    pub(crate) fn serial(&self) -> u64 {
+        self.3
+    }
+}
 
 /// One `lra_*` result as Rust values (Element._new step): no Python object in the memo.
 pub enum LraMemo {
@@ -281,7 +292,7 @@ impl PyTermTable {
             req(tables, "n_terms")?,
             Box::new(PyReads(reads)),
         )
-        .map(|t| PyTermTable(t, HashMap::new(), HashMap::new()))
+        .map(|t| PyTermTable(t, HashMap::new(), HashMap::new(), TABLE_SERIAL.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1))
         .map_err(|e| PyValueError::new_err(format!("tables refused: {e}")))
     }
 

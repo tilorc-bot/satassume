@@ -668,7 +668,8 @@ pub struct SessionCore {
 pub(crate) struct RelKeys {
     pub(crate) objs: Vec<Py<PyAny>>,
     pub(crate) by_term: HashMap<u32, u32>,
-    pub(crate) table: Option<usize>,
+    /// the query table's serial (`PyTermTable::serial`), never its address
+    pub(crate) table: Option<u64>,
     pub(crate) dict_only: bool,
     pub(crate) dict: Option<Py<PyDict>>,
     /// SymPy terms interned by hash while in table mode (no row); a `by_term` miss checks `dict` only when there are some.

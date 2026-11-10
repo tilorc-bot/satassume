@@ -125,6 +125,34 @@ def _child(mode):
         term_live.stack().pop()
         out['counts'] = {k: v for k, v in sa_solver.session_counts().items() if k.startswith(('rk:', 'rs:core', 'rs:view',
                                                                                               'rs:record'))}
+        # A session that outlives its query (the two tests/test_scope.py failures on the bar of 1a6d38a): the next query's
+        # table is allocated at the dead table's address, and each table gives its symbol the same term id. RelKeys must
+        # see a second table (by its serial) and go dict-only, not read `a`'s id as `b`'s.
+        import gc
+        import convert
+        a, b = Symbol('a'), Symbol('b')
+        ca = convert.convert(Q.positive(a + pi), True, eng)
+        cb = convert.convert(Q.positive(b + pi), True, eng)
+        qa = term_live._Query(ca)
+        term_live.stack().append(qa)
+        s2 = Session(eng)
+        rel2 = Relations(s2, eng._relation_specs)
+        rel2._xcand.add(a)
+        addr, before = id(qa.table), sa_solver.session_counts()['rk:outlive']
+        term_live.stack().pop()
+        del qa
+        gc.collect()
+        held = []
+        for _ in range(50):
+            qb = term_live._Query(cb)
+            if id(qb.table) == addr:
+                break
+            held.append(qb)
+        term_live.stack().append(qb)
+        out['alias'] = {'same_address': id(qb.table) == addr, 'ids': [ca.ids.get(a), cb.ids.get(b)],
+                        'b_in': b in rel2._xcand, 'a_in': a in rel2._xcand, 'len': len(rel2._xcand),
+                        'outlive': sa_solver.session_counts()['rk:outlive'] - before}
+        term_live.stack().pop()
     del out['rows']
     print(json.dumps(out))
 
@@ -165,6 +193,16 @@ def test_record_method_and_counters(rust):
     assert rust['bounded'] == ['pi'], rust['bounded']
     c = rust['counts']
     assert all(c[k] > 0 for k in ('rk:intern:input', 'rk:intern:engine', 'rk:term', 'rs:core', 'rs:view', 'rs:record')), c
+
+
+def test_a_later_table_at_a_dead_tables_address_is_a_second_table(rust):
+    """Found by the bar of 1a6d38a (tests/test_scope.py::test_answers_agree_with_the_lazy_order and
+    ::test_zero_twins_are_in_the_scope answered None for True in the suite's order): RelKeys compared the query table by
+    address, so a session outliving its query read the dead table's term ids as the next table's. On 1a6d38a this gives
+    b_in True and a_in False."""
+    al = rust['alias']
+    assert al['same_address'] and al['ids'][0] == al['ids'][1] is not None, al    # the control: the alias is reached
+    assert al == dict(al, b_in=False, a_in=True, len=1, outlive=1), al
 
 
 @pytest.mark.parametrize('plant', PLANTS)
