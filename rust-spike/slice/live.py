@@ -278,6 +278,9 @@ def load(wl):
     if wl == "zero":    # zero_wl.py: zero twins under an application, for `_glue_of`'s twin branch (before 5c7)
         import zero_wl
         return zero_wl.queries()
+    if wl == "cls":     # cls_wl.py: two equal class objects in one query, for `same_class` (the ad:cbm_noid fix)
+        import cls_wl
+        return cls_wl.queries()
     if wl == "cert":    # cert_wl.py: pi bounds near the certificate's Y, for lra_cert's pi_laurent (adapters C2)
         import cert_wl
         return cert_wl.queries()

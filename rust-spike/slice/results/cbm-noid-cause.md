@@ -177,3 +177,97 @@ test_cbm_noid.py (Rust: `sa_solver.ad_lra_export`; Python: `_memoized`'s results
   which a user can inspect.
 - test_cbm_noid.py `test_native_results_hold_the_querys_own_rows` pins today's behaviour, including the two differing
   cases. **No plant was built for Q1**: which direction is right is the question.
+
+## Gate item 1 (b)-(d) and the Q1 ruling (sa-port-244, 10 Nov; short checks, **not the bar**)
+
+Ruling: planner ~16:35Z 10 Nov (addenda/sa-port-q1-ruling.txt). It replaces "Q1, open with the planner" above.
+Runs: orion, `~/sa-rust-ids-work/sa-port-244/` (`base/` is a worktree of rust-slice 0192b35 with its own build; `q1tree/`
+a worktree of 17241af with its own build, the same `.so` bytes as the clone's).
+
+### 1 (a): waits for state part 3. Known failures until then, by test id
+`test_rs_core.py::test_two_equal_function_classes_key_as_one`, `test_rs_core.py::test_class_split_plant_is_caught`,
+`test_relations_core.py::test_join_second_object_resolves_on_its_own`. `twin_row`, plant 409 and `rk:twin` are untouched.
+
+### 1 (b): the four other failing slice files fail the same way on the base build
+Run one file per pytest, as check1.sh does, on `base/` (0192b35, `base-slice/tree.txt`):
+
+| file | base 0192b35 | this branch (c1, 3985a76 + the fix) | whose |
+|---|---|---|---|
+| test_term_live.py | 2 failed, 18 passed, 1 skipped (`'_Mark' object has no attribute 'facts'`) | the same 2 | base |
+| test_handler_count.py | 2 failed (`'NoneType' object has no attribute 'flush'`) | the same 2 | base |
+| test_catch_count.py | 3 failed (`assert [] == ['formula<_consistent']`, ...) | the same 3 | base |
+| test_cf_diff.py | collection error (`int('-q')` from `sys.argv`: a script, not a test file) | the same | base |
+
+Same test ids on both. None was fixed here; they need an owner (the first three look like tests that want the suite's
+plugins loaded; not checked). test_formula_nodes.py's 2 failures in c1 were this branch's (plants 660/661 in its
+parametrized list) and were already fixed in 4d9327c: 17 passed on Python under the plugin here; run plain as check1.sh
+does it was **not rerun** after this commit.
+
+### 1 (c) Q1 (a): the named rule and its plant
+**An equal class is represented by its first occurrence in the query's input** (RULINGS.md 5, the one named exception to
+"results hold Python's objects"). Native results are built from `q.objects`, the conversion's rows, so the first equal
+object the input shows is what a result holds. Plant 662 `ad-lra-atom-object` (formula.rs list; adapters.rs `Reader`):
+the read works on its own copy of the rows and puts the atom's own object where the row's was. test_cbm_noid.py
+`test_plant_662_fires_and_is_caught`: fired, answers unchanged, and both halves of
+`test_native_results_hold_the_querys_own_rows`' check (`_not_first`) see it.
+
+### 1 (c) Q1 (b): wiring.py's two identity readers now compare by `==`. **A change to the Python reference**
+- wiring.py `matches` 'same' shape (`a != args[j]`, was `a is not args[j]`) and the Pow key (`b == e`, was `b is e`).
+  offline_data.json regenerated: only wiring.py's source hash in the header changed.
+- Rust: rows_tpl.rs `same_term` at the same two sites: identity, else cached hashes that differ mean unequal (no Python
+  runs), else `==` in Python, counted `rows:python:eq`; counter 672 `same:eq` when two distinct objects are equal.
+- **Under Rust it is still wiring.py that answers such a query**: conversion keeps any query holding a term with two
+  equal, distinct arguments (convert.py `_Walk`, R12, `kept:args-eq-not-is`), so Rust's site never gets an input row of
+  that kind. Plant 663 `same-is` (identity back in `same_term`) therefore **cannot fire on a query: void by R12, a
+  footnote**. test_cbm_noid.py `test_plant_663_is_void_while_such_queries_are_kept` holds that (fired 0, `same:eq` 0, the
+  query counted kept), so it fails the day R12 goes. Whether a derived term can reach the site with equal, distinct
+  arguments was not shown either way; `same:eq` in each bar's session report is the measure (0 on `cls`).
+- The plant the ruling asks for is the reference's own mutant: test_cbm_noid.py
+  `test_same_shape_is_equality_not_identity` (two symbols of one name, and `f(a)` of two `Function` classes, as base and
+  exponent; `Q.extended_positive(b**b)` given `Q.extended_nonnegative(b)`) is True and True on both backends, and
+  **`[None, None]` on the reference with `is`** (run on `base/`, Python: 1 failed; `t2-mutant-python/`).
+- The old answer followed history: on the base, in one process, the same query is True once an identical `b**b` of the
+  same name has been asked first, and None in a fresh process (scratch run, not kept as a test).
+- **Answers that change.** Measured two ways: answers of the base's Python against this tree's Python, query by query,
+  and same_eq_probe.py's count of the events where the key met equal, distinct objects (the only place an answer can
+  differ; `pow` is how often the probe's site ran).
+
+  | workload | queries | answers changed | probe events | Pow keys built |
+  |---|---|---|---|---|
+@@WL@@
+
+  Suite (`tests` plus test_cbm_noid.py, probe loaded; Python, then Rust): @@SUITE@@
+
+### 1 (c) Q1 (c): `Engine.cache.store` keys
+test_cbm_noid.py `test_cache_store_key_is_the_first_equal_object`: two equal, distinct constants (`sin(k)`, `log(k)`) on
+the two sides of one query. The store ends with one key, `==` to both, with the facts `{'extended_real': True}` on both
+backends; under Rust the key is the first object the input shows. **The writer reached is `Engine.is_(u, 'extended_real')`,
+not relations.py:1116's `is_(u, 'real')`**: 14 crafted queries with a constant side or summand (`sin(1)`, `log(2)`,
+`zeta(3)`, `pi**pi`, sums, products, `Abs`, integer atoms) never called it on either backend; only
+test_relations_core.py's direct case `guard-real-at-root` does. A query that reaches :1116 is still owed, or a footnote.
+
+Footnotes (identity used as equality, no change made):
+- engine.py:1722 `cones.get(o) if o is not d else None`: `d` is taken from the same list `o` runs over, so `is` picks that
+  one element out; an equal, distinct `o` goes to `cones.get(o)`, a lookup by `==`.
+- relations.py:1657 `if o is node or o == node`: identity is only the fast path of the `==` beside it.
+
+### 1 (d): a workload that reaches `cls:eq`
+`live.py cls` (cls_wl.py, 72 queries: test_cbm_noid.py's shapes over three function names, the two class objects in
+either order). Python against Python MATCH; Python against Rust **MATCH**, `cls:eq` 174, `cls:differs` 0, `ad:cbm_noid`
+0, `ad:lra_native` 1,128, `same:eq` 0, `fm:nosession` 159 (`~/sa-rust-ids-work/sa-port-244/cls/`).
+
+| plant on `cls` | fired | livecmp against Python | `ad:cbm_noid` | `cls:eq` | caught by |
+|---|---|---|---|---|---|
+| 661 `class-is` | 2,152 | **MATCH** | 264 (0 without) | 0 | the count; test_cbm_noid.py |
+| 660 `ad-lra-class-is` | 1,015 | **MATCH** | 264 | 0 | the count; test_cbm_noid.py |
+| 662 `ad-lra-atom-object` | 174 | **MATCH** | 0 | 174 | test_cbm_noid.py only |
+
+**No plant of this item is caught by a workload's comparison.** 660 and 661 send the read to Python, which answers the
+same, so answers, call streams and end states agree and only `ad:cbm_noid` moves (0 to 264); 662 changes which object a
+result holds, which livecmp does not read. The gaps ruling asks for a caught plant or a footnote: this is the footnote,
+unless a nonzero `ad:cbm_noid` on `cls` is made a bar verdict (a question for the planner).
+
+### Not run
+The bar; the digest extension; pareto; history; mutants. dev, fuzz and the other workloads on Rust at this head (only
+`cls` was run on Rust). The 50 slice files one by one at this head (test_cbm_noid.py and test_formula_nodes.py only).
+`fm:nosession` is not 0 (159 on `cls`): gate item 3, not started. Gate items 2 to 5: not started.
