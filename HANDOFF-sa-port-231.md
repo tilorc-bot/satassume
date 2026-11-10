@@ -31,15 +31,15 @@ Handed off at the context budget, with (iii) not yet landed (rust-slice still 59
 4. After-probe, the bar, land after (iii) and state part 3.
 
 ## File:line map (at this branch's head)
-- formula.rs: `N` :32, `Occ` :52, counters :60, plants :83, `Walk::atom` :126, `Walk::walk` :155, `FNode` :225,
-  `FNode::atoms_of` :250 (Rust callers), `convert` :318, pyfunctions :345-375.
+- formula.rs: `N` :32, `Occ` :51, counters :59, plants :83, `Walk::atom` :133, `Walk::walk` :162, `FNode` :233,
+  `FNode::atoms_of` :257 (Rust callers), `convert` :326, pyfunctions from :355.
 - session.rs: `to_f` :942-989, `convert` :993-1009, `nid_in_formula` :804, `custom_in_formula` :829, `atom_fields` :933,
   `compile`/`literal` :1560/:1569, `FORMULA_DEPTH` :481, `SessionRules.classes` :520.
 - atoms_of callbacks: session_glue.rs:86, :184; compile_loop.rs:327, :372-376; query.rs:271, :287; scope_core.rs:252-261,
   :286-296; budget.rs:61, :91, :115, :199, :374, :465.
 - compile by name: compile_loop.rs:182, :344; session_glue.rs:119; query.rs:248; entry.rs:778, :781.
-- rows_tpl.rs: `QIds.pending` :1343, `rest` :1458, `check_products` :1492, `check_product` :1503, flush in
-  `direct_split` :1590; plant name :91. knowledge_common_live.py:46-47 (plant 600 in PLANTS).
+- rows_tpl.rs: `QIds.pending` :1346, `rest` :1458, `check_products` :1495, `check_product` :1506, flush in
+  `direct_split` :1589; plant name :91. knowledge_common_live.py:46-47 (plant 600 in PLANTS).
 - session_live.py `_core_rules` :34-39 (the nine classes).
 
 ## Watch
