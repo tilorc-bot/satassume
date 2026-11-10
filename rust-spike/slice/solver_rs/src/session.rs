@@ -9,7 +9,7 @@ use std::rc::Rc;
 use pyo3::exceptions::{PyException, PyKeyError, PyTypeError, PyValueError};
 use pyo3::intern;
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList, PyTuple};
+use pyo3::types::{PyBool, PyDict, PyList, PyTuple};
 
 use crate::compile::{self, block_lits, Cx, Def, Kind, Need, F, R};
 use crate::formula::{self, FNode, Refused, N};

@@ -69,6 +69,7 @@ SD = ('pending', 'pending_c', 'demand', 'literals', '_groups')
 SS = ('truncated', '_link_pending', '_neg_shared', 'sel', 'n_hold', 'verdict')
 #: The pattern cache's row (knowledge.templates._common._CACHE; not moved): the known-difference row beside `_SPLIT`'s.
 CACHE = 'process:_CACHE'
+CACHE_FIELDS = ('rules', 'node', 'nobjs', 'clauses', 'used', 'child_preds', 'complete', 'wide')
 GROUPS = (('rs_snapshot', RS), ('rd_snapshot', RD), ('rl_snapshot', RL), ('relc_snapshot', RC))
 
 _ADDR = re.compile(r' at 0x[0-9a-f]+')
@@ -378,7 +379,9 @@ class Moved:
             if short == '_SPLIT':
                 out[k] = [_h(sorted(set(rows))), _h(rows), len(rows), len(set(rows))]
         from satassume.knowledge.templates import _common
-        rows = [show(a) for a in list(_common._CACHE)]
+        # keys and values (the `_CACHE` fix, issue 323: both backends fill one table under Python's keys, so the patterns
+        # are compared too, field by field)
+        rows = [(show(a), show(tuple(getattr(p, f, '<unset>') for f in CACHE_FIELDS))) for a, p in list(_common._CACHE.items())]
         out[CACHE] = [_h(sorted(rows)), _h(rows), len(rows)]
         for name, v in self._engine(engine).items():
             out['engine:' + name] = v
