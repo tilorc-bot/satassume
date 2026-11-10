@@ -17,8 +17,8 @@
 //!   (:2119), `_is_custom` (:2152), `ask` (:2172), `_ask` (:2220), `_check_version` (:1556), `_settings_changed` (:1528),
 //!   `_drop_set_memos` (:1589), `_fresh_session` (:1412); `_over_budget`/`_note_budget` are budget.rs's (from port/5c7),
 //!   writing here. Callbacks left, counted: the module helpers that read SymPy's `is_commutative` (`_noncommutative`,
-//!   `_construction_level`, `noncommutative_false`, `_noncommutative_atoms`: `ent:cb_noncomm`), `_gave_up` (the session's
-//!   solver, the state step: `ent:cb_gave_up`), `theory_scope` (scope.py: `ent:cb_scope`), `basis_lits`/`basis_formula`
+//!   `_construction_level`, `noncommutative_false`, `_noncommutative_atoms`: `ent:cb_noncomm`), `_gave_up` (Rust since state
+//!   part 3, theory_flags.rs; `ent:cb_gave_up` still counts the read), `theory_scope` (scope.py: `ent:cb_scope`), `basis_lits`/`basis_formula`
 //!   (the rule tables: `ent:cb_basis`). Session's methods and `s.truncated` are read through the session (the state step).
 
 use std::cell::Cell;
@@ -818,7 +818,7 @@ fn ask_inner<'py>(eng: &Bound<'py, PyAny>, s: &Bound<'py, PyAny>, _lits: &Bound<
     }
     if contextual {
         tick(ENT_CB_GAVE_UP);
-        if engine_mod(p)?.getattr(intern!(p, "_gave_up"))?.call1((s,))?.is_truthy()? && !planted(ENT_ASK_NO_GAVE_UP) {
+        if crate::theory_flags::theory_flag(s, crate::theory_flags::Flag::GaveUp)? && !planted(ENT_ASK_NO_GAVE_UP) {
             bump(eng, THEORY_GAVE_UP, 1)?;
         }
     }

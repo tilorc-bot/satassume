@@ -11,8 +11,8 @@
 //! - **Calls among the five are direct Rust calls**, unless the class attribute (or the instance's) isn't the one session_live
 //!   installed: a test's or a tool's patch (`catch_count`, `mock.patch.object`) is then called by name, counted `ctx:cb_patched`.
 //! - **Called back by name, counted, each with the step that removes it:** `_check_version` and `_fresh_session`
-//!   (`ctx:cb_check_version`, `ctx:cb_fresh_session`; 5c10d), the module helpers `_gave_up`, `_exhausted`,
-//!   `_noncommutative_atoms` (`ctx:cb_helpers`; 5c10d), `stats["set_checks"]` (`ctx:py_stats`; 5c10d). `theory_scope`,
+//!   (`ctx:cb_check_version`, `ctx:cb_fresh_session`; 5c10d), the module helper
+//!   `_noncommutative_atoms` (`ctx:cb_helpers`; 5c10d; `_gave_up`/`_exhausted` are theory_flags.rs's since state part 3), `stats["set_checks"]` (`ctx:py_stats`; 5c10d). `theory_scope`,
 //!   `_within_budget` and the Session and Solver methods are read by name as Python reads them; each is Rust under the default
 //!   backend.
 use pyo3::exceptions::{PyException, PyValueError};
@@ -21,6 +21,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyTuple};
 
 use crate::engmemo;
+use crate::theory_flags::{theory_flag, Flag};
 use crate::relations_core::{
     planted, CTX_BUILD_NO_FALLBACK, CTX_BUILD_NO_LINK, CTX_CHECK_NO_ESCALATE, CTX_CHECK_NO_TRUNCATED, CTX_CHECK_RAISE,
     CTX_FAILED_NO_MEMO, CTX_SESSION_INCONSISTENT_PASS, CTX_SESSIONS_STORE, CTX_VERDICT_NO_BOUND, CTX_VERDICT_SKIP_BUDGET,
@@ -67,11 +68,6 @@ fn epoch_check(eng: &Bound<'_, PyAny>) -> PyResult<()> {
         eng.call_method0(intern!(p, "_check_version"))?;
     }
     Ok(())
-}
-
-fn helper(p: Python<'_>, name: &str, s: &Bound<'_, PyAny>) -> PyResult<bool> {
-    tick(CTX_CB_HELPERS);
-    engine_mod(p)?.getattr(name)?.call1((s,))?.is_truthy()
 }
 
 fn inconsistent_err(p: Python<'_>) -> PyResult<PyErr> {
@@ -201,7 +197,7 @@ fn build_context<'py>(eng: &Bound<'py, PyAny>, assumptions: &Bound<'py, PyAny>, 
         }
     }
     let v = match v {
-        Some(v) if !helper(p, "_gave_up", &s)? || planted(CTX_BUILD_NO_FALLBACK) => v,
+        Some(v) if !theory_flag(&s, Flag::GaveUp)? || planted(CTX_BUILD_NO_FALLBACK) => v,
         _ => {
             tick(CTX_FALLBACK);
             (s, lits) = fresh(eng, &scope, assumptions)?;
@@ -293,8 +289,8 @@ fn complete_check<'py>(s: &Bound<'py, PyAny>, lits: &Bound<'py, PyAny>) -> PyRes
         return konst(p, "INCONSISTENT");
     }
     if !planted(CTX_CHECK_NO_TRUNCATED)
-        && (helper(p, "_gave_up", s)?
-            || helper(p, "_exhausted", s)?
+        && (theory_flag(s, Flag::GaveUp)?
+            || theory_flag(s, Flag::Exhausted)?
             || s.getattr(intern!(p, "incomplete"))?.is_truthy()?
             || s.getattr(intern!(p, "truncated"))?.is_truthy()?)
     {

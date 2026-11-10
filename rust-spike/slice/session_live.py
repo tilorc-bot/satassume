@@ -1001,6 +1001,8 @@ _REL_STATE_PLANTS = ('ad-lra-not-expr',
                      'rk-class-split')
 #: S2 (block.rs rule_tables, relations_core.rs 320-323): see test_rule_tables.py
 _RULE_BLOCK_PLANTS = ('rb-gen-model-flip', 'rb-built-model-drop', 'rb-gen-any', 'rb-check-skip')
+#: State part 3 (theory_flags.rs, 428-430): engine.py `_gave_up`/`_exhausted` in Rust; see test_theory_flags.py
+_TH_PLANTS = ('th-gave-up-skip', 'th-exhausted-skip', 'th-first-only')
 
 
 def entry_native():
@@ -1375,6 +1377,8 @@ def from_env():
                     or PLANT[0] in _CONE_PLANTS or PLANT[0] in _ENTRY_PLANTS \
                     or PLANT[0] in _LRA_SLOT_PLANTS or PLANT[0] in _REL_STATE_PLANTS or PLANT[0] in _RULE_BLOCK_PLANTS:
                 sa_solver.rel_plant(PLANT[0])
+            elif PLANT[0] in _TH_PLANTS:
+                sa_solver.th_plant(PLANT[0])
         return install()
     return None
 

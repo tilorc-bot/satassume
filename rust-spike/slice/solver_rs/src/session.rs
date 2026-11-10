@@ -14,7 +14,7 @@ use pyo3::types::{PyBool, PyDict, PyList, PySet, PyTuple};
 use crate::compile::{self, block_lits, Cx, Def, Kind, Need, F, R};
 use crate::formula_py::PyP;
 
-const NAMES: [&str; 526] = [
+const NAMES: [&str; 559] = [
     "py:var", "py:dvar", "py:node", "py:compile", "py:literal", "py:table", "rs:visit", "rs:add_clause", "rs:ensure_vars",
     "rs:def_implications", "rs:neg_shared", "join", "rs:emit_callback", "refuse:depth", "refuse:convert", "refuse:object", "second:visit", "custom:own",
     "link:hit", "link:resolved", "link:none", "link:no_table", "link:second", "link:no_node",
@@ -89,6 +89,10 @@ const NAMES: [&str; 526] = [
     "rd:core", "rd:view", "rd:record",
     // state step part 2 (iii)(b), rest: Relations' lists in the core (relkeys.rs RelListView), 523-525
     "rl:core", "rl:view", "rl:record",
+    // 526-554 reserved (state part 3's counters start at 550; 550-554 are rows_probe.py's, Python-side)
+    "reserved:526", "reserved:527", "reserved:528", "reserved:529", "reserved:530", "reserved:531", "reserved:532", "reserved:533", "reserved:534", "reserved:535", "reserved:536", "reserved:537", "reserved:538", "reserved:539", "reserved:540", "reserved:541", "reserved:542", "reserved:543", "reserved:544", "reserved:545", "reserved:546", "reserved:547", "reserved:548", "reserved:549", "reserved:550", "reserved:551", "reserved:552", "reserved:553", "reserved:554",
+    // state part 3 (theory_flags.rs): engine.py _gave_up/_exhausted in Rust, 555-558
+    "th:gave_up", "th:exhausted", "th:py_flag", "th:py_helper",
 ];
 const VAR: usize = 0;
 const DVAR: usize = 1;
@@ -502,6 +506,10 @@ pub(crate) const RL_RECORD: usize = 525;
 pub(crate) const RB_GENERATED: usize = 420;
 pub(crate) const RB_BUILT: usize = 421;
 pub(crate) const RB_CHECK_ERROR: usize = 422;
+pub(crate) const TH_GAVE_UP: usize = 555;
+pub(crate) const TH_EXHAUSTED: usize = 556;
+pub(crate) const TH_PY_FLAG: usize = 557;
+pub(crate) const TH_PY_HELPER: usize = 558;
 
 /// Deeper formulas compile on Python, over this same table. Python's own limit depends on the caller's stack, so it isn't
 /// reproduced: its deepest shape is `Implies`, 3 frames a level (first failure at depth 330 from a bare stack, limit 1000), so
@@ -509,7 +517,7 @@ pub(crate) const RB_CHECK_ERROR: usize = 422;
 const FORMULA_DEPTH: u32 = 64;
 
 thread_local! {
-    static COUNTS: [Cell<u64>; 526] = const { [const { Cell::new(0) }; 526] };
+    static COUNTS: [Cell<u64>; 559] = const { [const { Cell::new(0) }; 559] };
     /// Each session's serial, for the link's memo: a pointer could alias a dead session's.
     static SERIAL: Cell<u64> = const { Cell::new(0) };
 }

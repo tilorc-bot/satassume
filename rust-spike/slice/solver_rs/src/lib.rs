@@ -42,6 +42,7 @@ mod session;
 mod solver;
 mod term;
 mod theory;
+mod theory_flags;
 mod transfer;
 mod transfer_py;
 
@@ -653,5 +654,6 @@ fn sa_solver(m: &Bound<'_, PyModule>) -> PyResult<()> {
     entry::register(m)?;
     factcache::register(m)?;
     procmemo::register(m)?;
+    theory_flags::register(m)?;
     transfer_py::register(m)
 }

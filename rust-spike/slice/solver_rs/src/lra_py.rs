@@ -42,6 +42,11 @@ pub struct LraCore {
 }
 
 impl LraCore {
+    /// (`gave_up`, `exhausted`), for theory_flags.rs (engine.py `_gave_up`/`_exhausted`).
+    pub(crate) fn flags(&self) -> (bool, bool) {
+        (self.t.gave_up, self.t.exhausted)
+    }
+
     fn bound<'py>(&self, p: Python<'py>, b: &Option<LraBound>) -> PyResult<Bound<'py, PyAny>> {
         match b {
             None => Ok(p.None().into_bound(p)),
