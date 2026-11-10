@@ -487,6 +487,11 @@ impl TermTable {
     /// negative integer.
     pub fn core_pow_bound_shape(&self, expr: TermId) -> Result<Option<(TermId, TermId)>, Refuse> {
         let (b, e) = self.core_two_args(expr)?;
+        self.core_pow_bound_parts(b, e)
+    }
+
+    /// 6i(c): the same test on a base and exponent (a Pow Python built, which has no id of its own).
+    pub fn core_pow_bound_parts(&self, b: TermId, e: TermId) -> Result<Option<(TermId, TermId)>, Refuse> {
         if self.class_of(b).flags & flag::IS_ADD == 0 || self.core_is_number(e)? && !self.core_negative_integer(e)? {
             return Ok(None);
         }
