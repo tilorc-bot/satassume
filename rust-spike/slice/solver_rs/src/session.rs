@@ -6,12 +6,13 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use pyo3::exceptions::{PyException, PyKeyError, PyRecursionError, PyTypeError, PyValueError};
+use pyo3::exceptions::{PyException, PyKeyError, PyTypeError, PyValueError};
 use pyo3::intern;
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyDict, PyList, PySet, PyTuple};
+use pyo3::types::{PyDict, PyList, PyTuple};
 
 use crate::compile::{self, block_lits, Cx, Def, Kind, Need, F, R};
+use crate::formula::{self, FNode, Refused, N};
 use crate::formula_py::PyP;
 
 const NAMES: [&str; 571] = [
@@ -533,11 +534,6 @@ pub(crate) const SC_KEY_HASH: usize = 568;
 pub(crate) const SC_KEY_EQ: usize = 569;
 pub(crate) const SB_CORE_PROP: usize = 570;
 
-/// Deeper formulas compile on Python, over this same table. Python's own limit depends on the caller's stack, so it isn't
-/// reproduced: its deepest shape is `Implies`, 3 frames a level (first failure at depth 330 from a bare stack, limit 1000), so
-/// 64 is below what Python reaches with up to about 800 frames already on the stack.
-const FORMULA_DEPTH: u32 = 64;
-
 thread_local! {
     static COUNTS: [Cell<u64>; 571] = const { [const { Cell::new(0) }; 571] };
     /// Each session's serial, for the link's memo: a pointer could alias a dead session's.
@@ -671,6 +667,9 @@ pub struct SessionCore {
     /// Set when a conversion refuses for `second_object`, which `convert` counts.
     refused_object: Cell<bool>,
     bad: RefCell<Vec<Py<PyAny>>>,
+    /// Formula step: each Formula object's node, converted once per session and found by the object's identity. The node
+    /// holds the object, so the address can't come back as another's. After the conversion nothing reads the object again.
+    fnodes: RefCell<HashMap<usize, Rc<FNode>>>,
     /// Custom predicates: a dict, because Python's table takes any hashable there, joined as a dict joins them.
     custom_ids: Py<PyDict>,
     custom_preds: RefCell<Vec<Py<PyAny>>>,
@@ -1308,69 +1307,95 @@ impl SessionCore {
         Ok((self.pred_id(p, &a.getattr(intern!(p, "pred"))?)?, a.getattr(intern!(p, "expr"))?))
     }
 
-    fn to_f(&self, f: &Bound<'_, PyAny>, depth: u32) -> PyResult<R> {
-        let p = f.py();
-        if depth > FORMULA_DEPTH {
-            return Err(PyRecursionError::new_err("formula deeper than Rust compiles"));
+    /// The session's node of `f`: converted on the first call, by one walk of the object, and found by identity after that.
+    /// A refusal isn't kept, so a refused formula is walked again the next time (rare: `fm:refuse:*`).
+    pub(crate) fn fnode(&self, f: &Bound<'_, PyAny>) -> PyResult<Result<Rc<FNode>, Refused>> {
+        let k = f.as_ptr() as usize;
+        if let Some(n) = self.fnodes.borrow().get(&k) {
+            formula::tick(formula::CACHE_HIT);
+            return Ok(Ok(n.clone()));
         }
-        if f.is_instance_of::<PyBool>() {
-            return Ok(Rc::new(if f.is_truthy()? { F::True } else { F::False }));
-        }
-        let c = &self.rules.classes;
-        if f.is_instance_of::<PyP>() || f.is_instance(c[0].bind(p))? {
-            let (pred, expr) = self.atom_fields(f)?;
-            let n = self.nid_in_formula(&expr)?;
-            self.custom_in_formula(pred, n, &expr)?;
-            return Ok(Rc::new(F::Atom(pred, n)));
-        }
-        let args = |f: &Bound<'_, PyAny>| -> PyResult<Vec<R>> {
-            let a = f.getattr(intern!(p, "args"))?;
-            let t = a.cast::<PyTuple>()?;
-            t.iter().map(|x| self.to_f(&x, depth + 1)).collect()
-        };
-        for (i, cls) in c.iter().enumerate().skip(1) {
-            if !f.is_instance(cls.bind(p))? {
-                continue;
+        Ok(match formula::convert_or(f, &self.rules.classes)? {
+            Ok(n) => {
+                let n = Rc::new(n);
+                self.fnodes.borrow_mut().insert(k, n.clone());
+                Ok(n)
             }
-            if i == 8 {
-                return Ok(Rc::new(F::Lit(f.getattr(intern!(p, "lit"))?.extract()?)));
-            }
-            let mut a = args(f)?;
-            return Ok(Rc::new(match i {
-                1 => F::And(a),
-                2 => F::Or(a),
-                3 => F::Not(a.remove(0)),
-                4 => {
-                    let y = a.remove(1);
-                    F::Implies(a.remove(0), y)
-                }
-                5 => F::Equivalent(a),
-                6 => F::Exclusive(a),
-                _ => {
-                    let (z, y) = (a.remove(2), a.remove(1));
-                    F::Ite(a.remove(0), y, z)
-                }
-            }));
-        }
-        let mut b = self.bad.borrow_mut();
-        b.push(f.clone().unbind());
-        Ok(Rc::new(F::Bad(b.len() as u32 - 1)))
+            Err(w) => Err(w),
+        })
     }
 
-    /// The formula over ids, or `None` for Python to compile it: too deep, or any error reading it. Nothing has been emitted
-    /// yet, so Python's compiler raises what it raises, where it raises it. A BaseException isn't an answer and goes up.
+    /// `atoms_of(f)`, from the session's node. Where the conversion refuses, Python's own `atoms_of` (`fm:atoms_py`).
+    pub(crate) fn atoms_of<'py>(&self, f: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyTuple>> {
+        let p = f.py();
+        match self.fnode(f)? {
+            Ok(n) => {
+                formula::tick(formula::ATOMS_NODE);
+                Ok(n.atoms_of(p))
+            }
+            Err(_) => {
+                formula::tick(formula::ATOMS_PY);
+                let a = p.import(intern!(p, "satassume.sat.formula"))?.getattr(intern!(p, "atoms_of"))?.call1((f,))?;
+                Ok(a.cast_into::<PyTuple>()?)
+            }
+        }
+    }
+
+    /// The node over this session's ids. Per atom occurrence, in the walk's order: `pred_id`, `nid_in_formula`,
+    /// `custom_in_formula`, each on the occurrence's own `pred` and `expr`, as the walk of the object ran them.
+    fn to_f(&self, p: Python<'_>, node: &FNode, n: &N) -> PyResult<R> {
+        let kids = |a: &[Rc<N>]| -> PyResult<Vec<R>> { a.iter().map(|x| self.to_f(p, node, x)).collect() };
+        Ok(Rc::new(match n {
+            N::True => F::True,
+            N::False => F::False,
+            N::Atom(k) => {
+                let o = node.occ(*k);
+                let pred = self.pred_id(p, o.pred.bind(p))?;
+                let expr = o.expr.bind(p);
+                let nid = self.nid_in_formula(expr)?;
+                self.custom_in_formula(pred, nid, expr)?;
+                F::Atom(pred, nid)
+            }
+            N::Not(a) => F::Not(self.to_f(p, node, a)?),
+            N::And(a) => F::And(kids(a)?),
+            N::Or(a) => F::Or(kids(a)?),
+            N::Implies(a, b) => {
+                let x = self.to_f(p, node, a)?;
+                F::Implies(x, self.to_f(p, node, b)?)
+            }
+            N::Equivalent(a) => F::Equivalent(kids(a)?),
+            N::Exclusive(a) => F::Exclusive(kids(a)?),
+            N::Ite(c, a, b) => {
+                let x = self.to_f(p, node, c)?;
+                let y = self.to_f(p, node, a)?;
+                F::Ite(x, y, self.to_f(p, node, b)?)
+            }
+            N::Lit(l) => F::Lit(*l),
+            N::Bad(i) => {
+                let mut b = self.bad.borrow_mut();
+                b.push(node.bad(*i).clone_ref(p));
+                F::Bad(b.len() as u32 - 1)
+            }
+        }))
+    }
+
+    /// The formula over ids, or `None` for Python to compile it: the conversion refused (too deep, a Formula class outside
+    /// the nine or a wrong arity, any error reading it), or an atom's ids refused. Nothing has been emitted yet, so Python's
+    /// compiler raises what it raises, where it raises it. A BaseException isn't an answer and goes up.
     fn convert(&self, f: &Bound<'_, PyAny>) -> PyResult<Option<R>> {
         let p = f.py();
-        match self.to_f(f, 0) {
+        let node = match self.fnode(f)? {
+            Ok(n) => n,
+            Err(w) => {
+                tick(if w == Refused::Depth { REFUSE_DEPTH } else { REFUSE_CONVERT });
+                return Ok(None);
+            }
+        };
+        formula::tick(formula::TO_F);
+        match self.to_f(p, &node, node.root()) {
             Ok(r) => Ok(Some(r)),
             Err(e) if e.is_instance_of::<PyException>(p) => {
-                tick(if self.refused_object.take() {
-                    REFUSE_OBJECT
-                } else if e.is_instance_of::<PyRecursionError>(p) {
-                    REFUSE_DEPTH
-                } else {
-                    REFUSE_CONVERT
-                });
+                tick(if self.refused_object.take() { REFUSE_OBJECT } else { REFUSE_CONVERT });
                 Ok(None)
             }
             Err(e) => Err(e),
@@ -1724,6 +1749,7 @@ impl SessionCore {
             objs: RefCell::new(vec![]),
             refused_object: Cell::new(false),
             bad: RefCell::new(vec![]),
+            fnodes: RefCell::new(HashMap::new()),
             custom_ids: PyDict::new(p).unbind(),
             custom_preds: RefCell::new(vec![]),
             custom_exprs: RefCell::new(HashMap::new()),
@@ -2022,6 +2048,11 @@ impl SessionCore {
                 visit.call(&x.rel)?;
             }
         }
+        if let Ok(m) = self.fnodes.try_borrow() {
+            for n in m.values() {
+                n.visit(&visit)?;
+            }
+        }
         if let Ok(k) = self.relkeys.try_borrow() {
             for o in k.objs.iter() {
                 visit.call(o)?;
@@ -2051,6 +2082,9 @@ impl SessionCore {
     fn __clear__(&self) {
         if let Ok(mut s) = self.solver.try_borrow_mut() {
             *s = None;
+        }
+        if let Ok(mut m) = self.fnodes.try_borrow_mut() {
+            m.clear();
         }
         if let Ok(mut x) = self.session_xfer.try_borrow_mut() {
             *x = None;

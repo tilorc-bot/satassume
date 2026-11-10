@@ -26,7 +26,9 @@ use pyo3::types::{PyBool, PyDict, PyList, PyTuple};
 use std::cell::Cell;
 use std::rc::Rc;
 
-/// session.rs's `FORMULA_DEPTH`.
+/// Deeper formulas compile on Python, over this same table. Python's own limit depends on the caller's stack, so it isn't
+/// reproduced: its deepest shape is `Implies`, 3 frames a level (first failure at depth 330 from a bare stack, limit 1000), so
+/// 64 is below what Python reaches with up to about 800 frames already on the stack.
 pub(crate) const DEPTH: u32 = 64;
 
 pub(crate) enum N {
@@ -56,7 +58,7 @@ pub(crate) struct Occ {
     pub atom: u32,
 }
 
-const NAMES: [&str; 10] = [
+const NAMES: [&str; 14] = [
     "fm:convert",       // 630: conversions run
     "fm:nodes",         // 631: nodes built
     "fm:atom_occ",      // 632: atom occurrences read (`.pred`, `.expr`)
@@ -67,6 +69,10 @@ const NAMES: [&str; 10] = [
     "fm:atoms",         // 637: `atoms_of` answered from a node
     "fm:plant_fired",   // 638
     "fm:bad",           // 639: non-formula objects kept as `Bad`
+    "fm:cache_hit",     // 640: a session's node cache answered (no walk of the object)
+    "fm:to_f",          // 641: a node walked into ids for the compiler
+    "fm:atoms_py",      // 642: Python's `atoms_of` called for a refused formula
+    "fm:atoms_node",    // 643: an engine `atoms_of` site answered from the session's node
 ];
 const CONVERT: usize = 0;
 const NODES: usize = 1;
@@ -78,6 +84,10 @@ const REFUSE_READ: usize = 6;
 const ATOMS: usize = 7;
 const PLANT_FIRED: usize = 8;
 const BAD: usize = 9;
+pub(crate) const CACHE_HIT: usize = 10;
+pub(crate) const TO_F: usize = 11;
+pub(crate) const ATOMS_PY: usize = 12;
+pub(crate) const ATOMS_NODE: usize = 13;
 
 /// Plants 601-606, each the control of one comparison in test_formula_nodes.py.
 const PLANTS: [&str; 6] = [
@@ -90,12 +100,12 @@ const PLANTS: [&str; 6] = [
 ];
 
 thread_local! {
-    static COUNTS: [Cell<u64>; 10] = const { [const { Cell::new(0) }; 10] };
+    static COUNTS: [Cell<u64>; 14] = const { [const { Cell::new(0) }; 14] };
     /// 0: none; else 1 + the index into `PLANTS`.
     static PLANT: Cell<u8> = const { Cell::new(0) };
 }
 
-fn tick(i: usize) {
+pub(crate) fn tick(i: usize) {
     COUNTS.with(|c| c[i].set(c[i].get() + 1));
 }
 
@@ -121,7 +131,6 @@ impl From<PyErr> for Stop {
 struct Walk<'a, 'py> {
     p: Python<'py>,
     classes: &'a [Py<PyAny>],
-    formula_t: Bound<'py, PyAny>,
     occ: Vec<Occ>,
     firsts: Vec<Bound<'py, PyAny>>,
     seen: Bound<'py, PyDict>,
@@ -219,7 +228,7 @@ impl<'py> Walk<'_, 'py> {
                 }
             }));
         }
-        if f.is_instance(&self.formula_t)? {
+        if f.is_instance(&p.import(intern!(p, "satassume.sat.formula"))?.getattr(intern!(p, "Formula"))?)? {
             return Err(Stop::Refuse(REFUSE_CLASS));
         }
         tick(BAD);
@@ -239,8 +248,22 @@ pub struct FNode {
     nodes: u32,
 }
 
-#[allow(dead_code)] // the session's readers come with the wiring, after (iii)
 impl FNode {
+    /// Every object the node holds, for the collector (the session's cache keeps nodes alive).
+    pub(crate) fn visit(&self, visit: &pyo3::PyVisit<'_>) -> Result<(), pyo3::PyTraverseError> {
+        visit.call(&self.source)?;
+        visit.call(&self.atoms)?;
+        for o in &self.occ {
+            visit.call(&o.obj)?;
+            visit.call(&o.pred)?;
+            visit.call(&o.expr)?;
+        }
+        for b in &self.bad {
+            visit.call(b)?;
+        }
+        Ok(())
+    }
+
     pub(crate) fn root(&self) -> &Rc<N> {
         &self.root
     }
@@ -322,24 +345,36 @@ impl FNode {
     }
 }
 
+/// Why a conversion refused; each is counted where it is decided.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum Refused {
+    Depth,
+    Class,
+    Read,
+}
+
 /// The node of `f`, or `None` where it is refused (see the module's head). `classes`: `SessionRules`' nine.
 pub(crate) fn convert(f: &Bound<'_, PyAny>, classes: &[Py<PyAny>]) -> PyResult<Option<FNode>> {
+    Ok(convert_or(f, classes)?.ok())
+}
+
+/// `convert`, saying why it refused.
+pub(crate) fn convert_or(f: &Bound<'_, PyAny>, classes: &[Py<PyAny>]) -> PyResult<Result<FNode, Refused>> {
     let p = f.py();
     if classes.len() != 9 {
         return Err(PyValueError::new_err("formula: nine classes expected"));
     }
     tick(CONVERT);
-    let formula_t = p.import(intern!(p, "satassume.sat.formula"))?.getattr(intern!(p, "Formula"))?;
-    let mut w = Walk { p, classes, formula_t, occ: Vec::new(), firsts: Vec::new(), seen: PyDict::new(p), bad: Vec::new(), nodes: 0 };
+    let mut w = Walk { p, classes, occ: Vec::new(), firsts: Vec::new(), seen: PyDict::new(p), bad: Vec::new(), nodes: 0 };
     let root = match w.walk(f, 0) {
         Ok(r) => r,
         Err(Stop::Refuse(c)) => {
             tick(c);
-            return Ok(None);
+            return Ok(Err(if c == REFUSE_DEPTH { Refused::Depth } else { Refused::Class }));
         }
         Err(Stop::Py(e)) if e.is_instance_of::<PyException>(p) => {
             tick(REFUSE_READ);
-            return Ok(None);
+            return Ok(Err(Refused::Read));
         }
         Err(Stop::Py(e)) => return Err(e),
     };
@@ -348,7 +383,7 @@ pub(crate) fn convert(f: &Bound<'_, PyAny>, classes: &[Py<PyAny>]) -> PyResult<O
     if !firsts.is_empty() && planted(0) {
         firsts.pop();
     }
-    Ok(Some(FNode { root, occ: w.occ, atoms: PyTuple::new(p, firsts)?.unbind(), bad: w.bad, source: f.clone().unbind(), nodes: w.nodes }))
+    Ok(Ok(FNode { root, occ: w.occ, atoms: PyTuple::new(p, firsts)?.unbind(), bad: w.bad, source: f.clone().unbind(), nodes: w.nodes }))
 }
 
 #[pyfunction]
