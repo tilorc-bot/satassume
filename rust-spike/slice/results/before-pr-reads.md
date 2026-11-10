@@ -137,14 +137,14 @@ query's bound variable. Not checked: whether any reader does. The 560 queries ho
 the bound variable's name, so they do not test this.
 
 Proposed check: two orders of one query over `Subs(g(x), x, 0)` and `Subs(g(y), y, 0)` with an assumption on `x`.
-**Owner: before-PR list, unassigned.**
+**Done by sa-port-251: see "The `Subs` two-order check" below (0 of 392).**
 
 ### Proposed owners
 
 | finding | owner |
 |---|---|
 | wiring.py:223 and :323 by `==` (17241af) is what removes the 34; it must land with formula | formula's step (already theirs) |
-| `Subs` alpha-equivalence check | before-PR list, unassigned |
+| `Subs` alpha-equivalence check | done by sa-port-251 (0 of 392), section below |
 | Two-order harness as a kept test (twin queries; 560 here, 34 caught on the reference with `is`) | before-PR list, unassigned; it would also serve as the plant-catching test for Q1 (b) on the reference |
 
 ## Item 0 (sa-port-251): the two-order harness on satassume main
@@ -303,6 +303,82 @@ with them, and one is a script that pytest collects by its name.**
 Not checked: whether any landing bar lists these four in TESTS or DIRECT (bar.sh's TESTS default is
 test_session_limits.py; each bar passes its own list); Rust backend through the plugin (`SLICE_SUITE_BACKEND=rust`).
 
+## The `Subs` two-order check (item 1's open point; sa-port-251)
+
+**Verdict: no flip found. 0 of 392 query pairs that differ only in the bound variable's name (`Subs(g(x), x, p)`
+against `Subs(g(y), y, p)`) change any answer with order, on base 0192b35 and on base + wiring.py's `==`. A measurement
+on my own queries plus a short read, not a proof. One other finding, not an order flip: two `Subs` whose *point* symbols
+differ only in assumptions are `==` in SymPy although the symbols are not, and the reference then treats two different
+terms as one.**
+
+### Runs (`~/sa-rust-ids-work/sa-port-251/subs/subs2.py`, `cmp.py`; Python backend, orion)
+
+- 14 term shapes x 28 forms = 392 pairs. Shapes: `Subs(f(a), a, 0)`, `Subs(sin(a) + z, a, 0)`, `Subs(a**a, a, z)`,
+  `Subs(a**2, a, z)`, `Subs(f(a) + a, a, z)`, `Subs(Abs(a), a, z)`, `Subs(exp(a), a, z)`, `Subs(a**2 + 1, a, 0)`,
+  `Subs(f(a, z), a, 1)`, `Subs(a*z, a, 2)`, `Subs(Derivative(f(a), a), a, 0)`, `Subs(a, a, z)`, `Subs(f(a), a, z) + 1`,
+  `Subs(a**2, a, z)**Subs(a**2, a, z)`. The bound `a` is the free symbol `x` in one query and `y` in the other, and
+  the forms put assumptions on `x`, on `y`, on `z`, and on the term itself (23 forms), or hold both namings in one
+  query (5 forms, such as `ask(Q.positive(S_x), Q.positive(S_y))`).
+- Each pair is asserted `==` with equal hash and different `srepr`. Each query is built after `clear_cache()`: without
+  it SymPy's cache hands back the first-built term whatever its bound name (so in ordinary use SymPy itself already
+  merges the two).
+- Per pair, 10 answers: each query alone from emptied state (`PROCESS.clear()`, `clear_cache()`, a new default engine,
+  a new `Engine` for the ask); then x-named first and y-named first, once on a new default engine and once with a new
+  `Engine` per ask (process memos kept inside the pair).
+
+| | base | base + `==` |
+|---|---|---|
+| x-named alone vs y-named alone | 0 of 392 | 0 of 392 |
+| any of the 10 answers differ | 0 of 392 | 0 of 392 |
+| base against base + `==`, any answer | 0 | |
+
+Answers of the set: 96 True, 11 False, 285 None; 0 exceptions. That the stand-in happens: `_INTERPRETED` answered a
+key whose first stored object had another `srepr` 984 times per run, so a memo-held `Subs` of one name did stand in for
+the other. That the harness can show a flip is item 0's and item 1's 34 (the same comparison, on `x**x`).
+
+### Read: who follows a `Subs` term's arguments
+
+`rg '\bSubs\b|free_symbols|atoms\(Symbol|bound_symbols' satassume/`:
+
+- euf_adapter.py:29-31: binders (`Sum`, `Integral`, `Lambda`, `Derivative`, `Subs`) are one opaque constant keyed by
+  the expression; no congruence over their arguments. The run agrees: assumptions on `x` or `y` alone give `None` for
+  every shape (for example `ask(Q.zero(Subs(x**2, x, z)), Q.zero(x))` is `None` for both namings).
+- sympy_api.py:192, the `strict=True` check, reads `e.atoms(Symbol, ...)`, "bound ones included". It reads the
+  query's own objects before anything is keyed: `subs/probe.py` asks `Subs(f(y), y, 0)` and the equal
+  `Subs(f(xp), xp, 0)` (`xp` positive) in both orders with `strict=True`, and the second raises
+  `AssumptionSymbolError` in either order while the first answers. Safe.
+- templates/__init__.py:147 (`_may_be_nan`) and domain.py:408 (`_holds_matrix`) look inside a `Subs` for `nan`,
+  infinities or a matrix. Renaming the bound variable does not change which of those a term holds. Safe by that
+  reason, not run.
+- `free_symbols` readers (scope.py:141, ref.py:151, lra_adapter.py:185/:197/:535, relations.py:579, engine.py:1774)
+  get the same set for both namings: the bound variable is not free. Not each read line by line.
+
+### Other finding: `Subs` with point symbols that differ only in assumptions (`subs/probe.py`, `probe-base.out`)
+
+With `z = Symbol('z')` and `zp = Symbol('z', positive=True)`: `z != zp`, yet
+`Subs(f(x), x, z) == Subs(f(x), x, zp)` with equal hash (SymPy compares a `Subs` through a renamed copy whose
+placeholder carries the point's printed name). The reference keys by `==`, so:
+
+| query (same answer alone and in every order tried; same on base + `==`) | answer | the same with `f(zp)`, `f(z)` written directly |
+|---|---|---|
+| `ask(Q.positive(Subs(f(x), x, zp)), Q.positive(Subs(f(x), x, z)))` | True | None |
+| `ask(Q.gt(Subs(f(x), x, zp), Subs(f(x), x, z)))` | False | None |
+| `ask(Q.eq(Subs(f(x), x, zp), Subs(f(x), x, z)))` | True | not run |
+
+This is not history dependence (no order changes it), and with `strict=True` the `zp` query raises. Whether the
+definite answers are wrong depends on whether `z` and `zp` are meant as two symbols; SymPy says they are (`z != zp`)
+and its `Subs.__eq__` says the terms are one. It is a property of keying terms by SymPy's `==`, so Rust keying "as the
+replaced Python containers did" (RULINGS 4) inherits it. **Owner: before-PR list, unassigned; a question for the
+planner, not a fix proposed here.**
+
+### Limits
+
+- 392 pairs of mine; one-variable `Subs` only; no nested `Subs`, no `Subs` whose point holds the other bound name.
+  Other binders (`Lambda`, `Integral`, `Sum`) were not tried; item 1's `eqprobe.py` is the list of which equal objects
+  can differ at all.
+- Rust was not run. Main was not run for this check (base and base + `==` only).
+- The point-assumption finding was run alone and in two orders for the strict pair only.
+
 ## Item 3: `PROCESS.clear()` and the Rust stores
 
-Not started.
+Not started (sa-port-251 reached its budget after the `Subs` check).
