@@ -6,8 +6,8 @@ commit. Scratch scripts and run output are in `~/sa-rust-ids-work/sa-port-250/` 
 | item | state |
 |---|---|
 | 1. `_INTERPRETED` first-seen object (Q1 (d)) | done, below |
-| 2. Cause of the four slice files that fail on base | **not started** (handed off) |
-| 3. `PROCESS.clear()` and the Rust stores | **not started** (handed off) |
+| 2. Cause of the four slice files that fail on base | done (sa-port-251), below |
+| 3. `PROCESS.clear()` and the Rust stores | done (sa-port-252), below |
 
 ## Item 1: can `_INTERPRETED`'s first-seen object reach an answer after wiring.py's `==` change?
 
@@ -379,6 +379,86 @@ planner, not a fix proposed here.**
 - Rust was not run. Main was not run for this check (base and base + `==` only).
 - The point-assumption finding was run alone and in two orders for the strict pair only.
 
-## Item 3: `PROCESS.clear()` and the Rust stores
+## Item 3: `PROCESS.clear()` and the Rust stores (sa-port-252)
 
-Not started (sa-port-251 reached its budget after the `Subs` check).
+**Verdict: on base, `memos.PROCESS.clear()` empties the Rust stores that are in the registry (6 of the 7 measured
+going to 0; the seventh, `_NEIGH`, was empty), and leaves two that stand in for adopted Python memos and are not in it: the dispatch's memo, class cache and entries
+(for `registry._clauses_cache` and `_mro_cache`; 50 of 50 lookups still hit after a clear) and `RULE_MASKS` (for
+`rules._MASKS`; one slot). Formula's pending c170496 covers the first, by its diff. Nothing covers the second, which
+cannot change an answer.**
+
+Base 0192b35, Rust backend installed as `memo_check.py` does, `sa_solver.so` sha256 `bfc06f0cd68a252a` from the
+clone (the base's build), orion. No source change.
+
+### Every Python process memo and what Rust has in its place
+
+The 25 names are `memos.PROCESS.names()` after `load_owners()` under Rust: Python's 9 tables and 14 adopted
+containers, plus Rust's 2 own. "py / rust" is the size after 600 dev queries on each backend, before the clear.
+
+| Python memo | py / rust | Rust store | in the registry | emptied by `PROCESS.clear()` |
+|---|---|---|---|---|
+| `engine._SPLIT` | 317 / 322 | `procmemo.rs:110` `SPLIT` (thread-local) | yes, view put in `_adopted` (session_live.py:1151) | yes, 322 -> 0 |
+| `engine._WANT` | 37 / 37 | `procmemo.rs:109` `WANT` | yes, view | yes, 37 -> 0 |
+| `engine._NEIGH` | 0 / 0 | `procmemo.rs:111` `NEIGH` | yes, view | not shown: empty in every run (no engine code calls `neighbourhood`) |
+| `relations._CLOSED` | 74 / 74 | `procmemo.rs:112` `CLOSED` | yes, view put in `_tables` | yes, 74 -> 0 |
+| `relations._SYMPY_ATOMS` | 66 / 66 | `procmemo.rs:113` `ATOMS` | yes, view | yes, 66 -> 0 |
+| `registry._clauses_cache` | 74 / 0 | `term/dispatch.rs:52` `Dispatch.memo`, held by `knowledge_live.DISPATCH` (:201) | **no** | **no**: 50 of 50 hits after the clear |
+| `registry._mro_cache` | 21 / 0 | `term/dispatch.rs:55-56` `Dispatch.classes`, `entries` | **no** | **no** (same object; emptied only by an epoch change, `sync_epoch` :173) |
+| `rules._MASKS` | 1 / 0 | `relations_core.rs:2730` `RULE_MASKS`, one slot (clause tuple, masks) | **no** | **no**: the tuple's refcount stays 4 -> 4 (fuzz); Python's goes 4 -> 3 |
+| `_common._CACHE` | 59 / 48 | none: `term/common.rs:45` holds Python's dict itself | Python's | yes, 48 -> 0 |
+| `sympy_api._KEYS`, `_CONST` | 104, 9 / 104, 9 | none: Python's tables, restamped from Rust (`memos.rs` `restamp`) | Python's | yes, 104 -> 0 and 9 -> 0 |
+| `sympy_api._FORMULAS` | 142 / 142 | none on this branch | Python's | yes, 142 -> 0 |
+| `domain._NONCOMM` | 55 / 55 | none: read by callback (`entry.rs:528`) | Python's | yes, 55 -> 0 |
+| `relations._UNDER_APPS` | 39 / 0 | none: `relations._under_apps` by callback (`relations_core.rs:2940`) | Python's | Python's own clear; empty under Rust here |
+| `relations._ZERO_TWINS` | 0 / 0 | no Rust store by that name (rg; `zero_twins` is `relations_core.rs:2961`) | Python's | empty on both backends in every run |
+| `lra_adapter._INTERPRETED` | 1 / 0 | `term/py.rs:248`, a memo inside each query's term table, and `adapters.rs:283` `LraQuery.memo`, per query | no, not process-wide | not needed if the table dies with its query (read, not measured) |
+| `solver._RULE_TABLES` | 1 / 0 | `rule_tables_gen.rs` (generated constants) and `block.rs:182`, per solver | no, not a memo | not needed |
+| `euf_adapter._class_ok` | 9 / 0 | none found (rg: no memo or cache in `euf_py.rs`) | Python's | empty under Rust here |
+| `lra_bounds._BOUNDS`, `_IV`, `_ENCLOSURES` | 0 / 0 | none: `lra_bounds.constant_bounds` by callback (`term/lra_read.rs:336`) | Python's | empty in every run |
+| `rules._DEF_IMPL`, `extensions._node_cache` | 0 / 0 | none | Python's | empty in every run |
+| (Rust only) `relations_core.SPEC_ROWS` | - / 2 | `relations_core.rs:2669` | yes, attached (`memo_install`) | yes, 2 -> 0 |
+| (Rust only) `constfield.ENCLOSURES` | - / 1 | `constfield.rs:185` | yes, attached | yes, 1 -> 0 |
+
+The other process-lifetime Rust state is not a memo: one-time reads of fixed Python objects (`PyOnceLock`s in
+memos.rs:211, relevance.rs:46, relkeys.rs:25 and :51, adapters.rs:211, constfield.rs:154, :155, :2055;
+transfer_py.rs:86), install-time settings (`HOOKS` in scope_core.rs:32 and relations_core.rs:40, `LIVE` in
+adapters.rs:216, `JOIN_HOOK` session.rs:1927, `LIMITS` constfield.rs:183, `NPRED` session.rs:627), counters and
+plants. The list is every `static` and `thread_local!` in `solver_rs/src` (rg) and every module-level container in
+`backend.py`, `lra_backend.py`, `*_live.py`, `convert.py`.
+
+### Evidence
+
+- `~/sa-rust-ids-work/sa-port-252/item3/run.sh MODE N` (`clearprobe.py`, summary by `show.py *.json`): the first N
+  queries of a workload, then every registry size, each module's own container, `sa_solver.memo_snapshot()` (the
+  maps, not the views) and the refcount of `rules.RULE_INSTANTIATED`, before and after one `PROCESS.clear()`.
+  Runs: dev 600 on Rust and on Python (same answers hash `46e32c7746b52a80`), fuzz 300 on Rust, dev 60 on Rust.
+- Registered stores: every non-empty one goes to 0, in the views and in the maps. After the clear and a new default
+  `Engine`, rerunning the same queries gives the same answers in all four runs.
+- The dispatch: `Dispatch.clauses_for` on 50 expression objects taken from the queries: 50 hits (`registry:memo`)
+  before the clear, 50 again, and 50 after `PROCESS.clear()`; `registry:epoch-clear` 0. Python's `_clauses_cache`,
+  `_mro_cache` and `_CACHE` are 0, 0, 0 at that point. The memo is keyed by `==` like `_clauses_cache`, so it is
+  one of the holders that keeps a first-seen object, and on base it outlives a clear.
+- `RULE_MASKS` is reached on fuzz, not on dev (refcount 3 -> 3 on dev Rust, 4 -> 4 on fuzz Rust, 4 -> 3 on dev
+  Python). A hit needs the stored tuple to be the very object (`relations_core.rs:2742`, `is`) and the slot keeps it
+  alive, so it cannot return another tuple's masks. It is missing from `names()`, `sizes()` and the inventory.
+- The five moved memos: the modules' own containers (`engine._SPLIT` and the rest) leave the registry at install.
+  They stayed empty under Rust in all runs, so the clear left nothing behind here.
+- c170496 (origin/port/formula, read as a diff, not built or run here): `Dispatch.clear_memos` empties `memo`,
+  `classes` and `entries`, called from a `dict` subclass that replaces `registry._clauses_cache`, so the clear of
+  that adopted name reaches it. Its own evidence is plant 665 and `test_cache_fix.py`.
+
+### Proposed owners (no change made here)
+
+| finding | proposed fix | owner |
+|---|---|---|
+| Dispatch memo, class cache and entries outlive `PROCESS.clear()` on base | c170496 as written; until it lands, a Rust two-order harness cannot isolate asks with `PROCESS.clear()` | formula's step |
+| `RULE_MASKS` is outside the registry | list it in `memos.rs` `TABLES` under `rules._MASKS`' name, as 5c9b did for the five | before-PR list, unassigned (formula's step holds relations_core.rs) |
+| Python's own containers of the five moved memos are outside the registry while Rust is installed | check the suite's 42 Python fallbacks (tests/test_transfer.py) leave them empty; if not, clear both | before-PR list, unassigned |
+| `_SPLIT` 322 against Python's 317 and `_CACHE` 48 against 59 after the same 600 queries | already c170496's subject (one pattern per key) | formula's step |
+
+### Limits
+
+- dev 600 and fuzz 300 only; the suite was not run. Stores empty before the clear show nothing about their clear.
+- No answer was shown to change because of the surviving dispatch memo; only that it survives.
+- `Engine.memos` (per engine: engmemo.rs, factcache.rs) is not `PROCESS`'s and was not checked.
+- That a term table and its memo die with the query is read from py.rs:248 and adapters.rs:277, not measured.
