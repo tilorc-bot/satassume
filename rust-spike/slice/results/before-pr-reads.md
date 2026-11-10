@@ -669,9 +669,10 @@ cache is unbounded (SymPy's holds 1000 entries per function), so it merges at le
 13 workloads (value, dev, fuzz, f6, rootof, opaque, core, scope, loop, zero, wiring, cert, budget), whole, both
 backends: 58084 asks, 26 runs, all exit 0. **20 cached functions are reached; merged hits: 0.** The workloads hold no
 `==`-equal pair of different structure, so that 0 says nothing about safety. The class was then put in by hand:
-`twins_wl.py`, 17 `Subs` pairs (points `z`/`z` positive, `oo`/`Symbol('oo')`, `nan`/`Symbol('nan')`,
-`1.5`/`Symbol('1.50000000000000')`, `1`/`Symbol('1')`; 4 shapes, 3 of 20 dropped as not `==`), 10 query forms, both
-orders, a new `Engine` per ask, 400 asks per backend.
+`twins_wl.py`, 20 `Subs` pairs built (points `z`/`z` positive, `oo`/`Symbol('oo')`, `nan`/`Symbol('nan')`,
+`1.5`/`Symbol('1.50000000000000')`, `1`/`Symbol('1')`; 4 shapes), of which 10 were kept as `==` with different
+`srepr` (which 10 was not recorded; the `z` and `oo` pairs are among them), 10 query forms, both orders, a new
+`Engine` per ask, 400 asks per backend.
 
 | twin run, merged hits (of which the result differs) | Python | Rust backend |
 |---|---|---|
@@ -682,7 +683,7 @@ orders, a new `Engine` per ask, 400 asks per backend.
 | `PROCESS.clear()` before every ask: `AssocOp.__new__` | 80 (40) | 64 (32) |
 
 Python's 0 with nothing cleared is not safety: its own memos hand SymPy the first-seen term before SymPy's cache
-is asked (below). These counts include the 6 twin-`Function` pairs' asks, which were void (see Limits).
+is asked (below). Each run also made 240 asks on 6 twin-`Function` pairs, which were void and added no merged hit (see Limits).
 
 | cached function | reached from (Python reference; Rust backend) | between `==`-equal inputs | mark |
 |---|---|---|---|
