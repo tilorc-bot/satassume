@@ -274,3 +274,66 @@ totals over the run's two passes. `scope:cb_atoms_of` is 0 by construction (the 
 604 and 605 are void on both workloads: no `Implies` or `Ite` node reaches the conversion there. They are caught only in
 test_formula_nodes.py; they need a workload with such formulas, or a footnote. 602 fires and is not caught on either;
 its classification is still owed. The other 11 workloads were not run with plants.
+
+## sa-port-246, 10 Nov: gate item 1, the `_common._CACHE` fix (c170496). Unbarred, unlanded.
+On 9a7d47f (rust-slice 0192b35). Ruling: the planner's `_CACHE` fix ruling of 10 Nov ~12:53. One commit, c170496.
+
+### What changed
+- **common.rs `atom_pattern` (:636).** knowledge_live's symbol and constant templates (`rust_compiled`,
+  knowledge_live.py:288) now build Python's key in Rust (`('symbol', frozenset(assumptions0.items()))`,
+  `('const', const_key(value))`), read `_common._CACHE` and fill it on a miss, as `units` does (`room`, MAX_CACHE). For an
+  input term the key comes from the term table's read, so no Python runs for it; for a node read here the reads are the
+  ones Python's template makes (`assumptions0`; `const_value` only on a miss, where before it ran on every call).
+- **A second cause, found by the new test: dispatch.rs `clear_memos` (:316).** `memos.PROCESS.clear()`
+  (`reset_module_state`) emptied `_CACHE` and Python's `registry._clauses_cache`, but Rust's memo of compiled nodes
+  (`Dispatch.memo`, which stands in for `_clauses_cache`) was registered nowhere and survived. After a clear Rust served
+  nodes from it and never refilled `_CACHE`: 0 keys where Python held 3 on the test's queries. The memo and the class
+  cache are now emptied with Python's two (knowledge_live.py:246, a dict subclass on `registry._clauses_cache` whose
+  `clear` also calls `clear_memos`). Workloads don't clear mid-run, so 239's twin and transfer numbers did not show it;
+  the suite clears between tests.
+- knowledge_live's shadow compares this call's uncached build (`_fresh`, :127) with what Python's key holds. Comparing
+  the cached pattern would compare it with itself, since Python's template now answers from the same entry.
+- The two plants in `rust_compiled` (`knowledge-no-query-drop`, `knowledge-value-multigamma-drop`) cut a copy, so they
+  don't shorten the cached pattern for later queries.
+
+### The key determines the value
+1. By reading. A symbol's pattern is built from its `assumptions0` items (filtered by VOCAB, not None, not
+   `commutative`), closed under the rule base and sorted, and the key is the set of exactly those items. A constant's is
+   built from `const_value(value, pred)` over `_CONST_BASIS`, and the key is `(type(value), value)`. What the key leaves
+   out is the order of `assumptions0`, which matters only if the closure is contradictory (`units` then keeps the
+   generator's order); SymPy refuses such a Symbol.
+2. By running: cache_det.py. On every `_CACHE` hit the pattern is built again from the hitting call's own arguments,
+   outside the cache, and compared field by field. It covers `_common.facts`/`units` under their Python names on both
+   backends, and the atom templates on Rust (`RECHECK`, knowledge_live.py:124). It does not cover templates Rust calls
+   natively (rows_tpl.rs, outer_tpl.rs, fn_tpl.rs); for those the evidence is the digest's `_CACHE` row against Python's,
+   with values (below).
+3. Plant 664 `atom-symbol-key-names` (a symbol's key without its values: `Symbol(prime=True)` then
+   `Symbol(composite=True)` share an entry): caught three ways by test_cache_fix.py:139 (the probe's mismatch, the table
+   against Python's, and the answer `ask(Q.prime(b))` True where Python says False).
+   Plant 665 `dispatch-keeps-memo`: caught by :171 (`_CACHE` short of Python's keys after a clear).
+
+### Checked so far (short checks, **not the bar**)
+- test_cache_fix.py 7 passed. Also passed on the final build: test_knowledge_common 26, test_knowledge_value_units 10,
+  test_knowledge_core 7, test_knowledge_lazy 7, test_formula_nodes 15, test_knowledge_f6_fallback 6,
+  test_knowledge_fn_direct 14; on the build before `clear_memos`: test_knowledge_rows 51, test_knowledge_wire 6,
+  test_cbm_noid 2 (6 skipped outside the backend plugin).
+- Digest, in a scratch tree (c170496's first build + e82147a cherry-picked + `_CACHE`'s row extended to values + **no
+  known rows**), Python against Rust, `--check entry`: twin MATCH (`_SPLIT` 2/2, `_CACHE` 2/2; before 2/4, 2/0),
+  transfer:7:60 MATCH (174/174, 277/277, 332/332; `_CACHE` 19/19, 23/23, 24/24; before 174/182 ..., 19/14 ...), dev MATCH
+  (first point 35/35, 12/12), cls MATCH (25/25, 11/11). These four ran before `clear_memos` was added.
+- **Running detached, not read here**: `~/sa-rust-ids-work/sa-port-246/j1` (job1.sh, end marker `j1/end.txt`): the same
+  digest on 20 workloads at c170496 (`j1/dg/verdicts.txt`; ground and port MATCH when this was written), cache_det on
+  both backends on the 20 (`j1/det/*.json`), pycalls for knowledge_live.py before (17241af) and after on six workloads
+  (`j1/pc`), then the suite on Python and on Rust with `-p cache_det` (`j1/suite-python`, `j1/suite-rust`).
+
+### Not done in item 1
+- The digest change itself: e82147a arrives with the rebase onto state part 3. Then apply
+  `~/sa-rust-ids-work/sa-port-246/cache-values.diff` (moved_digest.py: `_CACHE`'s row by keys and values), regenerate
+  known_moved.json with known_moved.py from clean runs (expected: no rows left), and switch `_SPLIT` to exact in
+  livecmp.py. Plants 450-453 (test_split_order.py) come with e82147a: 451 `atoms-uncached` makes Python do what Rust
+  did before the fix, so its test's expected Rust row counts change (twin 4 to 2).
+- Python calls for knowledge_live.py module-wide, before and after: in the job (`j1/pc`), not read.
+- Layer (b) of 239's report (Rust calling an atom template again where Python's `_clauses_cache` serves): not looked
+  for. With the fix a second call is a `_CACHE` hit and adds no row; `common:atom:hit` counts them.
+- test_knowledge_value_units.py::test_with_no_query_rust_answers now compares a pattern with itself (Python's template
+  hits the entry Rust filled). test_cache_fix.py:109 is the test that fills in both orders.
