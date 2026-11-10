@@ -59,7 +59,9 @@ sa-port-216 read bar 1, rebased onto db7130a, ran bar 2 and landed it.
   `term_live.py`, `solver_rs/src/{relations_core,session}.rs`, `term/{algebra,py,relations,table}.rs`, the tests
   `test_relc_core.py` (new) and `test_term_ids.py`, `harness/state.py` (+2), and results/handoffs. That is guarded source, so
   **bar 3 runs on the rebased head** (6i(b)'s code commits are unedited by the rebase).
-- Tested for landing: BAR3_TESTED (bar 3 below). Landed: BAR3_LANDED.
+- Tested: **c59bb1a** (bar 3 below, clean) as 6i(b) alone, and **6f9c44a** as the stack with 6i(c) (port-6i-c.md), which is
+  what lands: one push of 6f9c44a's source plus results/ and HANDOFF commits. The landed head and the incoming diff at
+  landing are in the landing `agent report`.
 
 ## Bar 1 (pareto1, `~/sp19/sa-rust-ids-work/sa-port-214/bar-6ib` on fe250ff, base 80665b5)
 Run 15:18Z-16:16Z 9 Nov under a shared lease; every phase exited 0 (build, tests, suite, live, plants, extra, suiteplants,
@@ -182,7 +184,61 @@ differ from bar 1's (`registry:python` 26 → 33, `rows:python` 0 → 64) and eq
 not this step, puts scope's queries on Rust. Kept shares: **every share equals base**, the same numbers as bar 1's list
 below.
 
-BAR3_SECTION
+## Bar 3 (pareto1, `~/sp19/sa-rust-ids-work/sa-port-220/bar-6ib3` on c59bb1a, base c822173): 6i(b)'s own evidence
+Run 06:15Z-07:30Z 10 Nov under a shared lease; every phase exited 0 (build, tests, suite, live, plants, extra, suiteplants,
+sum); seed1 was not run. `.so` sha256 c1b686bf…. Base suite rows: `sa-port-217/bar-state-relations-iii-ab/suite` (022630c,
+c822173's landing bar). WLS: the 11. PLANTS: the six fn-* plus `ctx-check-raise`. Tests phase: **886 passed, 4 skipped**,
+exit 0. DIRECT: `relations_direct.py 300 0` exit 0; `dispatch_direct.py` exit 0, BAD 0, `registry:rust:_unary` 6 and `nary`
+1 reached. Read by sa-port-224 (`~/sa-rust-ids-work/sa-port-224/fb-6ib3.txt`, `fn-ctx.txt`).
+1. **Suite by id:** 5,991 passed, 127 failed, 23 skipped (plus 18 xfailed), over 6,159 ids. **Against base: new 0, gone 0,
+   changed outcome 1:** `tests/test_history.py::test_module_state_inventory_is_classified` failed -> passed. The base rows
+   are 022630c's, where it failed; c822173, landed on top of them, fixed it (it classifies `relations.RELATION_ATOM_IMPL`).
+   Not this step's change. Passed splits into **5,990 with no handler firing and 1 with a firing:**
+   `tests/test_invariants.py::test_ci_stream_reports_only_what_replays`, the named case.
+2. **Fresh dev and fuzz: answers and state MATCH** (Rust against Python, traced and untraced; Python against Python as the
+   control); answers_sha as bars 1 and 2. **All 11 extra workloads MATCH**, each with its Python control MATCH.
+3. **Plants caught:** the same five of six fn plants with the same fire counts as bars 1 and 2, plus `ctx-check-raise`
+   DIFFER on all 13 workloads; table below.
+4. **Quiet handler firings on Rust: the handler multiset is the same as base** (ids whose caught rows differ: 0): the same
+   39 rows in 2 tests as bar 2 (34 + 4 `_consistent` in test_ci_stream_reports_only_what_replays, 1
+   `Engine._build_context` "Already mutably borrowed" in test_protocol_on_fuzz). **`ctx:caught`: 0 on all 13 workloads**, 1
+   in the suite (test_protocol_on_fuzz). Not void: under `ctx-check-raise` every complete check is caught, with bar 2's
+   numbers exactly (dev 833, fuzz 2,980, f6 6, value 636, rootof 368, opaque 31, core 300, scope 166, loop 244, zero 718,
+   wiring 5,004, cert 61, budget 16). The live and extra Rust handler files have 0 rows; TermFault in pytest.log: 0.
+5. **Known differences in answers or read state: none.**
+
+### Plants (bar 3)
+Same reading as bars 1 and 2 (the suite's "plant fired: 0" is void for the fn plants; the suite catch is read from changed
+outcomes against this run's plain suite).
+
+| plant | fired (bar) | caught by | suite (against the plain suite) |
+|---|---|---|---|
+| `fn-unary-drop-last` (340) | dev 31, f6 75, opaque 45, value 309, zero 5 | dev, f6, opaque, value DIFFER; zero MATCH (5 fires, no answer moved) | not run (fires on dev) |
+| `fn-nary-drop-last` (341) | f6 47 | f6 DIFFER | 11 changed (test_nan_arguments Falling/RisingFactorial 4, test_notmpl_elementary 2, test_notmpl_special 5); bars 1 and 2 had 14, the 3 missing ids not read |
+| `fn-unit-interval-flip` (342) | f6 18 | f6 DIFFER | 1 changed (`test_sympy_api.py::test_function_closures`) |
+| `fn-value-drop` (343) | value 236 | value DIFFER | 0 changed: **void in the suite** |
+| `fn-genocchi-half-flip` (344) | value 50 | value DIFFER | 1 changed, the planted-history test failed -> passed: the id()-reuse flip, not a catch, so **void in the suite** |
+| `fn-unary-shift` (345) | dev 2, f6 33, opaque 16, value 212 | dev, f6, opaque, value DIFFER | not run (fires on dev) |
+| `ctx-check-raise` (Q2 control) | as item 4 | DIFFER on all 13 | not run (fires on dev) |
+
+Every fn plant fires 0 on fuzz, budget, cert, core, loop, rootof, scope and wiring, and those all MATCH. Void cells:
+`fn-unary-drop-last` on zero (fires, MATCH); `fn-value-drop` and `fn-genocchi-half-flip` in the suite.
+
+### Fallbacks and kept shares (bar 3)
+`fbcounts.py` on bar 3 against sa-port-209's harness bar gives **exactly bars 1 and 2's deltas** and nothing else:
+`registry:python` dev 126 → 95, f6 211 → 65, opaque 101 → 42, value 507 → 180, zero 43 → 38 (`_unary`/`nary` 0 on every
+workload); `fn:` value `rust:unary` 309, `rust:genocchi_half` 50, `value_units` 236, **`value:sympy` 264**; f6 `rust:unary`
+75, `rust:nary` 47, `rust:unit_interval` 18; opaque `rust:unary` 45; dev 31; zero 5; 0 on the other eight; `registry:kept`
+f6 2 → 14, opaque 2 → 9, value 6 → 15; **value `scaffold:rebuilt` 221 → 269 (+48)**. Every `rows:python` count equals base;
+**`ad:cbm_noid` 0 on all 13 workloads.** Kept shares: every share equals bar 2's (the list below); the bar's own base has
+rows for dev, fuzz, loop, zero, cert, scope and budget only, and those are equal.
+
+## The stack (6i(b) + 6i(c), one bar and one push)
+6i(b) was not landed alone. Under the general stack ruling sa-port-219 stacked 6i(c) on c59bb1a (port/6i-c-stack) and ran
+one full bar on **6f9c44a**; port-6i-c.md has that bar, which is the landing bar for both steps: suite 5,992 / 126 / 23,
+new 0, gone 0, changed 2 (the inventory test above and the id()-reuse flip), handler multiset = base, all 13 workloads
+MATCH, `_unary`/`nary` 0 in `registry:python` and the same `fn:` counts in the merged build. Bar 3 stays as 6i(b)'s own
+evidence (the fn plants ran only here) and as the bisect fallback.
 
 ## Fallbacks to Python inside ported code (planner's fallback-reporting ruling, with its `ad:cbm_noid` addition)
 From bar 1's knowledge files by `fbcounts.py` (prefixes `registry:python:`, `fn:`, `ad:cbm_noid`, `rows:python:`,
@@ -300,6 +356,8 @@ the rebase brought no change to functions.py, fn_tpl.rs or dispatch.rs). With `f
 facts, a named SymPy-semantics callback (value 264, 0 on the other 12 workloads; bar on fe250ff); offline_data.json's
 `value_units` table covers every pair it is called with and is unread; reading it in fn_tpl.rs removes the callback for
 the tagged classes." The other footnotes stand as in STATUS.
+With core.py from 6i(c), landed in the same push, the count is **21 of 32** (port-6i-c.md has core.py's footnote).
+Bar 3 and the stack bar repeat `fn:value:sympy` value 264, 0 on the other 12.
 
 ## Not run
 - Moved to "before any backend PR", none quoted as met:
@@ -313,7 +371,8 @@ the tagged classes." The other footnotes stand as in STATUS.
   - forced moves;
   - the native path;
   - timing.
-- The module-wide probe was not rerun on e817aa1 (no functions.py or Rust change came in).
+- The module-wide probe was not rerun on e817aa1 or c59bb1a (no functions.py, fn_tpl.rs or dispatch.rs change came in);
+  for the stacked tree see port-6i-c.md.
 - The dispatch_direct.py shared-cache question: `_common._CACHE` is shared by pattern key, so dispatch_direct.py's
   side-by-side comparison may read one side's pattern on the other, as test_knowledge_fn_direct.py's first draft did.
   **Unchecked; a backend-PR-list item.**
