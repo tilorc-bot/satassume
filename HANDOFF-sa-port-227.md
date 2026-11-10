@@ -19,7 +19,7 @@ Branch port/state-part3 (from rust-slice c822173), head e1e4729 + this handoff. 
    deferred, verdict, literals, defvars, _dv, _dv_node, sel, truncated :376); session_live.install() :1201 makes
    table/base/xfer properties onto SessionCore. Mark each row's overlap with (iii) (Relations views `_REL_XVIEWS`/`_REL_CVIEWS`).
 3. Session.solver code: the `_ses_*`, `_q`, `_ent`, `_compile_formula`, `_formula_literal`, `_context_session` wrappers in
-   session_live.py can use the core's copy (`TableView.bind` :127 `set_solver`) instead of `s.solver`. The `_rel_*` wrappers go into
+   session_live.py can use the core's copy (`TableView.bind` :126 `set_solver`) instead of `s.solver`. The `_rel_*` wrappers go into
    relations_core.rs: condition (2), so ask forward-chain-3b (Status: question) before touching them. Read `_gave_up`/`_exhausted`
    (engine.py, rg 'def _gave_up|def _exhausted') first.
 5. SessionCore shape: after (iii) incl. 225 lands; rebase.
