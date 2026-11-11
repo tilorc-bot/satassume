@@ -69,12 +69,6 @@ class Rules:
                            conclusion if isinstance(conclusion, list) else [conclusion]))
 
 
-def ge2_alternatives(k: int):
-    """Premise alternatives meaning ``objs[k]`` is an integer >= 2."""
-    return ([(k, 'prime', True)], [(k, 'composite', True)],
-            [(k, 'even', True), (k, 'positive', True)])
-
-
 def const_value(c, pred: str):
     """Static truth value of ``pred`` for the constant ``c`` (None if the
     constant does not decide it).  Beyond the old-system property this

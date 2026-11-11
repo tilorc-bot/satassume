@@ -202,5 +202,5 @@ def test_table_sizes_and_names():
     assert len(names) == len(set(names)), "row names are unique"
     for r in iter_rows(core.IPI_TABLE):
         for lit in (*r.prem, *r.concl):
-            assert lit[1] in _common.VOCAB or lit[1] in ('$p', 'flip:$p', 'int>=2'), r.text()
+            assert lit[1] in _common.VOCAB or lit[1] in ('$p', 'flip:$p'), r.text()
     print("rows:", {"ipi": count_rows(core.IPI_TABLE)})

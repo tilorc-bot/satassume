@@ -17,10 +17,7 @@ integer, a name the caller binds to an index (``'N'``, ``'B'``, ``'k'``), or
 a *group* name bound to several indices (``'*'``, ``'rest'``, ``'neg'``):
 a group literal stands for the literal on each of them (the builder
 :func:`._common.lits`), a conjunction in the premises and a disjunction in
-the conclusion.  The pseudo-predicate ``'int>=2'`` in a premise expands to
-the alternatives of :func:`._common.ge2_alternatives`, one rule each (on a
-group, every slot's: the product of the alternatives).  A row
-with ``kind='equiv'`` is ``premises -> (a <-> b)`` as two rules,
+the conclusion.  A row with ``kind='equiv'`` is ``premises -> (a <-> b)`` as two rules,
 ``premises & a -> b`` then ``premises & b -> a``.
 
 The interpreter :func:`expand` yields ``(row, premises, conclusion)``; the
@@ -34,17 +31,15 @@ from collections.abc import Callable, Iterator
 from itertools import combinations
 from typing import Any
 
-from ._common import SIGN_FLIP, Rules, ge2_alternatives, lits
+from ._common import SIGN_FLIP, Rules, lits
 
 __all__ = ['Row', 'Section', 'count_rows', 'expand', 'iter_rows', 'rules_of']
-
-GE2 = 'int>=2'
 
 
 class Row:
     """One rule schema: ``And(prem) -> Or(concl)`` (``kind='rule'``) or
     ``prem -> (concl[0] <-> concl[1])`` (``kind='equiv'``)."""
-    __slots__ = ('_concl', '_ge2', '_prem', 'concl', 'kind', 'name', 'note', 'preds', 'prem', 'when')
+    __slots__ = ('_concl', '_prem', 'concl', 'kind', 'name', 'note', 'preds', 'prem', 'when')
 
     def __init__(self, name: str, prem, concl, when=(), preds=None, kind='rule', note=''):
         self.name = name
@@ -67,7 +62,6 @@ class Row:
         ``prem`` or ``concl``, e.g. a mutation test)."""
         self._prem = tuple(_norm(s) for s in self.prem)
         self._concl = tuple(_norm(s) for s in self.concl)
-        self._ge2 = any(s[1] == GE2 for s in self.prem)
 
     def __repr__(self):
         return f"Row({self.name!r})"
@@ -125,40 +119,18 @@ def _lits(spec, slots, cur):
     return lits(v, pred, pos)
 
 
-def _premise_alternatives(row, slots, cur):
-    """The premise lists of a row (more than one only for ``int>=2``)."""
-    if not row._ge2:
-        prem = []
-        for spec in row._prem:
-            prem += _lits(spec, slots, cur)
-        return (prem,)
-    alts = [[]]
-    for spec in row._prem:
-        if spec[1] == GE2:
-            k = spec[0] if type(spec[0]) is int else slots[spec[0]]
-            # a slot list ('*', 'rest'): every slot is an integer >= 2
-            for j in ((k,) if type(k) is int else k):
-                alts = [a + list(g) for a in alts for g in ge2_alternatives(j)]
-        else:
-            ls = _lits(spec, slots, cur)
-            alts = [a + ls for a in alts]
-    return alts
-
-
 def _row_specs(row: Row, slots, cur):
-    out = []
-    for prem in _premise_alternatives(row, slots, cur):
-        if row.kind == 'equiv':
-            (a,), (b,) = (_lits(row._concl[0], slots, cur), _lits(row._concl[1], slots, cur))
-            # cond -> (a <-> b) as two rules
-            out.append(([*prem, a], [b]))
-            out.append(([*prem, b], [a]))
-        else:
-            concl = []
-            for spec in row._concl:
-                concl += _lits(spec, slots, cur)
-            out.append((prem, concl))
-    return out
+    prem = []
+    for spec in row._prem:
+        prem += _lits(spec, slots, cur)
+    if row.kind == 'equiv':
+        (a,), (b,) = (_lits(row._concl[0], slots, cur), _lits(row._concl[1], slots, cur))
+        # cond -> (a <-> b) as two rules
+        return [([*prem, a], [b]), ([*prem, b], [a])]
+    concl = []
+    for spec in row._concl:
+        concl += _lits(spec, slots, cur)
+    return [(prem, concl)]
 
 
 def _rows(rows, guards, ctx, slots) -> Iterator[tuple[Any, list, list]]:
