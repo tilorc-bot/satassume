@@ -850,3 +850,20 @@ def test_eq_with_foreign_numbers():
         CBRT3 ** 3 == sympy.Integer(3)       # value 3, not decidable here
     with pytest.raises(TypeError):
         PI < 3.5
+
+
+def _eq_or_undecided(a, b):
+    try:
+        return a == b
+    except Undecided:
+        return None
+
+
+def test_eq_with_sympy_numbers_is_never_false_when_equal():
+    # Kept: these equalities are mathematically true, so an answer of False
+    # would be unsound. True or Undecided are both acceptable. Element.__eq__
+    # reaches them only through _coerce_foreign; without it they come out
+    # False.
+    sympy = pytest.importorskip("sympy")
+    assert _eq_or_undecided(CBRT3 ** 3, sympy.Integer(3)) is not False
+    assert _eq_or_undecided(PI, sympy.pi) is not False
