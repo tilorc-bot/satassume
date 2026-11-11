@@ -983,7 +983,7 @@ cover, from the code:
   (`q.ids.get(value)`, :266) and, when the value is an input term of its own class, reads that row
   (`value:input`, :272); otherwise `kn.units(facts)` (`value:derived`). The table has no value, so a table read gives
   the derived route only. The derived route is what Python's reference computes; for the input route,
-  the shadow compare in `test_knowledge_value_units.py:51` (`value:input`, no mismatch) finds its pattern equal to
+  the shadow compare in `test_knowledge_value_units.py:51` (`value:input`, one query, no mismatch) finds its pattern equal to
   Python's. Keeping `value:input` would need the value in the table.
 - **Subclasses.** The table is keyed by exact class (`gen_offline_data.py:144`), so a subclass of one of the six
   keeps `fn:value:sympy`. None in this workload.
