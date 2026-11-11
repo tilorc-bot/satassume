@@ -561,6 +561,10 @@ fn session_counts<'py>(p: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
         }
         Ok::<_, PyErr>(())
     })?;
+    // gauges, not counts (the part 3 follow-up, labels 701-702): sessions alive now, the largest identity memo so far
+    let (live, peak) = crate::ses_cont::gauges();
+    d.set_item("sc:ses_live", live)?;
+    d.set_item("sc:memo_peak", peak)?;
     formula::counts_into(&d)?;
     Ok(d)
 }

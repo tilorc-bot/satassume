@@ -68,6 +68,17 @@ const KEY_ID_SHARED_PLANT: u16 = 617;
 thread_local! {
     /// Plant 617's process-wide memo; empty unless the plant is set.
     static SHARED_SEEN: std::cell::RefCell<std::collections::HashMap<usize, Seen>> = Default::default();
+    /// Gauge 701 `sc:ses_live`: the sessions' containers alive now (one per `SessionCore`). The planner's ruling (2) on 293's
+    /// deviations: the memo keeps what it looked up alive for its session, so no session may outlive its query. Read at a
+    /// query boundary (after `gc.collect()`), it is 0 (test_ses_keys.py `test_no_session_outlives_its_query`).
+    static LIVE: std::cell::Cell<i64> = const { std::cell::Cell::new(0) };
+    /// Gauge 702 `sc:memo_peak`: the most rows one dict's memo has held, process-wide (one process per workload).
+    static PEAK: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// The two gauges (701 `sc:ses_live`, 702 `sc:memo_peak`), for `session_counts`.
+pub(crate) fn gauges() -> (i64, usize) {
+    (LIVE.with(|c| c.get()), PEAK.with(|c| c.get()))
 }
 
 struct Entry {
@@ -78,7 +89,9 @@ struct Entry {
 }
 
 /// An object a dict has met: held (so its address stays its own), its `hash()`, and the entry it resolved to with that
-/// entry's `gen`, if any.
+/// entry's `gen`, if any. The planner's ruling (1) on 293's deviations: the cached `hash()` is keyed by identity on an object
+/// this row holds, never by address alone: the row's key is the address of `obj`, which the row keeps alive, so no other
+/// object can have that address while the row lives (plant 616 drops the hold; test_ses_keys.py catches it).
 struct Seen {
     #[allow(dead_code)]
     obj: Py<PyAny>,
@@ -115,10 +128,22 @@ impl SesDict {
     }
 }
 
-#[derive(Default)]
 pub(crate) struct SesCont {
     d: [SesDict; 5],
     q: [VecDeque<Py<PyAny>>; 2],
+}
+
+impl Default for SesCont {
+    fn default() -> Self {
+        LIVE.with(|c| c.set(c.get() + 1));
+        SesCont { d: Default::default(), q: Default::default() }
+    }
+}
+
+impl Drop for SesCont {
+    fn drop(&mut self) {
+        LIVE.with(|c| c.set(c.get() - 1));
+    }
 }
 
 impl SessionCore {
@@ -182,7 +207,11 @@ impl SessionCore {
         let old = if sb_planted(KEY_ID_SHARED_PLANT) {
             SHARED_SEEN.with(|m| m.borrow_mut().insert(x.as_ptr() as usize, row))
         } else {
-            self.sc.borrow_mut().d[k].seen.insert(x.as_ptr() as usize, row)
+            let mut sc = self.sc.borrow_mut();
+            let old = sc.d[k].seen.insert(x.as_ptr() as usize, row);
+            let n = sc.d[k].seen.len();
+            PEAK.with(|c| c.set(c.get().max(n)));
+            old
         };
         drop(old);
     }
