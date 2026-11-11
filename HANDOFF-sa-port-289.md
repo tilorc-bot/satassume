@@ -13,14 +13,14 @@ briefs/addenda/sa-port-siblings.txt).
 | (3) bar.sh cbm_noid / bar_sum fired | - | not started (HANDOFF-sa-port-284.md has the map) |
 | batch bar | - | not run (at the end, or near the budget) |
 
-## Group D, pinned before/after C2 (running when I left)
+## Group D, pinned before/after C2: DONE (results/gd-c2-med-r1.md; ~/sa-rust-ids-work/sa-port-289/gd)
 
-Run by ~/sa-rust-ids-work/sa-port-289/gd/go289.sh (orion, detached). The end marker is gd/go-end.txt ("END step rc time").
-It staged 6a461f2 and d25b1a7 on pareto1, ran job195 (profile samples) and post195 for both (gd/run-SHA/SUMMARY.md,
-ana-dev.txt and ana-fuzz.txt give the per-function shares). It was then in the quiet lease (7 interleaved rounds,
-bench-container CPU 2) and, last, med285.py writes gd/med-r1.md. Report the per-function shares, not only the totals (the gate
-asks for this). The base numbers are results/gd-adapters-cost-med-r1.md on rust-slice. Tools are copied from sa-port-288's
-gd, with paths rewritten to sa-port-289.
+7 interleaved quiet rounds, pareto1 bench-container CPU 2, digest mismatches 0. 6a461f2 (before) -> d25b1a7 (C2):
+- fuzz: Rust median 6.463 -> 6.402 s; Group D 2.178 -> 2.172 s (share 33.7% -> 33.9%, flat); relations_core
+  0.374 -> 0.345 s, glue 0.536 -> 0.507 s, callback 2.328 -> 2.286 s, session 0.166 -> 0.142, adapters 0.204 -> 0.210.
+- dev: 0.766 -> 0.764 s; Group D 0.185 -> 0.188 s (flat); per-module shares unchanged within 0.002 s.
+C2 removes about 0.03 s fuzz from relations_core and the pyo3 glue (group-d-cause.md estimated 0.039). Group D as a whole
+doesn't move: the gain is not inside Group D's total, which matches 288's reading. Per-function tables: gd/run-SHA/SUMMARY.md.
 
 ## Counts per workload (session counters; tools/cnt_rows.py; cnt-c2 = d25b1a7, cnt-c7 = the C7 build)
 
