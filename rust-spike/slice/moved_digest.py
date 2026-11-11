@@ -32,8 +32,10 @@ The extension (sa-port-242, the planner's (A)/(B) rulings of 10 Nov), per query 
 - `ses`: per `Session` made in the query, state part 3's seven containers (`frontier`, `deferred` in order; `pending`,
   `pending_c`, `demand`, `literals`, `_groups` items in insertion order, keys and values), on Rust from the core's
   `sc_snapshot`, and under `@ses` its six scalars (`ses_snapshot`); on a build without the exports, the session's own
-  attributes (`src`). Under `@xfer`, state part 2 (ii)'s handles: which of the query's `Relations` `Session.xfer` is, and
-  whether the session has a solver; each `Relations` row has `@xfer` too (`xfer` and `_xadapter` by class, `xfer_sel`).
+  attributes (`src`). Each dict's identity memo (ses_cont.rs `SesDict::seen`, the part 3 follow-up's item 2) isn't a
+  row: it is derived from its dict (an object's hash and the entry it found) and lives and ends with it.
+  Under `@xfer`, state part 2 (ii)'s handles: which of the query's `Relations` `Session.xfer` is, and whether the
+  session has a solver; each `Relations` row has `@xfer` too (`xfer` and `_xadapter` by class, `xfer_sel`).
 - `lra`: lra_live `_memoized`'s per-query slot (state part 1). On Rust every slot entry stored in the query
   (`ad_lra_export`); on Python every distinct `lra_adapter._memoized` call of the query; one short hash per
   (kind, arg, flag, result). Python's memo outlives a query and Rust's slot doesn't, so the rows are the calls, not the

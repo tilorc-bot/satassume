@@ -729,12 +729,13 @@ struct SesScalars {
 /// 447 `sb-core-unset` (`core_of` doesn't read `_core`: every read goes through the property), 448 `sb-core-stale`
 /// (`core_of` gives the first core it saw, whatever the session). The part 3 follow-up's (`A_PLANTS`, from 614):
 /// 614 `sb-join-address` (the join hook is given the session's address again, not its serial), 615 `sc-key-id-stale`
-/// (ses_cont.rs: a session dict's identity memo ignores the entry's generation).
+/// (ses_cont.rs: a session dict's identity memo ignores the entry's generation), 616 `sc-key-id-weak` (the memo holds no
+/// reference to its objects), 617 `sc-key-id-shared` (one memo, process-wide).
 static SB_PLANT: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(0);
 const SB_PLANTS: [&str; 18] = ["sb-truncated-stale", "sb-link-pending-stale", "sb-neg-shared-stale", "sb-sel-zero", "sb-hold-zero",
     "sb-verdict-none", "sb-fwd-skip-link", "sb-solver-fresh", "sc-frontier-drop", "sc-pending-drop", "sc-pending_c-drop",
     "sc-demand-drop", "sc-deferred-drop", "sc-literals-drop", "sc-groups-drop", "sc-key-shared", "sb-core-unset", "sb-core-stale"];
-const A_PLANTS: [&str; 2] = ["sb-join-address", "sc-key-id-stale"];
+const A_PLANTS: [&str; 4] = ["sb-join-address", "sc-key-id-stale", "sc-key-id-weak", "sc-key-id-shared"];
 const SB_JOIN_ADDRESS: u16 = 614;
 const SB_CORE_UNSET: u16 = 447;
 const SB_CORE_STALE: u16 = 448;

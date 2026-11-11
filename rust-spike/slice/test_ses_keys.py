@@ -5,6 +5,12 @@ held, a deleted key set again goes last with its new object, an equal object of 
 Each case runs the same operations on a plain dict and on `Session.demand` (the Rust view) and compares every result.
 Plant 615 `sc-key-id-stale` (the memo ignores the entry's generation) gives a deleted key's old object the value of the
 key set after it at the same index: the comparison with the plain dict catches it.
+
+The planner's conditions on the memo (11 Nov): (a) it holds each object, so an address isn't reused while its row lives;
+(c) it is per dict, never process-wide. `_reuse` looks up short-lived objects, each freed before the next is made, so
+CPython hands their addresses on: plant 616 `sc-key-id-weak` (no reference held) gives a new object a freed one's row.
+`_two` uses one dict in each of two sessions: plant 617 `sc-key-id-shared` (one memo for all) finds an object set in the
+first in the second. Each is compared with plain dicts, which no plant touches.
 """
 import json
 import os
@@ -45,6 +51,24 @@ def _ops(d):
     return out
 
 
+def _reuse(d):
+    held = K(1)
+    d[held] = 'a'
+    out = []
+    for n in range(200):
+        out.append(d.get(K(1000 + n), 'missing'))     # a miss; the object is freed when the call returns
+        out.append(d.get(K(1), 'missing'))            # an equal object, often at the freed one's address
+        out.append(d.get(K(2000 + n), 'missing'))     # likewise after a hit
+    return out
+
+
+def _two(d1, d2):
+    a, b = K(1), K(2)
+    d1[a] = 'x'
+    d2[b] = 'y'
+    return [d2.get(a, 'missing'), d1.get(b, 'missing'), d1.get(a), d2.get(b), a in d2, b in d1]
+
+
 def _child(mode):
     from test_relations_core import _rust
     _rust()
@@ -62,6 +86,13 @@ def _child(mode):
     out['rust_hashes'] = len(K.calls)
     after = dict(sa_solver.session_counts())
     out['counts'] = {k: after[k] - before.get(k, 0) for k in ('sc:key_id', 'sc:key_hash', 'sc:key_eq', 'rel:plant_fired')}
+    out['py_reuse'] = _reuse({})
+    out['rust_reuse'] = _reuse(Session(Engine(cache=DictCache(), uninterpreted='none')).demand)
+    out['py_two'] = _two({}, {})
+    s1, s2, s3 = (Session(Engine(cache=DictCache(), uninterpreted='none')) for _ in range(3))
+    out['rust_two'] = _two(s1.demand, s2.demand)
+    out['rust_two_one_session'] = _two(s3.pending, s3.demand)
+    out['fired'] = dict(sa_solver.session_counts()).get('rel:plant_fired', 0) - before.get('rel:plant_fired', 0)
     print(json.dumps(out))
 
 
@@ -83,6 +114,24 @@ def test_session_dict_is_a_python_dict_with_fewer_hashes():
     # the repeats of `a` and `a2` go by identity: fewer `hash()` calls than the plain dict made
     assert got['counts']['sc:key_id'] > 0 and got['rust_hashes'] < got['py_hashes'], got
     assert got['rust_hashes'] == got['counts']['sc:key_hash'], got
+
+
+def test_memo_holds_its_objects_and_is_per_dict():
+    got = _run()
+    assert got['rust_reuse'] == got['py_reuse'], got['rust_reuse'][:12]
+    assert got['rust_two'] == got['py_two'] == got['rust_two_one_session'], got
+
+
+def test_key_id_weak_plant_is_caught():
+    got = _run('sc-key-id-weak')
+    assert got['fired'] > 0, got
+    assert got['rust_reuse'] != got['py_reuse']
+
+
+def test_key_id_shared_plant_is_caught():
+    got = _run('sc-key-id-shared')
+    assert got['fired'] > 0, got
+    assert got['rust_two'] != got['py_two'] and got['rust_two_one_session'] != got['py_two'], got
 
 
 def test_key_id_stale_plant_is_caught():

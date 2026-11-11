@@ -23,7 +23,12 @@
 //! there. Each `hash()` not called is counted `sc:key_id`. Python's dict gives the same answers: it assumes a key's hash
 //! and `==` don't change (SymPy's `Basic` caches its hash), and finds an identical object without `==`. The
 //! first key object is still the one the dict holds. Per dict, per session, never process-wide; emptied by `clear()`.
-//! Plant 615 `sc-key-id-stale` ignores the generation (a deleted key's old object finds a dead or reused entry).
+//! Plant 615 `sc-key-id-stale` ignores the generation (a deleted key's old object finds a dead or reused entry); 616
+//! `sc-key-id-weak` holds no reference (a reused address finds a freed object's row); 617 `sc-key-id-shared` keeps one memo
+//! process-wide (a dict finds another dict's entry). test_ses_keys.py catches each against a plain dict.
+//! The memo is derived from its dict: it lives in the `SesDict` and goes with it (`clear()`, a replace, the session's end;
+//! sessions are built per query, engine.py `_session`), so a discarded run takes it with its session (R5). The digest
+//! (`sc_snapshot`) exports the entries, not the memo.
 //! Why not the query's term id: a term id is reached through the session's node table (`node_quiet`, a Python dict lookup),
 //! so it would move each `hash()` to `link:cross_hash`, not remove it.
 
@@ -54,6 +59,16 @@ const SD_PLANT: [u16; 5] = [440, 441, 442, 444, 445];
 const SQ_PLANT: [u16; 2] = [439, 443];
 const KEY_SHARED_PLANT: u16 = 446;
 pub(crate) const KEY_ID_STALE_PLANT: u16 = 615;
+/// 616 `sc-key-id-weak`: a memo row keeps no reference to its object, so a freed object's address, reused by another, finds
+/// the freed one's hash and entry (condition (a) of the planner's 11 Nov ruling on item 2).
+const KEY_ID_WEAK_PLANT: u16 = 616;
+/// 617 `sc-key-id-shared`: one memo for every dict of every session, process-wide (condition (c)).
+const KEY_ID_SHARED_PLANT: u16 = 617;
+
+thread_local! {
+    /// Plant 617's process-wide memo; empty unless the plant is set.
+    static SHARED_SEEN: std::cell::RefCell<std::collections::HashMap<usize, Seen>> = Default::default();
+}
 
 struct Entry {
     gen: u64,
@@ -110,24 +125,21 @@ impl SessionCore {
     /// The entry of the key `x` in dict `k` and `x`'s hash: the dict's rule, the same hash and then the same object or `==`
     /// (the held key on the left). No borrow is held while Python's `__hash__` and `__eq__` run.
     fn sd_find(&self, k: usize, x: &Bound<'_, PyAny>) -> PyResult<(Option<usize>, isize)> {
-        let ptr = x.as_ptr() as usize;
-        let known = {
-            let sc = self.sc.borrow();
-            let d = &sc.d[k];
-            match d.seen.get(&ptr) {
-                Some(m) => {
-                    if let Some((i, g)) = m.at {
-                        if let Some(Some(e)) = d.ent.get(i) {
-                            if e.gen == g || sb_planted(KEY_ID_STALE_PLANT) {
-                                tick(session::SC_KEY_ID);
-                                return Ok((Some(i), e.hash));
-                            }
+        let row = self.seen_row(k, x.as_ptr() as usize);
+        let known = match row {
+            Some((h, at)) => {
+                if let Some((i, g)) = at {
+                    let sc = self.sc.borrow();
+                    if let Some(Some(e)) = sc.d[k].ent.get(i) {
+                        if e.gen == g || sb_planted(KEY_ID_STALE_PLANT) {
+                            tick(session::SC_KEY_ID);
+                            return Ok((Some(i), e.hash));
                         }
                     }
-                    Some(m.hash)
                 }
-                None => None,
+                Some(h)
             }
+            None => None,
         };
         let hash = match known {
             Some(h) => {
@@ -146,11 +158,32 @@ impl SessionCore {
 
     /// `x` (whose hash is `hash`) resolved to entry `at` of dict `k`, or to none.
     fn sd_remember(&self, k: usize, x: &Bound<'_, PyAny>, hash: isize, at: Option<usize>) {
-        let mut sc = self.sc.borrow_mut();
-        let d = &mut sc.d[k];
-        let at = at.and_then(|i| d.ent.get(i).and_then(|e| e.as_ref()).map(|e| (i, e.gen)));
-        let old = d.seen.insert(x.as_ptr() as usize, Seen { obj: x.clone().unbind(), hash, at });
-        drop(sc);
+        let at = {
+            let sc = self.sc.borrow();
+            let d = &sc.d[k];
+            at.and_then(|i| d.ent.get(i).and_then(|e| e.as_ref()).map(|e| (i, e.gen)))
+        };
+        self.seen_put(k, x, hash, at);
+    }
+
+    /// The memo row of the object at address `ptr` in dict `k`: its hash and the entry (with that entry's `gen`) it resolved to.
+    fn seen_row(&self, k: usize, ptr: usize) -> Option<(isize, Option<(usize, u64)>)> {
+        if sb_planted(KEY_ID_SHARED_PLANT) {
+            return SHARED_SEEN.with(|m| m.borrow().get(&ptr).map(|r| (r.hash, r.at)));
+        }
+        self.sc.borrow().d[k].seen.get(&ptr).map(|r| (r.hash, r.at))
+    }
+
+    /// Remember `x` in dict `k`'s memo, holding it (so its address stays its own while the row lives). The row it replaces
+    /// is dropped after the borrow ends (dropping an object can run Python).
+    fn seen_put(&self, k: usize, x: &Bound<'_, PyAny>, hash: isize, at: Option<(usize, u64)>) {
+        let obj = if sb_planted(KEY_ID_WEAK_PLANT) { x.py().None() } else { x.clone().unbind() };
+        let row = Seen { obj, hash, at };
+        let old = if sb_planted(KEY_ID_SHARED_PLANT) {
+            SHARED_SEEN.with(|m| m.borrow_mut().insert(x.as_ptr() as usize, row))
+        } else {
+            self.sc.borrow_mut().d[k].seen.insert(x.as_ptr() as usize, row)
+        };
         drop(old);
     }
 
@@ -203,9 +236,9 @@ impl SessionCore {
                     d.idx.entry(hash).or_default().push(i);
                     d.ent.push(Some(Entry { gen: d.gen, hash, key: x.clone().unbind(), val: v.clone().unbind() }));
                     d.live += 1;
-                    let old = d.seen.insert(x.as_ptr() as usize, Seen { obj: x.clone().unbind(), hash, at: Some((i, d.gen)) });
+                    let at = Some((i, d.gen));
                     drop(sc);
-                    drop(old);
+                    self.seen_put(k, x, hash, at);
                     None
                 }
             }

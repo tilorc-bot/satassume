@@ -245,6 +245,14 @@ def _joinkey(mode):
     eng = Engine(cache=DictCache(), uninterpreted='none')
     seen = []
     sa_solver.set_join_hook(lambda s, n, a, b: seen.append(s))
+    # a warm-up session with joins first: since 15c62a7 something made once, on the first join path, takes the first
+    # freed session's slot for good, and the address never comes round (the control failed, keys [1, 201])
+    s0 = Session(eng)
+    s0.table.core.node_base(_JoinA())
+    s0.table.core.base_of_get(_JoinB())
+    del s0
+    gc.collect()
+    seen.clear()
     before = sa_solver.session_counts()['join']
     s1 = Session(eng)
     s1.table.core.node_base(_JoinA())
