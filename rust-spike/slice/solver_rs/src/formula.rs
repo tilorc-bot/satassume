@@ -59,7 +59,7 @@ pub(crate) struct Occ {
     pub atom: u32,
 }
 
-const NAMES: [&str; 23] = [
+const NAMES: [&str; 25] = [
     "fm:convert",       // 630: conversions run
     "fm:nodes",         // 631: nodes built
     "fm:atom_occ",      // 632: atom occurrences read (`.pred`, `.expr`)
@@ -83,9 +83,17 @@ const NAMES: [&str; 23] = [
     "fm:again",         // 647: with `formula_track(True)` only: an object converted that some earlier entry had converted
     "fm:twice:patched", // 648: an object converted again on the other side of a user's replaced `Engine.verdict`, called by name
     "nc:memo_miss",     // 720: entry.rs `noncommutative_term`: domain's `_NONCOMM` memo had no row, so `_noncommutative` was called
+    "occ:reach",        // 721: session.rs `reach`: compiling reached a formula atom whose own object isn't the one held for its
+                        //      node, which had no visit yet, so the slot or the visit takes that occurrence's object
+    "occ:two",          // 722: session.rs `convert`: a formula with a second object for a node with no visit, compiled in Rust
+                        //      (it refused before item (1), `refuse:object`, and Python compiled it)
 ];
 /// Counter 720.
 pub(crate) const NC_MEMO_MISS: usize = 22;
+/// Counter 721.
+pub(crate) const OCC_REACH: usize = 23;
+/// Counter 722.
+pub(crate) const OCC_TWO: usize = 24;
 const CONVERT: usize = 0;
 const NODES: usize = 1;
 const ATOM_OCC: usize = 2;
@@ -103,7 +111,7 @@ pub(crate) const ATOMS_NODE: usize = 13;
 const NOSESSION: usize = 14;
 
 /// Plants 601-606, each the control of one comparison in test_formula_nodes.py.
-const PLANTS: [&str; 16] = [
+const PLANTS: [&str; 17] = [
     "fm-atoms-drop-last",  // 601: `atoms` without its last atom
     "fm-atoms-merge-pred", // 612: the dedupe keyed by the predicate alone, so two atoms with one predicate are one (replaces 602
                            //      `fm-atoms-no-dedupe`, speed-only: every reader of the atoms is idempotent; sa-port-274)
@@ -122,10 +130,12 @@ const PLANTS: [&str; 16] = [
     "fm-hand-patched-direct",   // 610: a user's replaced `Engine.verdict` is passed over: Rust calls its own directly
     "fm-hand-per-entry",   // 622: each outermost entry inside an ask makes its own map again (`formula_ask` shares none)
     "nc-memo-true-false",  // 623: entry.rs `noncommutative_term` reads a memo row of True as False (a wrong answer)
+    "occ-walk-first",      // 624: session.rs `reach` does nothing, so a node keeps the object conversion walked to first, not the
+                           //      one Python's compiler reaches first (test_occ_object.py)
 ];
 
 thread_local! {
-    static COUNTS: [Cell<u64>; 23] = const { [const { Cell::new(0) }; 23] };
+    static COUNTS: [Cell<u64>; 25] = const { [const { Cell::new(0) }; 25] };
     /// The nine classes for a site with no session: `SessionRules`' list (session_live.py `_core_rules`), read once.
     static CLASSES: std::cell::RefCell<Option<Rc<Vec<Py<PyAny>>>>> = const { std::cell::RefCell::new(None) };
     /// 0: none; else 1 + the index into `PLANTS`.
@@ -179,6 +189,10 @@ const HAND_PER_ENTRY: u8 = 14;
 /// Plant 623 (entry.rs `noncommutative_term`).
 pub(crate) fn planted_nc_memo() -> bool {
     planted(15)
+}
+/// Plant 624 (session.rs `reach`).
+pub(crate) fn planted_occ_walk_first() -> bool {
+    planted(16)
 }
 const AGAIN: usize = 20;
 /// Plant 609 (context.rs `method_of`).

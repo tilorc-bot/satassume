@@ -390,7 +390,10 @@ def test_cases_exercise_what_they_name(both):
 def test_counters_fired(both):
     c = both[1]['counts']
     assert c['refuse:depth'] > 0 and c['refuse:convert'] > 0 and c['rs:emit_callback'] > 0
-    assert c['refuse:object'] > 0 and c['join'] > 0
+    assert c['join'] > 0
+    # Item (1) (sa-port-290): a second object no longer refuses; compiling reaches each atom's own object (session.rs `reach`),
+    # and the cases with a second object above still match Python (test_occ_object.py has the plant).
+    assert c['refuse:object'] == 0 and c['occ:reach'] > 0
 
 
 def _depth_ok(shape, d, entry):

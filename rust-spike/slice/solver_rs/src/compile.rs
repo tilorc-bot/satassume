@@ -61,6 +61,9 @@ pub trait Cx {
     fn dv_basis(&mut self, pred: u32, nid: u32) -> Result<i32, Self::E>;
     /// The `TypeError` of `cannot compile` (`literal` false) or `cannot make a literal from`.
     fn bad(&mut self, i: u32, literal: bool) -> Self::E;
+    /// Compiling is about to take the variable of the formula atom at `at` (an `Atom` of the converted tree, by address), as
+    /// Python's compiler takes it from that atom's own object. Nothing for a context with no objects.
+    fn reach(&mut self, _at: *const F) {}
 }
 
 fn at(b: i32, l: i32) -> i32 {
@@ -126,11 +129,27 @@ fn basis_lits<C: Cx>(cx: &C, pred: u32, pos: bool) -> Option<(bool, Vec<i32>)> {
     }
 }
 
+/// The atom whose object `_def` returns as the node: the atom itself, or a conjunction's first, which Python's `nodes` set
+/// keeps.
+fn def_at(f: &F) -> *const F {
+    match f {
+        F::And(a) => match a.first().map(|x| &**x) {
+            Some(F::Not(y)) => &**y,
+            Some(y) => y,
+            None => std::ptr::null(),
+        },
+        _ => f,
+    }
+}
+
 /// `_def`.
 pub fn def_of<C: Cx>(cx: &mut C, f: &F) -> Result<Option<(Def, u32)>, C::E> {
     if let F::Atom(p, n) = f {
         return Ok(match cx.kind(*p) {
-            Kind::Derived(d) => Some((d, *n)),
+            Kind::Derived(d) => {
+                cx.reach(f);
+                Some((d, *n))
+            }
             _ => None,
         });
     }
@@ -163,6 +182,7 @@ pub fn def_of<C: Cx>(cx: &mut C, f: &F) -> Result<Option<(Def, u32)>, C::E> {
         return Ok(None);
     }
     let Some(node) = node else { return Ok(None) };
+    cx.reach(def_at(f));
     lits.sort_by_key(|&l| (l.abs(), l)); // issue 325: the key of held PR 334, so no set order to reproduce
     Ok(Some((Rc::new((true, lits)), node)))
 }
@@ -173,6 +193,7 @@ pub fn compile<C: Cx>(f: &R, cx: &mut C) -> Result<(), C::E> {
         F::True => Ok(()),
         F::False => cx.emit(vec![]),
         F::Atom(p, n) => {
+            cx.reach(&**f);
             if let Kind::Derived(d) = cx.kind(*p) {
                 if cx.has_dv() && !d.0 {
                     if let Some(v) = cx.dv(&d, *n, Need::PosUnit)? {
@@ -248,6 +269,7 @@ fn compile_not<C: Cx>(inner: &R, cx: &mut C) -> Result<(), C::E> {
     }
     match &**inner {
         F::Atom(p, n) => {
+            cx.reach(&**inner);
             if let Kind::Derived(d) = cx.kind(*p) {
                 if cx.has_dv() && d.0 {
                     if let Some(v) = cx.dv(&d, *n, Need::NegUnit)? {
@@ -301,6 +323,8 @@ const MAX_EXACT: usize = 8;
 struct Part {
     clauses: Vec<Vec<i32>>,
     src: Option<(Def, u32, bool)>,
+    /// `src`'s atom, reached again when its literal is taken.
+    at: *const F,
 }
 
 /// `(m, l, part)` of the Python, and its `cost`.
@@ -347,7 +371,7 @@ fn or_cnf<C: Cx>(args: &[R], cx: &mut C) -> Result<Vec<Vec<i32>>, C::E> {
                     clause.extend_from_slice(&sub[0]);
                     continue;
                 }
-                parts.push(Part { clauses: sub, src: None });
+                parts.push(Part { clauses: sub, src: None, at: std::ptr::null() });
                 continue;
             }
             _ => {}
@@ -372,7 +396,7 @@ fn or_cnf<C: Cx>(args: &[R], cx: &mut C) -> Result<Vec<Vec<i32>>, C::E> {
             if !op {
                 clause.extend_from_slice(&lits);
             } else {
-                parts.push(Part { clauses: lits.iter().map(|&l| vec![l]).collect(), src: Some((d, node, neg)) });
+                parts.push(Part { clauses: lits.iter().map(|&l| vec![l]).collect(), src: Some((d, node, neg)), at: def_at(g) });
             }
             continue;
         }
@@ -411,6 +435,7 @@ fn or_cnf<C: Cx>(args: &[R], cx: &mut C) -> Result<Vec<Vec<i32>>, C::E> {
         for i in chosen {
             let src = if cx.has_dv() { parts[i].src.clone() } else { None };
             if let Some((d, node, neg)) = src {
+                cx.reach(parts[i].at);
                 let t = cx.dv(&d, node, if neg { Need::Neg } else { Need::Pos })?.expect("only the unit needs answer None");
                 clause.push(if neg { -t } else { t });
                 continue;
@@ -455,6 +480,7 @@ fn true_lit<C: Cx>(cx: &mut C) -> Result<i32, C::E> {
 pub fn literal<C: Cx>(f: &R, cx: &mut C) -> Result<i32, C::E> {
     match &**f {
         F::Atom(p, n) => {
+            cx.reach(&**f);
             if let Kind::Derived(d) = cx.kind(*p) {
                 if cx.has_dv() {
                     return Ok(cx.dv(&d, *n, Need::Both)?.expect("only the unit needs answer None"));
@@ -469,6 +495,7 @@ pub fn literal<C: Cx>(f: &R, cx: &mut C) -> Result<i32, C::E> {
         }
         F::Not(inner) => {
             if let F::Atom(p, n) = &**inner {
+                cx.reach(&**inner);
                 if let Kind::Derived(d) = cx.kind(*p) {
                     if cx.has_dv() {
                         return Ok(-cx.dv(&d, *n, Need::Both)?.expect("only the unit needs answer None"));

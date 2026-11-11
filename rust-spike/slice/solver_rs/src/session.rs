@@ -120,6 +120,8 @@ const JOIN: usize = 11;
 const EMIT_CB: usize = 12;
 const REFUSE_DEPTH: usize = 13;
 const REFUSE_CONVERT: usize = 14;
+/// Stays in `NAMES`, at 0 since item (1) (sa-port-290), for the reports' before and after: `reach` replaced the refusal.
+#[allow(dead_code)]
 const REFUSE_OBJECT: usize = 15;
 const SECOND_VISIT: usize = 16;
 const CUSTOM_OWN: usize = 17;
@@ -663,8 +665,13 @@ pub struct SessionCore {
     nids: Py<PyDict>,
     /// The object per node id, as Python's slots keep it: the one passed to `node_base`, so it can still change until then.
     objs: RefCell<Vec<Py<PyAny>>>,
-    /// Set when a conversion refuses for `second_object`, which `convert` counts.
-    refused_object: Cell<bool>,
+    /// The converted formula's atoms whose node has no visit yet (a custom one: no variable yet), by the address of their
+    /// `F::Atom`, each with its own object, for `reach`. Kept only when one of them is a second object.
+    occ: RefCell<HashMap<usize, (u32, u32, Py<PyAny>)>>,
+    occ_two: Cell<bool>,
+    /// The object `reach` found for a node with a slot and no visit: its visit takes it, as Python's compiler passes the
+    /// atom's own object.
+    passing: RefCell<Option<(u32, Py<PyAny>)>>,
     bad: RefCell<Vec<Py<PyAny>>>,
     /// Formula step: each Formula object's node, converted once per session and found by the object's identity. The node
     /// holds the object, so the address can't come back as another's. After the conversion nothing reads the object again.
@@ -1173,21 +1180,81 @@ impl SessionCore {
 
     /// `nid_of` for an atom in a formula being converted. Conversion walks the formula and compiling may reach its atoms in
     /// another order, and a node with no visit yet may be visited from here, where Python visits the atom's own object. So a
-    /// second object for a node with no visit refuses, before anything is emitted, and Python's compiler passes them in its
-    /// own order over this same table.
+    /// known node keeps its object here, and `reach` gives it the atom's own when compiling takes the atom (item (1): this
+    /// refused before, and Python compiled the formula).
     fn nid_in_formula(&self, x: &Bound<'_, PyAny>) -> PyResult<u32> {
-        if let Some(n) = self.known(x)? {
-            if !self.objs.borrow()[n as usize].bind(x.py()).is(x) && self.st.borrow().visited(n) == 0 {
-                return Err(self.refuse_object());
-            }
-            return Ok(n);
+        match self.known(x)? {
+            Some(n) => Ok(n),
+            None => self.nid_of(x),
         }
-        self.nid_of(x)
     }
 
-    fn refuse_object(&self) -> PyErr {
-        self.refused_object.set(true);
-        PyValueError::new_err("a second object for a node with no visit")
+    /// Notes the atom `at` with its own object `x`, while its node has no visit (a custom atom: no variable), for `reach`.
+    fn occ_note(&self, at: &R, pred: u32, nid: u32, x: &Bound<'_, PyAny>) {
+        let p = x.py();
+        let held = if matches!(self.kind_of(p, pred), Kind::Custom) {
+            if self.st.borrow().custom.contains_key(&(pred, nid)) {
+                return;
+            }
+            self.custom_exprs.borrow()[&(pred, nid)].clone_ref(p)
+        } else {
+            if self.st.borrow().visited(nid) != 0 {
+                return;
+            }
+            self.objs.borrow()[nid as usize].clone_ref(p)
+        };
+        if !held.bind(p).is(x) {
+            self.occ_two.set(true);
+        }
+        self.occ.borrow_mut().insert(Rc::as_ptr(at) as usize, (pred, nid, x.clone().unbind()));
+    }
+
+    /// Compiling takes the variable of the atom at `at`. Python's compiler passes that atom's own object: the slot keeps it if
+    /// the node has none yet, and the visit takes it if the node has no visit (`passing`); a custom atom's variable keeps it if
+    /// it has none yet. Plant 624 leaves the objects conversion walked to first.
+    fn reach(&self, p: Python<'_>, at: *const F) {
+        let occ = self.occ.borrow();
+        let Some((pred, nid, o)) = occ.get(&(at as usize)) else { return };
+        if formula::planted_occ_walk_first() {
+            return;
+        }
+        let (pred, nid, o) = (*pred, *nid, o.bind(p));
+        if matches!(self.kind_of(p, pred), Kind::Custom) {
+            if !self.st.borrow().custom.contains_key(&(pred, nid)) {
+                let mut exprs = self.custom_exprs.borrow_mut();
+                if !exprs.get(&(pred, nid)).is_some_and(|x| x.bind(p).is(o)) {
+                    formula::tick(formula::OCC_REACH);
+                    exprs.insert((pred, nid), o.clone().unbind());
+                }
+            }
+            return;
+        }
+        let (visited, slot) = {
+            let st = self.st.borrow();
+            (st.visited(nid) != 0, st.base_of.get(nid as usize).copied().unwrap_or(0) != 0)
+        };
+        if visited {
+            return;
+        }
+        let held = self.objs.borrow()[nid as usize].bind(p).is(o);
+        if !held {
+            formula::tick(formula::OCC_REACH);
+        }
+        if !slot {
+            if !held {
+                self.objs.borrow_mut()[nid as usize] = o.clone().unbind();
+            }
+            *self.passing.borrow_mut() = None;
+        } else {
+            *self.passing.borrow_mut() = if held { None } else { Some((nid, o.clone().unbind())) };
+        }
+    }
+
+    /// After a conversion's compile: `reach` has nothing more to find.
+    fn occ_done(&self) {
+        self.occ.borrow_mut().clear();
+        self.occ_two.set(false);
+        *self.passing.borrow_mut() = None;
     }
 
     /// A custom atom's own expr reaching a direct entry: Python's `custom` keeps the first atom to reach `table.var`, so with
@@ -1198,21 +1265,14 @@ impl SessionCore {
         }
     }
 
-    /// The same in a formula being converted, which may reach its atoms in another order: a different expr with no variable
-    /// yet refuses, as a second object does.
+    /// The same in a formula being converted, which may reach its atoms in another order: the first expr with no variable
+    /// yet is noted, and `reach` gives the variable the atom's own when compiling takes it.
     fn custom_in_formula(&self, pred: u32, nid: u32, x: &Bound<'_, PyAny>) -> PyResult<()> {
         if !matches!(self.kind_of(x.py(), pred), Kind::Custom) || self.st.borrow().custom.contains_key(&(pred, nid)) {
             return Ok(());
         }
-        let mut exprs = self.custom_exprs.borrow_mut();
-        match exprs.get(&(pred, nid)) {
-            Some(o) if !o.bind(x.py()).is(x) => Err(self.refuse_object()),
-            Some(_) => Ok(()),
-            None => {
-                exprs.insert((pred, nid), x.clone().unbind());
-                Ok(())
-            }
-        }
+        self.custom_exprs.borrow_mut().entry((pred, nid)).or_insert_with(|| x.clone().unbind());
+        Ok(())
     }
 
     fn known(&self, x: &Bound<'_, PyAny>) -> PyResult<Option<u32>> {
@@ -1366,7 +1426,9 @@ impl SessionCore {
                 let expr = o.expr.bind(p);
                 let nid = self.nid_in_formula(expr)?;
                 self.custom_in_formula(pred, nid, expr)?;
-                F::Atom(pred, nid)
+                let r = Rc::new(F::Atom(pred, nid));
+                self.occ_note(&r, pred, nid, expr);
+                return Ok(r);
             }
             N::Not(a) => F::Not(self.to_f(p, node, a)?),
             N::And(a) => F::And(kids(a)?),
@@ -1404,13 +1466,25 @@ impl SessionCore {
             }
         };
         formula::tick(formula::TO_F);
+        self.occ_done();
         match self.to_f(p, &node, node.root()) {
-            Ok(r) => Ok(Some(r)),
+            Ok(r) => {
+                if self.occ_two.get() {
+                    formula::tick(formula::OCC_TWO);
+                } else {
+                    self.occ.borrow_mut().clear();
+                }
+                Ok(Some(r))
+            }
             Err(e) if e.is_instance_of::<PyException>(p) => {
-                tick(if self.refused_object.take() { REFUSE_OBJECT } else { REFUSE_CONVERT });
+                self.occ_done();
+                tick(REFUSE_CONVERT);
                 Ok(None)
             }
-            Err(e) => Err(e),
+            Err(e) => {
+                self.occ_done();
+                Err(e)
+            }
         }
     }
 
@@ -1448,6 +1522,11 @@ impl SessionCore {
                 tick(SECOND_VISIT);
             }
             return self.visit_id(o, nid, p.None().bind(p));
+        }
+        let reached = self.passing.borrow_mut().take_if(|x| x.0 == nid);
+        if let Some((_, o)) = reached {
+            tick(SECOND_VISIT);
+            return self.visit_id(o.bind(p), nid, p.None().bind(p));
         }
         let o = self.objs.borrow()[nid as usize].clone_ref(p);
         self.visit_id(o.bind(p), nid, p.None().bind(p))
@@ -1735,6 +1814,10 @@ impl Cx for PyCx<'_, '_> {
         Ok(v)
     }
 
+    fn reach(&mut self, at: *const F) {
+        self.core.reach(self.p, at)
+    }
+
     fn bad(&mut self, i: u32, literal: bool) -> PyErr {
         let what = if literal { "cannot make a literal from" } else { "cannot compile" };
         let shown = match self.core.bad.borrow().get(i as usize) {
@@ -1759,7 +1842,9 @@ impl SessionCore {
             }),
             nids: PyDict::new(p).unbind(),
             objs: RefCell::new(vec![]),
-            refused_object: Cell::new(false),
+            occ: RefCell::new(HashMap::new()),
+            occ_two: Cell::new(false),
+            passing: RefCell::new(None),
             bad: RefCell::new(vec![]),
             fnodes: RefCell::new(HashMap::new()),
             custom_ids: PyDict::new(p).unbind(),
@@ -2176,8 +2261,9 @@ impl SessionCore {
     fn compile(&self, f: &Bound<'_, PyAny>, via: Option<Bound<'_, PyAny>>, use_dv: bool) -> PyResult<bool> {
         tick(COMPILE);
         let Some(r) = self.convert(f)? else { return Ok(false) };
-        compile::compile(&r, &mut PyCx { core: self, p: f.py(), via, use_dv })?;
-        Ok(true)
+        let out = compile::compile(&r, &mut PyCx { core: self, p: f.py(), via, use_dv });
+        self.occ_done();
+        out.map(|()| true)
     }
 
     /// `formula_literal`; `None` if Python has to compile it.
@@ -2185,7 +2271,9 @@ impl SessionCore {
     fn literal(&self, f: &Bound<'_, PyAny>, via: Option<Bound<'_, PyAny>>, use_dv: bool) -> PyResult<Option<i32>> {
         tick(LITERAL);
         let Some(r) = self.convert(f)? else { return Ok(None) };
-        compile::literal(&r, &mut PyCx { core: self, p: f.py(), via, use_dv }).map(Some)
+        let out = compile::literal(&r, &mut PyCx { core: self, p: f.py(), via, use_dv });
+        self.occ_done();
+        out.map(Some)
     }
 
     // ---- `VarTable`'s surface, for the shell's view
