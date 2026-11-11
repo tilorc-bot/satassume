@@ -26,13 +26,77 @@ use crate::relations_core::{
 use crate::term::py::PyTermTable;
 use crate::session::{self, tick};
 
-fn module<'py>(p: Python<'py>, sub: &str) -> PyResult<Bound<'py, PyModule>> {
+thread_local! {
+    /// D, C5: `(package, sub)` -> the module's full name, built once per package rather than per adapter.
+    static MODULE_NAMES: std::cell::RefCell<HashMap<(String, &'static str), Py<PyString>>> = std::cell::RefCell::new(HashMap::new());
+    /// plant 472 only: the first module each name gave.
+    static FIRST_MODULE: std::cell::RefCell<HashMap<(String, &'static str), Py<PyModule>>> = std::cell::RefCell::new(HashMap::new());
+}
+
+fn module<'py>(p: Python<'py>, sub: &'static str) -> PyResult<Bound<'py, PyModule>> {
     // Python's classes reach their module's globals; the package is the one `relations` lives in, as `rel_default_specs` reads it.
     let package: String = match crate::relations_core::relations_package(p) {
         Some(s) => s,
         None => "satassume".to_string(),
     };
-    p.import(format!("{package}.{sub}").as_str())
+    // D, C5: the module as `import` gives it once it's loaded: sys.modules' entry (PyImport_GetModule, no import machinery).
+    // Not loaded yet, or not a module there: the import, exactly as before.
+    let name = MODULE_NAMES.with(|m| {
+        m.borrow_mut().entry((package.clone(), sub)).or_insert_with(|| PyString::new(p, &format!("{package}.{sub}")).unbind()).clone_ref(p)
+    });
+    let name = name.bind(p);
+    let m = module_now(p, name)?;
+    // plant 472: the first module this name gave, kept across a reimport (a module cache instead of sys.modules: wrong value)
+    let first = FIRST_MODULE.with(|f| f.borrow_mut().entry((package, sub)).or_insert_with(|| m.clone().unbind()).clone_ref(p));
+    if ad_planted(AD_MODULE_SWAP) {
+        return Ok(first.into_bound(p));
+    }
+    Ok(m)
+}
+
+fn module_now<'py>(p: Python<'py>, name: &Bound<'py, PyString>) -> PyResult<Bound<'py, PyModule>> {
+    // SAFETY: `name` is a str; PyImport_GetModule returns a new reference, or NULL with or without an error set.
+    let got = unsafe { pyo3::ffi::PyImport_GetModule(name.as_ptr()) };
+    if !got.is_null() {
+        let got = unsafe { Bound::from_owned_ptr(p, got) };
+        if let Ok(m) = got.cast_into::<PyModule>() {
+            return Ok(m);
+        }
+    } else if let Some(e) = PyErr::take(p) {
+        return Err(e);
+    }
+    p.import(name)
+}
+
+static RATIONAL: pyo3::sync::PyOnceLock<Py<PyAny>> = pyo3::sync::PyOnceLock::new();
+
+// D: this file's plants (470 up), set by `ad_cost_plant`; none is on unless a test sets it.
+static PLANT: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(0);
+/// 470: py_class looks up a name that is never set with `getattr_opt` first, so a raise is built and swallowed on the Rust side
+/// on every call (C1's cost put back). miss_count.py must see it.
+const AD_SWALLOW: u16 = 470;
+/// 471: intern_into's ready pass takes the args of the node pushed before it (C3's carried args, wrong value).
+const AD_READY_ARGS: u16 = 471;
+/// 472: module() returns the first module object its name gave, even after sys.modules' entry is replaced (wrong value).
+const AD_MODULE_SWAP: u16 = 472;
+
+fn ad_planted(x: u16) -> bool {
+    PLANT.load(std::sync::atomic::Ordering::Relaxed) == x
+}
+
+/// Sets (or, with None, clears) this file's plant.
+#[pyfunction]
+#[pyo3(signature = (name=None))]
+fn ad_cost_plant(name: Option<&str>) -> PyResult<()> {
+    let v = match name {
+        None => 0,
+        Some("ad-swallow") => AD_SWALLOW,
+        Some("ad-ready-args") => AD_READY_ARGS,
+        Some("ad-module-swap") => AD_MODULE_SWAP,
+        Some(x) => return Err(PyValueError::new_err(format!("no plant {x}"))),
+    };
+    PLANT.store(v, std::sync::atomic::Ordering::Relaxed);
+    Ok(())
 }
 
 fn fraction<'py>(p: Python<'py>, n: i64) -> PyResult<Bound<'py, PyAny>> {
@@ -640,7 +704,8 @@ impl EufAdapter {
                 module.getattr(intern!(p, "EUFTheory"))?.call0()?
             }
         };
-        let rational = p.import(intern!(p, "sympy"))?.getattr(intern!(p, "Rational"))?.unbind();
+        // D, C5: sympy.Rational once, as euf_adapter.py's global is bound once at its import.
+        let rational = RATIONAL.get_or_try_init(p, || -> PyResult<Py<PyAny>> { Ok(p.import(intern!(p, "sympy"))?.getattr(intern!(p, "Rational"))?.unbind()) })?.clone_ref(p);
         let rust_payloads = theory.is_instance_of::<crate::euf_py::PyEuf>();
         Ok(EufAdapter {
             rust_payloads,
@@ -656,8 +721,13 @@ impl EufAdapter {
     /// Python's class, for its `parse` and `interned` (which term_live.py wraps on the class).
     fn py_class<'py>(&self, p: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         // `_PyEUFAdapter` is set where the module's name is swapped for this class (ad_swap.py), so the call isn't to itself.
+        // D, C1: read from the module's __dict__, still per call so a later swap is seen. `getattr_opt` built and dropped an
+        // AttributeError on every miss on Python 3.12 (pyo3-ffi 0.30.1 src/compat/py_3_13.rs:185-203); a dict get builds none.
         let m = self.module.bind(p);
-        match m.getattr_opt(intern!(p, "_PyEUFAdapter"))? {
+        if ad_planted(AD_SWALLOW) {
+            let _ = m.getattr_opt(intern!(p, "_PyEUFAdapter_planted_470"))?;
+        }
+        match m.dict().get_item(intern!(p, "_PyEUFAdapter"))? {
             Some(c) => Ok(c),
             None => m.getattr(intern!(p, "EUFAdapter")),
         }
@@ -673,34 +743,39 @@ impl EufAdapter {
         let th = self.theory.bind(p);
         let rational = self.rational.bind(p);
         let has = |e: &Bound<'py, PyAny>| -> PyResult<bool> { Ok(out.contains(e)? || known.map_or(Ok(false), |k| k.contains(e))?) };
-        let mut stack: Vec<(Bound<'py, PyAny>, bool)> = vec![(expr.clone(), false)];
+        // D, C3: a structural node's second visit carries what its first found: that it is structural (so not a Rational, and
+        // `structural` isn't asked again) and its args, read once. Python's `_intern` asks both again; SymPy terms don't change
+        // between the visits, so the answers, the order and the terms built are the same.
+        let mut stack: Vec<(Bound<'py, PyAny>, Option<Vec<Bound<'py, PyAny>>>)> = vec![(expr.clone(), None)];
+        let mut last_args: Option<Vec<Bound<'py, PyAny>>> = None;
         while let Some((e, ready)) = stack.pop() {
             if has(&e)? {
                 continue;
             }
-            if e.is_instance(rational)? {
+            if let Some(kids) = ready {
+                let kids = match (ad_planted(AD_READY_ARGS), &last_args) {
+                    (true, Some(prev)) if prev.len() == kids.len() => prev.clone(),
+                    _ => kids,
+                };
+                let args = PyList::empty(p);
+                for a in kids.iter() {
+                    let t = match known.map(|k| k.get_item(a)).transpose()?.flatten() {
+                        Some(t) => t,
+                        None => out.get_item(a)?.ok_or_else(|| pyo3::exceptions::PyKeyError::new_err(a.clone().unbind()))?,
+                    };
+                    args.append(t)?;
+                }
+                out.set_item(&e, th.call_method1(intern!(p, "term"), (e.getattr(intern!(p, "func"))?, args))?)?;
+            } else if e.is_instance(rational)? {
                 out.set_item(&e, th.call_method1(intern!(p, "value"), (&e,))?)?;
             } else if self.structural(p, &e)? {
-                if ready {
-                    let args = PyList::empty(p);
-                    for a in e.getattr(intern!(p, "args"))?.try_iter()? {
-                        let a = a?;
-                        let t = match known.map(|k| k.get_item(&a)).transpose()?.flatten() {
-                            Some(t) => t,
-                            None => out.get_item(&a)?.ok_or_else(|| pyo3::exceptions::PyKeyError::new_err(a.clone().unbind()))?,
-                        };
-                        args.append(t)?;
-                    }
-                    out.set_item(&e, th.call_method1(intern!(p, "term"), (e.getattr(intern!(p, "func"))?, args))?)?;
-                } else {
-                    stack.push((e.clone(), true));
-                    for a in e.getattr(intern!(p, "args"))?.try_iter()? {
-                        let a = a?;
-                        if !has(&a)? {
-                            stack.push((a, false));
-                        }
-                    }
+                let kids: Vec<Bound<'py, PyAny>> = e.getattr(intern!(p, "args"))?.try_iter()?.collect::<PyResult<_>>()?;
+                let push: Vec<Bound<'py, PyAny>> = kids.iter().filter_map(|a| match has(a) { Ok(true) => None, Ok(false) => Some(Ok(a.clone())), Err(x) => Some(Err(x)) }).collect::<PyResult<_>>()?;
+                if ad_planted(AD_READY_ARGS) {
+                    last_args = Some(kids.clone());
                 }
+                stack.push((e.clone(), Some(kids)));
+                stack.extend(push.into_iter().map(|a| (a, None)));
             } else {
                 out.set_item(&e, th.call_method1(intern!(p, "term"), (&e,))?)?;
             }
@@ -811,5 +886,6 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(ad_lra_live, m)?)?;
     m.add_function(wrap_pyfunction!(ad_lra_live_get, m)?)?;
     m.add_function(wrap_pyfunction!(ad_lra_export, m)?)?;
+    m.add_function(wrap_pyfunction!(ad_cost_plant, m)?)?;
     Ok(())
 }
