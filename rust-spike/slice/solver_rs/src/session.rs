@@ -15,7 +15,7 @@ use crate::compile::{self, block_lits, Cx, Def, Kind, Need, F, R};
 use crate::formula::{self, FNode, Refused, N};
 use crate::formula_py::PyP;
 
-const NAMES: [&str; 571] = [
+const NAMES: [&str; 572] = [
     "py:var", "py:dvar", "py:node", "py:compile", "py:literal", "py:table", "rs:visit", "rs:add_clause", "rs:ensure_vars",
     "rs:def_implications", "rs:neg_shared", "join", "rs:emit_callback", "refuse:depth", "refuse:convert", "refuse:object", "second:visit", "custom:own",
     "link:hit", "link:resolved", "link:none", "link:no_table", "link:second", "link:no_node",
@@ -104,6 +104,8 @@ const NAMES: [&str; 571] = [
     "sc:key_hash", "sc:key_eq",
     // `core_of` through the `Session.table` property (a Python frame, session_live `_table_get`): a session without `_core`, 570
     "sb:core_prop",
+    // the part 3 follow-up (counter 700, its range): a session dict's key found by identity, no `hash()` (ses_cont.rs `seen`)
+    "sc:key_id",
 ];
 const VAR: usize = 0;
 const DVAR: usize = 1;
@@ -532,10 +534,12 @@ pub(crate) const SC_VIEW: usize = 566;
 pub(crate) const SC_RECORD: usize = 567;
 pub(crate) const SC_KEY_HASH: usize = 568;
 pub(crate) const SC_KEY_EQ: usize = 569;
+/// counter 700 (`sc:key_id`) by label; its index here is 571
+pub(crate) const SC_KEY_ID: usize = 571;
 pub(crate) const SB_CORE_PROP: usize = 570;
 
 thread_local! {
-    static COUNTS: [Cell<u64>; 571] = const { [const { Cell::new(0) }; 571] };
+    static COUNTS: [Cell<u64>; NAMES.len()] = const { [const { Cell::new(0) }; NAMES.len()] };
     /// Each session's serial, for the link's memo: a pointer could alias a dead session's.
     static SERIAL: Cell<u64> = const { Cell::new(0) };
 }
@@ -724,12 +728,13 @@ struct SesScalars {
 /// 439-445 `sc-<name>-drop` (ses_cont.rs: a session container's write is a no-op), 446 `sc-key-shared` (ses_cont.rs),
 /// 447 `sb-core-unset` (`core_of` doesn't read `_core`: every read goes through the property), 448 `sb-core-stale`
 /// (`core_of` gives the first core it saw, whatever the session). The part 3 follow-up's (`A_PLANTS`, from 614):
-/// 614 `sb-join-address` (the join hook is given the session's address again, not its serial).
+/// 614 `sb-join-address` (the join hook is given the session's address again, not its serial), 615 `sc-key-id-stale`
+/// (ses_cont.rs: a session dict's identity memo ignores the entry's generation).
 static SB_PLANT: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(0);
 const SB_PLANTS: [&str; 18] = ["sb-truncated-stale", "sb-link-pending-stale", "sb-neg-shared-stale", "sb-sel-zero", "sb-hold-zero",
     "sb-verdict-none", "sb-fwd-skip-link", "sb-solver-fresh", "sc-frontier-drop", "sc-pending-drop", "sc-pending_c-drop",
     "sc-demand-drop", "sc-deferred-drop", "sc-literals-drop", "sc-groups-drop", "sc-key-shared", "sb-core-unset", "sb-core-stale"];
-const A_PLANTS: [&str; 1] = ["sb-join-address"];
+const A_PLANTS: [&str; 2] = ["sb-join-address", "sc-key-id-stale"];
 const SB_JOIN_ADDRESS: u16 = 614;
 const SB_CORE_UNSET: u16 = 447;
 const SB_CORE_STALE: u16 = 448;

@@ -15,6 +15,17 @@
 //! int, `_transfer_terms` no longer saw a `Rational`, and `_number_basis(1)` (one `is_many` session) was lost. Python's dicts
 //! are separate, so these are too; nothing here reads or writes RelKeys (but plant 446, which puts the fault back). Each `hash()` and `==` on a key is a call into
 //! Python, counted `sc:key_hash` and `sc:key_eq` (an identical object is found without `==`, as a dict finds it).
+//!
+//! The part 3 follow-up, item 2: each dict also remembers, by identity, every object it has met (`SesDict::seen`, holding a
+//! strong ref, so an address can't be reused while it's there): its `hash()`, and the entry it resolved to. A later lookup
+//! with that same object goes straight to its entry with no `hash()` and no `==` while the entry is the one it resolved to
+//! (`Entry::gen`); otherwise (a miss then, or a deleted and re-set key) it takes the remembered hash and the dict's rule from
+//! there. Each `hash()` not called is counted `sc:key_id`. Python's dict gives the same answers: it assumes a key's hash
+//! and `==` don't change (SymPy's `Basic` caches its hash), and finds an identical object without `==`. The
+//! first key object is still the one the dict holds. Per dict, per session, never process-wide; emptied by `clear()`.
+//! Plant 615 `sc-key-id-stale` ignores the generation (a deleted key's old object finds a dead or reused entry).
+//! Why not the query's term id: a term id is reached through the session's node table (`node_quiet`, a Python dict lookup),
+//! so it would move each `hash()` to `link:cross_hash`, not remove it.
 
 use std::collections::VecDeque;
 
@@ -42,11 +53,22 @@ pub(crate) const SQ_DEFERRED: usize = 1;
 const SD_PLANT: [u16; 5] = [440, 441, 442, 444, 445];
 const SQ_PLANT: [u16; 2] = [439, 443];
 const KEY_SHARED_PLANT: u16 = 446;
+pub(crate) const KEY_ID_STALE_PLANT: u16 = 615;
 
 struct Entry {
+    gen: u64,
     hash: isize,
     key: Py<PyAny>,
     val: Py<PyAny>,
+}
+
+/// An object a dict has met: held (so its address stays its own), its `hash()`, and the entry it resolved to with that
+/// entry's `gen`, if any.
+struct Seen {
+    #[allow(dead_code)]
+    obj: Py<PyAny>,
+    hash: isize,
+    at: Option<(usize, u64)>,
 }
 
 /// One dict: entries in insertion order (a deleted one leaves a hole), and the entries of each hash.
@@ -55,6 +77,9 @@ struct SesDict {
     idx: std::collections::HashMap<isize, Vec<usize>>,
     ent: Vec<Option<Entry>>,
     live: usize,
+    /// each object already looked up or set here, by address
+    seen: std::collections::HashMap<usize, Seen>,
+    gen: u64,
 }
 
 impl SesDict {
@@ -68,6 +93,7 @@ impl SesDict {
         }
         self.live -= 1;
         if self.live == 0 {
+            // `seen` stays: its rows name entries by `gen`, which only grows, so a row for a cleared entry never matches
             self.ent.clear();
         }
         Some(e)
@@ -84,9 +110,52 @@ impl SessionCore {
     /// The entry of the key `x` in dict `k` and `x`'s hash: the dict's rule, the same hash and then the same object or `==`
     /// (the held key on the left). No borrow is held while Python's `__hash__` and `__eq__` run.
     fn sd_find(&self, k: usize, x: &Bound<'_, PyAny>) -> PyResult<(Option<usize>, isize)> {
+        let ptr = x.as_ptr() as usize;
+        let known = {
+            let sc = self.sc.borrow();
+            let d = &sc.d[k];
+            match d.seen.get(&ptr) {
+                Some(m) => {
+                    if let Some((i, g)) = m.at {
+                        if let Some(Some(e)) = d.ent.get(i) {
+                            if e.gen == g || sb_planted(KEY_ID_STALE_PLANT) {
+                                tick(session::SC_KEY_ID);
+                                return Ok((Some(i), e.hash));
+                            }
+                        }
+                    }
+                    Some(m.hash)
+                }
+                None => None,
+            }
+        };
+        let hash = match known {
+            Some(h) => {
+                tick(session::SC_KEY_ID);
+                h
+            }
+            None => {
+                tick(session::SC_KEY_HASH);
+                x.hash()?
+            }
+        };
+        let r = self.sd_find_hash(k, x, hash)?;
+        self.sd_remember(k, x, hash, r.0);
+        Ok(r)
+    }
+
+    /// `x` (whose hash is `hash`) resolved to entry `at` of dict `k`, or to none.
+    fn sd_remember(&self, k: usize, x: &Bound<'_, PyAny>, hash: isize, at: Option<usize>) {
+        let mut sc = self.sc.borrow_mut();
+        let d = &mut sc.d[k];
+        let at = at.and_then(|i| d.ent.get(i).and_then(|e| e.as_ref()).map(|e| (i, e.gen)));
+        let old = d.seen.insert(x.as_ptr() as usize, Seen { obj: x.clone().unbind(), hash, at });
+        drop(sc);
+        drop(old);
+    }
+
+    fn sd_find_hash(&self, k: usize, x: &Bound<'_, PyAny>, hash: isize) -> PyResult<(Option<usize>, isize)> {
         let p = x.py();
-        tick(session::SC_KEY_HASH);
-        let hash = x.hash()?;
         let cand: Vec<(usize, Py<PyAny>)> = match self.sc.borrow().d[k].idx.get(&hash) {
             Some(b) => b.iter().filter_map(|&i| self.sc.borrow().d[k].ent[i].as_ref().map(|e| (i, e.key.clone_ref(p)))).collect(),
             None => return Ok((None, hash)),
@@ -129,9 +198,14 @@ impl SessionCore {
             match at.and_then(|i| d.ent[i].as_mut()) {
                 Some(e) => Some(std::mem::replace(&mut e.val, v.clone().unbind())),
                 None => {
-                    d.idx.entry(hash).or_default().push(d.ent.len());
-                    d.ent.push(Some(Entry { hash, key: x.clone().unbind(), val: v.clone().unbind() }));
+                    let i = d.ent.len();
+                    d.gen += 1;
+                    d.idx.entry(hash).or_default().push(i);
+                    d.ent.push(Some(Entry { gen: d.gen, hash, key: x.clone().unbind(), val: v.clone().unbind() }));
                     d.live += 1;
+                    let old = d.seen.insert(x.as_ptr() as usize, Seen { obj: x.clone().unbind(), hash, at: Some((i, d.gen)) });
+                    drop(sc);
+                    drop(old);
                     None
                 }
             }
