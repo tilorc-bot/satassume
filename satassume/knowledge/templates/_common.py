@@ -68,11 +68,6 @@ class Rules:
         self.rules.append((list(premises),
                            conclusion if isinstance(conclusion, list) else [conclusion]))
 
-    def equiv(self, cond, a: Lit, b: Lit) -> None:
-        """``cond -> (a <-> b)`` as two rules."""
-        self.rule([*cond, a], b)
-        self.rule([*cond, b], a)
-
 
 def ge2_alternatives(k: int):
     """Premise alternatives meaning ``objs[k]`` is an integer >= 2."""

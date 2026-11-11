@@ -20,8 +20,8 @@ a group literal stands for the literal on each of them (the builder
 the conclusion.  The pseudo-predicate ``'int>=2'`` in a premise expands to
 the alternatives of :func:`._common.ge2_alternatives`, one rule each (on a
 group, every slot's: the product of the alternatives).  A row
-with ``kind='equiv'`` is ``premises -> (a <-> b)`` as two rules in the order
-of :meth:`._common.Rules.equiv`.
+with ``kind='equiv'`` is ``premises -> (a <-> b)`` as two rules,
+``premises & a -> b`` then ``premises & b -> a``.
 
 The interpreter :func:`expand` yields ``(row, premises, conclusion)``; the
 template functions hand the specs to :class:`._common.Rules`.  The one
@@ -150,7 +150,7 @@ def _row_specs(row: Row, slots, cur):
     for prem in _premise_alternatives(row, slots, cur):
         if row.kind == 'equiv':
             (a,), (b,) = (_lits(row._concl[0], slots, cur), _lits(row._concl[1], slots, cur))
-            # Rules.equiv: cond -> (a <-> b) as two rules
+            # cond -> (a <-> b) as two rules
             out.append(([*prem, a], [b]))
             out.append(([*prem, b], [a]))
         else:
