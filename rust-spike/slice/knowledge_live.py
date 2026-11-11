@@ -285,8 +285,9 @@ def install_dispatch():
         flush()
         atexit.unregister(flush)
         DISPATCH[0] = None
-        for s in stores:
-            term_live.NATIVE_EXTRA.remove(s)
+        for s in stores:     # an undo may run twice (test_cache_fix.py undoes the install inside a test, then its fixture)
+            if s in term_live.NATIVE_EXTRA:
+                term_live.NATIVE_EXTRA.remove(s)
         registry.__dict__.pop('clauses_for', None)
         registry._clauses_cache = dict(registry._clauses_cache)
         convert.TEMPLATES_FOR[0] = None

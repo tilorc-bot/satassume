@@ -637,3 +637,35 @@ sweep1, tree 6648573) unless named.
 | 662 `ad-lra-atom-object` | **which-object (R1)**: equal objects by construction, so no answer can move; not speed-only, not redundant | R1's kept test test_native_results_hold_the_querys_own_rows | **to the planner**: the gate's classes don't fit; ad:cbm_noid stays 0 under it |
 | 663 `same-is` | **unreached** on the 19 | kept test test_cbm_noid.py (`same-is`) | **suite-only reach: footnote** |
 | 600, 611, 664-667 | not classified | their checks: kept_product mismatch, test_cache_fix.py, test_cache_rollback.py, test_discard_exempt.py, term_discard.py | firing not read |
+
+## sa-port-276 (11 Nov): the plant table, read on the head's source (d6f57a2, .so 3f92f9fe on pareto1)
+
+Sweep: pareto1 `~/sp19/sa-rust-ids-work/sa-port-276/sw1` (`sweep276.sh`, `sw_sum.py`), 19 short workloads plus lra, plain
+and under 612, 600, 664, 665 (SLICE_SESSION_PLANT) and 611, 666, 667 (SLICE_TERM_PLANT); all 153 runs exit 0. fm_rows.py
+now writes each run's `fired` (term_live `plant:*`, session_live PLANT_FIRED), and 666 counts its cut (d6f57a2). The plain
+rows: `fm_rows.py check` 20 workloads, 0 differ.
+
+| plant | fires on (workloads) | independent check that catches it | class |
+|---|---|---|---|
+| 612 `fm-atoms-merge-pred` | 15 | answers on cert, transfer:7:60, transfer2:3:40, zero; fm row on budget, lra, scope; the state comparison on cls (livecmp DIFFER: `_SPLIT` Rust 23 vs Python 25, rl_snapshot 328 vs 340; plain Rust MATCH; orion `sa-port-276/p612e`); kept test test_formula_nodes.py (Rust's atoms against Python's `atoms_of`, not the flag) | **caught** |
+| 608 `fm-hand-kept` | 17 (+ lra) | lra: fm:again 98 -> 69, fm:convert 7308 -> 7279, answers equal (sa-port-270 `fm-lra-p608`, .so of 6ec4638 = 271673f's) | caught; **void on f6**: its 896 reconversions are the session's own `fnode` (session.rs:1324), never `Hand.node`, the only reader of KEPT (formula.rs:639; fm:give 120 of 1018 conversions); **void on twin**: fm:again 0, no object is converted in two queries |
+| 662 `ad-lra-atom-object` | 4 | R1's kept test test_native_results_hold_the_querys_own_rows (asserts which object is held) | **kept-test catch (R1)**: it changes which of two equal objects is held, so no answer or row can move |
+| 600 `rows-product-verdict-flip` | 7 (core 326, f6 164, dev 66, wiring 20, loop/transfer 4) | `scaffold:core:kept_product:mismatch` (Rust's verdict against Python's product), kept test test_formula_nodes.py:274 (passes) | kept-test catch; the mismatch counter is not in the fm row, so the workloads' catch is read only by the bar's kept_product row |
+| 664 `atom-symbol-key-names` | 19 | kept test test_cache_fix.py:140 (rows against Python's two entries, an answer True vs False, cache_det mismatch); passes serially | kept-test catch; no workload query pair has two symbols with one assumption-name set and different values in that order (no answer or row moves on 19) |
+| 665 `dispatch-keeps-memo` | **0** | kept test test_cache_fix.py:172 (rows against Python's after a clear; passes) | kept-test catch: no workload calls `memos.PROCESS.clear()` mid-run |
+| 611 `mark-skips-native` | 4 (f6, opaque, value, wiring: the workloads with discarded runs) | term_discard's left count, kept test test_discard_exempt.py:104 (passes) | kept-test catch; on workloads only `fresh.py --full`/term_discard reads it, not run here |
+| 667 `mark-leaves-entry` | 4 (same; = discarded runs 13, 7, 15, 1) | term_discard's left count, kept test test_discard_exempt.py:74 (passes) | kept-test catch, as 611 |
+| 666 `mark-cuts-patterns` | 2 (f6 1, wiring 1) | **none now**: its kept test test_cache_rollback.py:41 **fails** ("plant 666 no longer fires": the keys equal Python's) | **speed-only since ded8c3f**: the discard rolls back the dispatch memo too, so the rerun asks for its patterns again and refills the cut `_CACHE`. Either a wrong-value plant at the same site, or the `_CACHE` exemption (R3) is no longer needed: planner |
+
+Done earlier: 601, 604, 606, 607, 613, 660, 661 caught; 602/603 retired; 605/663 suite-only (footnote); 609/610 kept tests.
+
+Discarded runs per workload (live.py `discarded.runs`, plain, this head): f6 13, opaque 7, value 15, wiring 1, lra 456; the
+other 15 are 0. Same as sa-port-270's.
+
+The carrier (base 511 -> head 0, fixed at a5fa1f6) is **slice-only**: the 511 are term_live's fallback into relations.py
+when Rust's adapter compared two equal class objects by identity (adapters.rs `Reader.id`, which plant 660 restores); on
+main every query runs relations.py in Python, so there is no fallback to count. Read from the code, not run on main.
+
+Kept tests on the head (orion, -n 4; `sa-port-276/kt`): 56 passed, 2 failed (664 under xdist, 666), 3 errors
+(test_cache_fix.py: `undo` ran twice and `NATIVE_EXTRA.remove` raised, since ded8c3f). Fixed in knowledge_live.py (undo
+removes only what is there): test_cache_fix.py 6 pass serially; 664 under -n 4 not rerun. 666 fails as above.
