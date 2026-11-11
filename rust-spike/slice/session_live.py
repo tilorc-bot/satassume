@@ -1121,6 +1121,19 @@ def _ent(name, rf, doc=None):
     return sa_solver.EntMethod(rf, name, 'Engine.' + name, doc, engine.Engine, engine.Engine.__module__)
 
 
+def _method_docs():
+    """`EntMethod.__doc__` and `GuardMethod.__doc__` per object, the method's (the planner's ruling (3) on 293's deviations).
+    PyType_FromSpec stores the type's doc under `__doc__` after the getsets, so the getter is `_method_doc` and is put under
+    `__doc__` here, once."""
+    import types
+    for name in ('EntMethod', 'GuardMethod'):
+        c = getattr(sa_solver, name, None)
+        if c is not None and not isinstance(c.__dict__.get('__doc__'), types.GetSetDescriptorType):
+            type.__setattr__(c, '__doc__', c.__dict__['_method_doc'])
+
+
+_method_docs()
+
 #: The part 3 follow-up, C7: 'rust' (default) installs each entry as an `EntMethod`; 'py' as the Python `def` before it.
 ENTRY_FRAME = [os.environ.get('SLICE_ENTRY_FRAME', 'rust')]
 
@@ -1188,8 +1201,14 @@ def _frameless(f):
         g = (entry, globals()[dname], key, via, False)
     entry, d, key, via, positional = g
     name = key if isinstance(key, str) else f.__name__
-    return sa_solver.GuardMethod(getattr(sa_solver, entry), d, key, via, positional, TableView, f, name,
-                                 ('Relations.' if via else 'Session.') + name, f.__doc__)
+    qualname, doc = ('Relations.' if via else 'Session.') + name, f.__doc__
+    try:
+        py = d[key]
+    except (KeyError, TypeError):
+        py = None
+    if py is not None:      # named as the Python method it stands for (the planner's ruling (3) on 293's deviations)
+        name, qualname, doc = py.__name__, py.__qualname__, py.__doc__
+    return sa_solver.GuardMethod(getattr(sa_solver, entry), d, key, via, positional, TableView, f, name, qualname, doc)
 
 
 def _install_entry():

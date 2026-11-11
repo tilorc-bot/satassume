@@ -59,7 +59,24 @@ def _child():
     finally:
         sys.setprofile(None)
     nocore = _asks(ref=True)
-    print(json.dumps(dict(kinds=kinds, rust=rust, nocore=nocore, frames=sorted(set(seen)), nframes=len(seen))))
+    # the planner's ruling (3) on 293's deviations: a bound GuardMethod is named as the Python method it stands for
+    # (the class's method before the install, kept in PY_X),
+    # as the bound method forwards to it
+    looks, n = {}, 0
+    for cls in (engine.Session, relations.Relations):
+        for k, v in vars(cls).items():
+            if type(v).__name__ != 'GuardMethod':
+                continue
+            n += 1
+            saved = (SL.PY_REL,) if cls is relations.Relations else (SL.PY_DISC, SL.PY_LOOP, SL.PY_QUERY, SL.PY_GLUE)
+            py = next((D[k] for D in saved if k in D), None)
+            bound = v.__get__(object(), cls)
+            bad = [[w, a, getattr(o, a), getattr(py, a, '?')] for w, o in (('bound', bound), ('class', v))
+                   for a in ('__name__', '__qualname__', '__doc__') if py is None or getattr(o, a) != getattr(py, a)]
+            if bad:
+                looks[cls.__name__ + '.' + k] = bad
+    print(json.dumps(dict(kinds=kinds, rust=rust, nocore=nocore, frames=sorted(set(seen)), nframes=len(seen), looks=looks,
+                          n_guard=n)))
 
 
 def _run(plant=None, frame=None):
@@ -85,6 +102,11 @@ def test_guarded_methods_have_no_frame_and_keep_pythons_path():
     assert {'_ses_ensure', '_rel_fresh', 'f'} <= set(defs['frames']), defs['frames']
     assert 'f' not in got['frames'] and not {'_rel_fresh', '_ses_ensure', '_ses_discover', '_ses_custom'} & set(got['frames']), got
     print('still frames:', got['frames'], got['nframes'], 'of', defs['nframes'])
+
+
+def test_a_bound_guard_method_looks_like_the_python_method():
+    got = _run()
+    assert got['n_guard'] > 50 and got['looks'] == {}, (got['n_guard'], got['looks'])
 
 
 def test_gm_guard_skip_plant_is_caught():

@@ -58,6 +58,9 @@ def _child():
                         if getattr(getattr(e2, n), a) != getattr(py, a)]
                     for n, py in session_live.PY_ENTRY.items() if n in session_live._ENTRY_METHODS}
     out['n_methods'] = len(out['looks'])
+    # ... and so is the class's attribute (`Engine.ask`, the EntMethod itself)
+    out['class_looks'] = [n for n, py in session_live.PY_ENTRY.items() if n in session_live._ENTRY_METHODS
+                          and [getattr(Engine.__dict__[n], a) for a in attrs[:3]] != [getattr(py, a) for a in attrs[:3]]]
     # the control: an EntMethod made without the class and module binds the pyfunction, which names the bound method
     import sa_solver
     bare = sa_solver.EntMethod(sa_solver.ent_ask, 'ask', 'Engine.ask', Engine.ask.__doc__)
@@ -95,6 +98,7 @@ def test_a_bound_entry_method_looks_like_the_python_method():
     got = _run()
     assert got['n_methods'] > 10, got
     assert {n: d for n, d in got['looks'].items() if d} == {}, got['looks']
+    assert got['class_looks'] == [], got['class_looks']
     assert got['bare_name'] == 'ent_ask', got
 
 

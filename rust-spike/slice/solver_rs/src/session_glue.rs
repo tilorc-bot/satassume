@@ -496,7 +496,9 @@ pub(crate) struct EntMethod {
     name: Py<PyAny>,
     #[pyo3(get, name = "__qualname__")]
     qualname: Py<PyAny>,
-    #[pyo3(get, name = "__doc__")]
+    /// `__doc__` per object: CPython's PyType_FromSpec writes the type's own doc into its dict after the getsets, so a
+    /// getter named `__doc__` is shadowed; session_live `_method_docs` puts this one under `__doc__`.
+    #[pyo3(get, name = "_method_doc")]
     doc: Py<PyAny>,
 }
 
@@ -614,7 +616,9 @@ pub(crate) struct GuardMethod {
     name: Py<PyAny>,
     #[pyo3(get, name = "__qualname__")]
     qualname: Py<PyAny>,
-    #[pyo3(get, name = "__doc__")]
+    /// `__doc__` per object: CPython's PyType_FromSpec writes the type's own doc into its dict after the getsets, so a
+    /// getter named `__doc__` is shadowed; session_live `_method_docs` puts this one under `__doc__`.
+    #[pyo3(get, name = "_method_doc")]
     doc: Py<PyAny>,
 }
 
