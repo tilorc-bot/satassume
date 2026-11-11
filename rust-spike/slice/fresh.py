@@ -31,6 +31,7 @@ ap.add_argument("--term-out", help="term_live's counts, as JSON")
 ap.add_argument("--discard", action="store_true", help="a planted refusal in each query's run: term_discard.py. Needs --term")
 ap.add_argument("--budget", type=int, help="the engine's discovery budget for every query, as the matrix's low budgets")
 ap.add_argument("--no-rollback", action="store_true", help="plant: with --discard, skip the rollback")
+ap.add_argument("--first", type=int, help="only the workload's first N queries (a kept test's short run)")
 a = ap.parse_args()
 if a.so:
     sys.path.insert(0, a.so)
@@ -104,6 +105,8 @@ elif a.wl == "lra":
     pairs = lra_wl.queries()
 else:
     pairs = workload(a.wl)
+if a.first is not None:
+    pairs = pairs[:a.first]
 if a.handlers:
     import handler_count
     handler_count.install(a.handlers)
