@@ -29,6 +29,8 @@ def main(out, wl, mode, rest):
         return r
     p_install.install = install_then_wrap
 
+    live = [0, 0]
+
     def wrap(sympy_api):
         ask = sympy_api.ask
 
@@ -42,13 +44,19 @@ def main(out, wl, mode, rest):
             finally:
                 depth[0] -= 1
                 if depth[0] == 0:
-                    per.append(dict(sa_solver.session_counts()).get('fm:again', 0) - before)
+                    c = dict(sa_solver.session_counts())
+                    per.append(c.get('fm:again', 0) - before)
+                    # sessions alive at a top-level ask's end (gauge 701; no gc.collect, so a cycle not yet collected counts)
+                    live[0] = max(live[0], c.get('sc:ses_live', 0))
+                    live[1] += c.get('sc:ses_live', 0) > 0
         sympy_api.ask = wrapped
 
     def dump():
         c = dict(sa_solver.session_counts())
         json.dump(dict(wl=wl, mode=mode, again=c.get('fm:again', 0), convert=c.get('fm:convert', 0), asks=len(per),
-                       asks_with_again=sum(1 for x in per if x), first=[i for i, x in enumerate(per) if x][:10]),
+                       asks_with_again=sum(1 for x in per if x), first=[i for i, x in enumerate(per) if x][:10],
+                       sc={k: v for k, v in c.items() if k.startswith('sc:')}, ses_live_max_at_ask_end=live[0],
+                       asks_ending_with_live_session=live[1]),
                   open(out, 'w'), sort_keys=True)
     atexit.register(dump)
     sa_solver.formula_track(True)
