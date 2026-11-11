@@ -59,7 +59,7 @@ pub(crate) struct Occ {
     pub atom: u32,
 }
 
-const NAMES: [&str; 21] = [
+const NAMES: [&str; 22] = [
     "fm:convert",       // 630: conversions run
     "fm:nodes",         // 631: nodes built
     "fm:atom_occ",      // 632: atom occurrences read (`.pred`, `.expr`)
@@ -81,6 +81,7 @@ const NAMES: [&str; 21] = [
     "cls:differs",      // 671: `same_class`: two class objects, not one class to the query
     "same:eq",          // 672: wiring's 'same' shape or the Pow key met two equal, distinct objects (`==`, not `is`)
     "fm:again",         // 647: with `formula_track(True)` only: an object converted that some earlier entry had converted
+    "fm:twice:patched", // 648: an object converted again on the other side of a user's replaced `Engine.verdict`, called by name
 ];
 const CONVERT: usize = 0;
 const NODES: usize = 1;
@@ -99,7 +100,7 @@ pub(crate) const ATOMS_NODE: usize = 13;
 const NOSESSION: usize = 14;
 
 /// Plants 601-606, each the control of one comparison in test_formula_nodes.py.
-const PLANTS: [&str; 12] = [
+const PLANTS: [&str; 14] = [
     "fm-atoms-drop-last",  // 601: `atoms` without its last atom
     "fm-atoms-no-dedupe",  // 602: every occurrence its own atom
     "fm-args-reverse",     // 603: `And`/`Or` arguments reversed
@@ -112,18 +113,25 @@ const PLANTS: [&str; 12] = [
     "same-is",             // 663: wiring's 'same' shape and the Pow key's `b == e` by identity again (rows_tpl.rs)
     "fm-hand-no-give",     // 607: `Hand::give` hands nothing over
     "fm-hand-kept",        // 608: an entry's nodes outlive it and answer the next entry (a `Hand` reused across queries)
+    "fm-hand-instrument-by-name",  // 609: a registered instrument's `verdict` wrapper is called by name, as a user's patch is
+    "fm-hand-patched-direct",   // 610: a user's replaced `Engine.verdict` is passed over: Rust calls its own directly
 ];
 
 thread_local! {
-    static COUNTS: [Cell<u64>; 21] = const { [const { Cell::new(0) }; 21] };
+    static COUNTS: [Cell<u64>; 22] = const { [const { Cell::new(0) }; 22] };
     /// The nine classes for a site with no session: `SessionRules`' list (session_live.py `_core_rules`), read once.
     static CLASSES: std::cell::RefCell<Option<Rc<Vec<Py<PyAny>>>>> = const { std::cell::RefCell::new(None) };
     /// 0: none; else 1 + the index into `PLANTS`.
     static PLANT: Cell<u8> = const { Cell::new(0) };
     /// How many `Hand`s are live on this thread's stack: 0 outside any entry.
     static ENTRIES: Cell<u32> = const { Cell::new(0) };
-    /// The objects converted since the outermost entry began, held until it ends (`fm:twice` only; nothing reads a node here).
-    static SEEN: std::cell::RefCell<HashMap<usize, Py<PyAny>>> = std::cell::RefCell::new(HashMap::new());
+    /// The objects converted since the outermost entry began, held until it ends, each with the scopes it was converted
+    /// in: the first, then any others (`fm:twice` and `fm:twice:patched` only; nothing reads a node here).
+    static SEEN: std::cell::RefCell<HashMap<usize, (Py<PyAny>, u32, Vec<u32>)>> = std::cell::RefCell::new(HashMap::new());
+    /// The scope conversions run in: 0 is the outermost entry's own, and each by-name call of a user's replaced
+    /// `Engine.verdict` (`Patched`) is a new one until it returns.
+    static SCOPE: Cell<u32> = const { Cell::new(0) };
+    static SCOPES: Cell<u32> = const { Cell::new(0) };
     /// `formula_track(True)`: every object converted since, held so its address stays its own (`fm:again` only; a
     /// measurement a run switches on, nothing reads a node here).
     static TRACK: std::cell::RefCell<Option<HashMap<usize, Py<PyAny>>>> = const { std::cell::RefCell::new(None) };
@@ -157,6 +165,15 @@ const HAND_NO_GIVE: u8 = 10;
 /// Plant 608: the ruled-out cache, a `Hand` whose nodes survive into the next entry.
 const HAND_KEPT: u8 = 11;
 const AGAIN: usize = 20;
+/// Plant 609 (context.rs `method_of`).
+pub(crate) fn plant_instrument_by_name() -> bool {
+    planted(12)
+}
+/// Plant 610 (context.rs `verdict_from`).
+pub(crate) fn plant_patched_direct() -> bool {
+    planted(13)
+}
+const TWICE_PATCHED: usize = 21;
 pub(crate) const AD_LRA_CLASS_IS: u8 = 6;
 const CLASS_IS: u8 = 7;
 const AD_LRA_ATOM_OBJECT: u8 = 8;
@@ -490,8 +507,29 @@ pub(crate) fn convert_or(f: &Bound<'_, PyAny>, classes: &[Py<PyAny>]) -> PyResul
         return Err(PyValueError::new_err("formula: nine classes expected"));
     }
     tick(CONVERT);
-    if ENTRIES.with(|d| d.get()) > 0 && SEEN.with(|s| s.borrow_mut().insert(f.as_ptr() as usize, f.clone().unbind())).is_some() {
-        tick(TWICE);
+    if ENTRIES.with(|d| d.get()) > 0 {
+        // Again in the scope that converted it: the per-query rule's `fm:twice`. Again in another scope: the two are
+        // either side of a replaced `verdict` called by name, where a second `Hand` is allowed (`fm:twice:patched`).
+        let scope = SCOPE.with(|c| c.get());
+        let again = SEEN.with(|s| match s.borrow_mut().entry(f.as_ptr() as usize) {
+            std::collections::hash_map::Entry::Vacant(v) => {
+                v.insert((f.clone().unbind(), scope, Vec::new()));
+                None
+            }
+            std::collections::hash_map::Entry::Occupied(mut o) => {
+                let (_, first, more) = o.get_mut();
+                let same = *first == scope || more.contains(&scope);
+                if !same {
+                    more.push(scope);
+                }
+                Some(same)
+            }
+        });
+        match again {
+            Some(true) => tick(TWICE),
+            Some(false) => tick(TWICE_PATCHED),
+            None => {}
+        }
     }
     if TRACK.with(|t| t.borrow_mut().as_mut().is_some_and(|m| m.insert(f.as_ptr() as usize, f.clone().unbind()).is_some())) {
         tick(AGAIN);
@@ -634,6 +672,26 @@ impl Hand {
     }
 }
 
+/// A by-name call of an `Engine.verdict` that is neither session_live's nor a registered instrument's (context.rs
+/// `verdict_from`): the caller's nodes can't go with the objects, so the entry behind the call starts its own `Hand`.
+/// What it converts again is counted apart, `fm:twice:patched`, until the call returns.
+pub(crate) struct Patched {
+    outer: u32,
+}
+
+impl Patched {
+    pub(crate) fn enter() -> Patched {
+        let n = SCOPES.with(|c| { c.set(c.get() + 1); c.get() });
+        Patched { outer: SCOPE.with(|c| c.replace(n)) }
+    }
+}
+
+impl Drop for Patched {
+    fn drop(&mut self) {
+        SCOPE.with(|c| c.set(self.outer));
+    }
+}
+
 impl Drop for Hand {
     fn drop(&mut self) {
         let nodes = std::mem::take(&mut *self.nodes.borrow_mut());
@@ -649,6 +707,7 @@ impl Drop for Hand {
         if ENTRIES.with(|d| { d.set(d.get() - 1); d.get() }) == 0 {
             let seen = SEEN.with(|s| std::mem::take(&mut *s.borrow_mut()));
             drop(seen);
+            SCOPES.with(|c| c.set(0));
         }
     }
 }

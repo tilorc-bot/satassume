@@ -61,22 +61,51 @@ fn patched<'py>(eng: &Bound<'py, PyAny>, name: &str) -> PyResult<Option<Bound<'p
     Ok(Some(eng.getattr(name)?))
 }
 
-/// The engine's method `name` when it isn't the one session_live installed (`OURS`): a caller holding nodes calls Rust's
-/// own directly on None, and the returned method, with the objects, otherwise.
-pub(crate) fn patched_method<'py>(eng: &Bound<'py, PyAny>, name: &str) -> PyResult<Option<Bound<'py, PyAny>>> {
+/// What the engine's method `name` is to a Rust caller that holds nodes.
+enum Method<'py> {
+    /// The one session_live installed (`OURS`): Rust's own is called directly, with the nodes.
+    Ours,
+    /// A registered instrument's wrapper over `OURS` (session_live.py `INSTRUMENTS`; catch_count): Rust's own is still
+    /// called directly, between the instrument's `before()` and, on an Exception, its `raised(token, exc)`.
+    Instrument(Bound<'py, PyAny>, Bound<'py, PyAny>),
+    /// Anything else, on the instance or the class: the user's, called by name with the objects.
+    Patched(Bound<'py, PyAny>),
+}
+
+fn method_of<'py>(eng: &Bound<'py, PyAny>, name: &str) -> PyResult<Method<'py>> {
     let p = eng.py();
     if let Ok(d) = eng.getattr(intern!(p, "__dict__")) {
         if let Ok(d) = d.cast_into::<PyDict>() {
             if d.contains(name)? {
-                return Ok(Some(eng.getattr(name)?));
+                return Ok(Method::Patched(eng.getattr(name)?));
             }
         }
     }
-    let ours = p.import(intern!(p, "session_live"))?.getattr(intern!(p, "OURS"))?.cast_into::<PyDict>()?.get_item(name)?;
-    match ours {
-        Some(o) if eng.get_type().getattr(name)?.is(&o) => Ok(None),
-        _ => Ok(Some(eng.getattr(name)?)),
+    let live = p.import(intern!(p, "session_live"))?;
+    let Some(ours) = live.getattr(intern!(p, "OURS"))?.cast_into::<PyDict>()?.get_item(name)? else {
+        return Ok(Method::Patched(eng.getattr(name)?));
+    };
+    let cls = eng.get_type().getattr(name)?;
+    if cls.is(&ours) {
+        return Ok(Method::Ours);
     }
+    if let Some(i) = live.getattr(intern!(p, "INSTRUMENTS"))?.cast_into::<PyDict>()?.get_item(name)? {
+        let i = i.cast_into::<PyTuple>()?;
+        if cls.is(&i.get_item(0)?) && i.get_item(1)?.is(&ours) && !crate::formula::plant_instrument_by_name() {
+            return Ok(Method::Instrument(i.get_item(2)?, i.get_item(3)?));
+        }
+    }
+    Ok(Method::Patched(eng.getattr(name)?))
+}
+
+/// The engine's method `name` when it isn't the one session_live installed (`OURS`): a caller holding nodes calls Rust's
+/// own directly on None, and the returned method, with the objects, otherwise.
+pub(crate) fn patched_method<'py>(eng: &Bound<'py, PyAny>, name: &str) -> PyResult<Option<Bound<'py, PyAny>>> {
+    Ok(match method_of(eng, name)? {
+        Method::Ours => None,
+        Method::Instrument(..) => Some(eng.getattr(name)?),
+        Method::Patched(f) => Some(f),
+    })
 }
 
 fn epoch_check(eng: &Bound<'_, PyAny>) -> PyResult<()> {
@@ -117,9 +146,23 @@ pub(crate) fn context_session_from<'py>(eng: &Bound<'py, PyAny>, assumptions: &B
 
 /// `self.verdict(assumptions)` for a caller that holds nodes.
 pub(crate) fn verdict_from<'py>(eng: &Bound<'py, PyAny>, assumptions: &Bound<'py, PyAny>, hand: &Hand) -> PyResult<Bound<'py, PyAny>> {
-    match patched_method(eng, "verdict")? {
-        None => verdict(eng, assumptions, hand),
-        Some(f) => f.call1((assumptions,)),
+    match method_of(eng, "verdict")? {
+        Method::Ours => verdict(eng, assumptions, hand),
+        Method::Instrument(before, raised) => {
+            let token = before.call0()?;
+            let r = verdict(eng, assumptions, hand);
+            if let Err(e) = &r {
+                if e.is_instance_of::<pyo3::exceptions::PyException>(eng.py()) {
+                    raised.call1((token, e.value(eng.py())))?;
+                }
+            }
+            r
+        }
+        Method::Patched(_) if crate::formula::plant_patched_direct() => verdict(eng, assumptions, hand),
+        Method::Patched(f) => {
+            let _scope = crate::formula::Patched::enter();
+            f.call1((assumptions,))
+        }
     }
 }
 

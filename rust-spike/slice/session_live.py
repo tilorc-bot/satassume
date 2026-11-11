@@ -934,6 +934,17 @@ PY_BUDGET = {}
 #: The Engine methods as installed here, by name: a Rust caller holding nodes calls Rust's own directly while the class
 #: still has this one (context.rs `patched_method`), and the patched method, with the objects, otherwise.
 OURS = {}
+#: Instruments over one of `OURS`, by method name: `(wrapper, wrapped, before, raised)`. While the class holds `wrapper`
+#: and `wrapped` is `OURS[name]`, a Rust caller holding nodes still calls Rust's own directly (context.rs `method_of`):
+#: `before()` first, and `raised(token, exc)` on an Exception, so the instrument sees what its wrapper saw when Rust
+#: called it by name. Anything else on the class or the instance is the user's and is called by name.
+INSTRUMENTS = {}
+
+
+def register_instrument(name, wrapper, wrapped, before, raised):
+    INSTRUMENTS[name] = (wrapper, wrapped, before, raised)
+
+
 _BUDGET_METHODS = {'_union': 'bud_union', '_within_budget': 'bud_within_budget', '_query_cone': 'bud_query_cone',
                    '_struct': 'bud_struct', '_cone_info': 'bud_cone_info', '_drop_cones': 'bud_drop_cones'}
 _BUDGET_PLANTS = ('union-skip-overlap', 'within-no-link', 'over-budget-no-flag', 'note-budget-keep-flag')

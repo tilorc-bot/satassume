@@ -151,7 +151,7 @@ def test_source_is_the_object_and_is_never_read_again():
     assert n.nodes == 6
 
 
-# 660, 661: test_cbm_noid.py; 607, 608 (`fm-hand-*`, an entry's nodes): test_convert_once.py
+# 660, 661: test_cbm_noid.py; 607-610 (`fm-hand-*`, an entry's nodes): test_convert_once.py
 @pytest.mark.parametrize('plant', [n for n in sa_solver.formula_plants() if n.startswith('fm-') and not n.startswith('fm-hand-')])
 def test_each_plant_fires_and_is_caught(plant):
     fs = cases()

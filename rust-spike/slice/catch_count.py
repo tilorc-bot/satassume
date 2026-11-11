@@ -29,6 +29,12 @@ def install():
             sink.append(("complete_check", type(e).__name__, str(e)[:200]))
             raise
 
+    def verdict_raised(hint, e):
+        """Also what Rust calls when it holds nodes and runs its own `verdict` directly: frame 1 is then the Python
+        frame that called into Rust, as it was for `counted_verdict` called by name."""
+        caller = hint or sys._getframe(1).f_code.co_name
+        sink.append((f"verdict<{caller}", type(e).__name__, str(e)[:200]))
+
     def counted_verdict(self, assumptions):
         hint = _take_hint()
         try:
@@ -39,6 +45,10 @@ def install():
             raise
     Engine._complete_check = staticmethod(complete_check)
     Engine.verdict = counted_verdict
+    # The Rust backend: a registered instrument doesn't change which path runs (session_live.py `INSTRUMENTS`).
+    live = sys.modules.get("session_live")
+    if live is not None and hasattr(live, "register_instrument"):
+        live.register_instrument("verdict", counted_verdict, verdict, _take_hint, verdict_raised)
     # `_consistent`'s handler at sympy_api.py:1107 also covers `_formula`, which `verdict` doesn't see.
     from satassume import sympy_api
     formula = sympy_api._formula
