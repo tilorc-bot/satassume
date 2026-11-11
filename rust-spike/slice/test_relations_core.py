@@ -255,6 +255,22 @@ def _direct():
         finally:
             done()
         out['guard-' + name] = dict(log=log, guard=list(g), same=g is again, other=list(other))
+    # relations.py:1116 (item 4c): two equal, distinct constants through `_guard` in one query, the real engine answering
+    # `is_(u, "real")`. No query of the 20 workloads reaches the line (0 number terms in ~76,000 `_guard` calls; sa-port-277).
+    from sympy import sin
+    from sympy.core.cache import clear_cache
+    n1 = sin(S(7927))
+    clear_cache()
+    n2 = sin(S(7927))
+    s, rel, log = fresh(Q.positive(x + n1))
+    try:
+        g = rel._guard(lra(rel), [n1, n2])
+        keys = [k for k in s.engine.cache.store if k == n1]
+        held = [str(s.engine.cache.store[k]) for k in keys]
+    finally:
+        done()
+    out['guard-equal-distinct'] = dict(log=log, distinct=n1 is not n2 and n1 == n2, guard=list(g), keys=len(keys),
+                                       first=bool(keys) and keys[0] is n1, held=held)
     for name, ad_of in (('no-attr', lambda rel: NoBounds()), ('none-attr', lambda rel: NoneBounds())):
         s, rel, log = fresh(Q.positive(pi))
         try:
@@ -818,6 +834,9 @@ def test_direct_reaches_bound_and_every_infinity_path(py_direct, rust_direct):
         # Three `_guard` calls, one `_bound`: two root facts, and the rest is `ensure(x, real)`'s, none of them a unit.
         assert sum(s[0] == 'clause' and len(s[1]) == 1 for s in cases['guard-real-at-root']['log']) == 2
         assert cases['guard-real-at-root']['guard'] == [] and cases['guard-real-at-root']['same'] is True
+        # 4c: one store key for the two equal constants, the first object, no guard literal (real at the root)
+        eq = cases['guard-equal-distinct']
+        assert eq['distinct'] and eq['guard'] == [] and eq['keys'] == 1 and eq['first'] is True and eq['held'], eq
         assert cases['guard-forced-unknown']['guard'] != []
         assert cases['bound-symbol']['log'] == [] and cases['guard-no-attr']['log'] == cases['guard-none-attr']['log']
     assert rust_direct['counts']['rel:bound'] > 0 and rust_direct['counts']['rel:eq_infinity'] > 0
