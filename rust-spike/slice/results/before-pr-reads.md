@@ -931,16 +931,18 @@ classes' `eval` under the same version string passes the load and is caught only
 
 | class | cells | null | null where | fact sets used |
 |---|---|---|---|---|
-| factorial2 | 401 | 100 | negative even c (ValueError) | 0,1,2,3,4,5,6,7 |
-| subfactorial | 401 | 200 | c <= -1 (unevaluated) | 3,4,6,7,8 |
+| factorial2 | 401 | 100 | negative even c | 0,1,2,3,4,5,6,7 |
+| subfactorial | 401 | 200 | c <= -1 | 3,4,6,7,8 |
 | catalan | 401 | 0 | | 0,3,4,5,6,7,8 |
-| andre | 401 | 200 | c <= -1 (unevaluated or a `Mul`) | 3,4,5,6,7 |
+| andre | 401 | 200 | c <= -1 | 3,4,5,6,7 |
 | partition | 401 | 0 | | 3,4,5,6,7,8 |
-| genocchi | 401 | 200 | c <= -1 (unevaluated) | 2,3,5,7,8 |
+| genocchi | 401 | 200 | c <= -1 | 2,3,5,7,8 |
 
 The 9 fact sets are: negative non-integer rational (0), positive non-integer rational (1), negative odd integer (2),
 odd 1 (3: positive, odd, not prime, not composite), 2 (4), odd prime (5), even composite (6), odd composite (7), zero
-(8), each as all 19 `_CONST_BASIS` facts. 10279 bytes of JSON.
+(8), each as all 19 `_CONST_BASIS` facts. A null is a raise of the three caught types or a value that is not an
+atom number (or nan); in the workload's cells these are factorial2's ValueError and, for the other three, unevaluated
+nodes and andre's `Mul`s (section 2). 10279 bytes of JSON.
 
 ### (2) The live calls against the table (`vu.py`, `live.py value MODE --check plain`)
 
@@ -964,7 +966,7 @@ three caught types, or the value is not an atom number, or is nan). Plant (`VU_P
 
 264 is 255's census count (`DefinedFunction.__new__` direct from `functions.py:427`) and bar 1's `fn:value:sympy`
 for value; 214's 265 distinct pairs with the cache off are these 264 plus the nested factorial2(198). Each class has 44
-arguments (-5..30, ±100 only -100, ±199, ±200, 50, 100, 150), factorial2 45 with the nested 198. The 24 live
+arguments (-200, -199, -100, -5..30, 50, 100, 150, 199, 200), factorial2 45 with the nested 198. The 24 live
 non-atom nulls: andre 8 (3 unevaluated, 5 a `Mul`), genocchi 8, subfactorial 8 (unevaluated). Rust's own counters
 (`fn:value:sympy`, `value:input` / `value:derived`) were not read here: `knowledge_live.DISPATCH[0].counts()` held no
 `value` key in this run and `K.COUNTS` stays empty under `p_install`; the recorder's counts stand in for them.
@@ -980,8 +982,9 @@ cover, from the code:
   Rust's `rust_compiled` (`knowledge_live.py:258`) also looks `v` up in the query's term table
   (`q.ids.get(value)`, :266) and, when the value is an input term of its own class, reads that row
   (`value:input`, :272); otherwise `kn.units(facts)` (`value:derived`). The table has no value, so a table read gives
-  the derived route only. The derived route is what Python's reference computes, and 6g's shadow compare finds the two
-  routes' patterns equal; keeping `value:input` would need the value in the table.
+  the derived route only. The derived route is what Python's reference computes; for the input route,
+  the shadow compare in `test_knowledge_value_units.py:51` (`value:input`, no mismatch) finds its pattern equal to
+  Python's. Keeping `value:input` would need the value in the table.
 - **Subclasses.** The table is keyed by exact class (`gen_offline_data.py:144`), so a subclass of one of the six
   keeps `fn:value:sympy`. None in this workload.
 - **`evaluate(False)`.** `ev.py`, both backends: `ask(Q.positive(genocchi(8, evaluate=False)))` and three like it are
