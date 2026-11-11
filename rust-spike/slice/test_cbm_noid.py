@@ -276,3 +276,33 @@ def test_cache_store_key_is_the_first_equal_object():
         assert [facts for _, facts in held] == [{'extended_real': True}]
         if _counts() is not None:
             assert held[0][0] is n1
+
+
+_CLS = '''import atexit, json, runpy, sys
+sys.path.insert(0, sys.argv[1])
+import sa_solver
+atexit.register(lambda: print('NOID %d' % sa_solver.session_counts()['ad:cbm_noid']))
+sys.argv = [sys.argv[1] + '/live.py', 'cls', 'rust', sys.argv[2], '--check', 'plain']
+runpy.run_path(sys.argv[0], run_name='__main__')
+'''
+
+
+def test_cbm_noid_is_zero_on_cls_and_the_class_plants_flip_it(tmp_path):
+    """Item 4b: `ad:cbm_noid == 0` on workload cls, exact. Plants 660 (`ad-lra-class-is`) and 661 (`class-is`) send the
+    reads back to Python (264 each on cls at b18b064, answers unchanged); 662 does not route anything to Python (it changes
+    which object a native result holds: test_native_results_hold_the_querys_own_rows is its check)."""
+    import os
+    import subprocess
+    import sys
+    here = os.path.dirname(os.path.abspath(__file__))
+    got = {}
+    for plant in (None, 'ad-lra-class-is', 'class-is'):
+        env = dict(os.environ, PYTHONPATH=os.pathsep.join([here, os.environ.get('PYTHONPATH', '')]), SLICE_MOVED='0')
+        env.pop('SLICE_SESSION_PLANT', None)
+        if plant:
+            env['SLICE_SESSION_PLANT'] = plant
+        r = subprocess.run([sys.executable, '-c', _CLS, here, str(tmp_path / ('%s.jsonl' % plant))], env=env,
+                           capture_output=True, text=True, timeout=900)
+        assert r.returncode == 0, r.stderr[-3000:]
+        got[plant] = int([x for x in r.stdout.splitlines() if x.startswith('NOID ')][-1].split()[1])
+    assert got[None] == 0 and got['ad-lra-class-is'] > 0 and got['class-is'] > 0, got
