@@ -260,6 +260,8 @@ class _Mark:
                 del t[n:]
                 continue
             moved = stamp is not _NO_STAMP and t.stamp != stamp
+            if t is _common._CACHE and len(t) > n:
+                COUNTS['plant:mark-cuts-patterns'] += 1    # plant 666's firing: only that plant notes `_CACHE` (above)
             while len(t) > n:
                 t.popitem()
             if moved or len(t) < n or (n and next(reversed(t)) is not last):

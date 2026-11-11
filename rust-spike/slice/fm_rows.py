@@ -8,7 +8,9 @@ on sa-port-268's report: a plant is caught only by a check that is not its own c
 
 A row is `fm:again` (an input object converted again in a later query: intended under H2, and what a `Hand` kept across
 queries, plant 608, takes away), `fm:convert`, `fm:twice`, `fm:twice:patched` and `fm:nosession`. `fm:plant_fired` is
-written beside the row and is never compared: it is the plant's own counter. A plant comes in by SLICE_SESSION_PLANT, as
+written beside the row and is never compared: it is the plant's own counter. `fired` (never compared either) holds
+the firing counters of the plants `fm:plant_fired` doesn't count: term_live's `plant:*` (611, 666, 667) and
+session_live's PLANT_FIRED (600, 664, 665 and the session plants). A plant comes in by SLICE_SESSION_PLANT, as
 in bar.sh."""
 import atexit
 import glob
@@ -33,7 +35,12 @@ def run(out, wl, rest):
     def dump():
         c = dict(sa_solver.session_counts())
         row = {k: c.get(k, 0) for k in ROW}
-        json.dump(dict(wl=wl, row=row, plant_fired=c.get('fm:plant_fired', 0), plant=os.environ.get('SLICE_SESSION_PLANT')),
+        fired = {k: v for k, v in sys.modules['term_live'].COUNTS.items() if k.startswith('plant:')} \
+            if 'term_live' in sys.modules else {}
+        if 'session_live' in sys.modules:
+            fired['session_live'] = sys.modules['session_live'].PLANT_FIRED[0]
+        json.dump(dict(wl=wl, row=row, plant_fired=c.get('fm:plant_fired', 0), fired=fired,
+                       plant=os.environ.get('SLICE_SESSION_PLANT') or os.environ.get('SLICE_TERM_PLANT')),
                   open(out, 'w'), sort_keys=True)
     atexit.register(dump)
     sa_solver.formula_track(True)
