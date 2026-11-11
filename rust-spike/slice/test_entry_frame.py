@@ -51,6 +51,17 @@ def _child():
     out['ask'] = [ask(Q.positive(x), Q.positive(x), engine=e2), ask(Q.negative(x), Q.positive(x), engine=e1),
                   ask(Q.positive(x + 1), Q.positive(x), engine=e2)]
     out['name'] = [Engine.ask.__name__, e2.ask.__name__, e2.ask.__self__ is e2]
+    # the planner's ruling (3): every bound entry method is named as the Python method it replaced
+    import session_live
+    attrs = ('__name__', '__qualname__', '__doc__', '__module__')
+    out['looks'] = {n: [[a, getattr(getattr(e2, n), a), getattr(py, a)] for a in attrs
+                        if getattr(getattr(e2, n), a) != getattr(py, a)]
+                    for n, py in session_live.PY_ENTRY.items() if n in session_live._ENTRY_METHODS}
+    out['n_methods'] = len(out['looks'])
+    # the control: an EntMethod made without the class and module binds the pyfunction, which names the bound method
+    import sa_solver
+    bare = sa_solver.EntMethod(sa_solver.ent_ask, 'ask', 'Engine.ask', Engine.ask.__doc__)
+    out['bare_name'] = bare.__get__(e2, Engine).__name__
     print(json.dumps(out))
 
 
@@ -74,9 +85,17 @@ def test_an_entry_method_is_one_rust_call():
     assert got['frames'] == [], got
     assert got['hits'] == [0, 4], got
     assert got['ask'] == [True, False, True], got
-    # the class's attribute is named as the method; the bound method is named as the Rust entry it binds (`ent_ask`), as a
-    # bound builtin is: the one visible difference from the `def` (nothing in the tree reads a bound method's name)
-    assert got['name'] == ['ask', 'ent_ask', True], got
+    # the class's attribute and the bound method are named as the method
+    assert got['name'] == ['ask', 'ask', True], got
+
+
+def test_a_bound_entry_method_looks_like_the_python_method():
+    """The planner's ruling (3) on 293's deviations: `__name__`, `__qualname__`, `__doc__` (and `__module__`) of each bound
+    entry method are the Python method's. The control: bound to the bare pyfunction, the name is the Rust entry's."""
+    got = _run()
+    assert got['n_methods'] > 10, got
+    assert {n: d for n, d in got['looks'].items() if d} == {}, got['looks']
+    assert got['bare_name'] == 'ent_ask', got
 
 
 def test_the_python_def_is_a_frame_per_call():

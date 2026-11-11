@@ -1115,9 +1115,10 @@ def _ent(name, rf, doc=None):
     if ENTRY_FRAME[0] == 'py' or not hasattr(sa_solver, 'EntMethod'):
         def f(self, *a, **k):
             return rf(self, *a, **k)
-        f.__name__ = name
+        f.__name__, f.__qualname__, f.__doc__, f.__module__ = name, 'Engine.' + name, doc, engine.Engine.__module__
         return f
-    return sa_solver.EntMethod(rf, name, 'Engine.' + name, doc)
+    # the class and module: a bound entry is named as the Python method (the planner's ruling (3) on 293's deviations)
+    return sa_solver.EntMethod(rf, name, 'Engine.' + name, doc, engine.Engine, engine.Engine.__module__)
 
 
 #: The part 3 follow-up, C7: 'rust' (default) installs each entry as an `EntMethod`; 'py' as the Python `def` before it.

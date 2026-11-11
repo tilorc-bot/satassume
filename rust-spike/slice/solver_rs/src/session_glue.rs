@@ -500,12 +500,60 @@ pub(crate) struct EntMethod {
     doc: Py<PyAny>,
 }
 
+/// The planner's ruling (3) on 293's deviations: a bound entry method must look like the Python method it replaces, since
+/// P1 honours patched methods by name. A bound method forwards `__name__`, `__qualname__`, `__doc__` and `__module__` to its
+/// `__func__`, the pyfunction (`ent_ask`, `sa_solver`). So the method binds a builtin of its own over the same C entry
+/// point: named as the method (`ml_name`), with the method's doc (`ml_doc`), the class as its `__self__` (a builtin whose
+/// `__self__` is a type has `__qualname__` `<class>.<name>`, Objects/methodobject.c `meth_get__qualname__`) and the
+/// method's module. pyo3's pyfunction trampoline ignores `self`, so the call is unchanged. One `PyMethodDef` per installed
+/// method, leaked: it must outlive the builtin, and installs are once per process.
+fn renamed_entry(p: Python<'_>, f: &Bound<'_, PyAny>, name: &str, doc: Option<&str>, owner: &Bound<'_, PyAny>, module: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+    use pyo3::ffi;
+    unsafe {
+        if ffi::PyCFunction_CheckExact(f.as_ptr()) == 0 {
+            return Ok(f.clone().unbind());
+        }
+        let src = &*(*(f.as_ptr() as *mut ffi::PyCFunctionObject)).m_ml;
+        if src.ml_flags & ffi::METH_METHOD != 0 {
+            return Ok(f.clone().unbind());
+        }
+        let cname = std::ffi::CString::new(name).map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+        let cdoc = match doc.map(std::ffi::CString::new) {
+            Some(Ok(d)) => d.into_raw() as *const std::ffi::c_char,
+            Some(Err(e)) => return Err(pyo3::exceptions::PyValueError::new_err(e.to_string())),
+            None => std::ptr::null(),
+        };
+        let def = Box::leak(Box::new(ffi::PyMethodDef { ml_name: cname.into_raw(), ml_meth: src.ml_meth, ml_flags: src.ml_flags, ml_doc: cdoc }));
+        Ok(Bound::from_owned_ptr_or_err(p, ffi::PyCFunction_NewEx(def, owner.as_ptr(), module.as_ptr()))?.unbind())
+    }
+}
+
 #[pymethods]
 impl EntMethod {
+    /// `owner` (the class) and `module` (the method's `__module__`) given: the method binds a builtin named as the method
+    /// (`renamed_entry`). Without them it binds `f` itself, which a bound method then names `f.__name__` (test_entry_frame.py's
+    /// control for the name check).
     #[new]
-    #[pyo3(signature = (f, name, qualname, doc=None))]
-    fn new(p: Python<'_>, f: Py<PyAny>, name: Py<PyAny>, qualname: Py<PyAny>, doc: Option<Py<PyAny>>) -> Self {
-        EntMethod { f, name, qualname, doc: doc.unwrap_or_else(|| p.None()) }
+    #[pyo3(signature = (f, name, qualname, doc=None, owner=None, module=None))]
+    fn new(
+        p: Python<'_>,
+        f: Py<PyAny>,
+        name: Py<PyAny>,
+        qualname: Py<PyAny>,
+        doc: Option<Py<PyAny>>,
+        owner: Option<Py<PyAny>>,
+        module: Option<Py<PyAny>>,
+    ) -> PyResult<Self> {
+        let doc = doc.unwrap_or_else(|| p.None());
+        let f = match (owner, module) {
+            (Some(o), Some(m)) => {
+                let n: String = name.bind(p).extract()?;
+                let d: Option<String> = doc.bind(p).extract()?;
+                renamed_entry(p, f.bind(p), &n, d.as_deref(), o.bind(p), m.bind(p))?
+            }
+            _ => f,
+        };
+        Ok(EntMethod { f, name, qualname, doc })
     }
 
     fn __get__<'py>(slf: &Bound<'py, Self>, obj: Option<&Bound<'py, PyAny>>, _typ: Option<&Bound<'py, PyAny>>) -> PyResult<Bound<'py, PyAny>> {
