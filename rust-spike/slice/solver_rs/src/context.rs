@@ -333,8 +333,7 @@ fn verdict<'py>(eng: &Bound<'py, PyAny>, assumptions: &Bound<'py, PyAny>, hand: 
     tick(CTX_VERDICT);
     let p = eng.py();
     epoch_check(eng)?;
-    tick(CTX_CB_HELPERS);
-    if engine_mod(p)?.getattr(intern!(p, "_noncommutative_atoms"))?.call1((assumptions,))?.is_truthy()? {
+    if crate::entry::noncommutative_atoms(p, &[assumptions], hand)? {
         return konst(p, "UNKNOWN");
     }
     if !planted(CTX_VERDICT_SKIP_BUDGET) && !crate::budget::within_from(eng, assumptions, None, hand)? {

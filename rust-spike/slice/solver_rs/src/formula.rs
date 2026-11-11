@@ -59,7 +59,7 @@ pub(crate) struct Occ {
     pub atom: u32,
 }
 
-const NAMES: [&str; 22] = [
+const NAMES: [&str; 23] = [
     "fm:convert",       // 630: conversions run
     "fm:nodes",         // 631: nodes built
     "fm:atom_occ",      // 632: atom occurrences read (`.pred`, `.expr`)
@@ -82,7 +82,10 @@ const NAMES: [&str; 22] = [
     "same:eq",          // 672: wiring's 'same' shape or the Pow key met two equal, distinct objects (`==`, not `is`)
     "fm:again",         // 647: with `formula_track(True)` only: an object converted that some earlier entry had converted
     "fm:twice:patched", // 648: an object converted again on the other side of a user's replaced `Engine.verdict`, called by name
+    "nc:memo_miss",     // 720: entry.rs `noncommutative_term`: domain's `_NONCOMM` memo had no row, so `_noncommutative` was called
 ];
+/// Counter 720.
+pub(crate) const NC_MEMO_MISS: usize = 22;
 const CONVERT: usize = 0;
 const NODES: usize = 1;
 const ATOM_OCC: usize = 2;
@@ -100,7 +103,7 @@ pub(crate) const ATOMS_NODE: usize = 13;
 const NOSESSION: usize = 14;
 
 /// Plants 601-606, each the control of one comparison in test_formula_nodes.py.
-const PLANTS: [&str; 15] = [
+const PLANTS: [&str; 16] = [
     "fm-atoms-drop-last",  // 601: `atoms` without its last atom
     "fm-atoms-merge-pred", // 612: the dedupe keyed by the predicate alone, so two atoms with one predicate are one (replaces 602
                            //      `fm-atoms-no-dedupe`, speed-only: every reader of the atoms is idempotent; sa-port-274)
@@ -118,10 +121,11 @@ const PLANTS: [&str; 15] = [
     "fm-hand-instrument-by-name",  // 609: a registered instrument's `verdict` wrapper is called by name, as a user's patch is
     "fm-hand-patched-direct",   // 610: a user's replaced `Engine.verdict` is passed over: Rust calls its own directly
     "fm-hand-per-entry",   // 622: each outermost entry inside an ask makes its own map again (`formula_ask` shares none)
+    "nc-memo-true-false",  // 623: entry.rs `noncommutative_term` reads a memo row of True as False (a wrong answer)
 ];
 
 thread_local! {
-    static COUNTS: [Cell<u64>; 22] = const { [const { Cell::new(0) }; 22] };
+    static COUNTS: [Cell<u64>; 23] = const { [const { Cell::new(0) }; 23] };
     /// The nine classes for a site with no session: `SessionRules`' list (session_live.py `_core_rules`), read once.
     static CLASSES: std::cell::RefCell<Option<Rc<Vec<Py<PyAny>>>>> = const { std::cell::RefCell::new(None) };
     /// 0: none; else 1 + the index into `PLANTS`.
@@ -172,6 +176,10 @@ const HAND_NO_GIVE: u8 = 10;
 const HAND_KEPT: u8 = 11;
 /// Plant 622: one node map per entry again, not per ask (`fm:again` within an ask).
 const HAND_PER_ENTRY: u8 = 14;
+/// Plant 623 (entry.rs `noncommutative_term`).
+pub(crate) fn planted_nc_memo() -> bool {
+    planted(15)
+}
 const AGAIN: usize = 20;
 /// Plant 609 (context.rs `method_of`).
 pub(crate) fn plant_instrument_by_name() -> bool {

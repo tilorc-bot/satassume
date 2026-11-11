@@ -179,9 +179,11 @@ def test_counters_fire(both):
     _, rust = both
     c = rust['counts']
     for k in ('em:py_failed', 'em:py_verdict', 'em:py_ctxs', 'ctx:context_session', 'ctx:build_memoized', 'ctx:build_context',
-              'ctx:verdict', 'ctx:complete_check', 'ctx:cb_check_version', 'ctx:cb_fresh_session', 'ctx:cb_helpers',
+              'ctx:verdict', 'ctx:complete_check', 'ctx:cb_check_version', 'ctx:cb_fresh_session',
               'ctx:py_stats', 'ctx:failed_hit', 'ctx:verdict_hit', 'ctx:fallback'):
         assert c[k] > 0, k
+    # `_noncommutative_atoms` is native since B's item 2 (entry.rs `noncommutative_atoms`): no helper callback is left
+    assert c['ctx:cb_helpers'] == 0
     assert c['rel:plant_fired'] == 0
 
 

@@ -526,8 +526,41 @@ fn ent_put_result(eng: &Bound<'_, PyAny>, s: &Bound<'_, PyAny>, cache: &Bound<'_
 }
 
 fn noncommutative(p: Python<'_>, node: &Bound<'_, PyAny>) -> PyResult<bool> {
+    noncommutative_term(p, node)
+}
+
+/// `engine._noncommutative(term)`: domain.py's `_NONCOMM` memo (a `dict`, read as `dict.get` reads it) answers; only
+/// on a miss is domain's `_noncommutative` called (it walks the term and fills the row), counted `ent:cb_noncomm` and
+/// `nc:memo_miss`. The walk reads SymPy's classes and stays Python.
+pub(crate) fn noncommutative_term(p: Python<'_>, term: &Bound<'_, PyAny>) -> PyResult<bool> {
+    let dom = p.import(intern!(p, "satassume.knowledge.domain"))?;
+    let memo = dom.getattr(intern!(p, "_NONCOMM"))?;
+    if let Some(r) = memo.cast::<PyDict>()?.get_item(term)? {
+        if !r.is_none() {
+            return Ok(r.is_truthy()? && !crate::formula::planted_nc_memo());
+        }
+    }
     tick(ENT_CB_NONCOMM);
-    engine_mod(p)?.getattr(intern!(p, "_noncommutative"))?.call1((node,))?.is_truthy()
+    crate::formula::tick(crate::formula::NC_MEMO_MISS);
+    dom.getattr(intern!(p, "_noncommutative"))?.call1((term,))?.is_truthy()
+}
+
+/// `engine._noncommutative_atoms(*formulas)`, native (B's item 2, group-d-cause.md C7's cb_noncomm): whether a
+/// vocabulary atom (`pred in PRED_INDEX`) of one of `formulas` (None skipped) has a non-commutative term. The atoms come
+/// from `hand`'s node of each formula, so the formula is converted once for the entry, not walked in Python.
+pub(crate) fn noncommutative_atoms(p: Python<'_>, formulas: &[&Bound<'_, PyAny>], hand: &Hand) -> PyResult<bool> {
+    let index = engine_mod(p)?.getattr(intern!(p, "PRED_INDEX"))?;
+    for f in formulas {
+        if f.is_none() {
+            continue;
+        }
+        for a in hand.atoms(f)?.iter() {
+            if index.contains(a.getattr(intern!(p, "pred"))?)? && noncommutative_term(p, &a.getattr(intern!(p, "expr"))?)? {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
 }
 
 fn construction_level(p: Python<'_>, node: &Bound<'_, PyAny>) -> PyResult<i64> {
@@ -760,11 +793,10 @@ fn ent_ask<'py>(eng: &Bound<'py, PyAny>, proposition: &Bound<'py, PyAny>, assump
     let contextual = !assumptions.is_none() && !assumptions.is(PyBool::new(p, true));
     let em = engine_mod(p)?;
     let ctx_or_none = if contextual { assumptions.clone() } else { none.clone() };
-    tick(ENT_CB_NONCOMM);
-    if em.getattr(intern!(p, "_noncommutative_atoms"))?.call1((proposition, &ctx_or_none))?.is_truthy()? {
+    let hand = Hand::enter();
+    if noncommutative_atoms(p, &[proposition, &ctx_or_none], &hand)? {
         return Ok(none);
     }
-    let hand = Hand::enter();
     let within = |f: &Bound<'py, PyAny>, a: &Bound<'py, PyAny>| -> PyResult<bool> {
         crate::budget::within_from(eng, f, Some(a), &hand)
     };
