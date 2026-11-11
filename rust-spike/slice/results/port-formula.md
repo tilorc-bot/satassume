@@ -393,3 +393,88 @@ f6 against Python (`j2/p666/verdict.txt`, expected DIFFER). Expected: 18 MATCH; 
 
 ### Not run
 Items 2 to 5 of the gate; the bar; the two-order reproductions; h2.py; the clear() test; D and E.
+
+## sa-port-260 (10-11 Nov): j2 read, the rebase onto state part 3, the (iii) edits, rulings 1 and 2
+Head afca220 (+ this file and the handoff), on rust-slice 9151316. **Unbarred, unlanded.** No suite and no bar was run.
+
+### The detached job j2 (sa-port-248's tree: 32eb7e1 + e82147a + cache-values.diff + 311fb80, on 0192b35), as expected
+`~/sa-rust-ids-work/sa-port-248/j2`, ended 23:43Z 10 Nov.
+- `dg/verdicts.txt`: **18 MATCH, scope DIFFER, lra DIFFER**. No `"known"` row in any .cmp (`_SPLIT` and `_CACHE` counts equal
+  at every engine point of every workload).
+- scope: `moved_diff` 8, all `engine:splits` (first at query 24); answers, sessions, end, stream, lra and stats 0 of 169.
+- lra: `end_diff` 2, `stream_diff` 2, `lra_diff` 2 (first at 204; lra first at 585), `stats_diff` 1427 (first at 73:
+  sessions 105 against 104, consistency_checks 16 against 15, set_checks 46 against 45), `moved_diff` 2 (`@lra` 1,268
+  filled on Python against 1,207); answers 0 of 1500. The base rows of the section above.
+- `p666/verdict.txt`: **DIFFER** (plant 666 on f6: `moved_known_diff` 77, first at engine point 40, `_CACHE` 93 on Python
+  against 90). The plant is caught by the digest as well as by test_cache_rollback.py.
+
+### The rebase onto state part 3 (9151316), 78962f7
+16 commits rebased with no conflict (relevance.rs included). It did not build: this branch had dropped `PyBool` from
+session.rs's imports and part 3 added a use; restored. e82147a was already in rust-slice. cache-values.diff applied (the
+digest's `_CACHE` row is keys and values). known_moved.json is empty: with the `_CACHE` fix no known row is left, so
+livecmp.py requires `_SPLIT` and `_CACHE` counts equal at every point (exact).
+
+**Digest after the rebase, running detached** (`~/sa-rust-ids-work/sa-port-260/j1`, job1.sh, started 23:46Z 10 Nov, end
+marker `j1/end.txt`; scratch worktree `sa-port-260/dg` at 78962f7 with that commit's .so, so it does **not** hold the three
+commits after it). Read at 00:35Z: **scope MATCH** (ruling 4: `engine:splits` is gone with part 3's 4d14638), f6 MATCH,
+wiring MATCH, dev, port, ground, loop MATCH; 12 workloads and lra not yet written, plant 666 after them.
+
+### The (iii) edits that waited for part 3 (132fa61, b0106f7)
+- relkeys.rs `twin_row`, plant 409 `rk-class-split` and counter `rk:twin` (slot 359 reserved) are removed, with the plant's
+  sites in relations_core.rs and session_live.py. The query's class table gives an equal class's object the first class's
+  row, so `twin_row` could not fire and 409 was void.
+- The three tests hold the new rule and each is caught by plant 661 `class-is`: test_rs_core.py
+  `test_two_equal_function_classes_key_as_one` (`cls:eq` > 0) and `test_class_split_plant_is_caught` (661: answer lost, rows
+  differ, `_tv` holds `f(0)` twice); test_relations_core.py `test_join_second_object_resolves_on_its_own`: ids
+  `[want] * 5`, hit 1, second 3, none 0 (before: the other class None, hit >= 2, second 2, none 2; plant 661 gives those
+  again and the test checks it). `second` 3 means each change between the two equal objects asks `term_id` in Python again:
+  the link memo holds one object per node. A speed matter only where a query alternates twins; not changed.
+- test_moved_digest.py's twin plant is 661. test_term_live.py's two stale tests were fixed by part 3 (02354d4): 20
+  passed, 1 skipped here.
+- `_SPLIT` exact: split_order.compare counts a Rust-only `_SPLIT` row and a `_CACHE` key difference as differences. twin: 2
+  rows and 2 keys on both backends (2 against 4, 2 against 0 before the fix). Plant 451 is caught in both directions.
+- **relations_core.rs off the `table` property** (b0106f7): `session_of` (:778) uses session.rs `core_of`; :2269, :2331,
+  :2467 use `table_of`. `_table_get` calls on converted queries (pycalls.py on session_live.py, Rust, `--check plain`;
+  `sa-port-260/tg/before` = 78962f7, `tg/after` = b0106f7's source; before equals sa-port-263's table):
+
+  | workload | queries | `_table_get` before | after | all session_live.py calls on converted queries, before | after |
+  |---|---:|---:|---:|---:|---:|
+  | dev | 1985 | 10,775 | 1,775 | 86,871 | 77,871 |
+  | zero | 854 | 46,702 | 1,789 | 207,546 | 162,633 |
+  | scope | 169 | 4,472 | 704 | 28,513 | 24,745 |
+  | wiring | 6512 | 11,454 | 11,454 | 457,748 | 457,748 |
+  | transfer:7:60 | 60 | 7,379 | 273 | 29,883 | 22,777 |
+  | twin | 2 | 164 | 32 | 748 | 616 |
+
+  What is left is session_live.py's own reads (`_node`, `_rust_call`, `_dvar_public`): part 3's follow-up. Not measured:
+  the other 10 workloads and the suite.
+- Tests after these edits (orion, plain pytest, the clone's build): test_rs_core.py 15 passed, test_relations_core.py 88
+  passed, test_session_boundary.py 27 passed, test_moved_digest.py 2 passed, test_split_order.py 2 passed; before the
+  edits on the rebased tree: test_cache_fix.py 7 passed, test_cache_rollback.py 2 passed, test_cbm_noid.py 2 passed and 6
+  skipped (plain pytest is the Python backend: its Rust-only tests skip), test_term_live.py 20 passed, 1 skipped.
+  test_rd_core.py ran to exit 0 in a combined shell whose own line was cut off: its count was not read.
+
+### Rulings 1 and 2 on e8d5adf: `_CACHE` stays, term_discard.py exempts it alone (afca220)
+- Ruling 1's condition holds on the evidence in hand: cache_det 0 mismatches on 20 workloads and the suite, both backends
+  (sa-port-246's j1, section above). It was not rerun on the rebased tree.
+- `fresh.py dev rust --term terms --lra --discard` (`~/sa-rust-ids-work/sa-port-260/disc`): 1,985 armed, raised and
+  checked in each run.
+
+  | run | clean | left-something | names left |
+  |---|---:|---:|---|
+  | before the exemption (dev0) | 500 | 1,485 | `_CACHE` only (its `process:` and `module:` names) |
+  | with the exemption (dev1) | 1,985 | 0 | none; `exempt:_CACHE` 2,970 = 1,485 rollbacks x 2 names |
+  | plant 667 `mark-leaves-entry` (dev667) | 0 | 1,985 | `_NONCOMM` 448, `_CLOSED` 1,485, `_SYMPY_ATOMS` 3, `_FORMULAS` 13, `_KEYS` 36 |
+
+  dev0 and dev1's answers and digests are byte-equal. The exemption applies only when the run added `_CACHE` entries and
+  left the earlier ones the same objects. Plant 667 (term_live.py `rollback`: the first other table the run grew keeps the
+  run's entries) is caught on every query. **No kept test**: the evidence is these runs; dev only.
+
+### Not run
+The suite and the bar; fm:nosession, Formula callbacks, rk:intern, kept shares, handler multiset, plant table (no numbers
+of this session: nothing in them was measured). Gate steps 3 (convert once), 4 (the term_live fallback cause and the 42
+containers), 5 (bar, Group D seconds, memo cost). The lra cause (ruling 3; OWED) and lra after the rebase. The digest as
+snapshot-only with `sb:fwd_named` on and off (RULINGS 14). The PY_COMPILE fallback cause. The two-order reproductions, h2.py
+int:condio / int:engio with CLEAR=process, the clear() test, the twin and two-order harnesses as kept tests, bar.sh's
+invocation of the three harness tests, the cls verdict line, relations.py:1116, plant 663's class. cache_det and the
+module-wide probes on the rebased tree.
