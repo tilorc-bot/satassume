@@ -87,8 +87,10 @@ and `Engine._verdict` are native `EngineMemo`s).
 - q204: the first differing solver event (of 3,073) is `LRATheory.check`'s model: the same constant-field element
   with its terms in another order. **The native container that carries the order is not named.**
 - Control: the four queries on Rust with `SLICE_TERM=py` (no first run) against Python: MATCH. Term path on: DIFFER.
-This is the "rerun sees the first run's state" shape (#96), so it went to the planner first. lra stays an exact known
-row in the bar until ruled. Files: `~/sa-rust-ids-work/sa-port-267/lra/` (trace73.py MODE [Q], q4*.cmp, d204-*.detail).
+This is the "rerun sees the first run's state" shape (#96), so it went to the planner first. **Ruled after the
+question (architect's message, ~02:00Z 11 Nov): choice (1), the discard also rolls back the native EngineMemo tables
+and the carrier of the constant order; the exact order is in addenda/sa-port-268-gate.txt. Nothing is done for it
+yet,** and the carrier of q204's constant order still has to be named first. Files: `~/sa-rust-ids-work/sa-port-267/lra/` (trace73.py MODE [Q], q4*.cmp, d204-*.detail).
 
 ## Not started
 Plant 608 on the two-order harness; gate item 2's rest (bis-order.txt on the head, the bisect on base to the carrier
