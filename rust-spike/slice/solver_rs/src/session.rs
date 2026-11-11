@@ -723,11 +723,14 @@ struct SesScalars {
 /// 437 `sb-fwd-skip-link` (the direct `_link` not run), 438 `sb-solver-fresh` (`solver_of` gives a new solver),
 /// 439-445 `sc-<name>-drop` (ses_cont.rs: a session container's write is a no-op), 446 `sc-key-shared` (ses_cont.rs),
 /// 447 `sb-core-unset` (`core_of` doesn't read `_core`: every read goes through the property), 448 `sb-core-stale`
-/// (`core_of` gives the first core it saw, whatever the session).
+/// (`core_of` gives the first core it saw, whatever the session). The part 3 follow-up's (`A_PLANTS`, from 614):
+/// 614 `sb-join-address` (the join hook is given the session's address again, not its serial).
 static SB_PLANT: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(0);
 const SB_PLANTS: [&str; 18] = ["sb-truncated-stale", "sb-link-pending-stale", "sb-neg-shared-stale", "sb-sel-zero", "sb-hold-zero",
     "sb-verdict-none", "sb-fwd-skip-link", "sb-solver-fresh", "sc-frontier-drop", "sc-pending-drop", "sc-pending_c-drop",
     "sc-demand-drop", "sc-deferred-drop", "sc-literals-drop", "sc-groups-drop", "sc-key-shared", "sb-core-unset", "sb-core-stale"];
+const A_PLANTS: [&str; 1] = ["sb-join-address"];
+const SB_JOIN_ADDRESS: u16 = 614;
 const SB_CORE_UNSET: u16 = 447;
 const SB_CORE_STALE: u16 = 448;
 pub(crate) const SB_FWD_SKIP_LINK: u16 = 437;
@@ -748,7 +751,10 @@ fn sb_plant(name: Option<&str>) -> PyResult<()> {
         None => 0,
         Some(n) => match SB_PLANTS.iter().position(|x| *x == n) {
             Some(i) => 431 + i as u16,
-            None => return Err(PyValueError::new_err(format!("no such plant: {n}"))),
+            None => match A_PLANTS.iter().position(|x| *x == n) {
+                Some(i) => 614 + i as u16,
+                None => return Err(PyValueError::new_err(format!("no such plant: {n}"))),
+            },
         },
     };
     SB_PLANT.store(v, std::sync::atomic::Ordering::Relaxed);
@@ -1281,7 +1287,9 @@ impl SessionCore {
         let first = self.objs.borrow()[n as usize].clone_ref(x.py());
         if !first.bind(x.py()).get_type().is(x.get_type()) {
             tick(JOIN);
-            log_join(self as *const Self as usize, n, first.bind(x.py()), x)?;
+            // the session's serial, never its address: a dead session's address is reused by the next (F1, sa-port-233's audit)
+            let key = if sb_planted(SB_JOIN_ADDRESS) { self as *const Self as usize as u64 } else { self.serial };
+            log_join(key, n, first.bind(x.py()), x)?;
         }
         Ok(Some(n))
     }
@@ -2394,7 +2402,7 @@ thread_local! {
     static JOIN_HOOK: RefCell<Option<Py<PyAny>>> = const { RefCell::new(None) };
 }
 
-fn log_join(session: usize, nid: u32, first: &Bound<'_, PyAny>, second: &Bound<'_, PyAny>) -> PyResult<()> {
+fn log_join(session: u64, nid: u32, first: &Bound<'_, PyAny>, second: &Bound<'_, PyAny>) -> PyResult<()> {
     let hook = JOIN_HOOK.with(|h| h.borrow().as_ref().map(|f| f.clone_ref(first.py())));
     if let Some(f) = hook {
         f.bind(first.py()).call1((session, nid, first, second))?;

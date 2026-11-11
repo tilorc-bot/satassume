@@ -220,6 +220,52 @@ def _twin(mode):
     print(json.dumps(out))
 
 
+class _JoinA:
+    """`==` to every `_JoinA`, hashing alike: a second object of another class (`_JoinB`) is a `join` (session.rs `known`)."""
+    def __eq__(self, other):
+        return isinstance(other, _JoinA)
+
+    def __hash__(self):
+        return 7
+
+
+class _JoinB(_JoinA):
+    pass
+
+
+def _joinkey(mode):
+    """Two sessions, the second at the dead first's address (asserted, so the control is reached), each with one join.
+    The join hook (join_log.py's channel) must see two sessions: a key by address reads them as one (F1 of sa-port-233's
+    address-keying audit, 83cbcb9: join_log.py and join_summary.py undercount)."""
+    import gc
+    from test_relations_core import _rust
+    _rust()
+    import sa_solver
+    from satassume.engine import DictCache, Engine, Session
+    eng = Engine(cache=DictCache(), uninterpreted='none')
+    seen = []
+    sa_solver.set_join_hook(lambda s, n, a, b: seen.append(s))
+    before = sa_solver.session_counts()['join']
+    s1 = Session(eng)
+    s1.table.core.node_base(_JoinA())
+    s1.table.core.base_of_get(_JoinB())
+    addr = id(s1.table.core)
+    del s1
+    gc.collect()
+    held = []
+    for _ in range(200):
+        s2 = Session(eng)
+        if id(s2.table.core) == addr:
+            break
+        held.append(s2)
+    out = dict(same_address=id(s2.table.core) == addr)
+    s2.table.core.node_base(_JoinA())
+    s2.table.core.base_of_get(_JoinB())
+    sa_solver.set_join_hook(None)
+    out.update(keys=seen, joins=sa_solver.session_counts()['join'] - before)
+    print(json.dumps(out))
+
+
 def _run(mode, plant=None, child='child'):
     env = dict(os.environ, PYTHONPATH=os.pathsep.join([HERE, os.environ.get('PYTHONPATH', '')]))
     env.pop('SLICE_SESSION_PLANT', None)
@@ -298,6 +344,21 @@ def test_class_split_plant_is_caught():
     assert len(tv) > len(set(tv)), tv
 
 
+def test_a_later_session_at_a_dead_sessions_address_is_a_second_session_in_the_join_log():
+    """F1 of the address-keying audit (83cbcb9): session.rs gave the join hook the session's address, which the next
+    session reuses once the first is dead, so join_log.py's rows read two sessions as one. The key is the session's serial."""
+    got = _run('rust', child='joinkey')
+    assert got['same_address'] and got['joins'] == 2 and len(got['keys']) == 2, got    # the control: the reuse is reached
+    assert got['keys'][0] != got['keys'][1], got
+
+
+def test_join_address_plant_is_caught():
+    """Plant 614 `sb-join-address`: the hook is given the address again. The two sessions' joins then share one key."""
+    got = _run('rust', 'sb-join-address', child='joinkey')
+    assert got['same_address'] and got['joins'] == 2, got
+    assert got['keys'][0] == got['keys'][1], got
+
+
 @pytest.mark.parametrize('plant', PLANTS)
 def test_plant_moves_the_digest(rust, plant):
     got = _run('rust', plant)
@@ -308,3 +369,5 @@ if __name__ == '__main__' and sys.argv[1:2] == ['child']:
     _child(sys.argv[2])
 elif __name__ == '__main__' and sys.argv[1:2] == ['twin']:
     _twin(sys.argv[2])
+elif __name__ == '__main__' and sys.argv[1:2] == ['joinkey']:
+    _joinkey(sys.argv[2])
