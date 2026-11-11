@@ -42,7 +42,7 @@ import itertools
 import os
 
 import pytest
-from hypothesis import HealthCheck, given, settings, strategies as st
+from hypothesis import HealthCheck, example, given, settings, strategies as st
 from sympy import (Eq, Ge, Gt, I, Le, Lt, Ne, Q, Rational, S, Symbol,
                    Function, nan, oo, symbols, zoo)
 from sympy.logic.boolalg import ITE, And, Equivalent, Implies, Not, Or, Xor
@@ -145,6 +145,10 @@ def _eq(a, b):
     if ka == "nan" or kb == "nan":
         return None if ka == kb else False
     if ka == "other" or kb == "other":
+        # e.g. oo + I: not equal to a finite value
+        fa, fb = a.is_finite, b.is_finite
+        if fa is not None and fb is not None and fa != fb:
+            return False
         return None
     return bool(a == b)
 
@@ -395,8 +399,16 @@ def test_fuzz_plain_symbols(case):
     check(prop, assum, domains, Engine() if fresh else None)
 
 
+_C, _K = (next(s for s, _ in OLD_SYMBOLS if s.name == n) for n in "ck")
+
+
 @FUZZ
 @given(old_symbol_cases())
+# _eq(I, oo + I) was None, which let c = c + k hold at c = I, k = oo
+@example((("u", "positive", _K),
+          ("and", ("not", ("or", ("u", "positive", _C), ("r", "lt", _C, _C, "Q"))),
+           ("or", ("u", "positive", _C), ("r", "eq", _C, _C + _K, "Q"))),
+          {s: v for s, v in OLD_SYMBOLS if s in (_C, _K)}, False))
 def test_fuzz_old_style_symbols(case):
     prop, assum, domains, fresh = case
     check(prop, assum, domains, Engine() if fresh else None)
