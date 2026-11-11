@@ -463,6 +463,37 @@ impl Dispatch {
         bump(&mut slf.borrow_mut().counts, "registry:rust");
         Ok(r)
     }
+
+    /// The discard's view of the memo (`part` 0) or the class cache (`part` 1), for term_live.py `NATIVE_EXTRA`.
+    fn store(slf: Py<Self>, part: usize, name: String) -> DispatchStore {
+        DispatchStore { d: slf, part, name }
+    }
+}
+
+/// `_Mark` takes its mark here with no Python in between (the gate for sa-port-280: the mark is Rust's; ruling R3).
+#[pyclass(name = "DispatchStore")]
+pub struct DispatchStore {
+    d: Py<Dispatch>,
+    part: usize,
+    #[pyo3(get)]
+    name: String,
+}
+
+#[pymethods]
+impl DispatchStore {
+    #[getter]
+    fn native(&self) -> bool {
+        true
+    }
+    fn items<'py>(&self, py: Python<'py>) -> Bound<'py, PyList> {
+        self.d.borrow(py)._nt_rows(py, self.part)
+    }
+    fn _nt_mark(&self, py: Python<'_>) -> (u64, usize, usize) {
+        self.d.borrow(py)._nt_mark(py, self.part)
+    }
+    fn _nt_rollback(&self, py: Python<'_>, mark: (u64, usize, usize)) -> PyResult<bool> {
+        self.d.borrow_mut(py)._nt_rollback(py, self.part, mark)
+    }
 }
 
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {

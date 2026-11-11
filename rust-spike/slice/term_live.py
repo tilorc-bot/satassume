@@ -115,8 +115,8 @@ class _Seen:
     def items(self):
         return [(o, (first, tuple(more))) for o, first, more in sa_solver.formula_seen_rows()]
 
-    def _nt_mark(self):
-        return sa_solver.formula_seen_rows()
+    #: Rust's function itself (a builtin is not bound), so `_Mark` runs no Python here (the gate for sa-port-280).
+    _nt_mark = sa_solver.formula_seen_rows
 
     def _nt_rollback(self, rows):
         sa_solver.formula_seen_restore(rows)

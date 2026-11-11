@@ -251,21 +251,8 @@ def install_dispatch():
 
     # A discard takes out what the refused run added to them, as it cuts Python's two dicts back (term_live.py `_Mark`;
     # the gate for sa-port-269 (4)), and term_discard.py reads their rows.
-    class _Store:
-        native = True
-
-        def __init__(self, name, part):
-            self.name, self.part = name, part
-
-        def items(self):
-            return d._nt_rows(self.part)
-
-        def _nt_mark(self):
-            return d._nt_mark(self.part)
-
-        def _nt_rollback(self, mark):
-            return d._nt_rollback(self.part, mark)
-    stores = [_Store('Dispatch.memo', 0), _Store('Dispatch.classes', 1)]
+    # dispatch.rs `DispatchStore`: Rust takes the mark, with no Python per entry (the gate for sa-port-280).
+    stores = [d.store(0, 'Dispatch.memo'), d.store(1, 'Dispatch.classes')]
     term_live.NATIVE_EXTRA.extend(stores)
     import convert
     convert.TEMPLATES_FOR[0] = d.templates_for
