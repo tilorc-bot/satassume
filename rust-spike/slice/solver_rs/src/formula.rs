@@ -102,8 +102,10 @@ const NOSESSION: usize = 14;
 /// Plants 601-606, each the control of one comparison in test_formula_nodes.py.
 const PLANTS: [&str; 14] = [
     "fm-atoms-drop-last",  // 601: `atoms` without its last atom
-    "fm-atoms-no-dedupe",  // 602: every occurrence its own atom
-    "fm-args-reverse",     // 603: `And`/`Or` arguments reversed
+    "fm-atoms-merge-pred", // 612: the dedupe keyed by the predicate alone, so two atoms with one predicate are one (replaces 602
+                           //      `fm-atoms-no-dedupe`, speed-only: every reader of the atoms is idempotent; sa-port-274)
+    "fm-args-drop-last",   // 613: `And`/`Or` without their last argument (replaces 603 `fm-args-reverse`, order-only: both are
+                           //      commutative; sa-port-274)
     "fm-implies-swap",     // 604: `Implies(a, b)` read as `Implies(b, a)`
     "fm-ite-swap",         // 605: `ITE(c, a, b)` read as `ITE(c, b, a)`
     "fm-not-drop",         // 606: `Not(a)` read as `a`
@@ -280,15 +282,23 @@ impl<'py> Walk<'_, 'py> {
         };
         tick(ATOM_OCC);
         // `atoms_of(P)` is `(P,)` with no hash; inside a formula, the `seen` set's lookup.
-        let atom = if bare || planted(1) {
+        let atom = if bare {
             self.firsts.push(f.clone());
             self.firsts.len() - 1
         } else {
             tick(ATOM_INTERN);
-            match self.seen.get_item(f)? {
-                Some(i) => i.extract()?,
+            // plant 612 keys the dedupe too coarsely: by the predicate, so a second atom with it is taken for the first
+            let key = if plant_set(1) { pred.bind(p).clone() } else { f.clone() };
+            match self.seen.get_item(&key)? {
+                Some(i) => {
+                    let i: usize = i.extract()?;
+                    if plant_set(1) && !self.firsts[i].eq(f)? {
+                        planted(1);
+                    }
+                    i
+                }
                 None => {
-                    self.seen.set_item(f, self.firsts.len())?;
+                    self.seen.set_item(&key, self.firsts.len())?;
                     self.firsts.push(f.clone());
                     self.firsts.len() - 1
                 }
@@ -334,7 +344,7 @@ impl<'py> Walk<'_, 'py> {
             return Ok(Rc::new(match i {
                 1 | 2 => {
                     if a.len() > 1 && planted(2) {
-                        a.reverse();
+                        a.pop();
                     }
                     if i == 1 { N::And(a) } else { N::Or(a) }
                 }

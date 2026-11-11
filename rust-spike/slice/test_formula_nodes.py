@@ -160,7 +160,7 @@ def test_each_plant_fires_and_is_caught(plant):
     d = differences(fs)
     sa_solver.formula_plant(None)
     assert sa_solver.formula_counts()['fm:plant_fired'] > c0, plant
-    caught = {'fm-atoms-drop-last': 'atoms', 'fm-atoms-no-dedupe': 'atoms'}.get(plant, 'shape')
+    caught = {'fm-atoms-drop-last': 'atoms', 'fm-atoms-merge-pred': 'atoms'}.get(plant, 'shape')
     assert d[caught] > 0, (plant, d)
     assert differences(fs) == dict(atoms=0, identity=0, shape=0, occurrences=0, refused=0)
 
