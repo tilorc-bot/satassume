@@ -25,6 +25,7 @@ ap.add_argument("--so")
 ap.add_argument("--handlers", help="count the quiet Exception handlers here: handler_count.py")
 ap.add_argument("--term", choices=["py", "table", "keys", "terms"], default="py", help="conversion on the real path: term_live.py")
 ap.add_argument("--term-plant", help="term_live.PLANT, one of its test plants")
+ap.add_argument("--formula-plant", help="formula.rs's plant by name (sa_solver.formula_plant), e.g. fm-hand-kept (608)")
 ap.add_argument("--lra", action="store_true", help="lra_adapter's term work from Rust: lra_live.py. Needs --term")
 ap.add_argument("--term-check", action="store_true", help="term_live.CHECK: run Python's own function at each answer from Rust and compare")
 ap.add_argument("--term-out", help="term_live's counts, as JSON")
@@ -130,6 +131,9 @@ if a.term != "py":
     if a.discard:
         import term_discard as TD
         TD.install()
+    if a.formula_plant:
+        import sa_solver
+        sa_solver.formula_plant(a.formula_plant)
 sessions = []
 #: Sessions of refused runs, dropped at the rollback: the digests are of the run that answered. Discarded + Python's was checked
 #: on all 298 refused `lra` queries before this went in (port-4d.md).

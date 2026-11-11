@@ -26,7 +26,7 @@ N = 30
 CACHE = 'satassume.knowledge.templates._common._CACHE'
 
 
-def run(tmp, plant=None, full=False):
+def run(tmp, plant=None, full=False, formula_plant=None):
     env = dict(os.environ)
     for k in ('SLICE_TERM_PLANT', 'SLICE_SESSION_PLANT', 'SLICE_KNOWLEDGE_PLANT', 'SLICE_PLANT'):
         env.pop(k, None)
@@ -37,6 +37,8 @@ def run(tmp, plant=None, full=False):
         cmd.append('--full')
     if plant:
         cmd += ['--term-plant', plant]
+    if formula_plant:
+        cmd += ['--formula-plant', formula_plant]
     subprocess.run(cmd, env=env, cwd=HERE, capture_output=True, text=True, check=True)
     return json.load(open(out)), open(os.path.join(tmp, 'rows.txt')).read()
 
@@ -111,3 +113,61 @@ def test_plant_611_a_native_table_left_as_the_run_wrote_it_is_caught(full, plant
     assert set(NATIVE) <= named, named        # the tables lra's cause went through, each named
     assert not any(CACHE in k for k in named)
     assert c['exempt:_CACHE'] == full[0]['counts']['exempt:_CACHE']
+
+
+# The gate for sa-port-269 (4): the Rust stores outside the memo registry. `Dispatch.memo`, `Dispatch.classes` and formula.rs
+# `SEEN` are rolled back and read; `KEPT` (plant 608's store) and adapters.rs `LIVE` are read, and nothing but the plant or an
+# install writes them.
+STORES = ('Dispatch.memo', 'Dispatch.classes', 'formula.SEEN', 'formula.KEPT', 'adapters.LIVE')
+
+
+def test_the_stores_outside_the_registry_are_read_at_every_discard(full):
+    c = full[0]['counts']
+    for name in STORES:
+        assert c['read:' + name] >= 2 * N, name       # before each run and after each rollback
+    assert c.get('left-something', 0) == 0
+
+
+@pytest.mark.parametrize('name', ['Dispatch.memo', 'Dispatch.classes'])
+def test_plant_611_on_a_dispatch_store_is_caught(tmp_path, name):
+    d, _ = run(str(tmp_path), 'mark-skips-native:' + name, full=True)
+    assert d['term']['plant:mark-skips-native'] == N
+    named = {k for k in d['left'] if not k.endswith(':exempt')}
+    assert named == {'native:' + name}, named
+    assert d['counts']['left-something'] > 0
+
+
+def test_plant_608_the_nodes_an_ended_entry_kept_are_caught_by_the_discard_check(tmp_path):
+    d, _ = run(str(tmp_path), full=True, formula_plant='fm-hand-kept')
+    named = {k for k in d['left'] if not k.endswith(':exempt')}
+    assert named == {'native:formula.KEPT'}, named
+    assert d['counts']['left-something'] > 0
+
+
+def test_seen_is_cut_back_to_its_mark_and_live_is_read():
+    sys.path.insert(0, HERE)
+    import sa_solver
+    import term_live
+    seen, kept, live = (next(t for t in term_live.NATIVE_EXTRA if t.name == n) for n in ('formula.SEEN', 'formula.KEPT', 'adapters.LIVE'))
+    assert seen.items() == [] and kept.items() == []       # outside any entry, and with no plant
+    a, b = object(), object()
+    try:
+        sa_solver.formula_seen_restore([(a, 0, [1])])
+        mark = seen._nt_mark()
+        sa_solver.formula_seen_restore([(a, 0, [1, 2]), (b, 3, [])])        # what a refused run inside an entry would add
+        assert len(seen.items()) == 2
+        assert seen._nt_rollback(mark) is False
+        assert seen.items() == [(a, (0, (1,)))] and seen.items()[0][0] is a
+    finally:
+        sa_solver.formula_seen_restore([])
+    was = sa_solver.ad_lra_live_get()
+    cfg = tuple(object() for _ in range(9)) + (False,)
+    try:
+        sa_solver.ad_lra_live(cfg)
+        rows = live.items()
+        assert [k for k, _ in rows] == [(i,) for i in range(10)] and all(v is x for (_, v), x in zip(rows, cfg))
+        sa_solver.ad_lra_live(None)
+        assert live.items() == []
+    finally:
+        sa_solver.ad_lra_live(was)
+    assert not hasattr(kept, '_nt_mark') and not hasattr(live, '_nt_mark')      # read by the check, written by no query

@@ -760,6 +760,27 @@ fn formula_plant(name: Option<&str>) -> PyResult<()> {
     Ok(())
 }
 
+/// `SEEN`'s rows, `[(object, first scope, the other scopes)]`: the discard's mark and what its check reads (term_live.py
+/// `_Mark`, term_discard.py; the gate for sa-port-269 (4)). Empty outside any entry, where a top query's discard happens.
+#[pyfunction]
+fn formula_seen_rows(p: Python<'_>) -> Vec<(Py<PyAny>, u32, Vec<u32>)> {
+    SEEN.with(|s| s.borrow().values().map(|(o, a, m)| (o.clone_ref(p), *a, m.clone())).collect())
+}
+
+/// The discard's rollback: `SEEN` holds `rows` again and nothing a refused run converted.
+#[pyfunction]
+fn formula_seen_restore(rows: Vec<(Py<PyAny>, u32, Vec<u32>)>) {
+    let new: HashMap<usize, (Py<PyAny>, u32, Vec<u32>)> = rows.into_iter().map(|(o, a, m)| (o.as_ptr() as usize, (o, a, m))).collect();
+    drop(SEEN.with(|s| std::mem::replace(&mut *s.borrow_mut(), new)));
+}
+
+/// Plant 608's store by key, for the discard's check: empty unless the plant is set (its only writer is `Hand`'s drop
+/// under `plant_set(HAND_KEPT)`).
+#[pyfunction]
+fn formula_kept_rows() -> Vec<usize> {
+    KEPT.with(|m| m.borrow().keys().copied().collect())
+}
+
 /// How many formulas the live entries hold: 0 between queries (H2: nothing in a `Hand` survives its entry's call).
 #[pyfunction]
 fn formula_held() -> usize {
@@ -792,6 +813,9 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(formula_plant, m)?)?;
     m.add_function(wrap_pyfunction!(formula_plants, m)?)?;
     m.add_function(wrap_pyfunction!(formula_held, m)?)?;
+    m.add_function(wrap_pyfunction!(formula_seen_rows, m)?)?;
+    m.add_function(wrap_pyfunction!(formula_seen_restore, m)?)?;
+    m.add_function(wrap_pyfunction!(formula_kept_rows, m)?)?;
     m.add_function(wrap_pyfunction!(formula_track, m)?)?;
     m.add_function(wrap_pyfunction!(class_is_plant, m)?)?;
     Ok(())

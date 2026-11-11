@@ -248,6 +248,25 @@ def install_dispatch():
             dict.clear(self)
             d.clear_memos()
     registry._clauses_cache = _WithRusts(registry._clauses_cache)
+
+    # A discard takes out what the refused run added to them, as it cuts Python's two dicts back (term_live.py `_Mark`;
+    # the gate for sa-port-269 (4)), and term_discard.py reads their rows.
+    class _Store:
+        native = True
+
+        def __init__(self, name, part):
+            self.name, self.part = name, part
+
+        def items(self):
+            return d._nt_rows(self.part)
+
+        def _nt_mark(self):
+            return d._nt_mark(self.part)
+
+        def _nt_rollback(self, mark):
+            return d._nt_rollback(self.part, mark)
+    stores = [_Store('Dispatch.memo', 0), _Store('Dispatch.classes', 1)]
+    term_live.NATIVE_EXTRA.extend(stores)
     import convert
     convert.TEMPLATES_FOR[0] = d.templates_for
 
@@ -266,6 +285,8 @@ def install_dispatch():
         flush()
         atexit.unregister(flush)
         DISPATCH[0] = None
+        for s in stores:
+            term_live.NATIVE_EXTRA.remove(s)
         registry.__dict__.pop('clauses_for', None)
         registry._clauses_cache = dict(registry._clauses_cache)
         convert.TEMPLATES_FOR[0] = None

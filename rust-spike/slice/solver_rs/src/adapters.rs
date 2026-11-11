@@ -261,6 +261,20 @@ fn ad_lra_live(cfg: Option<Bound<'_, PyTuple>>) -> PyResult<()> {
     Ok(())
 }
 
+/// What `ad_lra_live` registered, as the tuple it was given, or None: the discard's check reads it before the run and
+/// after the rollback (term_discard.py; the gate for sa-port-269 (4)). Only `ad_lra_live` writes it.
+#[pyfunction]
+fn ad_lra_live_get<'py>(p: Python<'py>) -> PyResult<Option<Bound<'py, PyTuple>>> {
+    LIVE.with(|l| match l.borrow().as_ref() {
+        None => Ok(None),
+        Some(v) => Ok(Some(PyTuple::new(p, [
+            v.memoized.clone_ref(p), v.reads[0].clone_ref(p), v.reads[1].clone_ref(p), v.reads[2].clone_ref(p), v.local.clone_ref(p),
+            v.relation.clone_ref(p), v.term_id.clone_ref(p), v.scaffold.clone_ref(p), v.fault.clone_ref(p),
+            pyo3::types::PyBool::new(p, v.check).to_owned().into_any().unbind(),
+        ])?)),
+    })
+}
+
 /// term_live's `current()` when it has a table: the stack's last `_Query` with `kept` None.
 fn top_query<'py>(local: &Bound<'py, PyAny>) -> PyResult<Option<Bound<'py, PyAny>>> {
     let p = local.py();
@@ -795,6 +809,7 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<LraAdapter>()?;
     m.add_class::<EufAdapter>()?;
     m.add_function(wrap_pyfunction!(ad_lra_live, m)?)?;
+    m.add_function(wrap_pyfunction!(ad_lra_live_get, m)?)?;
     m.add_function(wrap_pyfunction!(ad_lra_export, m)?)?;
     Ok(())
 }

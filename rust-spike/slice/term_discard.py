@@ -109,6 +109,9 @@ def state(eng):
         out['stamp:' + n] = getattr(t, 'stamp', None)
     for n, _, t in eng.memos.items():
         out['engine:' + n] = _copy(t)
+    for t in term_live.NATIVE_EXTRA:     # Rust stores outside the registry: the dispatch memo and class cache, formula.rs
+        out['native:' + t.name] = _copy(t)     # `SEEN` and `KEPT`, adapters.rs `LIVE` (the gate for sa-port-269 (4))
+        COUNTS['read:' + t.name] += 1
     for mod, name, _ in HS.inventory():
         out[f'module:{mod}.{name}'] = _copy(_module_value(mod, name))
     out['stats'] = dict(eng.stats)

@@ -107,6 +107,45 @@ class _Refused(_Query):
         self.kept, self.table, self.ids, self.objects, self.counts, self.raised = 'refused', None, None, None, {}, ()
 
 
+class _Seen:
+    """formula.rs `SEEN`, the objects converted since the outermost entry began (`fm:twice`'s record): marked and rolled back
+    with the rest (the gate for sa-port-269 (4)). A top query's discard happens outside any entry, where it is empty."""
+    native, name = True, 'formula.SEEN'
+
+    def items(self):
+        return [(o, (first, tuple(more))) for o, first, more in sa_solver.formula_seen_rows()]
+
+    def _nt_mark(self):
+        return sa_solver.formula_seen_rows()
+
+    def _nt_rollback(self, rows):
+        sa_solver.formula_seen_restore(rows)
+        return False
+
+
+class _Kept:
+    """formula.rs `KEPT`, plant 608's store. Read by the discard's check and not rolled back: its only writer is the plant
+    (`Hand`'s drop under `fm-hand-kept`), so without the plant it is empty before and after."""
+    native, name = True, 'formula.KEPT'
+
+    def items(self):
+        return [((k,), True) for k in sa_solver.formula_kept_rows()]
+
+
+class _LraLive:
+    """adapters.rs `LIVE`, what `lra_live.install` registered. Read by the discard's check and not rolled back: only
+    `ad_lra_live` writes it, and no query calls that. (An adapter's own slot is keyed by its query object, which it holds;
+    a refused run's query is never the current one again, so nothing reads what that run stored.)"""
+    native, name = True, 'adapters.LIVE'
+
+    def items(self):
+        return [((i,), x) for i, x in enumerate(sa_solver.ad_lra_live_get() or ())]
+
+
+#: Rust stores outside the memo registry that a discard marks, rolls back (those with `_nt_mark`) and checks (term_discard.py
+#: reads every one). knowledge_live's `install_dispatch` adds Rust's dispatch memo and class cache.
+NATIVE_EXTRA = [_Seen(), _Kept(), _LraLive()]
+
 _local = threading.local()
 
 
@@ -147,17 +186,21 @@ class _Mark:
         self.cache = []
         self.facts = {}
         for _, _, t in memos.PROCESS.items():
-            # The pattern cache is not rolled back (the `_CACHE` fix, issue 323, sa-port-248). Rust's memo of compiled
-            # nodes (dispatch.rs `Dispatch.memo`, which stands in for `registry._clauses_cache`) and the native `_SPLIT`
-            # keep what the discarded run wrote, and they hold the run's patterns: the second run is served those nodes
-            # and never asks for their patterns again, so a `_CACHE` cut back to the mark stayed short of the keys Python
-            # holds (f6: `cosh(y + 1*I*pi)`, refused for an LRA callback on a derived term, left 1 key of Python's 6).
-            # Leaving the entries is safe because the key determines the value (cache_det.py): the entry the discarded
-            # run left is the one any later run would build. Plant 666 `mark-cuts-patterns` rolls it back as before.
+            # The pattern cache is not rolled back (the `_CACHE` fix, issue 323, sa-port-248; ruling R3). When that was
+            # ruled, Rust's memo of compiled nodes (dispatch.rs `Dispatch.memo`, which stands in for
+            # `registry._clauses_cache`) and the native `_SPLIT` kept what the discarded run wrote and held the run's
+            # patterns: the second run was served those nodes and never asked for their patterns again, so a `_CACHE` cut
+            # back to the mark stayed short of the keys Python holds (f6: `cosh(y + 1*I*pi)`, refused for an LRA callback
+            # on a derived term, left 1 key of Python's 6). Both are rolled back now (`_SPLIT` since 1a91a81, the dispatch
+            # memo through `NATIVE_EXTRA`); `_CACHE` stays as ruled. Leaving its entries is safe because the key determines
+            # the value (cache_det.py): the entry the discarded run left is the one any later run would build. Plant 666
+            # `mark-cuts-patterns` rolls it back as before.
             if t is _common._CACHE and PLANT[0] != 'mark-cuts-patterns':
                 continue
             self._note(t)
         for t in (constfield._CONSTANTS, constfield._BY_KEY):
+            self._note(t)
+        for t in NATIVE_EXTRA:
             self._note(t)
         self.add(eng)
 

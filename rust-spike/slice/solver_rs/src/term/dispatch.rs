@@ -54,6 +54,9 @@ pub struct Dispatch {
     /// (undefined functions compare by SymPy's rule, not identity).
     classes: Py<PyDict>,
     entries: Vec<Arc<ClassEntry>>,
+    /// How often the memo (0) and the class cache (1) were emptied: a discard's mark taken before an emptying says
+    /// nothing of what the store holds now (`_nt_rollback`).
+    emptied: [u64; 2],
     counts: HashMap<String, u64>,
     plant: String,
     /// 6d's `Common`, for `wide_formulas`; None: Python's method, called back.
@@ -183,6 +186,7 @@ fn sync_epoch(slf: &Bound<'_, Dispatch>) -> PyResult<()> {
             d.memo.bind(py).clear();
             d.classes.bind(py).clear();
             d.entries.clear();
+            d.emptied = [d.emptied[0] + 1, d.emptied[1] + 1];
         }
         d.seen_epoch = now;
         bump(&mut d.counts, "registry:epoch-clear");
@@ -295,7 +299,7 @@ impl Dispatch {
         let seen_epoch = epoch.bind(py).get_item(0)?.extract()?;
         Ok(Dispatch {
             registry, py_clauses_for, epoch, compiled_t, p_t, formula_t, application_t, basic_t, nan, specials, vocab,
-            builtin, seen_epoch, memo: PyDict::new(py).unbind(), classes: PyDict::new(py).unbind(), entries: Vec::new(), counts: HashMap::new(),
+            builtin, seen_epoch, memo: PyDict::new(py).unbind(), classes: PyDict::new(py).unbind(), entries: Vec::new(), emptied: [0, 0], counts: HashMap::new(),
             plant: String::new(),
             common: None,
         })
@@ -323,7 +327,46 @@ impl Dispatch {
         self.memo.bind(py).clear();
         self.classes.bind(py).clear();
         self.entries.clear();
+        self.emptied = [self.emptied[0] + 1, self.emptied[1] + 1];
         bump(&mut self.counts, "registry:memos-clear");
+    }
+
+    /// The discard's mark (term_live.py `_Mark`, the gate for sa-port-269 (4)): the memo (`part` 0) or the class cache
+    /// with its entries (`part` 1), as `registry._clauses_cache` and `_mro_cache` are marked by size. A dict keeps
+    /// insertion order, so what a run added sits past the mark.
+    fn _nt_mark(&self, py: Python<'_>, part: usize) -> (u64, usize, usize) {
+        match part {
+            0 => (self.emptied[0], self.memo.bind(py).len(), 0),
+            _ => (self.emptied[1], self.classes.bind(py).len(), self.entries.len()),
+        }
+    }
+
+    /// Takes out what was added since `mark`. A store emptied since the mark is emptied again, which holds nothing of
+    /// the run's and is safe for a memo; true then, if the mark had rows (`rollback:cleared`).
+    fn _nt_rollback(&mut self, py: Python<'_>, part: usize, mark: (u64, usize, usize)) -> PyResult<bool> {
+        let part = part.min(1);
+        let d = if part == 0 { self.memo.bind(py) } else { self.classes.bind(py) };
+        if self.emptied[part] != mark.0 || d.len() < mark.1 {
+            d.clear();
+            if part == 1 {
+                self.entries.clear();
+            }
+            self.emptied[part] += 1;
+            return Ok(mark.1 > 0);
+        }
+        while d.len() > mark.1 {
+            d.call_method0("popitem")?;
+        }
+        if part == 1 {
+            self.entries.truncate(mark.2);
+        }
+        Ok(false)
+    }
+
+    /// The rows of the memo (`part` 0: node, result) or of the class cache (`part` 1: class, entry index), read now
+    /// (term_discard.py's check).
+    fn _nt_rows<'py>(&self, py: Python<'py>, part: usize) -> Bound<'py, PyList> {
+        if part == 0 { self.memo.bind(py).items() } else { self.classes.bind(py).items() }
     }
 
     fn counts(&self) -> HashMap<String, u64> {
@@ -413,6 +456,7 @@ impl Dispatch {
         }
         if memo.len() >= CLAUSES_CACHE_SIZE {
             memo.clear();
+            slf.borrow_mut().emptied[0] += 1;
         }
         let r = PyTuple::new(py, [compiled.into_any(), formulas.into_any()])?.into_any();
         memo.set_item(expr, &r)?;
