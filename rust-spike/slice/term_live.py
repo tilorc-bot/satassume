@@ -353,6 +353,24 @@ KEY_BAD = []
 #: The formula step: 666 'mark-wrong-pattern' (`_Mark.rollback` gives a `_CACHE` entry of the run another key's pattern), 667 'mark-leaves-entry' (`rollback` skips the
 #: first other table the run grew), 611 'mark-skips-native' (`rollback` leaves the Rust-native tables as the run left them).
 PLANT = [None]
+
+
+class _Plant(str):
+    """A plant's name that counts each check it matches (`COUNTS['plant_fired']`): the bar's fired column for a term
+    plant (bar_sum.py reads it from SLICE_TERM_COUNTS's file; B's item (3))."""
+    __hash__ = str.__hash__
+
+    def __eq__(self, o):
+        r = str.__eq__(self, o)
+        if r is True:
+            COUNTS['plant_fired'] += 1
+        return r
+
+    def startswith(self, *a):
+        r = str.startswith(self, *a)
+        if r:
+            COUNTS['plant_fired'] += 1
+        return r
 #: A compiled pattern's fields (cache_det.py's FIELDS): plant 666 picks a pattern that differs from the one it replaces.
 _PATTERN_FIELDS = ('rules', 'node', 'nobjs', 'clauses', 'used', 'child_preds', 'complete', 'wide')
 
@@ -1196,6 +1214,8 @@ def from_env(default='terms'):
     PLANT[0] = os.environ.get('SLICE_TERM_PLANT') or None
     if not PLANT[0] and os.environ.get('SLICE_SESSION_PLANT') == 'int-as-number':
         PLANT[0] = 'int-as-number'      # plant 265, the bar's channel (bar.sh's plants phase)
+    if PLANT[0]:
+        PLANT[0] = _Plant(PLANT[0])
     CHECK[0] = bool(os.environ.get('SLICE_TERM_CHECK'))
     out = os.environ.get('SLICE_TERM_COUNTS')
     if out:

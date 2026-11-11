@@ -116,7 +116,7 @@ for p in sorted(glob.glob(os.path.join(X, '*-rust.handlers'))):
 for p in sorted(glob.glob(os.path.join(L, 'seedx-*.cmp'))):
     print('  ', os.path.basename(p), ' | '.join((cat(p, 2) or [])))
 
-print('\n== plants (bar 3), each against this run\'s Python; fired = max(plant_fired, rel:plant_fired)')
+print('\n== plants (bar 3), each against this run\'s Python; fired = max(plant_fired, rel:plant_fired, a term plant\'s term:plant_fired)')
 print('| plant | wl | fired | verdict | first |')
 for p in sorted(glob.glob(os.path.join(L, 'plant-*.cmp'))) + sorted(glob.glob(os.path.join(X, 'plant-*.cmp'))):
     m = re.match(r'plant-([^-]+)-(.*)\.cmp$', os.path.basename(p))
@@ -126,6 +126,12 @@ for p in sorted(glob.glob(os.path.join(L, 'plant-*.cmp'))) + sorted(glob.glob(os
         f = max(d.get('plant_fired', 0), d.get('counts', {}).get('rel:plant_fired', 0))
     except (OSError, ValueError):
         f = '?'
+    try:
+        # a term plant counts in term_live (SLICE_TERM_COUNTS's file), not in the session report
+        t = json.load(open(p[:-4] + '.term.json')).get('counts', {}).get('plant_fired', 0)
+        f = t if f == '?' else max(f, t)
+    except (OSError, ValueError):
+        pass
     lines = cat(p) or []
     first = next((l for l in lines if l.startswith('first:')), '')[:120]
     print(f'| {pl} | {wl} | {f} | {lines[-1] if lines else "?"} | {first} |')

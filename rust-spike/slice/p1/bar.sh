@@ -97,8 +97,15 @@ suite() { # suite DIR [PLANT]
   run "rm -rf $O; mkdir -p $O"
   run "( ${2:+export $(penv $2); }export SLICE_SUITE_OUT=$O SLICE_SUITE_BACKEND=rust PYTHONPATH=\$PYTHONPATH:$S HYPOTHESIS_STORAGE_DIRECTORY=$O/hyp; cd $T; \$PY -c 'import satassume; print(satassume.__file__)' > $O/tree.txt; \$PY -m pytest -p rust_plugin -p handler_count -p plant_count -n $N -q --tb=short -p no:cacheprovider tests > $O/pytest.log 2>&1; echo \"\$? \$(tail -1 $O/pytest.log)\" > $O/exit.txt )"
 }
-fired() { # fired WL PLANT: the larger of the Python-side and Rust-side counts in the plant run's session report
-  $PY -c "import json,sys; d=json.load(open(sys.argv[1])); print(max(d.get('plant_fired',0), d.get('counts',{}).get('rel:plant_fired',0)))" $B/live/plant-$1-$2.session.json 2>/dev/null || echo 0
+fired() { # fired WL PLANT: the largest of the Python-side and Rust-side counts in the plant run's session report, and a term
+  # plant's own count in term_live (SLICE_TERM_COUNTS's file; B's item (3))
+  $PY -c "
+import json,sys
+def get(p, f):
+    try: return f(json.load(open(p)))
+    except (OSError, ValueError): return 0
+print(max(get(sys.argv[1], lambda d: max(d.get('plant_fired',0), d.get('counts',{}).get('rel:plant_fired',0))),
+          get(sys.argv[2], lambda d: d.get('counts',{}).get('plant_fired',0))))" $B/live/plant-$1-$2.session.json $B/live/plant-$1-$2.term.json 2>/dev/null || echo 0
 }
 
 for ph in $PHASES; do case $ph in
@@ -115,8 +122,8 @@ tests)
     run "echo \"files \$(wc -l < $B/tests.txt); not exit 0: \$(grep -v ' exit 0 ' $B/tests.txt | cut -d' ' -f1 | sort | tr '\n' ' ')\" >> $B/tests.txt"
   else
     # 4f: the files with their own invocation (p1/one_test.sh) run on their own, after the one pytest run of the rest
-    OWN=$(printf '%s\n' $TESTS | grep -xE 'test_(handler_count|catch_count|cf_diff)\.py' | tr '\n' ' ')
-    REST=$(printf '%s\n' $TESTS | grep -vxE 'test_(handler_count|catch_count|cf_diff)\.py' | tr '\n' ' ')
+    OWN=$(printf '%s\n' $TESTS | grep -xE 'test_(handler_count|catch_count|cf_diff|cbm_noid)\.py' | tr '\n' ' ')
+    REST=$(printf '%s\n' $TESTS | grep -vxE 'test_(handler_count|catch_count|cf_diff|cbm_noid)\.py' | tr '\n' ' ')
     : > $B/tests.txt
     [ -n "${REST// /}" ] && run "PYTHONPATH=\$PYTHONPATH:$S \$PY -m pytest $REST -q --tb=short -p no:cacheprovider > $B/tests.txt 2>&1; echo \"exit \$?\" >> $B/tests.txt"
     for f in $OWN; do mkdir -p $B/tests; run "PYTHONPATH=\$PYTHONPATH:$S bash $S/p1/one_test.sh $f $B/tests/$f.log >> $B/tests.txt"; done
@@ -129,7 +136,7 @@ suite) suite $B/suite; phase suite;;
 live) run "rm -rf $B/live; sh $S/run_live.sh $B/live entry"; phase live;;
 plants)
   for wl in dev fuzz; do for pl in $PLANTS; do echo "$wl $pl"; done; done > $B/plants.todo
-  run "xargs -P 10 -L 1 bash -c 'wl=\$0; pl=\$1; L=$B/live; env \$(penv \$pl) SESSION_REPORT=\$L/plant-\$wl-\$pl.session.json \$PY live.py \$wl rust \$L/plant-\$wl-\$pl.jsonl --check entry > \$L/plant-\$wl-\$pl.tot 2> \$L/plant-\$wl-\$pl.err; \$PY livecmp.py \$L/\$wl-py.jsonl \$L/plant-\$wl-\$pl.jsonl > \$L/plant-\$wl-\$pl.cmp 2>&1' < $B/plants.todo"
+  run "xargs -P 10 -L 1 bash -c 'wl=\$0; pl=\$1; L=$B/live; env \$(penv \$pl) SESSION_REPORT=\$L/plant-\$wl-\$pl.session.json SLICE_TERM_COUNTS=\$L/plant-\$wl-\$pl.term.json \$PY live.py \$wl rust \$L/plant-\$wl-\$pl.jsonl --check entry > \$L/plant-\$wl-\$pl.tot 2> \$L/plant-\$wl-\$pl.err; \$PY livecmp.py \$L/\$wl-py.jsonl \$L/plant-\$wl-\$pl.jsonl > \$L/plant-\$wl-\$pl.cmp 2>&1' < $B/plants.todo"
   phase plants;;
 seed1)
   [ "${SEED1:-0}" = 1 ] || continue
@@ -145,7 +152,7 @@ extra)
     run "( \$PY live.py $wl py $X/$wl-py.jsonl --check entry > $X/$wl-py.tot 2> $X/$wl-py.err ) & ( \$PY live.py $wl py $X/$wl-py2.jsonl --check entry > $X/$wl-py2.tot 2> $X/$wl-py2.err ) & ( SESSION_REPORT=$X/$wl-rust.session.json \$PY live.py $wl rust $X/$wl-rust.jsonl --handlers $X/$wl-rust.handlers --check entry > $X/$wl-rust.tot 2> $X/$wl-rust.err ) & wait"
     run "{ echo '== $wl py vs py (control)'; \$PY livecmp.py $X/$wl-py.jsonl $X/$wl-py2.jsonl; echo '== $wl py vs rust'; \$PY livecmp.py $X/$wl-py.jsonl $X/$wl-rust.jsonl; } >> $X/summary.txt 2>&1"
     for pl in $PLANTS; do echo "$wl $pl"; done > $X/plants.todo
-    run "xargs -P 10 -L 1 bash -c 'wl=\$0; pl=\$1; env \$(penv \$pl) SESSION_REPORT=$X/plant-\$wl-\$pl.session.json \$PY live.py \$wl rust $X/plant-\$wl-\$pl.jsonl --check entry > $X/plant-\$wl-\$pl.tot 2> $X/plant-\$wl-\$pl.err; \$PY livecmp.py $X/\$wl-py.jsonl $X/plant-\$wl-\$pl.jsonl > $X/plant-\$wl-\$pl.cmp 2>&1' < $X/plants.todo"
+    run "xargs -P 10 -L 1 bash -c 'wl=\$0; pl=\$1; env \$(penv \$pl) SESSION_REPORT=$X/plant-\$wl-\$pl.session.json SLICE_TERM_COUNTS=$X/plant-\$wl-\$pl.term.json \$PY live.py \$wl rust $X/plant-\$wl-\$pl.jsonl --check entry > $X/plant-\$wl-\$pl.tot 2> $X/plant-\$wl-\$pl.err; \$PY livecmp.py $X/\$wl-py.jsonl $X/plant-\$wl-\$pl.jsonl > $X/plant-\$wl-\$pl.cmp 2>&1' < $X/plants.todo"
   done
   phase extra;;
 suiteplants)
