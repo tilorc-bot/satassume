@@ -73,6 +73,17 @@ run to check a change is in [testing.md](testing.md).
    importing one package's test module can re-register its handlers over
    another's.
 
+## The truth standard
+
+1. SymPy's evaluation (`doit()`, automatic evaluation, `subs`/`xreplace`
+   values) and its `is_*` answers are candidates, never the truth
+   (docs/spec.md, "Truth standard"; #247). A report or review finding
+   that calls an answer wrong states a mathematical argument: a
+   definition, a limit, a theorem, or a convention of the spec. "SymPy
+   evaluates it to X" alone is filed as a candidate.
+2. Every review brief and every brief for a held-out test writer states
+   this rule, and their oracles derive expected answers from the spec.
+
 ## Coordinating agents
 
 1. An interim "still running" message is not progress. Judge liveness from

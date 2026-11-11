@@ -17,6 +17,75 @@ with `pred in PRED_INDEX`; a *relation atom* is `P("eq"|"lt", (a, b))`
 (`RELATION_ATOMS`, `relations.py`); a *custom atom* is any other `P`
 (`formula.py`; `atoms_of(f)` lists a formula's atoms).
 
+## Truth standard
+
+What decides that an answer is right or wrong (#247).
+
+- SymPy's evaluation is a candidate generator, never the truth. `doit()`,
+  automatic evaluation, and values obtained through `subs`/`xreplace`
+  carry SymPy's conventions and bugs, some kept for backwards
+  compatibility. A disagreement with them points at a candidate mistake.
+  Calling an answer wrong needs a mathematical argument: a definition, a
+  limit, a theorem, or a convention written in this spec or in design.md.
+  The same holds for bug reports, review findings and test oracles: a test
+  comparing with SymPy's answers is a candidate generator, a tripwire
+  (`tests/test_noncommutative.py::test_constructed_noncommutative_sympy_candidates`):
+  a new disagreement fails it until it is triaged with an argument, and
+  is never settled by taking SymPy's answer as right.
+- A term built non-commutative is never a number. SymPy builds `t`
+  non-commutative when `t.is_commutative` is False by construction, read
+  without evaluating an assumption (`domain._built_noncommutative`): a
+  non-commutative symbol; a class declaring `is_commutative = False`
+  (an operator, a ket, a matrix expression, secondquant `Commutator`
+  over any arguments); the `is_commutative` slot `Add`, `Mul`, `Pow` and
+  integrals, sums and products fill when built, if False and an argument
+  is built non-commutative (not `Tr(A) + 1`, whose slot is False only
+  because `Tr(A).is_commutative` is unknown); `Function`'s
+  `_eval_is_commutative` with such an argument. The term stands for an
+  element of a non-commutative algebra (an operator, a matrix) or a
+  vector (a ket). Its zero
+  and its identity are not the scalars 0 and 1: `Add(A, -A,
+  evaluate=False)`, `0*A`, `Pow(A, 0, evaluate=False)`, `rf(A, 0,
+  evaluate=False)`, `Integral(A, (x, 0, 0))` and an empty sum or product
+  are False for `zero`, `complex` and every fact implying `commutative`
+  (`domain.noncommutative_false`), whatever SymPy evaluates them to.
+  `Engine.is_`/`is_many` answer so (level 2,
+  `domain.constructed_noncommutative`; `engine._noncommutative_answer`).
+- nan is no number, so a function of nan has no facts (design.md,
+  "Extended reals and `nan` in templates"; #189). A term holding an
+  explicit `nan` or infinity in a part that carries a value
+  (`domain.may_be_nan`: `A + nan`, `oo*A`, `rf(nan, 0)`) gets no fact from
+  the rule above or from a template, so `rf(nan, 0, evaluate=False)` is
+  not positive although `rf(x, 0) = 1` for every number `x`.
+
+Numbers by definition, held at level 1 (only `commutative` is False): a
+term with a bra below it, a linear functional, so that a bra applied to a
+ket is a number (`Bra('a')*Operator('O')*Ket('b')`; a bra alone is not
+held); the adjoint, conjugate or transpose of a proper subterm holding a
+ket counts as a bra (`Dagger(Ket('a'), evaluate=False)*Ket('b')`), a
+conservative hold that may also hold a term that is not a number
+(`conjugate(Ket('a'))*Ket('b')`, `Dagger(Dagger(Ket('a')))*Ket('b')`),
+which only costs answers; and a tensor expression without free indices, a rank-0 tensor
+(`p(i)*q(-i)`, `TensMul(x)`, `TensAdd(1, 1)`).
+
+Held at level 1 (only `commutative` is False) while Tilo decides (#247,
+open questions 3 and 4), each behind one flag in `domain.py`; a held
+subterm holds the whole term (`sin(Z(A))`, `Z(A) + B`):
+`USER_EVALUATORS_HELD`, a term with a class that is not SymPy's own (the
+user's `eval`, `doit` or property: a `Function` subclass whose `eval`
+returns `S.Zero`, #239; `Function('g', eval=...)`), while a plain
+undefined function `Function('f')` has no evaluator and is not held;
+`IDENTITY_RELATIONS_HELD`, a compound term over operators with
+commutation rules (`[c, c†]`, `{d, d†}`, `c*Dagger(c)`, `2*c`, secondquant
+`Commutator(B(p), Bd(p))`), unitary operators (`U*Dagger(U)`) or Pauli
+matrices of `paulialgebra` (`Pauli(1)**2`): relations among them may stand
+for the identity operator, which SymPy writes as 1; and
+`IdentityOperator()`; the
+operator alone (`BosonOp('c')`) is not held. A held term (a matrix
+included), and a term holding an explicit `nan` or infinity (including the limits of an
+integral, sum or product, `Sum(A, (x, 1, oo))`), gets no fact but
+`commutative` False.
+
 ## 1. Routing: what reaches the engine
 
 Definition. `ask(p, A)` returns one of `True`, `False`, `None`, or raises
