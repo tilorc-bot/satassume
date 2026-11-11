@@ -99,7 +99,7 @@ measured this session: handler multiset, plant table, inventory, kept shares, `s
   :733, :801. context.rs: `patched_method` :66, `context_session_from` :111, `verdict_from` :119, `ctx_verdict` :277.
 - session.rs: `nid_in_formula` :1178, `refuse_object` :1188, `convert` :1397, `compile` :2176, `literal` :2185.
 - formula.rs: as HANDOFF-sa-port-265.md (unchanged). session_live.py: `OURS` :936, `_install_context` :1123, `_rust_call`
-  :1326, `_compile_formula` :1338, `_formula_literal` :1349. catch_count.py: `counted_verdict` :32, the class patch :41.
+  :1327, `_compile_formula` :1339, `_formula_literal` :1349. catch_count.py: `counted_verdict` :32, the class patch :41.
   rust_plugin.py:117. term_live.py `_Mark.rollback` :183 (plant 667 :189). term_discard.py `EXEMPT` :48, `check` :121.
 - test_convert_once.py: the `is` group :80-:87, tests :116-:150. test_discard_exempt.py. fresh.py `--first` :34, :108.
 
