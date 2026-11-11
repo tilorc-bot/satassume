@@ -167,6 +167,22 @@ def test_equality_sharing_is_needed_and_works(monkeypatch):
     assert ask_with(relation_engine(dummy_specs()), prop, assum) is None
 
 
+def test_real_euf_equality_sharing_alone_decides(monkeypatch):
+    # on dummy_specs the test above can't show sharing is needed: with
+    # _share off the query is still True, since _trichotomy decides it
+    # alone.  With the real EUF adapter sharing alone decides it: True
+    # with _trichotomy off, None once _share is off too
+    from satassume.theories.euf.euf_adapter import EUFAdapter
+    from satassume.relations import AdapterSpec
+    from theory_harness import OrderAdapter
+    specs = [AdapterSpec("order", OrderAdapter, True),
+             AdapterSpec("euf", EUFAdapter, False)]
+    prop, assum = Q.eq(f(x), f(y)), (x <= y) & (y <= x)
+    monkeypatch.setattr(Relations, "_trichotomy", lambda self, var, atom: None)
+    assert ask_with(relation_engine(specs), prop, assum) is True
+    monkeypatch.setattr(Relations, "_share", lambda self: False)
+    assert ask_with(relation_engine(specs), prop, assum) is None
+
 def test_real_euf_with_order_stand_in():
     # the real EUF adapter combined with the dummy order theory (LRA stand-in)
     from satassume.theories.euf.euf_adapter import EUFAdapter
