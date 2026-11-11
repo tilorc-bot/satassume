@@ -81,3 +81,30 @@ def test_twin_known_rows_and_the_extension(tmp_path):
     if "'sc-demand-drop'" in open(os.path.join(HERE, 'session_live.py')).read():
         n, first, verdict = _cmp(py, _live(tmp_path, 'rust', 'sc-demand-drop'))
         assert verdict == 'DIFFER', (n, first)
+
+
+_COUNTS = '''import atexit, json, runpy, sys
+sys.path.insert(0, sys.argv[1])
+import sa_solver
+atexit.register(lambda: print('COUNTS ' + json.dumps({k: v for k, v in sa_solver.session_counts().items() if k.startswith('sb:fwd')})))
+sys.argv = [sys.argv[1] + '/live.py', 'cls', 'rust', sys.argv[2], '--check', 'entry']
+runpy.run_path(sys.argv[0], run_name='__main__')
+'''
+
+
+def test_the_digest_observes_and_never_replaces(tmp_path):
+    """Item 4g (RULINGS 14): with the digest on, Rust still calls `_interpret` and `_link` directly. The digest used to
+    replace both on `Relations`, so Rust called them by name (`sb:fwd_named` 306 of 453 on cls) and the process memos'
+    values followed that path. Now its mid-query samples come from `sa_solver.rel_observe` and `sys.monitoring`."""
+    got = {}
+    for moved in ('1', '0'):
+        env = dict(os.environ, PYTHONPATH=os.pathsep.join([HERE, os.environ.get('PYTHONPATH', '')]), SLICE_MOVED=moved)
+        env.pop('SLICE_SESSION_PLANT', None)
+        out = os.path.join(str(tmp_path), 'cls-%s.jsonl' % moved)
+        r = subprocess.run([sys.executable, '-c', _COUNTS, HERE, out], env=env, capture_output=True, text=True, timeout=900)
+        assert r.returncode == 0, r.stderr[-3000:]
+        got[moved] = json.loads([x for x in r.stdout.splitlines() if x.startswith('COUNTS ')][-1][len('COUNTS '):])
+        if moved == '1':
+            tot = json.loads(open(out).read().splitlines()[-1])['total']['moved']
+            assert tot['mid_samples'] > 0, tot
+    assert got['1'] == got['0'] and got['1']['sb:fwd_named'] == 0 and got['1']['sb:fwd_direct'] > 0, got

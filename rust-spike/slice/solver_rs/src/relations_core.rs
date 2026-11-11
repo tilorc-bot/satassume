@@ -39,6 +39,31 @@ impl Hooks {
 
 static HOOKS: RwLock<Option<Arc<Hooks>>> = RwLock::new(None);
 
+/// An observer of `_interpret` and `_link` (moved_digest.py's mid-query samples), called as `f(rel, at)` on entry to
+/// `rel_interpret` / `rel_link`, before any work, on whichever path reached them (called directly or through
+/// session_live's wrapper). It only observes: the digest no longer replaces `Relations._interpret`/`_link`, so Rust keeps
+/// its direct path (`sb:fwd_direct`) with the digest on (RULINGS 14, item 4g). Off unless `rel_observe(f)` set it.
+static OBSERVING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static OBSERVER: std::sync::Mutex<Option<Py<PyAny>>> = std::sync::Mutex::new(None);
+
+#[pyfunction]
+#[pyo3(signature = (f=None))]
+fn rel_observe(f: Option<Py<PyAny>>) {
+    OBSERVING.store(f.is_some(), Relaxed);
+    *OBSERVER.lock().unwrap() = f;
+}
+
+fn observe(rel: &Bound<'_, PyAny>, at: &str) -> PyResult<()> {
+    if !OBSERVING.load(Relaxed) {
+        return Ok(());
+    }
+    let f = OBSERVER.lock().unwrap().as_ref().map(|f| f.clone_ref(rel.py()));
+    if let Some(f) = f {
+        f.call1(rel.py(), (rel, at))?;
+    }
+    Ok(())
+}
+
 /// Test plants: 1 `link-none`, every resolve answers None; 2, 3, 4 drop one clause each in `_order_sides`, `_order_infinite`,
 /// `_trichotomy`. From 5 on, C2b's: one effect dropped in each moved method, and `fresh-skew` shifts numbering.
 static PLANT: AtomicU16 = AtomicU16::new(0);
@@ -1230,6 +1255,7 @@ fn rel_eq_infinity<'py>(rel: &Bound<'py, PyAny>, var: i32, atom: &Bound<'py, PyA
 /// `_interpret`. The adapters, `sympy_atom`, `_note_sides` and `_adapter` stay Python and are called back.
 #[pyfunction]
 fn rel_interpret<'py>(rel: &Bound<'py, PyAny>, atom: &Bound<'py, PyAny>) -> PyResult<bool> {
+    observe(rel, "interpret")?;
     let p = rel.py();
     tick(session::REL_INTERPRET);
     let h = hooks()?;
@@ -1324,6 +1350,7 @@ fn rel_interpret<'py>(rel: &Bound<'py, PyAny>, atom: &Bound<'py, PyAny>) -> PyRe
 /// `_link`.
 #[pyfunction]
 fn rel_link<'py>(rel: &Bound<'py, PyAny>, e: &Bound<'py, PyAny>) -> PyResult<()> {
+    observe(rel, "link")?;
     let p = rel.py();
     tick(session::REL_LINK);
     let h = hooks()?;
@@ -3398,6 +3425,7 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(rel_eq_infinity, m)?)?;
     m.add_function(wrap_pyfunction!(rel_interpret, m)?)?;
     m.add_function(wrap_pyfunction!(rel_link, m)?)?;
+    m.add_function(wrap_pyfunction!(rel_observe, m)?)?;
     m.add_function(wrap_pyfunction!(rel_selectors_of, m)?)?;
     m.add_function(wrap_pyfunction!(rel_add_role, m)?)?;
     m.add_function(wrap_pyfunction!(rel_apply_role, m)?)?;

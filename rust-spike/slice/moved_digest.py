@@ -119,7 +119,7 @@ class Moved:
         self.tot = dict(relations=0, mid_samples=0, engine_points=0, filled={}, src={}, names_differ=[], unread=[], native_only={},
                         sessions=0, engines=0, lra_entries=0, native_bad=[], native_checked={})
         self.sessions, self.new_engs, self.engs, self.rels, self.lra = [], [], [], [], {}
-        init, interp, link = Relations.__init__, Relations._interpret, Relations._link
+        init = Relations.__init__
         me = self
 
         def tracked(self, *a, **k):
@@ -127,15 +127,37 @@ class Moved:
             me.made.append((self, getattr(getattr(a[0], 'table', None), 'core', None) if me.rust else None))
             return r
         self._more()
+        Relations.__init__ = tracked
+        self._observe(Relations)
 
-        def t_interp(self, atom):
-            me.sample(self, 'interpret')
-            return interp(self, atom)
+    def _observe(self, Relations):
+        """The mid-query samples, taken on entry to `_interpret` and `_link` without replacing either (item 4g, RULINGS 14:
+        instrumentation must not change which path runs). Replacing them made Rust call them by name (`sb:fwd_named`).
+        Rust's own copies call `sa_solver.rel_observe`'s observer on entry, on every path that reaches them; Python's own
+        (the Python backend, and Rust's PY_REL copies for a session with no core) are watched by `sys.monitoring`'s PY_START
+        on their code objects. The two never both see one call: Rust's copies run no Python code of these methods."""
+        import sys
+        me = self
+        if self.rust:
+            import sa_solver
+            import session_live
+            sa_solver.rel_observe(lambda rel, at: me.sample(rel, at))
+            codes = {session_live.PY_REL[n].__code__: n[1:] for n in ('_interpret', '_link') if n in session_live.PY_REL}
+        else:
+            codes = {Relations._interpret.__code__: 'interpret', Relations._link.__code__: 'link'}
+        M = sys.monitoring
+        tool = next(t for t in range(M.PROFILER_ID + 1, 6) if M.get_tool(t) is None)
+        M.use_tool_id(tool, 'moved_digest')
 
-        def t_link(self, e):
-            me.sample(self, 'link')
-            return link(self, e)
-        Relations.__init__, Relations._interpret, Relations._link = tracked, t_interp, t_link
+        def start(code, _offset):
+            at = codes.get(code)
+            if at is None:
+                return M.DISABLE
+            me.sample(sys._getframe(1).f_locals['self'], at)
+        M.register_callback(tool, M.events.PY_START, start)
+        for code in codes:
+            M.set_local_events(tool, code, M.events.PY_START)
+        self.observing = (tool, sorted(codes.values()))
 
     def _more(self):
         """The extension's hooks: every `Session` and `Engine` made, and the LRA slot's entries."""
