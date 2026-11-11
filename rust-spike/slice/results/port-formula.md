@@ -478,3 +478,64 @@ snapshot-only with `sb:fwd_named` on and off (RULINGS 14). The PY_COMPILE fallba
 int:condio / int:engio with CLEAR=process, the clear() test, the twin and two-order harnesses as kept tests, bar.sh's
 invocation of the three harness tests, the cls verdict line, relations.py:1116, plant 663's class. cache_det and the
 module-wide probes on the rebased tree.
+
+## sa-port-264 and sa-port-265 (11 Nov): convert once (gate item 1). Unbarred, unlanded.
+Code: sa-port-264's e843114 (the entry holds a `Hand`, formula.rs; scope_core.rs and budget.rs take `nodes` and never
+convert) and sa-port-265's commit on it: session_glue.rs:120 passes the session's core as `nodes`; `rv_relevant`,
+`rv_consistent`, `rv_part_consistent` hold a `Hand` and pass it to `_theory_scope` and `verdict` (relevance.rs:638, :760); a
+`Hand` keeps a refusal with the refused object; `fm:twice` is ticked before the walk, so a refused object's second walk
+counts.
+
+- One Rust pass, `--check plain`, orion; per-query lines byte-equal to sa-port-264's c1 on all three
+  (`~/sa-rust-ids-work/sa-port-265/w1`):
+
+  | workload | `fm:convert` cb1217b -> e843114 -> now | `fm:nosession` | `fm:twice` | `fm:give` |
+  |---|---|---|---|---|
+  | scope | 1,763 -> 1,275 -> 1,138 | 1,170 -> 133 -> 0 | 137 -> 0 | 610 |
+  | dev | 3,928 -> 1,865 -> 1,665 | 2,898 -> 196 -> 0 | 196 -> 0 | 1,678 |
+  | zero | 4,497 -> 1,949 -> 1,394 | 3,268 -> 555 -> 0 | 555 -> 0 | 1,321 |
+
+  All of scope's 137 `fm:twice` (the 4 above its `fm:nosession` included) came from session_glue.rs:120. `fm:nosession` and
+  `fm:twice` were shown to fire before they read 0 (the table's middle column; plant 607).
+- **`fm:again`** (counter 647; on only after `sa_solver.formula_track(True)`, which holds every converted object): an
+  object converted that an earlier entry had converted.
+  - over the whole workload (`w1t`): scope 283, dev 1,134, zero 1,251. The same formula object comes back in a later query
+    from Python's `_formula` memo (sympy_api.py:496). Intended (planner ~00:52Z 11 Nov on report ed9beca): the price of
+    no cross-query state (H2).
+  - inside one outermost `sympy_api.ask`, the tracker emptied at each (`w1q`): **scope 0, dev 30, zero 5. The remaining
+    violation.** All 35 have one path: `_ask_general` calls `_relevant` (entry `rv_relevant`, which converts the set's or
+    a part's formula for `_consistent`), then `_engine_ask` (sympy_api.py:591, :595) calls `Engine.ask` (entry `ent_ask`)
+    with the same memoized object. The caller between the two entries is Python. Owner by that ruling: the part 3
+    follow-up (one `Hand` per ask), not this step.
+- Kept tests, test_convert_once.py (5 tests, each run its own process on Rust): no object twice in one entry on split
+  sets, extension facts and repeated queries; H1: a handler called 13 times, returning the same object each time or a
+  new equal one each time, `fm:twice` 0 both ways and more conversions for the new objects (not merged by ==), answers
+  equal; H2: `formula_held()` above 0 inside an entry (read by the handler), 0 after every query, and the repeated
+  queries convert as much as the first time. **Plant 607** `fm-hand-no-give`: `fm:twice` above 0, `fm:give` 0, answers
+  unmoved. **Plant 608** `fm-hand-kept` (new: an ended entry's nodes answer the next entry): something held after a
+  query, the repeated queries convert 0. Both are out of test_formula_nodes.py's parametrization (:155).
+  test_convert_once.py and test_formula_nodes.py: 20 passed (orion, the clone's build).
+- Plant 608 against the two-order harness (H2's second half): **not run** (gate 4e).
+- Not done from the brief's list, and not in the gate's item 1: `_noncommutative_atoms` (entry.rs:762, context.rs:286)
+  still walks the formula in Python once per query; from the node's atoms it would call `_noncommutative` once per
+  vocabulary atom instead, more Python calls unless knowledge/domain.py's `_noncommutative` is ported too. `ent_is_many`
+  keeps one `Hand` for its call (H1: once per entry call). The session's own `fnode` still does not keep a refusal.
+
+### Gate item 2, started (not finished, nothing changed)
+- tests/test_transfer.py::test_inequalities_restate_an_equality on this head, Rust, with sa-port-240's relations.py probe
+  (`~/sa-rust-ids-work/sa-port-265/tl/probe.sh`): alone, and the whole file (26 passed, 2 failed as on base:
+  test_protocol_on_fuzz, test_models_respect_transfer): **0 relations.py frames in a converted query** (sa-port-240
+  counted 42 on ba1ca22 in the suite). The probe fires on the Python backend (57 function names, `_is_number` 502). So
+  the 42 are either gone since ba1ca22 or need the suite's history in the worker: not decided. Next: the same probe on
+  the full suite on this head, and on the base's tree.
+- PY_COMPILE: only read. session_live.py:1339 falls back when `_rust_call` says no (the table isn't a `TableView`, or `dv`
+  isn't the session's own `dvar`) or `table.core.compile` returns False (refused: too deep or unreadable). The split by
+  those three reasons was not measured.
+
+### Not run by sa-port-265
+The suite; the bar; the digest. Still running detached at the handoff (orion): the slice tests, one process per file
+(`~/sa-rust-ids-work/sa-port-265/t1`, end marker `t1/end.txt`; 38 of 58 files read: 35 passed, and test_catch_count.py 3
+failed, test_cf_diff.py 1 collection error, test_handler_count.py 2 failed, the three known harness-invocation rows of
+gate 4f), then the fm counters on 19 workloads and lra (`all.sh`: `a1` with `fm:again` over the workload, `a1q` inside
+one ask, `b0` the before on 78962f7; end marker `all-end.txt`). j1 (`sa-port-260/j1`) had no end.txt at 00:56Z: not read.
+Gate items 2 (rest), 3, 4, 5.

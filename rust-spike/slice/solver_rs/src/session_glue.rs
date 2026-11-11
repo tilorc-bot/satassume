@@ -117,7 +117,11 @@ pub(crate) fn assume_formula<'py>(s: &Bound<'py, PyAny>, f: &Bound<'py, PyAny>) 
     s.call_method0(intern!(p, "discover"))?;
     if !s.getattr(intern!(p, "relations"))?.is_none() && !planted(AF_DROP_RELATIONS) {
         let exts = s.getattr(intern!(p, "engine"))?.getattr(intern!(p, "_extensions"))?;
-        let sc = em.getattr(intern!(p, "theory_scope"))?.call1((f, p.None(), exts))?;
+        // the session holds `f`'s node: its core is the holder, so nothing is converted by name here
+        let sc = match crate::session::core_of(s) {
+            Ok(core) => crate::scope_core::theory_scope_from(em.as_any(), "theory_scope", f, &p.None().into_bound(p), &exts, &*core.borrow())?,
+            Err(_) => em.getattr(intern!(p, "theory_scope"))?.call1((f, p.None(), exts))?,
+        };
         if sc.getattr(intern!(p, "glue"))?.is_truthy()? {
             s.call_method1(intern!(p, "_relations"), (f,))?;
         } else {

@@ -29,6 +29,7 @@ use pyo3::sync::PyOnceLock;
 use pyo3::types::{PyBool, PyFrozenSet, PyList, PySet, PyString, PyTuple};
 
 use crate::engmemo;
+use crate::formula::Hand;
 use crate::relations_core::{
     planted, ARG_KEYS_NO_CLOSED, BOOL_KEYS_OPAQUE_IN, CLOSED_KEYS_NO_UNDEF, CONSISTENT_FAULT, CONSISTENT_IGNORE_VERDICT,
     CONST_BASE_NO_POW, CONST_FREE_NO_MUL, EXPR_KEYS_CLOSED_SKIP, KEYS_EMPTY, KEYS_REL_NO_FLAG, PART_CONSISTENT_TRUE,
@@ -614,7 +615,7 @@ fn caller_hint(p: Python<'_>, name: Option<&str>) -> PyResult<()> {
     Ok(())
 }
 
-fn consistent_body(p: Python<'_>, a: &Bound<'_, PyAny>, eng: &Bound<'_, PyAny>) -> PyResult<bool> {
+fn consistent_body(p: Python<'_>, a: &Bound<'_, PyAny>, eng: &Bound<'_, PyAny>, hand: &Hand) -> PyResult<bool> {
     let m = api(p)?;
     let rel = crate::memos::setting(eng, intern!(p, "_relation_specs"), intern!(p, "relation_specs"))?.is_truthy()?;
     tick(RV_CB_FORMULA);
@@ -634,7 +635,7 @@ fn consistent_body(p: Python<'_>, a: &Bound<'_, PyAny>, eng: &Bound<'_, PyAny>) 
     }
     tick(RV_CB_VERDICT);
     caller_hint(p, Some("_consistent"))?;
-    let v = eng.call_method1(intern!(p, "verdict"), (&g,));
+    let v = crate::context::verdict_from(eng, &g, hand);
     caller_hint(p, None)?;
     let v = v?;
     if planted(CONSISTENT_IGNORE_VERDICT) {
@@ -644,12 +645,12 @@ fn consistent_body(p: Python<'_>, a: &Bound<'_, PyAny>, eng: &Bound<'_, PyAny>) 
 }
 
 /// `_consistent`: the set's verdict is consistent or unknown; False also when it can't be checked.
-fn consistent(p: Python<'_>, a: &Bound<'_, PyAny>, eng: &Bound<'_, PyAny>) -> PyResult<bool> {
+fn consistent(p: Python<'_>, a: &Bound<'_, PyAny>, eng: &Bound<'_, PyAny>, hand: &Hand) -> PyResult<bool> {
     tick(RV_CONSISTENT);
     if !planted(crate::relations_core::ST_CONSISTENCY_DROP) {
         crate::entry::bump(eng, crate::entry::CONSISTENCY_CHECKS, 1)?;
     }
-    match consistent_body(p, a, eng) {
+    match consistent_body(p, a, eng, hand) {
         Ok(v) => Ok(v),
         Err(err) if err.is_instance_of::<PyException>(p) => {
             tick(RV_CONSISTENT_CAUGHT);
@@ -661,7 +662,7 @@ fn consistent(p: Python<'_>, a: &Bound<'_, PyAny>, eng: &Bound<'_, PyAny>) -> Py
 }
 
 /// `_part_consistent`: `_consistent` of one component, memoized in `Engine.splits` under `(_OK, f)`.
-fn part_consistent(p: Python<'_>, f: &Bound<'_, PyAny>, eng: &Bound<'_, PyAny>) -> PyResult<bool> {
+fn part_consistent(p: Python<'_>, f: &Bound<'_, PyAny>, eng: &Bound<'_, PyAny>, hand: &Hand) -> PyResult<bool> {
     tick(RV_PART_CONSISTENT);
     if planted(PART_CONSISTENT_TRUE) {
         return Ok(true);
@@ -671,13 +672,13 @@ fn part_consistent(p: Python<'_>, f: &Bound<'_, PyAny>, eng: &Bound<'_, PyAny>) 
     if let Some(ok) = engmemo::get(&splits, key.as_any())? {
         return ok.is_truthy();
     }
-    let ok = consistent(p, f, eng)?;
+    let ok = consistent(p, f, eng, hand)?;
     engmemo::put(&splits, key.as_any(), PyBool::new(p, ok).as_any())?;
     Ok(ok)
 }
 
 /// `_relevant`: `a` itself, or the part of `a` connected to `prop` if smaller and `a` isn't found inconsistent.
-fn relevant<'py>(p: Python<'py>, prop: &Bound<'py, PyAny>, a: &Bound<'py, PyAny>, eng: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+fn relevant<'py>(p: Python<'py>, prop: &Bound<'py, PyAny>, a: &Bound<'py, PyAny>, eng: &Bound<'py, PyAny>, hand: &Hand) -> PyResult<Bound<'py, PyAny>> {
     tick(RV_RELEVANT);
     let splits = eng.getattr(intern!(p, "splits"))?;
     let sp: Bound<'py, Split> = match engmemo::get(&splits, a)? {
@@ -743,7 +744,7 @@ fn relevant<'py>(p: Python<'py>, prop: &Bound<'py, PyAny>, a: &Bound<'py, PyAny>
                 true
             } else if relational || keyless {
                 tick(RV_BR_VERDICT);
-                consistent(p, a, eng)?
+                consistent(p, a, eng, hand)?
             } else {
                 let rel = crate::memos::setting(eng, intern!(p, "_relation_specs"), intern!(p, "relation_specs"))?.is_truthy()?;
                 tick(RV_CB_FORMULA);
@@ -756,20 +757,19 @@ fn relevant<'py>(p: Python<'py>, prop: &Bound<'py, PyAny>, a: &Bound<'py, PyAny>
                     Ok(g) => {
                         let glue = rel && {
                             tick(RV_CB_THEORY_SCOPE);
-                            m.getattr(intern!(p, "_theory_scope"))?
-                                .call1((&g, p.None(), &ext))?
+                            crate::scope_core::theory_scope_from(m.as_any(), "_theory_scope", &g, &p.None().into_bound(p), &ext, hand)?
                                 .getattr(intern!(p, "glue"))?
                                 .is_truthy()?
                         };
                         if glue {
                             tick(RV_BR_GLUE);
-                            consistent(p, a, eng)?
+                            consistent(p, a, eng, hand)?
                         } else {
                             tick(RV_BR_PARTS);
                             let mut all = true;
                             for j in 0..n {
                                 let part = sp.borrow_mut().part_of(p, &[j])?;
-                                if !part_consistent(p, &part, eng)? {
+                                if !part_consistent(p, &part, eng, hand)? {
                                     all = false;
                                     break;
                                 }
@@ -788,7 +788,7 @@ fn relevant<'py>(p: Python<'py>, prop: &Bound<'py, PyAny>, a: &Bound<'py, PyAny>
 
 #[pyfunction]
 fn rv_relevant<'py>(p: Python<'py>, prop: &Bound<'py, PyAny>, a: &Bound<'py, PyAny>, eng: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
-    relevant(p, prop, a, eng)
+    relevant(p, prop, a, eng, &Hand::enter())
 }
 
 #[pyfunction]
@@ -819,12 +819,12 @@ fn rv_vocab_blocks(p: Python<'_>, e: &Bound<'_, PyAny>, ext: &Bound<'_, PyAny>) 
 
 #[pyfunction]
 fn rv_part_consistent(p: Python<'_>, f: &Bound<'_, PyAny>, eng: &Bound<'_, PyAny>) -> PyResult<bool> {
-    part_consistent(p, f, eng)
+    part_consistent(p, f, eng, &Hand::enter())
 }
 
 #[pyfunction]
 fn rv_consistent(p: Python<'_>, a: &Bound<'_, PyAny>, eng: &Bound<'_, PyAny>) -> PyResult<bool> {
-    consistent(p, a, eng)
+    consistent(p, a, eng, &Hand::enter())
 }
 
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {

@@ -59,7 +59,7 @@ pub(crate) struct Occ {
     pub atom: u32,
 }
 
-const NAMES: [&str; 20] = [
+const NAMES: [&str; 21] = [
     "fm:convert",       // 630: conversions run
     "fm:nodes",         // 631: nodes built
     "fm:atom_occ",      // 632: atom occurrences read (`.pred`, `.expr`)
@@ -80,6 +80,7 @@ const NAMES: [&str; 20] = [
     "cls:eq",           // 670: `same_class`: two class objects with one id in the query's class table
     "cls:differs",      // 671: `same_class`: two class objects, not one class to the query
     "same:eq",          // 672: wiring's 'same' shape or the Pow key met two equal, distinct objects (`==`, not `is`)
+    "fm:again",         // 647: with `formula_track(True)` only: an object converted that some earlier entry had converted
 ];
 const CONVERT: usize = 0;
 const NODES: usize = 1;
@@ -98,7 +99,7 @@ pub(crate) const ATOMS_NODE: usize = 13;
 const NOSESSION: usize = 14;
 
 /// Plants 601-606, each the control of one comparison in test_formula_nodes.py.
-const PLANTS: [&str; 11] = [
+const PLANTS: [&str; 12] = [
     "fm-atoms-drop-last",  // 601: `atoms` without its last atom
     "fm-atoms-no-dedupe",  // 602: every occurrence its own atom
     "fm-args-reverse",     // 603: `And`/`Or` arguments reversed
@@ -110,10 +111,11 @@ const PLANTS: [&str; 11] = [
     "ad-lra-atom-object",  // 662: a native reader result holds the atom's own object, not the query's first (its row)
     "same-is",             // 663: wiring's 'same' shape and the Pow key's `b == e` by identity again (rows_tpl.rs)
     "fm-hand-no-give",     // 607: `Hand::give` hands nothing over
+    "fm-hand-kept",        // 608: an entry's nodes outlive it and answer the next entry (a `Hand` reused across queries)
 ];
 
 thread_local! {
-    static COUNTS: [Cell<u64>; 20] = const { [const { Cell::new(0) }; 20] };
+    static COUNTS: [Cell<u64>; 21] = const { [const { Cell::new(0) }; 21] };
     /// The nine classes for a site with no session: `SessionRules`' list (session_live.py `_core_rules`), read once.
     static CLASSES: std::cell::RefCell<Option<Rc<Vec<Py<PyAny>>>>> = const { std::cell::RefCell::new(None) };
     /// 0: none; else 1 + the index into `PLANTS`.
@@ -122,6 +124,13 @@ thread_local! {
     static ENTRIES: Cell<u32> = const { Cell::new(0) };
     /// The objects converted since the outermost entry began, held until it ends (`fm:twice` only; nothing reads a node here).
     static SEEN: std::cell::RefCell<HashMap<usize, Py<PyAny>>> = std::cell::RefCell::new(HashMap::new());
+    /// `formula_track(True)`: every object converted since, held so its address stays its own (`fm:again` only; a
+    /// measurement a run switches on, nothing reads a node here).
+    static TRACK: std::cell::RefCell<Option<HashMap<usize, Py<PyAny>>>> = const { std::cell::RefCell::new(None) };
+    /// How many formulas the live `Hand`s hold: 0 outside any entry (`formula_held`).
+    static HELD: Cell<usize> = const { Cell::new(0) };
+    /// Plant 608's store: the nodes of ended entries.
+    static KEPT: std::cell::RefCell<HashMap<usize, Rc<FNode>>> = std::cell::RefCell::new(HashMap::new());
 }
 
 pub(crate) fn tick(i: usize) {
@@ -145,6 +154,9 @@ const CLS_DIFFERS: usize = 18;
 const SAME_EQ: usize = 19;
 /// Plant 607: the entry hands no node to the session, which converts the query's formulas again (`fm:twice`).
 const HAND_NO_GIVE: u8 = 10;
+/// Plant 608: the ruled-out cache, a `Hand` whose nodes survive into the next entry.
+const HAND_KEPT: u8 = 11;
+const AGAIN: usize = 20;
 pub(crate) const AD_LRA_CLASS_IS: u8 = 6;
 const CLASS_IS: u8 = 7;
 const AD_LRA_ATOM_OBJECT: u8 = 8;
@@ -478,6 +490,12 @@ pub(crate) fn convert_or(f: &Bound<'_, PyAny>, classes: &[Py<PyAny>]) -> PyResul
         return Err(PyValueError::new_err("formula: nine classes expected"));
     }
     tick(CONVERT);
+    if ENTRIES.with(|d| d.get()) > 0 && SEEN.with(|s| s.borrow_mut().insert(f.as_ptr() as usize, f.clone().unbind())).is_some() {
+        tick(TWICE);
+    }
+    if TRACK.with(|t| t.borrow_mut().as_mut().is_some_and(|m| m.insert(f.as_ptr() as usize, f.clone().unbind()).is_some())) {
+        tick(AGAIN);
+    }
     let mut w = Walk { p, classes, occ: Vec::new(), firsts: Vec::new(), seen: PyDict::new(p), bad: Vec::new(), nodes: 0 };
     let root = match w.walk(f, 0) {
         Ok(r) => r,
@@ -492,9 +510,6 @@ pub(crate) fn convert_or(f: &Bound<'_, PyAny>, classes: &[Py<PyAny>]) -> PyResul
         Err(Stop::Py(e)) => return Err(e),
     };
     COUNTS.with(|c| c[NODES].set(c[NODES].get() + u64::from(w.nodes)));
-    if ENTRIES.with(|d| d.get()) > 0 && SEEN.with(|s| s.borrow_mut().insert(f.as_ptr() as usize, f.clone().unbind())).is_some() {
-        tick(TWICE);
-    }
     let mut firsts = w.firsts;
     if !firsts.is_empty() && planted(0) {
         firsts.pop();
@@ -534,9 +549,16 @@ pub(crate) trait Nodes {
 /// The nodes an entry holds for the length of its call: each formula it is given (and each one a callback hands it:
 /// the extensions' facts, a template's formulas) is converted the first time something needs it and never again. It
 /// is an argument, handed down to the scope and cone functions and, by `give`, to each session the entry makes. Found
-/// by the object's identity; the node holds the object.
+/// by the object's identity; the node holds the object, and a refusal is kept with the object it refused, so no object
+/// is walked twice in one entry. Nothing here outlives the entry's call: the next query starts with none.
 pub(crate) struct Hand {
-    nodes: std::cell::RefCell<HashMap<usize, Rc<FNode>>>,
+    nodes: std::cell::RefCell<HashMap<usize, Held>>,
+}
+
+enum Held {
+    Node(Rc<FNode>),
+    /// The refused object is held: its address is the key.
+    Refused(Refused, #[allow(dead_code)] Py<PyAny>),
 }
 
 impl Hand {
@@ -557,17 +579,33 @@ impl Hand {
 
     pub(crate) fn node(&self, f: &Bound<'_, PyAny>) -> PyResult<Result<Rc<FNode>, Refused>> {
         let k = f.as_ptr() as usize;
-        if let Some(n) = self.nodes.borrow().get(&k) {
+        if let Some(h) = self.nodes.borrow().get(&k) {
             tick(CACHE_HIT);
-            return Ok(Ok(n.clone()));
+            return Ok(match h {
+                Held::Node(n) => Ok(n.clone()),
+                Held::Refused(w, _) => Err(*w),
+            });
         }
-        Ok(match convert_or(f, &classes(f.py())?)? {
+        if plant_set(HAND_KEPT) {
+            if let Some(n) = KEPT.with(|m| m.borrow().get(&k).cloned()) {
+                planted(HAND_KEPT);
+                self.nodes.borrow_mut().insert(k, Held::Node(n.clone()));
+                HELD.with(|h| h.set(h.get() + 1));
+                return Ok(Ok(n));
+            }
+        }
+        let r = convert_or(f, &classes(f.py())?)?;
+        HELD.with(|h| h.set(h.get() + 1));
+        Ok(match r {
             Ok(n) => {
                 let n = Rc::new(n);
-                self.nodes.borrow_mut().insert(k, n.clone());
+                self.nodes.borrow_mut().insert(k, Held::Node(n.clone()));
                 Ok(n)
             }
-            Err(w) => Err(w),
+            Err(w) => {
+                self.nodes.borrow_mut().insert(k, Held::Refused(w, f.clone().unbind()));
+                Err(w)
+            }
         })
     }
 
@@ -587,6 +625,7 @@ impl Hand {
         let Ok(core) = crate::session::core_of(s) else { return Ok(()) };
         let core = core.borrow();
         for (k, n) in self.nodes.borrow().iter() {
+            let Held::Node(n) = n else { continue };
             if core.take_node(*k, || Rc::new(n.share(p))) {
                 tick(GIVE);
             }
@@ -597,6 +636,16 @@ impl Hand {
 
 impl Drop for Hand {
     fn drop(&mut self) {
+        let nodes = std::mem::take(&mut *self.nodes.borrow_mut());
+        if plant_set(HAND_KEPT) {
+            // the plant: what the entry held stays, and stays counted as held
+            KEPT.with(|m| m.borrow_mut().extend(nodes.into_iter().filter_map(|(k, h)| match h {
+                Held::Node(n) => Some((k, n)),
+                Held::Refused(..) => { HELD.with(|h| h.set(h.get() - 1)); None }
+            })));
+        } else {
+            HELD.with(|h| h.set(h.get() - nodes.len()));
+        }
         if ENTRIES.with(|d| { d.set(d.get() - 1); d.get() }) == 0 {
             let seen = SEEN.with(|s| std::mem::take(&mut *s.borrow_mut()));
             drop(seen);
@@ -644,7 +693,26 @@ fn formula_plant(name: Option<&str>) -> PyResult<()> {
         Some(n) => 1 + PLANTS.iter().position(|x| *x == n).ok_or_else(|| PyValueError::new_err(format!("formula: no plant {n}")))? as u8,
     };
     PLANT.with(|c| c.set(i));
+    // plant 608's store goes with the plant; between entries nothing is held again
+    drop(KEPT.with(|m| std::mem::take(&mut *m.borrow_mut())));
+    if ENTRIES.with(|d| d.get()) == 0 {
+        HELD.with(|h| h.set(0));
+    }
     Ok(())
+}
+
+/// How many formulas the live entries hold: 0 between queries (H2: nothing in a `Hand` survives its entry's call).
+#[pyfunction]
+fn formula_held() -> usize {
+    HELD.with(|h| h.get())
+}
+
+/// Switches `fm:again` on or off: on, every converted object is held from then on, so a second conversion of one
+/// object in any later entry is counted. Off drops them. A measurement for a run, never on by default.
+#[pyfunction]
+fn formula_track(on: bool) {
+    let old = TRACK.with(|t| t.replace(if on { Some(HashMap::new()) } else { None }));
+    drop(old);
 }
 
 #[pyfunction]
@@ -664,6 +732,8 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(formula_counts, m)?)?;
     m.add_function(wrap_pyfunction!(formula_plant, m)?)?;
     m.add_function(wrap_pyfunction!(formula_plants, m)?)?;
+    m.add_function(wrap_pyfunction!(formula_held, m)?)?;
+    m.add_function(wrap_pyfunction!(formula_track, m)?)?;
     m.add_function(wrap_pyfunction!(class_is_plant, m)?)?;
     Ok(())
 }
