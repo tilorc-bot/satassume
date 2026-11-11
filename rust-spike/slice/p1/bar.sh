@@ -27,7 +27,8 @@
 #   sum          bar_sum.py: the numbers, against BASE's suite rows
 # Environment:
 #   BASE          base suite rows (default: the last landing's, sa-port-91's, which rust-slice de8bd3a carries)
-#   PLANTS        SLICE_SESSION_PLANT names for dev and fuzz
+#   PLANTS        SLICE_SESSION_PLANT names for dev and fuzz; `term:NAME` is SLICE_TERM_PLANT=NAME instead (term_live's
+#                 plants, e.g. term:mark-wrong-pattern, plant 666); the same in SUITE_PLANTS and FM_PLANTS
 #   SUITE_PLANTS  plants also run on the suite (may contain `zero`)
 #   TESTS         test files in rust-spike/slice, one pytest run (default test_session_limits.py)
 #   TESTS_SPLIT   1: one pytest process per file, logs in $B/tests/, a line per file in tests.txt; TESTS=all is every test_*.py
@@ -80,6 +81,9 @@ mkdir -p $B; CMDS=$B/commands.txt
 export PY W SA_EVAL_DATA PYTHONHASHSEED PYTHONPATH=$T:$W/sympy:$W/shim
 run() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$1" | tee -a $CMDS; eval "$1"; }
 phase() { echo "$1 $(date -u +%FT%TZ) exit ${2:-0}" >> $B/phases.txt; }
+# penv PLANT: the variable that carries a plant: term_live's (`term:NAME`) or session_live's (everything else)
+penv() { case $1 in term:*) echo "SLICE_TERM_PLANT=${1#term:}";; *) echo "SLICE_SESSION_PLANT=$1";; esac; }
+export -f penv
 
 echo "== bar.sh $NAME $BR phases: $PHASES; script sha256 $(sha256sum "$0" | cut -c1-12)" | tee -a $CMDS
 [ -d $T/.git ] || run "git clone -q https://github.com/tilorc-bot/satassume $T"
@@ -91,7 +95,7 @@ cd $S
 suite() { # suite DIR [PLANT]
   local O=$1
   run "rm -rf $O; mkdir -p $O"
-  run "( ${2:+export SLICE_SESSION_PLANT=$2; }export SLICE_SUITE_OUT=$O SLICE_SUITE_BACKEND=rust PYTHONPATH=\$PYTHONPATH:$S HYPOTHESIS_STORAGE_DIRECTORY=$O/hyp; cd $T; \$PY -c 'import satassume; print(satassume.__file__)' > $O/tree.txt; \$PY -m pytest -p rust_plugin -p handler_count -p plant_count -n $N -q --tb=short -p no:cacheprovider tests > $O/pytest.log 2>&1; echo \"\$? \$(tail -1 $O/pytest.log)\" > $O/exit.txt )"
+  run "( ${2:+export $(penv $2); }export SLICE_SUITE_OUT=$O SLICE_SUITE_BACKEND=rust PYTHONPATH=\$PYTHONPATH:$S HYPOTHESIS_STORAGE_DIRECTORY=$O/hyp; cd $T; \$PY -c 'import satassume; print(satassume.__file__)' > $O/tree.txt; \$PY -m pytest -p rust_plugin -p handler_count -p plant_count -n $N -q --tb=short -p no:cacheprovider tests > $O/pytest.log 2>&1; echo \"\$? \$(tail -1 $O/pytest.log)\" > $O/exit.txt )"
 }
 fired() { # fired WL PLANT: the larger of the Python-side and Rust-side counts in the plant run's session report
   $PY -c "import json,sys; d=json.load(open(sys.argv[1])); print(max(d.get('plant_fired',0), d.get('counts',{}).get('rel:plant_fired',0)))" $B/live/plant-$1-$2.session.json 2>/dev/null || echo 0
@@ -125,7 +129,7 @@ suite) suite $B/suite; phase suite;;
 live) run "rm -rf $B/live; sh $S/run_live.sh $B/live entry"; phase live;;
 plants)
   for wl in dev fuzz; do for pl in $PLANTS; do echo "$wl $pl"; done; done > $B/plants.todo
-  run "xargs -P 10 -L 1 bash -c 'wl=\$0; pl=\$1; L=$B/live; SLICE_SESSION_PLANT=\$pl SESSION_REPORT=\$L/plant-\$wl-\$pl.session.json \$PY live.py \$wl rust \$L/plant-\$wl-\$pl.jsonl --check entry > \$L/plant-\$wl-\$pl.tot 2> \$L/plant-\$wl-\$pl.err; \$PY livecmp.py \$L/\$wl-py.jsonl \$L/plant-\$wl-\$pl.jsonl > \$L/plant-\$wl-\$pl.cmp 2>&1' < $B/plants.todo"
+  run "xargs -P 10 -L 1 bash -c 'wl=\$0; pl=\$1; L=$B/live; env \$(penv \$pl) SESSION_REPORT=\$L/plant-\$wl-\$pl.session.json \$PY live.py \$wl rust \$L/plant-\$wl-\$pl.jsonl --check entry > \$L/plant-\$wl-\$pl.tot 2> \$L/plant-\$wl-\$pl.err; \$PY livecmp.py \$L/\$wl-py.jsonl \$L/plant-\$wl-\$pl.jsonl > \$L/plant-\$wl-\$pl.cmp 2>&1' < $B/plants.todo"
   phase plants;;
 seed1)
   [ "${SEED1:-0}" = 1 ] || continue
@@ -141,7 +145,7 @@ extra)
     run "( \$PY live.py $wl py $X/$wl-py.jsonl --check entry > $X/$wl-py.tot 2> $X/$wl-py.err ) & ( \$PY live.py $wl py $X/$wl-py2.jsonl --check entry > $X/$wl-py2.tot 2> $X/$wl-py2.err ) & ( SESSION_REPORT=$X/$wl-rust.session.json \$PY live.py $wl rust $X/$wl-rust.jsonl --handlers $X/$wl-rust.handlers --check entry > $X/$wl-rust.tot 2> $X/$wl-rust.err ) & wait"
     run "{ echo '== $wl py vs py (control)'; \$PY livecmp.py $X/$wl-py.jsonl $X/$wl-py2.jsonl; echo '== $wl py vs rust'; \$PY livecmp.py $X/$wl-py.jsonl $X/$wl-rust.jsonl; } >> $X/summary.txt 2>&1"
     for pl in $PLANTS; do echo "$wl $pl"; done > $X/plants.todo
-    run "xargs -P 10 -L 1 bash -c 'wl=\$0; pl=\$1; SLICE_SESSION_PLANT=\$pl SESSION_REPORT=$X/plant-\$wl-\$pl.session.json \$PY live.py \$wl rust $X/plant-\$wl-\$pl.jsonl --check entry > $X/plant-\$wl-\$pl.tot 2> $X/plant-\$wl-\$pl.err; \$PY livecmp.py $X/\$wl-py.jsonl $X/plant-\$wl-\$pl.jsonl > $X/plant-\$wl-\$pl.cmp 2>&1' < $X/plants.todo"
+    run "xargs -P 10 -L 1 bash -c 'wl=\$0; pl=\$1; env \$(penv \$pl) SESSION_REPORT=$X/plant-\$wl-\$pl.session.json \$PY live.py \$wl rust $X/plant-\$wl-\$pl.jsonl --check entry > $X/plant-\$wl-\$pl.tot 2> $X/plant-\$wl-\$pl.err; \$PY livecmp.py $X/\$wl-py.jsonl $X/plant-\$wl-\$pl.jsonl > $X/plant-\$wl-\$pl.cmp 2>&1' < $X/plants.todo"
   done
   phase extra;;
 suiteplants)
@@ -157,7 +161,7 @@ fmrows)
   [ -n "${FM_WLS:-}" ] || continue
   fmrows() { # fmrows DIR [PLANT]
     run "rm -rf $1; mkdir -p $1"
-    run "printf '%s\n' $FM_WLS | ${2:+SLICE_SESSION_PLANT=$2 }xargs -P 6 -I{} bash -c 'n=\$(echo {} | tr -d :); \$PY fm_rows.py run $1/\$n.row.json {} > $1/\$n.tot 2> $1/\$n.err'"
+    run "printf '%s\n' $FM_WLS | ${2:+env $(penv $2) }xargs -P 6 -I{} bash -c 'n=\$(echo {} | tr -d :); \$PY fm_rows.py run $1/\$n.row.json {} > $1/\$n.tot 2> $1/\$n.err'"
     run "\$PY fm_rows.py check $1 > $1/check.txt 2>&1; echo \"exit \$?\" >> $1/check.txt; tail -n 2 $1/check.txt"
   }
   fmrows $B/fmrows
