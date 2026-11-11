@@ -62,6 +62,13 @@
   "fm:twice": 0,
   "fm:twice:patched": 0
  },
+ "lra": {
+  "fm:again": 98,
+  "fm:convert": 7308,
+  "fm:nosession": 0,
+  "fm:twice": 0,
+  "fm:twice:patched": 0
+ },
  "opaque": {
   "fm:again": 30,
   "fm:convert": 61,
