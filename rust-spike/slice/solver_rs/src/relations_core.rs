@@ -19,6 +19,7 @@ use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyList, PySet, PyString, PyTuple};
 
+use crate::adapters::{EufAdapter, LraAdapter};
 use crate::relkeys::{RDict, RList, RSet};
 use crate::session::{self, tick, SessionCore};
 use crate::term::py::PyTermTable;
@@ -1252,6 +1253,49 @@ fn rel_eq_infinity<'py>(rel: &Bound<'py, PyAny>, var: i32, atom: &Bound<'py, PyA
     eq_infinity(rel, &s, &c.borrow(), &h, var, atom)
 }
 
+
+/// C2 (group-d-cause.md): the slice's own adapter types (adapters.rs `LRAAdapter`, `EUFAdapter`; pyo3 classes that
+/// can't be subclassed, so the type fixes every method) are called directly, not through Python's method protocol and
+/// back. A user's adapter keeps the Python call. The same methods run, in the same order.
+fn ad_register(ad: &Bound<'_, PyAny>, solver: &Bound<'_, PyAny>, var: i32, sat: &Bound<'_, PyAny>) -> PyResult<bool> {
+    let p = ad.py();
+    let var = &var.into_pyobject(p)?.into_any();
+    if let Ok(a) = ad.cast_exact::<LraAdapter>() {
+        return a.try_borrow_mut()?.register(p, solver, var, sat);
+    }
+    if let Ok(a) = ad.cast_exact::<EufAdapter>() {
+        return a.try_borrow_mut()?.register(p, solver, var, sat);
+    }
+    ad.call_method1(intern!(p, "register"), (solver, var, sat))?.is_truthy()
+}
+
+/// Whether `ad` has the method `name`: from the type for the slice's own adapters (`node_term` is EUF's only,
+/// `order_sides` LRA's only).
+fn ad_has(ad: &Bound<'_, PyAny>, name: &Bound<'_, PyString>) -> PyResult<bool> {
+    let n = name.to_str()?;
+    if ad.is_exact_instance_of::<LraAdapter>() && (n == "node_term" || n == "order_sides") {
+        return Ok(n == "order_sides");
+    }
+    if ad.is_exact_instance_of::<EufAdapter>() && (n == "node_term" || n == "order_sides") {
+        return Ok(n == "node_term");
+    }
+    Ok(ad.getattr_opt(name)?.is_some())
+}
+
+fn ad_interned<'py>(ad: &Bound<'py, PyAny>, exprs: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    if let Ok(a) = ad.cast_exact::<EufAdapter>() {
+        return EufAdapter::interned(a, exprs);
+    }
+    ad.call_method1(intern!(ad.py(), "interned"), (exprs,))
+}
+
+fn ad_order_sides<'py>(ad: &Bound<'py, PyAny>, sat: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    if let Ok(a) = ad.cast_exact::<LraAdapter>() {
+        return a.try_borrow()?.order_sides(ad.py(), sat);
+    }
+    ad.call_method1(intern!(ad.py(), "order_sides"), (sat,))
+}
+
 /// `_interpret`. The adapters, `sympy_atom`, `_note_sides` and `_adapter` stay Python and are called back.
 #[pyfunction]
 fn rel_interpret<'py>(rel: &Bound<'py, PyAny>, atom: &Bound<'py, PyAny>) -> PyResult<bool> {
@@ -1286,10 +1330,10 @@ fn rel_interpret<'py>(rel: &Bound<'py, PyAny>, atom: &Bound<'py, PyAny>) -> PyRe
         let spec = spec?;
         let ad = rel.call_method1(intern!(p, "_adapter"), (&spec,))?;
         if !spec_row(&spec)?.guarded {
-            if ad.call_method1(intern!(p, "register"), (&solver, var, &sat))?.is_truthy()? {
+            if ad_register(&ad, &solver, var, &sat)? {
                 ok = true;
-                if eq && ad.getattr_opt(intern!(p, "node_term"))?.is_some() {
-                    eterms.call_method1(intern!(p, "extend"), (ad.call_method1(intern!(p, "interned"), (atom.getattr(intern!(p, "expr"))?,))?,))?;
+                if eq && ad_has(&ad, intern!(p, "node_term"))? {
+                    eterms.call_method1(intern!(p, "extend"), (ad_interned(&ad, &atom.getattr(intern!(p, "expr"))?)?,))?;
                     if !RSet::of(rel, session::RS_AUX_EQ)?.contains(atom)? {
                         rel.call_method1(intern!(p, "_note_sides"), (atom, 2))?;
                     } else if RSet::of(rel, session::RS_LINK_EQ)?.contains(atom)? {
@@ -1299,8 +1343,8 @@ fn rel_interpret<'py>(rel: &Bound<'py, PyAny>, atom: &Bound<'py, PyAny>) -> PyRe
             }
             continue;
         }
-        if order && ad.getattr_opt(intern!(p, "order_sides"))?.is_some() {
-            let sides = ad.call_method1(intern!(p, "order_sides"), (&sat,))?;
+        if order && ad_has(&ad, intern!(p, "order_sides"))? {
+            let sides = ad_order_sides(&ad, &sat)?;
             if !sides.is_none() {
                 if !link.is_none() && own_term(&sides, &link)? {
                     s.call_method1(intern!(p, "ensure"), (&link, r.getattr(intern!(p, "_INF_PREDS"))?))?;
@@ -1763,7 +1807,7 @@ impl<'a, 'py> Cx<'a, 'py> {
             let spec = spec?;
             if !spec_row(&spec)?.guarded {
                 let a = self.rel.call_method1(intern!(p, "_adapter"), (&spec,))?;
-                if a.getattr_opt(intern!(p, "node_term"))?.is_some() {
+                if ad_has(&a, intern!(p, "node_term"))? {
                     ad = Some(a);
                     break;
                 }

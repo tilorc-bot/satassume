@@ -549,7 +549,7 @@ impl LraAdapter {
         LraAdapter::build(p, theory)
     }
 
-    fn register(&mut self, p: Python<'_>, solver: &Bound<'_, PyAny>, var: &Bound<'_, PyAny>, atom: &Bound<'_, PyAny>) -> PyResult<bool> {
+    pub(crate) fn register(&mut self, p: Python<'_>, solver: &Bound<'_, PyAny>, var: &Bound<'_, PyAny>, atom: &Bound<'_, PyAny>) -> PyResult<bool> {
         tick(session::AD_LRA_REGISTER);
         let it = self.interpret(p, atom)?;
         if it.is_none() {
@@ -607,7 +607,7 @@ impl LraAdapter {
         self.memoized(p, K_INTERPRET, atom.clone(), intern!(p, "interpret"), atom)
     }
 
-    fn order_sides<'py>(&self, p: Python<'py>, atom: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    pub(crate) fn order_sides<'py>(&self, p: Python<'py>, atom: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
         let key = PyTuple::new(p, [intern!(p, "sides").clone().into_any(), atom.clone()])?.into_any();
         self.memoized(p, K_SIDES, key, intern!(p, "order_sides"), atom)
     }
@@ -801,7 +801,7 @@ impl EufAdapter {
         Ok(!self.parse(p, atom)?.is_none())
     }
 
-    fn register(&mut self, p: Python<'_>, solver: &Bound<'_, PyAny>, var: &Bound<'_, PyAny>, atom: &Bound<'_, PyAny>) -> PyResult<bool> {
+    pub(crate) fn register(&mut self, p: Python<'_>, solver: &Bound<'_, PyAny>, var: &Bound<'_, PyAny>, atom: &Bound<'_, PyAny>) -> PyResult<bool> {
         tick(session::AD_EUF_REGISTER);
         let parsed = self.parse(p, atom)?;
         if parsed.is_none() {
@@ -853,7 +853,7 @@ impl EufAdapter {
         self.intern_into(p, expr, nodes, Some(terms))
     }
 
-    fn interned<'py>(slf: &Bound<'py, Self>, exprs: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    pub(crate) fn interned<'py>(slf: &Bound<'py, Self>, exprs: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
         let p = slf.py();
         tick(session::AD_CB_INTERNED);
         slf.borrow().py_class(p)?.getattr(intern!(p, "interned"))?.call1((slf, exprs))
