@@ -142,6 +142,7 @@ class _Mark:
 
     def __init__(self, eng):
         self.tables = {}
+        self.natives = {}
         self.engines = {}
         self.cache = []
         self.facts = {}
@@ -161,7 +162,13 @@ class _Mark:
         self.add(eng)
 
     def _note(self, t):
-        if getattr(t, 'native', False):     # a Rust-native table's view (memos.rs, step 5c9a): Rust's, not rolled back here
+        if getattr(t, 'native', False):
+            # A Rust-native table's view (memos.rs `NativeTable`, engmemo.rs `EngineMemo`): Rust's map marks itself and takes
+            # out what the run added (the planner's ruling on lra's cause, issue 323: a discarded run left its `_Split` in
+            # `Engine.splits` and its verdict in `Engine._verdict`, and the rerun read them). A fact cache's view has its own
+            # mark (`add`).
+            if hasattr(t, '_nt_mark'):
+                self.natives[id(t)] = (t, t._nt_mark())
             return
         self.tables[id(t)] = (t, len(t), getattr(t, 'stamp', _NO_STAMP), next(reversed(t), None) if len(t) else None)
         if isinstance(t, collections.defaultdict) and t.default_factory is dict:
@@ -185,6 +192,16 @@ class _Mark:
             facts.pop(pred, None)
         for c, m in self.facts.values():
             if c._fc_rollback(m):
+                COUNTS['rollback:cleared'] += 1
+        # plant 611 'mark-skips-native': the native tables keep what the discarded run wrote; 'mark-skips-native:NAME' only
+        # the table of that name (`splits`, `satassume.relations._SYMPY_ATOMS`, ...)
+        skip = (PLANT[0] or '').partition('mark-skips-native')[1:] if (PLANT[0] or '').startswith('mark-skips-native') else None
+        for t, m in self.natives.values():
+            if skip is not None and skip[1] in ('', ':' + t.name):
+                COUNTS['plant:mark-skips-native'] += 1
+                continue
+            COUNTS['rollback:native'] += 1
+            if t._nt_rollback(m):
                 COUNTS['rollback:cleared'] += 1
         leave = PLANT[0] == 'mark-leaves-entry'
         for t, n, stamp, last in self.tables.values():
@@ -288,7 +305,7 @@ KEY_BAD = []
 #: Slice C's: 'le-swap', 'no-ext', 'is-number-false', 'affine-false', 'linked-drop', 'under-empty', 'interned-reversed',
 #: 'plan-drop', 'plan-pred', 'twin-one'. State step (iii)(a): plant 265 'int-as-number' (`_int_id`; counter 346 `term:int:*`).
 #: The formula step: 666 'mark-cuts-patterns' (`_Mark` rolls `_CACHE` back again), 667 'mark-leaves-entry' (`rollback` skips the
-#: first other table the run grew).
+#: first other table the run grew), 611 'mark-skips-native' (`rollback` leaves the Rust-native tables as the run left them).
 PLANT = [None]
 
 

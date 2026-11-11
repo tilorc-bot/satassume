@@ -27,6 +27,7 @@ use crate::relations_core::{
     planted, PM_ATOMS_KEY_EXPR, PM_CLOSED_HIT_NONE, PM_NEIGH_MEMO_FIRST, PM_NEIGH_NO_SELF, PM_SPLIT_CLEAR_SKIP, PM_SPLIT_NO_FULL_CLEAR,
     PM_WANT_KEY_LEN,
 };
+use crate::memos::AddLog;
 use crate::session::{tick, PM_CB_RULES, PM_FULL, PM_KEY_EQ, PM_KEY_HASH, PM_NEIGH};
 
 /// A Python dict's lookup over Python keys, held in Rust: buckets by the key's hash, then identity or `==`.
@@ -34,7 +35,23 @@ use crate::session::{tick, PM_CB_RULES, PM_FULL, PM_KEY_EQ, PM_KEY_HASH, PM_NEIG
 pub(crate) struct PyKeyMap {
     buckets: HashMap<isize, Vec<(Py<PyAny>, Py<PyAny>)>>,
     len: usize,
+    log: AddLog<isize>,
 }
+
+impl Default for AddLog<isize> {
+    fn default() -> Self {
+        AddLog::new()
+    }
+}
+impl Default for AddLog<(usize, Option<isize>)> {
+    fn default() -> Self {
+        AddLog::new()
+    }
+}
+
+/// What a rollback took out of a map: dropped by the caller once the map's borrow is released (a key's dealloc can run
+/// Python code). `None`: the map was emptied.
+type Gone<T> = Option<Vec<T>>;
 
 impl PyKeyMap {
     fn find<'py>(&self, k: &Bound<'py, PyAny>, h: isize) -> PyResult<Option<Bound<'py, PyAny>>> {
@@ -83,6 +100,7 @@ impl PyKeyMap {
             _ => {
                 b.push((k.clone().unbind(), v.clone().unbind()));
                 self.len += 1;
+                self.log.added(h);
             }
         }
         Ok(())
@@ -91,6 +109,32 @@ impl PyKeyMap {
     fn clear(&mut self) {
         self.buckets.clear();
         self.len = 0;
+        self.log.cleared();
+    }
+
+    /// `_Mark`'s rollback: takes out the entries added after `mark`, newest first (a bucket appends, so a key's newest entry
+    /// is its bucket's last); `None` when the map was emptied since the mark, and then it is emptied again.
+    fn rollback(&mut self, mark: (usize, u64)) -> Gone<(Py<PyAny>, Py<PyAny>)> {
+        let Some(hs) = self.log.since(mark) else {
+            let was = self.len;
+            self.buckets.clear();
+            self.len = 0;
+            self.log.cleared();
+            return if was > 0 || mark.0 > 0 { None } else { Some(Vec::new()) };
+        };
+        let mut gone = Vec::with_capacity(hs.len());
+        for h in hs {
+            if let Some(b) = self.buckets.get_mut(&h) {
+                if let Some(e) = b.pop() {
+                    gone.push(e);
+                    self.len -= 1;
+                }
+                if b.is_empty() {
+                    self.buckets.remove(&h);
+                }
+            }
+        }
+        Some(gone)
     }
 
     fn items(&self, p: Python<'_>) -> Vec<(Py<PyAny>, Py<PyAny>)> {
@@ -103,6 +147,7 @@ impl PyKeyMap {
 struct SplitMap {
     buckets: HashMap<(usize, Option<isize>), Vec<(Option<Py<PyAny>>, Py<PyTuple>)>>,
     len: usize,
+    log: AddLog<(usize, Option<isize>)>,
 }
 
 thread_local! {
@@ -118,7 +163,7 @@ pub(crate) const CLOSED_SIZE: usize = 4096;
 pub(crate) const ATOMS_SIZE: usize = 100_000;
 
 macro_rules! accessors {
-    ($m:ident, $len:ident, $clear:ident, $items:ident) => {
+    ($m:ident, $len:ident, $clear:ident, $items:ident, $mark:ident, $rollback:ident) => {
         pub(crate) fn $len() -> usize {
             $m.with(|m| m.borrow().len)
         }
@@ -128,12 +173,19 @@ macro_rules! accessors {
         pub(crate) fn $items(p: Python<'_>) -> PyResult<Vec<(Py<PyAny>, Py<PyAny>)>> {
             Ok($m.with(|m| m.borrow().items(p)))
         }
+        pub(crate) fn $mark() -> (usize, u64) {
+            $m.with(|m| m.borrow().log.mark())
+        }
+        pub(crate) fn $rollback(mark: (usize, u64)) -> bool {
+            let gone = $m.with(|m| m.borrow_mut().rollback(mark));
+            gone.is_none()
+        }
     };
 }
-accessors!(WANT, want_len, want_clear, want_items);
-accessors!(NEIGH, neigh_len, neigh_clear, neigh_items);
-accessors!(CLOSED, closed_len, closed_clear, closed_items);
-accessors!(ATOMS, atoms_len, atoms_clear, atoms_items);
+accessors!(WANT, want_len, want_clear, want_items, want_mark, want_rollback);
+accessors!(NEIGH, neigh_len, neigh_clear, neigh_items, neigh_mark, neigh_rollback);
+accessors!(CLOSED, closed_len, closed_clear, closed_items, closed_mark, closed_rollback);
+accessors!(ATOMS, atoms_len, atoms_clear, atoms_items, atoms_mark, atoms_rollback);
 
 pub(crate) fn split_len() -> usize {
     SPLIT.with(|m| m.borrow().len)
@@ -145,8 +197,40 @@ pub(crate) fn split_clear() {
             let mut m = m.borrow_mut();
             m.buckets.clear();
             m.len = 0;
+            m.log.cleared();
         });
     }
+}
+pub(crate) fn split_mark() -> (usize, u64) {
+    SPLIT.with(|m| m.borrow().log.mark())
+}
+/// `_Mark`'s rollback of `_SPLIT`, as `PyKeyMap::rollback`.
+pub(crate) fn split_rollback(mark: (usize, u64)) -> bool {
+    let gone: Gone<(Option<Py<PyAny>>, Py<PyTuple>)> = SPLIT.with(|m| {
+        let mut m = m.borrow_mut();
+        let Some(ks) = m.log.since(mark) else {
+            let was = m.len;
+            m.buckets.clear();
+            m.len = 0;
+            m.log.cleared();
+            return if was > 0 || mark.0 > 0 { None } else { Some(Vec::new()) };
+        };
+        let mut gone = Vec::with_capacity(ks.len());
+        for k in ks {
+            if let Some(b) = m.buckets.get_mut(&k) {
+                let e = b.pop();
+                if b.is_empty() {
+                    m.buckets.remove(&k);
+                }
+                if let Some(e) = e {
+                    gone.push(e);
+                    m.len -= 1;
+                }
+            }
+        }
+        Some(gone)
+    });
+    gone.is_none()
 }
 /// `[((id(clauses), want), r)]`, as Python's keys read.
 pub(crate) fn split_items(p: Python<'_>) -> PyResult<Vec<(Py<PyAny>, Py<PyAny>)>> {
@@ -237,6 +321,7 @@ pub(crate) fn split_put(clauses: &Bound<'_, PyAny>, want: &Bound<'_, PyAny>, r: 
                 let mut m = m.borrow_mut();
                 m.buckets.clear();
                 m.len = 0;
+                m.log.cleared();
             });
         }
     }
@@ -269,6 +354,7 @@ pub(crate) fn split_put(clauses: &Bound<'_, PyAny>, want: &Bound<'_, PyAny>, r: 
             _ => {
                 b.push(((!want.is_none()).then(|| want.clone().unbind()), r.clone().unbind()));
                 m.len += 1;
+                m.log.added(key);
             }
         }
     });

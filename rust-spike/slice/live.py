@@ -293,6 +293,39 @@ def load(wl):
     return workload(wl)
 
 
+def _discarded_runs(moved):
+    """A refused term_live run is rolled back and run again (term_live.py `_ask`), and the answer comes from the rerun alone.
+    What this recorder kept of the discarded run (its solvers' streams, the digest's sessions and relations) leaves the record
+    with it, so a query's row holds the sessions its answer came from, as Python's does: before the rollback reached the
+    Rust-native tables (issue 323, lra's cause) the rerun did less than Python and the two counts happened to be equal.
+    Counted in the totals, `discarded_runs` and `discarded_solvers`; what a discarded run leaves in the state is
+    term_discard.py's check, not this record's. Chained after any hook already there."""
+    import term_live
+    n = dict(runs=0, solvers=0, digest_sessions=0)
+    at = [None]
+    before, after = term_live.BEFORE_RUN[0], term_live.AFTER_ROLLBACK[0]
+
+    def start(eng):
+        at[0] = (len(T.solvers), moved.run_mark() if moved else None)
+        if before is not None:
+            before(eng)
+
+    def rolled_back():
+        if after is not None:
+            after()
+        if at[0] is None:
+            return
+        k, m = at[0]
+        at[0] = None
+        n['runs'] += 1
+        n['solvers'] += len(T.solvers) - k
+        del T.solvers[k:]
+        if moved:
+            n['digest_sessions'] += moved.run_discard(m)
+    term_live.BEFORE_RUN[0], term_live.AFTER_ROLLBACK[0] = start, rolled_back
+    return n
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("wl")
@@ -420,6 +453,7 @@ def main():
         moved = moved_digest.install(bool(backend))
     pairs = load(args.wl)
 
+    discarded = _discarded_runs(moved) if backend else None
     q_detail, f_detail = None, None
     if args.detail:
         q_detail, f_detail = args.detail.split(":", 1)
@@ -541,7 +575,7 @@ def main():
         tot.update(wl=args.wl, mode=args.mode, check=args.check, shuffle=args.shuffle,
                    answers_sha=hashlib.sha256(json.dumps([answers[i] for i in sorted(answers)]).encode())
                    .hexdigest()[:16],
-                   python_solvers_made=py_made[0], traced_made=T.created, traced_dropped=T.dropped,
+                   python_solvers_made=py_made[0], traced_made=T.created, traced_dropped=T.dropped, discarded=discarded,
                    reentry=T.reentry, addr_masked=T.addr, hook_outside_solver=T.outside, hook_counts=T.hookcount,
                    entry_raises=T.raises, reach=reach, answers=hist,
                    theory_classes=sorted(c.__name__ for c in T.theory_classes),

@@ -29,6 +29,40 @@ use crate::relations_core::{
 };
 use crate::session::{tick, MEMO_NATIVE_CLEAR, MEMO_NATIVE_ITEMS, MEMO_RESTAMP, MEMO_SETTING, MEMO_SETTING_PROP};
 
+/// What a run added to a native map, for term_live.py's `_Mark` (the formula step, the planner's ruling on lra's cause: a
+/// discarded run leaves nothing in a native table either). The keys added, in order, and how often the map was emptied. A
+/// mark is `(keys added so far, empties so far)`; `since` gives the keys added after a mark, newest first, or None when the
+/// map was emptied since (then what it holds is all the run's, and the rollback empties it, as `_Mark` does a Python table).
+/// A value written over an existing key isn't logged: `_Mark` undoes Python's tables by size too.
+pub(crate) struct AddLog<K> {
+    keys: Vec<K>,
+    emptied: u64,
+}
+
+impl<K> AddLog<K> {
+    pub(crate) const fn new() -> Self {
+        AddLog { keys: Vec::new(), emptied: 0 }
+    }
+    pub(crate) fn added(&mut self, k: K) {
+        self.keys.push(k);
+    }
+    pub(crate) fn cleared(&mut self) {
+        self.keys.clear();
+        self.emptied += 1;
+    }
+    pub(crate) fn mark(&self) -> (usize, u64) {
+        (self.keys.len(), self.emptied)
+    }
+    pub(crate) fn since(&mut self, mark: (usize, u64)) -> Option<Vec<K>> {
+        if mark.1 != self.emptied || mark.0 > self.keys.len() {
+            return None;
+        }
+        let mut gone = self.keys.split_off(mark.0);
+        gone.reverse();
+        Some(gone)
+    }
+}
+
 /// One Rust-native memo: its registry name, what it is keyed on besides its key (memos.py's `KEYS`), its bound, and its
 /// accessors.
 struct Native {
@@ -38,6 +72,9 @@ struct Native {
     len: fn() -> usize,
     clear: fn(),
     items: fn(Python<'_>) -> PyResult<Vec<(Py<PyAny>, Py<PyAny>)>>,
+    /// `_Mark`'s mark and rollback (`AddLog`); the rollback answers whether it had to empty the table.
+    mark: fn() -> (usize, u64),
+    rollback: fn((usize, u64)) -> bool,
 }
 
 const TABLES: [Native; 7] = [
@@ -48,6 +85,8 @@ const TABLES: [Native; 7] = [
         len: crate::relations_core::spec_rows_len,
         clear: crate::relations_core::spec_rows_clear,
         items: crate::relations_core::spec_rows_items,
+        mark: crate::relations_core::spec_rows_mark,
+        rollback: crate::relations_core::spec_rows_rollback,
     },
     Native {
         name: "sa_solver.constfield.ENCLOSURES",
@@ -56,13 +95,15 @@ const TABLES: [Native; 7] = [
         len: crate::constfield::enclosures_len,
         clear: crate::constfield::enclosures_clear,
         items: crate::constfield::enclosures_items,
+        mark: crate::constfield::enclosures_mark,
+        rollback: crate::constfield::enclosures_rollback,
     },
     // Step 5c9b (procmemo.rs): Python's own process memos, moved; their views take Python's names and places in the registry.
-    Native { name: "satassume.engine._WANT", key: "pure", size: None, len: crate::procmemo::want_len, clear: crate::procmemo::want_clear, items: crate::procmemo::want_items },
-    Native { name: "satassume.engine._SPLIT", key: "pure", size: Some(crate::procmemo::SPLIT_SIZE), len: crate::procmemo::split_len, clear: crate::procmemo::split_clear, items: crate::procmemo::split_items },
-    Native { name: "satassume.engine._NEIGH", key: "pure", size: None, len: crate::procmemo::neigh_len, clear: crate::procmemo::neigh_clear, items: crate::procmemo::neigh_items },
-    Native { name: "satassume.relations._CLOSED", key: "pure", size: Some(crate::procmemo::CLOSED_SIZE), len: crate::procmemo::closed_len, clear: crate::procmemo::closed_clear, items: crate::procmemo::closed_items },
-    Native { name: "satassume.relations._SYMPY_ATOMS", key: "pure", size: Some(crate::procmemo::ATOMS_SIZE), len: crate::procmemo::atoms_len, clear: crate::procmemo::atoms_clear, items: crate::procmemo::atoms_items },
+    Native { name: "satassume.engine._WANT", key: "pure", size: None, len: crate::procmemo::want_len, clear: crate::procmemo::want_clear, items: crate::procmemo::want_items, mark: crate::procmemo::want_mark, rollback: crate::procmemo::want_rollback },
+    Native { name: "satassume.engine._SPLIT", key: "pure", size: Some(crate::procmemo::SPLIT_SIZE), len: crate::procmemo::split_len, clear: crate::procmemo::split_clear, items: crate::procmemo::split_items, mark: crate::procmemo::split_mark, rollback: crate::procmemo::split_rollback },
+    Native { name: "satassume.engine._NEIGH", key: "pure", size: None, len: crate::procmemo::neigh_len, clear: crate::procmemo::neigh_clear, items: crate::procmemo::neigh_items, mark: crate::procmemo::neigh_mark, rollback: crate::procmemo::neigh_rollback },
+    Native { name: "satassume.relations._CLOSED", key: "pure", size: Some(crate::procmemo::CLOSED_SIZE), len: crate::procmemo::closed_len, clear: crate::procmemo::closed_clear, items: crate::procmemo::closed_items, mark: crate::procmemo::closed_mark, rollback: crate::procmemo::closed_rollback },
+    Native { name: "satassume.relations._SYMPY_ATOMS", key: "pure", size: Some(crate::procmemo::ATOMS_SIZE), len: crate::procmemo::atoms_len, clear: crate::procmemo::atoms_clear, items: crate::procmemo::atoms_items, mark: crate::procmemo::atoms_mark, rollback: crate::procmemo::atoms_rollback },
 ];
 /// The native tables `memo_install` attaches; the rest (5c9b's) replace Python's containers in place (`procmemo_views`).
 const ATTACHED: usize = 2;
@@ -123,6 +164,14 @@ impl NativeTable {
     }
     fn reset(&self) {
         self.clear()
+    }
+    /// `_Mark`'s mark of this table (term_live.py): what a run adds after it, `_nt_rollback` removes.
+    fn _nt_mark(&self) -> (usize, u64) {
+        (TABLES[self.i].mark)()
+    }
+    /// Removes what was added after `mark`; True when the table had to be emptied for it (Python's `rollback:cleared`).
+    fn _nt_rollback(&self, mark: (usize, u64)) -> bool {
+        (TABLES[self.i].rollback)(mark)
     }
     /// `[(key, value)]`, converted now (tests and the inventory only).
     fn items<'py>(&self, p: Python<'py>) -> PyResult<Bound<'py, PyList>> {

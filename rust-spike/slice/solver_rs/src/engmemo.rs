@@ -31,7 +31,7 @@
 //!   `_constructing` until the state step; Python's `Session.node` (SLICE_LOOP=py, a Python-backend path only).
 //! - **Test-only snapshot export:** `em_snapshot(memo)` reads a map's entries from the Rust map itself, not through the view's
 //!   methods, so memo_check can show the view and the map agree.
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 
 use pyo3::exceptions::{PyAttributeError, PyKeyError};
@@ -70,11 +70,14 @@ pub struct EngineMemo {
     slot: u8,
     maxsize: Option<usize>,
     map: RefCell<OrdMap>,
+    /// How often the map was emptied: `_Mark`'s rollback (term_live.py) cuts a map back to its size at the mark, which is
+    /// what the run added only while nothing emptied it.
+    emptied: Cell<u64>,
 }
 
 impl EngineMemo {
     fn new(slot: u8, maxsize: Option<usize>) -> Self {
-        EngineMemo { slot, maxsize, map: RefCell::new(OrdMap::default()) }
+        EngineMemo { slot, maxsize, map: RefCell::new(OrdMap::default()), emptied: Cell::new(0) }
     }
 
     /// The entry index and value of a key equal to `k`. Candidates are copied out first: `==` may run Python code.
@@ -164,9 +167,9 @@ impl EngineMemo {
     }
 
     pub(crate) fn wipe(&self) {
-        let mut m = self.map.borrow_mut();
-        m.entries.clear();
-        m.index.clear();
+        let old = std::mem::take(&mut *self.map.borrow_mut());
+        self.emptied.set(self.emptied.get() + 1);
+        drop(old);
     }
 
     fn entries(&self, p: Python<'_>) -> Vec<(Py<PyAny>, Py<PyAny>)> {
@@ -247,6 +250,35 @@ impl EngineMemo {
             return;
         }
         self.wipe();
+    }
+    /// `_Mark`'s mark (term_live.py; the formula step, the planner's ruling on lra's cause): entries and empties so far.
+    fn _nt_mark(&self) -> (usize, u64) {
+        (self.len(), self.emptied.get())
+    }
+    /// Cuts the map back to `mark`: the entries the run appended go, as `_Mark` pops a Python dict back to its size. A map
+    /// emptied since the mark holds only the run's entries and is emptied (True: Python's `rollback:cleared`). A value the
+    /// run wrote over an existing key stays, as it does in a Python dict rolled back by size.
+    fn _nt_rollback(&self, mark: (usize, u64)) -> bool {
+        let (n, emptied) = mark;
+        if emptied != self.emptied.get() {
+            let changed = self.len() > 0 || n > 0;
+            self.wipe();
+            return changed;
+        }
+        let gone: Vec<(Py<PyAny>, Py<PyAny>)> = {
+            let mut m = self.map.borrow_mut();
+            if m.entries.len() <= n {
+                return false;
+            }
+            let gone = m.entries.split_off(n);
+            m.index.retain(|_, b| {
+                b.retain(|&i| i < n);
+                !b.is_empty()
+            });
+            gone
+        };
+        drop(gone);     // after the borrow: a key's dealloc can run Python code
+        false
     }
     fn items<'py>(&self, p: Python<'py>) -> PyResult<Bound<'py, PyList>> {
         self.py();

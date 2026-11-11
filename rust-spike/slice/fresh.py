@@ -31,6 +31,8 @@ ap.add_argument("--term-out", help="term_live's counts, as JSON")
 ap.add_argument("--discard", action="store_true", help="a planted refusal in each query's run: term_discard.py. Needs --term")
 ap.add_argument("--budget", type=int, help="the engine's discovery budget for every query, as the matrix's low budgets")
 ap.add_argument("--no-rollback", action="store_true", help="plant: with --discard, skip the rollback")
+ap.add_argument("--full", action="store_true", help="with --term: also session_live and knowledge_live, as live.py installs them, "
+                "so the engine's memos and the process memos are the Rust-native ones and --discard checks those")
 ap.add_argument("--first", type=int, help="only the workload's first N queries (a kept test's short run)")
 a = ap.parse_args()
 if a.so:
@@ -120,6 +122,11 @@ if a.term != "py":
     if a.lra:
         import lra_live
         lra_live.install()
+    if a.full:
+        import session_live
+        session_live.from_env()
+        import knowledge_live
+        knowledge_live.from_env()
     if a.discard:
         import term_discard as TD
         TD.install()

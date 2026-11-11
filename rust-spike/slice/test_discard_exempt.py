@@ -6,6 +6,12 @@ rollback, because its key determines its value (cache_det.py), and term_discard.
 An entry a discarded run leaves in any other container is counted as left. Plant 667 `mark-leaves-entry` (term_live.py
 `_Mark.rollback`) makes the rollback skip the first other table the run grew.
 
+The Rust-native tables (the planner's ruling on lra's cause, sa-port-268): a discarded run left its `_Split` in `Engine.splits`,
+its verdict in `Engine._verdict` and its rows in `_kids`, `_cones` and `_qcones`, and the rerun read them (lra queries 73, 204,
+585, 6). `_Mark` now marks every native table (`_nt_mark`) and takes out what the run added (`_nt_rollback`), and the check
+reads the native tables' rows, which `--full` installs (session_live, knowledge_live, as live.py does). Plant 611
+`mark-skips-native` leaves the native tables as the run wrote them.
+
 Each run is its own process: `fresh.py dev rust --first 30 --term terms --lra --discard`, 30 planted refusals, a few seconds.
 """
 import json
@@ -20,13 +26,15 @@ N = 30
 CACHE = 'satassume.knowledge.templates._common._CACHE'
 
 
-def run(tmp, plant=None):
+def run(tmp, plant=None, full=False):
     env = dict(os.environ)
     for k in ('SLICE_TERM_PLANT', 'SLICE_SESSION_PLANT', 'SLICE_KNOWLEDGE_PLANT', 'SLICE_PLANT'):
         env.pop(k, None)
     out = os.path.join(tmp, 'term.json')
     cmd = [sys.executable, os.path.join(HERE, 'fresh.py'), 'dev', 'rust', os.path.join(tmp, 'rows.txt'), '--first', str(N),
            '--term', 'terms', '--lra', '--discard', '--term-out', out]
+    if full:
+        cmd.append('--full')
     if plant:
         cmd += ['--term-plant', plant]
     subprocess.run(cmd, env=env, cwd=HERE, capture_output=True, text=True, check=True)
@@ -69,3 +77,37 @@ def test_plant_667_an_entry_left_in_another_container_is_caught(plain, planted):
     named = {k for k in d['left'] if not k.endswith(':exempt')}
     assert named and not any(CACHE in k for k in named)         # the container is named, and it is not `_CACHE`
     assert c['exempt:_CACHE'] == plain[0]['counts']['exempt:_CACHE']    # the exemption covered `_CACHE` and nothing more
+
+
+NATIVE = ('engine:splits', 'engine:_verdict', 'engine:_kids', 'engine:_cones', 'engine:_qcones')
+
+
+@pytest.fixture(scope='module')
+def full(tmp_path_factory):
+    return run(str(tmp_path_factory.mktemp('full')), full=True)
+
+
+@pytest.fixture(scope='module')
+def planted_native(tmp_path_factory):
+    return run(str(tmp_path_factory.mktemp('p611')), 'mark-skips-native', full=True)
+
+
+def test_a_discarded_run_leaves_nothing_in_a_native_table(full):
+    d, _ = full
+    c = d['counts']
+    assert c['armed'] == c['raised'] == c['checked'] == N
+    assert c['native-read'] > 0, 'the check read no native table: its clean count says nothing of them'
+    assert d['term']['rollback:native'] > 0 and not d['term'].get('plant:mark-skips-native')
+    assert c.get('left-something', 0) == 0 and c['clean'] == N
+    assert set(d['left']) == {'module:' + CACHE + ':exempt', 'process:' + CACHE + ':exempt'}
+
+
+def test_plant_611_a_native_table_left_as_the_run_wrote_it_is_caught(full, planted_native):
+    d, rows = planted_native
+    c = d['counts']
+    assert d['term']['plant:mark-skips-native'] > 0, 'plant 611 no longer fires'
+    assert c['checked'] == N and c['left-something'] > 0 and c.get('clean', 0) < N
+    named = {k for k in d['left'] if not k.endswith(':exempt')}
+    assert set(NATIVE) <= named, named        # the tables lra's cause went through, each named
+    assert not any(CACHE in k for k in named)
+    assert c['exempt:_CACHE'] == full[0]['counts']['exempt:_CACHE']

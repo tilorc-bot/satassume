@@ -183,6 +183,8 @@ thread_local! {
     static LIMITS: Cell<Option<Limits>> = const { Cell::new(None) };
     /// (constant index, prec) -> the tuple in `Constant._cache` and its integers. Tied to that object's identity.
     static ENCLOSURES: RefCell<HashMap<(u32, i64), (Py<PyAny>, Rc<(BigInt, BigInt)>)>> = RefCell::new(HashMap::new());
+    /// The keys added to `ENCLOSURES`, for `_Mark`'s rollback (memos.rs `AddLog`).
+    static ENC_LOG: RefCell<crate::memos::AddLog<(u32, i64)>> = const { RefCell::new(crate::memos::AddLog::new()) };
 }
 
 /// `ENCLOSURES`' bound (step 5c9a: a registry table is bounded; it had none), as `NativeTable.size` gives it.
@@ -194,7 +196,33 @@ pub(crate) fn enclosures_len() -> usize {
 }
 
 pub(crate) fn enclosures_clear() {
-    ENCLOSURES.with(|m| m.borrow_mut().clear());
+    let old = ENCLOSURES.with(|m| std::mem::take(&mut *m.borrow_mut()));
+    ENC_LOG.with(|l| l.borrow_mut().cleared());
+    drop(old);
+}
+
+pub(crate) fn enclosures_mark() -> (usize, u64) {
+    ENC_LOG.with(|l| l.borrow().mark())
+}
+
+/// `_Mark`'s rollback: the rows added after `mark` go; True when the table had to be emptied (it was emptied since the mark).
+/// A row written over one that was there (the constant's `_cache` tuple replaced) stays: its identity check reads it again.
+pub(crate) fn enclosures_rollback(mark: (usize, u64)) -> bool {
+    match ENC_LOG.with(|l| l.borrow_mut().since(mark)) {
+        Some(ks) => {
+            let gone: Vec<_> = ENCLOSURES.with(|m| {
+                let mut m = m.borrow_mut();
+                ks.into_iter().filter_map(|k| m.remove(&k)).collect()
+            });
+            drop(gone);
+            false
+        }
+        None => {
+            let was = enclosures_len();
+            enclosures_clear();
+            was > 0 || mark.0 > 0
+        }
+    }
 }
 
 /// `[((index, prec), (lo, hi))]`, converted for the registry view's `items()`.
@@ -1259,14 +1287,18 @@ fn enclose(i: u32, prec: i64) -> R<Rc<Pair>> {
         }
         let (lo, hi): (BigInt, BigInt) = r.extract()?;
         let p = Rc::new((lo, hi));
-        ENCLOSURES.with(|m| {
+        let old = ENCLOSURES.with(|m| {
             let mut m = m.borrow_mut();
             if m.len() >= ENCLOSURES_SIZE {
                 crate::session::tick(crate::session::MEMO_FULL);
                 m.clear();
+                ENC_LOG.with(|l| l.borrow_mut().cleared());
             }
             m.insert((i, prec), (r.unbind(), p.clone()))
         });
+        if old.is_none() {
+            ENC_LOG.with(|l| l.borrow_mut().added((i, prec)));
+        }
         Ok(p)
     })
 }

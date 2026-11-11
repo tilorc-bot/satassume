@@ -195,6 +195,19 @@ class Moved:
             out[name] = [_h(sorted(rows)), _h(rows), len(rows)]
         return out
 
+    def run_mark(self):
+        """What the record holds as a term_live run starts (live.py `_discarded_runs`)."""
+        return len(self.made), len(self.sessions), len(self.new_engs)
+
+    def run_discard(self, mark):
+        """A refused run was rolled back and is run again: its relations, sessions and engines leave the record with it."""
+        a, b, c = mark
+        for rel, _ in self.made[a:]:
+            self.mid.pop(id(rel), None)
+        n = len(self.sessions) - b
+        del self.made[a:], self.sessions[b:], self.new_engs[c:]
+        return n
+
     def query_rows(self):
         """The extension's per-query row: `ses`, `lra`, `eng` (the module docstring). Call after `session_rows`."""
         out, rels = {}, self.rels

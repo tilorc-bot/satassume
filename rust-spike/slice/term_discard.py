@@ -77,7 +77,22 @@ def install():
     term_live.AFTER_ROLLBACK[0] = check
 
 
+def _sig(k):
+    return tuple(x if isinstance(x, int) else id(x) for x in k) if type(k) is tuple else id(k)
+
+
+def _native(t):
+    """A Rust-native table's rows, read now (memos.rs `NativeTable`, engmemo.rs `EngineMemo`, factcache.rs `FactView`): the
+    view is the live map, so comparing it with itself said nothing of what a run left (lra's cause, issue 323: `Engine.splits`
+    and `_verdict` kept a discarded run's entries and this check counted them clean). Rows are matched by the key object, since a
+    Rust map's order is not a dict's; the rows are held, so an address is not reused between the two readings."""
+    return {_sig(k): (k, _one(v)) for k, v in list(t.items())}
+
+
 def _copy(v):
+    if getattr(v, 'native', False):
+        COUNTS['native-read'] += 1
+        return _native(v)
     if isinstance(v, dict):
         return {k: _one(x) for k, x in v.items()}
     return _one(v)

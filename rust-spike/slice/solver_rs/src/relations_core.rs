@@ -2694,6 +2694,8 @@ fn ad_kind(factory: &Bound<'_, PyAny>) -> PyResult<AdKind> {
 }
 
 static SPEC_ROWS: std::sync::Mutex<Option<std::collections::HashMap<usize, (Py<PyAny>, Arc<SpecRow>)>>> = std::sync::Mutex::new(None);
+/// The specs added to `SPEC_ROWS`, for `_Mark`'s rollback (memos.rs `AddLog`).
+static SPEC_LOG: std::sync::Mutex<crate::memos::AddLog<usize>> = std::sync::Mutex::new(crate::memos::AddLog::new());
 
 /// `spec`'s fields, read from Python the first time Rust sees this spec (counted `rel:cb_spec_read`, one tick a field) and from
 /// the memo after that. The specs are configuration the user passes in, so they stay Python objects; only this conversion reads them.
@@ -2721,8 +2723,11 @@ pub(crate) fn spec_row(spec: &Bound<'_, PyAny>) -> PyResult<Arc<SpecRow>> {
     if m.len() >= SPEC_ROWS_SIZE && !planted(MEMO_SPEC_UNBOUNDED) {
         tick(session::MEMO_FULL);
         m.clear();
+        SPEC_LOG.lock().unwrap().cleared();
     }
-    m.insert(key, (spec.clone().unbind(), row.clone()));
+    if m.insert(key, (spec.clone().unbind(), row.clone())).is_none() {
+        SPEC_LOG.lock().unwrap().added(key);
+    }
     Ok(row)
 }
 
@@ -2738,6 +2743,37 @@ pub(crate) fn spec_rows_clear() {
     if let Some(m) = SPEC_ROWS.lock().unwrap().as_mut() {
         m.clear();
     }
+    SPEC_LOG.lock().unwrap().cleared();
+}
+
+pub(crate) fn spec_rows_mark() -> (usize, u64) {
+    SPEC_LOG.lock().unwrap().mark()
+}
+
+/// `_Mark`'s rollback: the rows added after `mark` go; True when the table had to be emptied (it was emptied since the mark).
+pub(crate) fn spec_rows_rollback(mark: (usize, u64)) -> bool {
+    let since = SPEC_LOG.lock().unwrap().since(mark);
+    let mut gone = Vec::new();
+    let emptied = {
+        let mut g = SPEC_ROWS.lock().unwrap();
+        match (since, g.as_mut()) {
+            (Some(ks), Some(m)) => {
+                gone.extend(ks.into_iter().filter_map(|k| m.remove(&k)));
+                false
+            }
+            (Some(_), None) => false,
+            (None, m) => {
+                let was = m.as_ref().map_or(0, |m| m.len());
+                if let Some(m) = m {
+                    gone.extend(m.drain().map(|(_, v)| v));
+                }
+                SPEC_LOG.lock().unwrap().cleared();
+                was > 0 || mark.0 > 0
+            }
+        }
+    };
+    drop(gone);     // after the lock is released: a spec's dealloc can run Python code
+    emptied
 }
 
 /// `[(spec, (name, factory, guarded))]`, converted for the registry view's `items()`.
