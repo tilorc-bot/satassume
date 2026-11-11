@@ -115,12 +115,12 @@ def test_memo_holds_the_answer_of_is_only():
     assert eng.is_(node, 'positive') is True
     # the session derived real(node), positive(y), nonzero(y), ... at the
     # root: none of it is a memo of is_, so none of it is written
-    assert dict(cache.items()) == {node: {'positive': True}}
+    assert cache.store == {typed(node): {'positive': True}}
     assert cache.get(node, 'real', 'missing') == 'missing'
     assert cache.facts('y') is None and cache.facts('z') is None
     assert eng.is_(node, 'real') is True
     assert eng.is_('y', 'nonzero') is True
-    assert dict(cache.items()) == {node: {'positive': True, 'real': True}, 'y': {'nonzero': True}}
+    assert cache.store == {typed(node): {'positive': True, 'real': True}, typed('y'): {'nonzero': True}}
     assert _not_memos(eng, lambda: _engine()[0]) == []
 
 
@@ -129,7 +129,7 @@ def test_child_fact_derived_by_the_parent_is_not_memoized():
     assert eng.is_(('sq', 'x'), 'nonzero') is False
     # zero(x) was derived at the root by the parent's template (not x's own
     # cone): a fresh is_('x', 'zero') is None, and so is this engine's
-    assert dict(cache.items()) == {('sq', 'x'): {'nonzero': False}}
+    assert cache.store == {typed(('sq', 'x')): {'nonzero': False}}
     fresh, _ = _engine()
     assert eng.is_('x', 'zero') is fresh.is_('x', 'zero') is None
     assert cache.facts('x') is None
@@ -189,7 +189,7 @@ def test_memo_is_keyed_on_the_registry_epoch():
     bump()
     assert eng.is_('y', 'nonzero') is True              # drops the stale memo
     assert cache._epoch == EPOCH[0]
-    assert dict(cache.items()) == {'y': {'nonzero': True}}
+    assert cache.store == {typed('y'): {'nonzero': True}}
     assert eng.stats["version_clears"] == 1
 
 
@@ -226,7 +226,7 @@ def test_none_memoizes_nothing():
     # the setting drops the caches on a change, like every setting
     eng.writeback = "root-only"
     assert eng.is_(node, 'positive') is True
-    assert dict(cache.items()) == {node: {'positive': True}}
+    assert cache.store == {typed(node): {'positive': True}}
     eng.writeback = "none"
     assert cache.store == {}
     assert eng.is_(node, 'positive') is True and cache.store == {}
@@ -437,7 +437,7 @@ def test_answer_decided_with_work_parked_is_memoized_within_the_budget(policy):
     assert _not_memos(eng, lambda: _parked_engine(2, policy)) == []
     eng = _parked_engine(5, policy)
     assert eng.is_(DP, 'positive') is True
-    assert dict(eng.cache.items()) == ({DP: {'positive': True}} if policy == "root-only" else {})
+    assert eng.cache.store == ({typed(DP): {'positive': True}} if policy == "root-only" else {})
     assert _not_memos(eng, lambda: _parked_engine(5, policy)) == []
 
 

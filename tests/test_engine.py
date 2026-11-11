@@ -3,6 +3,7 @@ import pytest
 
 from satassume import Engine, DictCache, P, And, Or, Not, Implies, allargs, anyarg, exactlyonearg
 from satassume.engine import InconsistentAssumptions, neighbourhood
+from satassume.sat.formula import typed
 
 
 # nodes: 'x' (a leaf) or ('add', a, b, ...) / ('mul', a, b, ...)
@@ -70,7 +71,7 @@ def test_structural_template_and_child_facts_are_not_memoized():
     assert cache.get('y', 'nonzero', 'missing') == 'missing'
     assert cache.get('y', 'positive', 'missing') == 'missing'
     assert cache.get(('mul', 'x', 'y'), 'nonzero') is True
-    assert set(dict(cache.items())) == {('add', 'x', 'y'), ('mul', 'x', 'y')}
+    assert set(cache.store) == {typed(('add', 'x', 'y')), typed(('mul', 'x', 'y'))}
     sessions = eng.stats['sessions']
     assert eng.is_('y', 'nonzero') is True
     assert eng.stats['sessions'] == sessions + 1
@@ -89,7 +90,7 @@ def test_unknown_stays_unknown_and_is_not_memoized():
     hits, sessions = eng.stats['cache_hits'], eng.stats['sessions']
     assert eng.is_(('add', 'x', 'y'), 'positive') is None
     assert eng.stats['cache_hits'] == hits and eng.stats['sessions'] == sessions + 1
-    assert cache.facts(('add', 'x', 'y')) is None
+    assert cache.store == {}
 
 
 def test_contextual_query_does_not_pollute_cache():
@@ -144,7 +145,7 @@ def test_sessions_are_per_query_and_facts_persist():
     assert eng.stats['sessions'] == 12
     assert eng.is_('x', 'nonzero') is True
     assert eng.stats['sessions'] == 12
-    assert dict(cache.items()) == {'x': {'positive': True, 'nonzero': True}}
+    assert cache.store == {typed('x'): {'positive': True, 'nonzero': True}}
 
 
 def test_contextual_queries_build_and_discard():
@@ -209,4 +210,4 @@ def test_exactlyone_helper():
     declaring = eng.templates
     eng = Engine(templates=lambda n: [f] if n == ('mul', 'x', 'y') else declaring(n), cache=cache)
     assert eng.is_(('mul', 'x', 'y'), 'imaginary') is True
-    assert dict(cache.items()) == {('mul', 'x', 'y'): {'imaginary': True}}
+    assert cache.store == {typed(('mul', 'x', 'y')): {'imaginary': True}}

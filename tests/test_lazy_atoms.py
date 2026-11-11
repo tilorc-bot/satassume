@@ -4,7 +4,7 @@ from sympy import Symbol, symbols
 
 from satassume.knowledge.compile import VarTable
 from satassume.engine import Engine
-from satassume.sat.formula import P
+from satassume.sat.formula import P, typed
 from satassume.knowledge.rules import BASIS
 from satassume.sympy_api import ask
 from sympy import Q
@@ -38,7 +38,7 @@ def test_memo_caches_the_answer_only():
     assert eng.is_(x + 1, "positive") is True
     # only the answer is memoized, under the queried node: nothing about the
     # argument, and no other fact of x + 1 (its vocabulary is not written)
-    assert dict(eng.cache.items()) == {x + 1: {"positive": True}}
+    assert eng.cache.store == {typed(x + 1): {"positive": True}}
     assert eng.cache.get(x, "positive", "missing") == "missing"
     assert eng.is_(x, "positive") is True
     assert eng.cache.get(x + 1, "positive") is True

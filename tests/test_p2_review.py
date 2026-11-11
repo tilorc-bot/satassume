@@ -11,6 +11,7 @@ what a fresh engine with the same settings derives.  Both tests fail at
 c8519f3 (the second engine answers True where a fresh one answers None).
 """
 from satassume import Engine, DictCache, P
+from satassume.sat.formula import typed
 
 
 def _declaring(node):
@@ -48,10 +49,10 @@ def test_shared_cache_with_the_same_settings_shares_hits():
     a = Engine(cache=cache, templates=_declaring)
     b = Engine(cache=cache, templates=_declaring)
     assert a.is_('x', 'positive') is True
-    assert dict(cache.items()) == {'x': {'positive': True}}
+    assert cache.store == {typed('x'): {'positive': True}}
     assert b.is_('x', 'positive') is True
     assert b.stats["cache_hits"] == 1 and b.stats["sessions"] == 0
-    assert dict(cache.items()) == {'x': {'positive': True}}
+    assert cache.store == {typed('x'): {'positive': True}}
     assert a.is_('x', 'positive') is True and a.stats["cache_hits"] == 1
 
 
