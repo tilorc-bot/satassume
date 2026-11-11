@@ -6,6 +6,7 @@ Keys are the session's own node ids, joined as Python's dicts join objects, not 
 says. Kept queries have no table. Dev's census of visited nodes (`SESSION_REPORT`): 2,246 input rows, 53 derived rows, 177
 `Add` and `Mul` with no row yet, 6 on kept queries, none of another class. Whether to link them is 5b's question.
 """
+import inspect
 import os
 
 import sa_solver
@@ -605,6 +606,7 @@ def _rel_m(name, rname):
             return PY_REL[name](self, *a)
         return rf(self, *a)
     f.__name__ = name
+    f._guard = (rname, PY_REL, name, True, True)     # session_live `_frameless`
     return f
 
 
@@ -737,7 +739,7 @@ def _install_discovery():
     saved = {n: S.__dict__[n] for n in _DISC_METHODS}
     PY_DISC.update(saved)
     for n, f in _DISC_METHODS.items():
-        setattr(S, n, f)
+        setattr(S, n, _frameless(f))
 
     def undo():
         for n, f in saved.items():
@@ -816,7 +818,7 @@ def _install_compile_loop():
     PY_LOOP.update(saved)
     PY_LOOP.update(saved_f)
     for n, f in _LOOP_METHODS.items():
-        setattr(S, n, f)
+        setattr(S, n, _frameless(f))
     for n, r in _LOOP_FUNCS.items():
         setattr(engine, n, getattr(sa_solver, r))
 
@@ -840,6 +842,7 @@ def _q(name, rname):
             return PY_QUERY[name](self, *a)
         return rf(self, *a)
     f.__name__ = name
+    f._guard = (rname, PY_QUERY, name, False, True)     # session_live `_frameless`
     return f
 
 
@@ -864,7 +867,7 @@ def _install_queries():
     saved = {n: S.__dict__[n] for n in _QUERY_METHODS}
     PY_QUERY.update(saved)
     for n, f in _QUERY_METHODS.items():
-        setattr(S, n, f)
+        setattr(S, n, _frameless(f))
 
     def undo():
         for n, f in saved.items():
@@ -898,6 +901,7 @@ def _g(name, rname):
             return PY_GLUE[name](self, *a)
         return rf(self, *a)
     f.__name__ = name
+    f._guard = (rname, PY_GLUE, name, False, True)     # session_live `_frameless`
     return f
 
 
@@ -916,7 +920,7 @@ def _install_glue():
     PY_GLUE.update(saved)
     _ses_init.__defaults__ = saved['__init__'].__defaults__
     for n, f in _GLUE_METHODS.items():
-        setattr(S, n, f)
+        setattr(S, n, _frameless(f))
 
     def undo():
         for n, f in saved.items():
@@ -1096,7 +1100,7 @@ _SB_PLANTS = ('sb-truncated-stale', 'sb-link-pending-stale', 'sb-neg-shared-stal
               'sb-verdict-none', 'sb-fwd-skip-link', 'sb-solver-fresh', 'sc-frontier-drop', 'sc-pending-drop',
               'sc-pending_c-drop', 'sc-demand-drop', 'sc-deferred-drop', 'sc-literals-drop', 'sc-groups-drop', 'sc-key-shared',
               'sb-core-unset', 'sb-core-stale', 'sb-join-address', 'sc-key-id-stale',
-              'sc-key-id-weak', 'sc-key-id-shared', 'ent-method-first-self')
+              'sc-key-id-weak', 'sc-key-id-shared', 'ent-method-first-self', 'gm-guard-skip')
 
 
 def entry_native():
@@ -1118,6 +1122,73 @@ def _ent(name, rf, doc=None):
 
 #: The part 3 follow-up, C7: 'rust' (default) installs each entry as an `EntMethod`; 'py' as the Python `def` before it.
 ENTRY_FRAME = [os.environ.get('SLICE_ENTRY_FRAME', 'rust')]
+
+
+def _guard_shapes():
+    """The part 3 follow-up, item (4): this module's guarded wrappers, read from its own source. Each is exactly
+        def _x(self, <params>):
+            if not isinstance(<self or self.session>.__dict__.get('_table_view'), TableView):
+                return PY_X['key'](self, <params>)
+            return sa_solver.<entry>(self, <params>)
+    with the parameters passed on positionally, in order, to both. Returns {name: (entry, PY_X's name, key, via_session)}.
+    Anything else (`_ses_incomplete`'s `.fget`, `_ses_link`, `_ses_init`'s other test) isn't one, and keeps its def."""
+    import ast
+    with open(__file__) as fh:
+        tree = ast.parse(fh.read())
+    out = {}
+    for fn in tree.body:
+        if not isinstance(fn, ast.FunctionDef) or fn.args.vararg or fn.args.kwarg or fn.args.kwonlyargs:
+            continue
+        b = [x for x in fn.body if not (isinstance(x, ast.Expr) and isinstance(x.value, ast.Constant))]
+        names = [a.arg for a in fn.args.args]
+        if len(b) != 2 or not isinstance(b[0], ast.If) or b[0].orelse or len(b[0].body) != 1 or not isinstance(b[1], ast.Return):
+            continue
+        test, fall, ret = ast.unparse(b[0].test), b[0].body[0], b[1].value
+        via = {f"not isinstance(self.__dict__.get('_table_view'), TableView)": False,
+               f"not isinstance(self.session.__dict__.get('_table_view'), TableView)": True}.get(test)
+        if via is None or not isinstance(fall, ast.Return) or not isinstance(fall.value, ast.Call):
+            continue
+        fc, call = fall.value, ret
+        if not (isinstance(fc.func, ast.Subscript) and isinstance(fc.func.value, ast.Name) and
+                isinstance(fc.func.slice, ast.Constant) and isinstance(call, ast.Call) and
+                isinstance(call.func, ast.Attribute) and ast.unparse(call.func.value) == 'sa_solver'):
+            continue
+        if fc.keywords or call.keywords or [ast.unparse(a) for a in fc.args] != names or [ast.unparse(a) for a in call.args] != names:
+            continue
+        out[fn.name] = (call.func.attr, fc.func.value.id, fc.func.slice.value, via)
+    return out
+
+
+_GUARD_SHAPES = {}
+
+
+def _frameless(f):
+    """`f` as a `GuardMethod` (session_glue.rs: the same test and the same calls, no Python frame) when it is one of this
+    module's guarded wrappers and the Rust entry takes the same parameters (names and defaults after the first; a
+    factory's `def f(self, *a)` passes them on as they come); otherwise `f`. SLICE_ENTRY_FRAME=py keeps every def."""
+    if ENTRY_FRAME[0] == 'py' or not hasattr(sa_solver, 'GuardMethod') or not callable(f):
+        return f
+    g = getattr(f, '_guard', None)
+    if g is None:
+        if not _GUARD_SHAPES:
+            _GUARD_SHAPES.update(_guard_shapes())
+        shape = _GUARD_SHAPES.get(getattr(f, '__name__', None))
+        if shape is None or globals().get(f.__name__) is not f:
+            return f
+        entry, dname, key, via = shape
+        rf = getattr(sa_solver, entry)
+        try:
+            same = (list(inspect.signature(f).parameters.values())[1:]
+                    == list(inspect.signature(rf).parameters.values())[1:])
+        except (TypeError, ValueError):
+            same = False
+        if not same:
+            return f
+        g = (entry, globals()[dname], key, via, False)
+    entry, d, key, via, positional = g
+    name = key if isinstance(key, str) else f.__name__
+    return sa_solver.GuardMethod(getattr(sa_solver, entry), d, key, via, positional, TableView, f, name,
+                                 ('Relations.' if via else 'Session.') + name, f.__doc__)
 
 
 def _install_entry():
@@ -1284,7 +1355,7 @@ def _install_relations():
     PY_REL.update(saved)
     sa_solver.rel_install(term_live, relations, euf_adapter, _fault)
     for n, f in _REL_METHODS.items():
-        setattr(R, n, f)
+        setattr(R, n, _frameless(f))
     import importlib
     mods = [(relations, tuple(_REL_FUNCS))] + [(importlib.import_module(m), ns) for m, ns in _REL_FUNC_IMPORTERS]
     saved_f = [(m, n, getattr(m, n)) for m, ns in mods for n in ns]

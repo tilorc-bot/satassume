@@ -731,13 +731,14 @@ struct SesScalars {
 /// 614 `sb-join-address` (the join hook is given the session's address again, not its serial), 615 `sc-key-id-stale`
 /// (ses_cont.rs: a session dict's identity memo ignores the entry's generation), 616 `sc-key-id-weak` (the memo holds no
 /// reference to its objects), 617 `sc-key-id-shared` (one memo, process-wide), 618 `ent-method-first-self`
-/// (session_glue.rs `EntMethod`: an entry method binds the first engine it saw).
+/// (session_glue.rs `EntMethod`: an entry method binds the first engine it saw), 619 `gm-guard-skip` (`GuardMethod`: a
+/// session with no core is given the Rust entry).
 static SB_PLANT: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(0);
 const SB_PLANTS: [&str; 18] = ["sb-truncated-stale", "sb-link-pending-stale", "sb-neg-shared-stale", "sb-sel-zero", "sb-hold-zero",
     "sb-verdict-none", "sb-fwd-skip-link", "sb-solver-fresh", "sc-frontier-drop", "sc-pending-drop", "sc-pending_c-drop",
     "sc-demand-drop", "sc-deferred-drop", "sc-literals-drop", "sc-groups-drop", "sc-key-shared", "sb-core-unset", "sb-core-stale"];
-const A_PLANTS: [&str; 5] = ["sb-join-address", "sc-key-id-stale", "sc-key-id-weak", "sc-key-id-shared",
-    "ent-method-first-self"];
+const A_PLANTS: [&str; 6] = ["sb-join-address", "sc-key-id-stale", "sc-key-id-weak", "sc-key-id-shared",
+    "ent-method-first-self", "gm-guard-skip"];
 const SB_JOIN_ADDRESS: u16 = 614;
 const SB_CORE_UNSET: u16 = 447;
 const SB_CORE_STALE: u16 = 448;
@@ -867,7 +868,9 @@ pub(crate) fn named<'py>(obj: &Bound<'py, PyAny>, name: &Bound<'py, pyo3::types:
     let m = obj.getattr(name)?;
     let w = cell.get_or_try_init(p, || -> PyResult<Py<PyAny>> { Ok(p.import(intern!(p, "session_live"))?.getattr(wrapper)?.unbind()) })?;
     if let Ok(f) = m.getattr(intern!(p, "__func__")) {
-        if f.is(w.bind(p)) {
+        // the def, or the `GuardMethod` session_live installed for it (the part 3 follow-up, item (4))
+        let ours = f.is(w.bind(p)) || f.cast::<crate::session_glue::GuardMethod>().is_ok_and(|g| g.get().origin.is(w.bind(p)));
+        if ours {
             tick(SB_FWD_DIRECT);
             return Ok(None);
         }

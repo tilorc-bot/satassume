@@ -462,7 +462,8 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(ses_set_glue, m)?)?;
     m.add_function(wrap_pyfunction!(ses_group_sel, m)?)?;
     m.add_function(wrap_pyfunction!(ses_glue_of, m)?)?;
-    m.add_class::<EntMethod>()
+    m.add_class::<EntMethod>()?;
+    m.add_class::<GuardMethod>()
 }
 
 // --------------------------------------------------------------------------------------------------------------------
@@ -536,5 +537,109 @@ impl EntMethod {
     #[getter]
     fn __func__(&self, p: Python<'_>) -> Py<PyAny> {
         self.f.clone_ref(p)
+    }
+}
+
+// --------------------------------------------------------------------------------------------------------------------
+// The part 3 follow-up, item (4): session_live.py's guarded method wrappers with no Python frame. Each was
+//     def f(self, *a): if not isinstance(<self or self.session>.__dict__.get('_table_view'), TableView): return PY_X[key](self, *a)
+//                      return sa_solver.<entry>(self, *a)
+// (a session with no core, `satassume/ref.py`'s or one built while `engine.VarTable` isn't `TableView`, runs Python's
+// method). `GuardMethod` makes the same test and the same call in Rust; the Python method is read from `PY_X` at the call,
+// as the def read it.
+
+/// Plant 619 `gm-guard-skip`: the guard is skipped, so a session with no core is given the Rust entry (a wrong-value plant
+/// at the guard). Caught by test_guard_method.py, which asks on sessions with no core and compares the answers.
+pub(crate) const GM_GUARD_SKIP_PLANT: u16 = 619;
+
+#[pyclass(module = "sa_solver", frozen)]
+pub(crate) struct GuardMethod {
+    f: Py<PyAny>,
+    py_methods: Py<PyAny>,
+    key: Py<PyAny>,
+    via_session: bool,
+    positional: bool,
+    view: Py<PyAny>,
+    /// The def it stands for (session_live's wrapper): session.rs `named` compares it, as it compared the def.
+    pub(crate) origin: Py<PyAny>,
+    #[pyo3(get, name = "__name__")]
+    name: Py<PyAny>,
+    #[pyo3(get, name = "__qualname__")]
+    qualname: Py<PyAny>,
+    #[pyo3(get, name = "__doc__")]
+    doc: Py<PyAny>,
+}
+
+#[pymethods]
+impl GuardMethod {
+    /// `f` the Rust entry; `py_methods[key]` Python's method; `via_session`: the test reads `self.session` (a
+    /// `Relations`); `positional`: keyword arguments are refused, as `def f(self, *a)` refuses them; `view` the class
+    /// `TableView`.
+    #[new]
+    #[pyo3(signature = (f, py_methods, key, via_session, positional, view, origin, name, qualname, doc=None))]
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        p: Python<'_>,
+        f: Py<PyAny>,
+        py_methods: Py<PyAny>,
+        key: Py<PyAny>,
+        via_session: bool,
+        positional: bool,
+        view: Py<PyAny>,
+        origin: Py<PyAny>,
+        name: Py<PyAny>,
+        qualname: Py<PyAny>,
+        doc: Option<Py<PyAny>>,
+    ) -> Self {
+        GuardMethod { f, py_methods, key, via_session, positional, view, origin, name, qualname, doc: doc.unwrap_or_else(|| p.None()) }
+    }
+
+    fn __get__<'py>(slf: &Bound<'py, Self>, obj: Option<&Bound<'py, PyAny>>, _typ: Option<&Bound<'py, PyAny>>) -> PyResult<Bound<'py, PyAny>> {
+        match obj {
+            Some(o) if !o.is_none() => unsafe { Bound::from_owned_ptr_or_err(slf.py(), PyMethod_New(slf.as_ptr(), o.as_ptr())) },
+            _ => Ok(slf.clone().into_any()),
+        }
+    }
+
+    #[pyo3(signature = (*args, **kwargs))]
+    fn __call__<'py>(
+        &self,
+        p: Python<'py>,
+        args: &Bound<'py, pyo3::types::PyTuple>,
+        kwargs: Option<&Bound<'py, pyo3::types::PyDict>>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        if self.positional && kwargs.is_some_and(|k| !k.is_empty()) {
+            return Err(pyo3::exceptions::PyTypeError::new_err(format!(
+                "{}() got an unexpected keyword argument",
+                self.name.bind(p)
+            )));
+        }
+        let me = args.get_item(0)?;
+        if crate::session::sb_planted(GM_GUARD_SKIP_PLANT) || self.has_core(&me)? {
+            return self.f.bind(p).call(args, kwargs);
+        }
+        self.py_methods.bind(p).get_item(self.key.bind(p))?.call(args, kwargs)
+    }
+
+    #[getter]
+    fn __func__(&self, p: Python<'_>) -> Py<PyAny> {
+        self.f.clone_ref(p)
+    }
+}
+
+impl GuardMethod {
+    /// `isinstance(<me or me.session>.__dict__.get('_table_view'), TableView)`.
+    fn has_core(&self, me: &Bound<'_, PyAny>) -> PyResult<bool> {
+        let p = me.py();
+        let holder = if self.via_session { me.getattr(intern!(p, "session"))? } else { me.clone() };
+        let d = holder.getattr(intern!(p, "__dict__"))?;
+        let tv = match d.cast::<pyo3::types::PyDict>() {
+            Ok(d) => d.get_item(intern!(p, "_table_view"))?,
+            Err(_) => d.call_method1(intern!(p, "get"), (intern!(p, "_table_view"),)).ok().filter(|x| !x.is_none()),
+        };
+        match tv {
+            Some(tv) => tv.is_instance(self.view.bind(p)),
+            None => Ok(false),
+        }
     }
 }

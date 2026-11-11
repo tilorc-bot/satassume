@@ -58,8 +58,10 @@ fn discover_inner<'py>(s: &Bound<'py, PyAny>, ses: &Ses<'py>, c: &SessionCore, d
 }
 
 #[pyfunction]
-#[pyo3(signature = (s, n, demanded=None))]
-fn ses_ensure<'py>(s: &Bound<'py, PyAny>, n: &Bound<'py, PyAny>, demanded: Option<Bound<'py, PyAny>>) -> PyResult<()> {
+#[pyo3(signature = (s, node, demanded=None))]
+fn ses_ensure<'py>(s: &Bound<'py, PyAny>, node: &Bound<'py, PyAny>, demanded: Option<Bound<'py, PyAny>>) -> PyResult<()> {
+    // `node`, Python's name, so a keyword call finds it (the part 3 follow-up, item (4): installed with no Python frame)
+    let n = node;
     tick(SES_ENSURE);
     let p = s.py();
     let demanded = demanded.unwrap_or_else(|| p.None().into_bound(p));
