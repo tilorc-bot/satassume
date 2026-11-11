@@ -21,6 +21,9 @@
 #   extra        each of WLS (live.py workloads, e.g. a hidden-gap one) like live and plants: Python twice, Rust, each of
 #                PLANTS; rows in $B/extra                                                          (bar 2, 3; gaps ruling)
 #   suiteplants  SUITE_PLANTS on the suite; the word `zero` stands for every PLANTS entry that fired 0 on both workloads
+#   fmrows       fm_rows.py on each of FM_WLS: formula's conversion row per workload against results/fm_rows.json
+#                ($B/fmrows/check.txt, exit 1 on any difference); then the same under each of FM_PLANTS
+#                ($B/fmrows-PLANT/check.txt: a plant is caught there when its check exits 1; its own counter is not read)
 #   sum          bar_sum.py: the numbers, against BASE's suite rows
 # Environment:
 #   BASE          base suite rows (default: the last landing's, sa-port-91's, which rust-slice de8bd3a carries)
@@ -31,6 +34,8 @@
 #   DIRECT        scripts with arguments, ';'-separated, each run in rust-spike/slice (e.g. "relations_direct.py 300 0")
 #   N             pytest -n for the suite (default 8)
 #   WLS           live.py workloads for the extra phase (default none: the phase is listed as not run)
+#   FM_WLS        live.py workloads for the fmrows phase (default none: the phase is listed as not run)
+#   FM_PLANTS     SLICE_SESSION_PLANT names run by the fmrows phase on FM_WLS
 #   OUT           output directory (default ~/sp19/sa-rust-ids-work/NAME)
 set -u
 if [ "${1:-}" = land ]; then
@@ -64,7 +69,7 @@ if [ "${1:-}" = land ]; then
 fi
 
 NAME=${1:?NAME}; BR=${2:?BRANCH}; shift 2
-PHASES=${*:-build tests suite live plants seed1 extra suiteplants sum}
+PHASES=${*:-build tests suite live plants seed1 extra suiteplants fmrows sum}
 export REAL=/home/tilo CARGO_HOME=/home/tilo/.cargo RUSTUP_HOME=/home/tilo/.rustup PATH=/home/tilo/.cargo/bin:$PATH HOME=/home/tilo/sp19
 export T=$HOME/dev/$NAME S=$HOME/dev/$NAME/rust-spike/slice B=${OUT:-$HOME/sa-rust-ids-work/$NAME}
 BASE=${BASE:-$HOME/sa-rust-ids-work/sa-port-91/suite}
@@ -142,6 +147,16 @@ suiteplants)
   done
   for pl in $(sort -u $B/suite-plants.txt); do suite $B/suite-$pl $pl; done
   phase suiteplants;;
+fmrows)
+  [ -n "${FM_WLS:-}" ] || continue
+  fmrows() { # fmrows DIR [PLANT]
+    run "rm -rf $1; mkdir -p $1"
+    run "printf '%s\n' $FM_WLS | ${2:+SLICE_SESSION_PLANT=$2 }xargs -P 6 -I{} bash -c 'n=\$(echo {} | tr -d :); \$PY fm_rows.py run $1/\$n.row.json {} > $1/\$n.tot 2> $1/\$n.err'"
+    run "\$PY fm_rows.py check $1 > $1/check.txt 2>&1; echo \"exit \$?\" >> $1/check.txt; tail -n 2 $1/check.txt"
+  }
+  fmrows $B/fmrows
+  for pl in ${FM_PLANTS:-}; do fmrows $B/fmrows-$pl $pl; done
+  phase fmrows;;
 sum) run "\$PY $S/p1/bar_sum.py $B $BASE > $B/sum.txt 2>&1; cat $B/sum.txt"; phase sum;;
 *) echo "unknown phase $ph" | tee -a $CMDS;;
 esac; done

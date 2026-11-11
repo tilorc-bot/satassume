@@ -1,0 +1,135 @@
+{
+ "budget": {
+  "fm:again": 381,
+  "fm:convert": 572,
+  "fm:nosession": 0,
+  "fm:twice": 0,
+  "fm:twice:patched": 0
+ },
+ "cert": {
+  "fm:again": 30,
+  "fm:convert": 122,
+  "fm:nosession": 0,
+  "fm:twice": 0,
+  "fm:twice:patched": 0
+ },
+ "cls": {
+  "fm:again": 2,
+  "fm:convert": 55,
+  "fm:nosession": 0,
+  "fm:twice": 0,
+  "fm:twice:patched": 0
+ },
+ "core": {
+  "fm:again": 832,
+  "fm:convert": 1283,
+  "fm:nosession": 0,
+  "fm:twice": 0,
+  "fm:twice:patched": 0
+ },
+ "dev": {
+  "fm:again": 1134,
+  "fm:convert": 1665,
+  "fm:nosession": 0,
+  "fm:twice": 0,
+  "fm:twice:patched": 0
+ },
+ "f6": {
+  "fm:again": 896,
+  "fm:convert": 1018,
+  "fm:nosession": 0,
+  "fm:twice": 0,
+  "fm:twice:patched": 0
+ },
+ "fuzz": {
+  "fm:again": 1388,
+  "fm:convert": 5805,
+  "fm:nosession": 0,
+  "fm:twice": 0,
+  "fm:twice:patched": 0
+ },
+ "ground": {
+  "fm:again": 5,
+  "fm:convert": 33,
+  "fm:nosession": 0,
+  "fm:twice": 0,
+  "fm:twice:patched": 0
+ },
+ "loop": {
+  "fm:again": 339,
+  "fm:convert": 2490,
+  "fm:nosession": 0,
+  "fm:twice": 0,
+  "fm:twice:patched": 0
+ },
+ "opaque": {
+  "fm:again": 30,
+  "fm:convert": 61,
+  "fm:nosession": 0,
+  "fm:twice": 0,
+  "fm:twice:patched": 0
+ },
+ "port": {
+  "fm:again": 6,
+  "fm:convert": 39,
+  "fm:nosession": 0,
+  "fm:twice": 0,
+  "fm:twice:patched": 0
+ },
+ "rootof": {
+  "fm:again": 368,
+  "fm:convert": 737,
+  "fm:nosession": 0,
+  "fm:twice": 0,
+  "fm:twice:patched": 0
+ },
+ "scope": {
+  "fm:again": 283,
+  "fm:convert": 1138,
+  "fm:nosession": 0,
+  "fm:twice": 0,
+  "fm:twice:patched": 0
+ },
+ "transfer2340": {
+  "fm:again": 1,
+  "fm:convert": 80,
+  "fm:nosession": 0,
+  "fm:twice": 0,
+  "fm:twice:patched": 0
+ },
+ "transfer760": {
+  "fm:again": 4,
+  "fm:convert": 124,
+  "fm:nosession": 0,
+  "fm:twice": 0,
+  "fm:twice:patched": 0
+ },
+ "twin": {
+  "fm:again": 0,
+  "fm:convert": 4,
+  "fm:nosession": 0,
+  "fm:twice": 0,
+  "fm:twice:patched": 0
+ },
+ "value": {
+  "fm:again": 319,
+  "fm:convert": 1154,
+  "fm:nosession": 0,
+  "fm:twice": 0,
+  "fm:twice:patched": 0
+ },
+ "wiring": {
+  "fm:again": 9932,
+  "fm:convert": 10908,
+  "fm:nosession": 0,
+  "fm:twice": 0,
+  "fm:twice:patched": 0
+ },
+ "zero": {
+  "fm:again": 1251,
+  "fm:convert": 1394,
+  "fm:nosession": 0,
+  "fm:twice": 0,
+  "fm:twice:patched": 0
+ }
+}

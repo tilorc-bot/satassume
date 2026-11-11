@@ -3,7 +3,7 @@ Prints numbers and lists only. It never says pass or fail: the worker reads and 
 import collections, glob, json, os, re, sys
 
 B, BASE = sys.argv[1], sys.argv[2]
-PHASES = ['build', 'tests', 'suite', 'live', 'plants', 'seed1', 'extra', 'suiteplants']
+PHASES = ['build', 'tests', 'suite', 'live', 'plants', 'seed1', 'extra', 'suiteplants', 'fmrows']
 
 
 def cat(p, n=None):
@@ -175,3 +175,8 @@ for sub in ('live', 'extra'):
             rise = ' RISE' if bq and q and c.get(r, 0) / q > bc.get(r, 0) / bq else ''
             cells.append(f'{r} {s} vs {b}{rise}')
         print(f'  {sub}/{wl}: ' + '; '.join(cells))
+# fm_rows.py's exact rows: the plain run must end `exit 0`; a plant's run is caught when it ends `exit 1`
+print('fm rows (fm_rows.py check; plain wants exit 0, a plant is caught on exit 1):')
+for d in sorted(glob.glob(os.path.join(B, 'fmrows*'))) or [None]:
+    ls = cat(os.path.join(d, 'check.txt')) if d else None
+    print('  %s: %s' % (os.path.basename(d) if d else 'fmrows', ' | '.join(ls[-2:]) if ls else 'not run'))
