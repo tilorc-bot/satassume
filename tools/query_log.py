@@ -152,14 +152,14 @@ def install(models=False):
     # -- sessions -----------------------------------------------------------------
     orig_ctx_session = Engine._context_session
 
-    def _context_session(self, assumptions):
+    def _context_session(self, assumptions, proposition=None):
         if ctx.depth == 1:
             # built for this query (no session is reused, #97 P1)
             ctx.session_new = "rebuilt" if assumptions in _seen_assumptions else "first"
             _seen_assumptions.add(assumptions)
         ctx.in_ctx_session = True
         try:
-            return orig_ctx_session(self, assumptions)
+            return orig_ctx_session(self, assumptions, proposition)
         except Exception as ex:
             if ctx.depth == 1:
                 ctx.session_error = type(ex).__name__
