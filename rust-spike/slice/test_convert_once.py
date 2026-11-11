@@ -4,6 +4,7 @@ holds outlives the call. One process per run, on Rust, the same queries each tim
 - `split`: sets that relevance splits (`rv_relevant` -> `_consistent` -> `verdict`, then `Engine.ask`);
 - `ext`: a custom predicate whose handler returns a formula fact, the same object on every call (`same`) or a new, equal
   object on every call (`fresh`): H1's case. The handler reads `formula_held()` when it runs, inside the entry.
+- `is`: `Engine.is_` and `is_many` on nodes whose cone has facts (the entry reads the cone before its session exists).
 - `again`: the first queries once more on a new engine, with the same formula objects (sympy_api's `_formula` memo).
 After each query: the answer, the change of `fm:convert`, `fm:twice`, `fm:nosession`, `fm:give`, and `formula_held()`.
 Plant 607 `fm-hand-no-give`: the entry hands the session nothing, the session converts again: `fm:twice` above 0.
@@ -76,6 +77,15 @@ def _main(plant):
             step('ext:' + kind, lambda: eng.ask(p, a))
         step('ext:' + kind, lambda: eng.is_(('add', 'x', 'y'), 'twice'))
 
+    # `Engine.is_` and `is_many`: the cone's facts are converted by the entry before its session exists (budget.rs
+    # `cone_info`), and the session's discovery reads the same objects (compile_loop.rs `visit`)
+    from sympy import I, asin, sqrt
+    e = Engine()
+    for q in (Q.zero(sqrt(I)), Q.finite(asin(-3)), Q.positive(sqrt(I) + 1)):
+        step('is', lambda: A.ask(q, engine=e))
+    e = Engine()
+    step('is', lambda: e.is_many(sqrt(I), ['zero', 'finite', 'real']))
+
     e = Engine()
     for p, a in split:
         step('again', lambda: A.ask(p, a, engine=e))
@@ -106,7 +116,7 @@ def _answers(run):
 def test_no_object_is_converted_twice_in_one_entry(plain):
     assert _sum(plain, 'fm:twice') == 0 and _sum(plain, 'fm:nosession') == 0
     assert _sum(plain, 'fm:plant_fired') == 0
-    for g in ('split', 'ext:same', 'ext:fresh', 'again'):
+    for g in ('split', 'ext:same', 'ext:fresh', 'is', 'again'):
         assert _sum(plain, 'fm:convert', g) > 0 and _sum(plain, 'fm:give', g) > 0, g
 
 

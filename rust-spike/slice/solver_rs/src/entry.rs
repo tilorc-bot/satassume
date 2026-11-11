@@ -602,6 +602,7 @@ fn is_<'py>(eng: &Bound<'py, PyAny>, node: &Bound<'py, PyAny>, pred: &Bound<'py,
     }
     bump(eng, QUERIES, 1)?;
     let s = fresh_session(eng, None)?;
+    hand.give(&s, &[])?;    // the cone's facts, converted by `cone_head`: the session's discovery reads the same objects
     let want = PySet::new(p, [pred])?;
     s.call_method1(intern!(p, "ensure"), (node, want))?;
     let lit = s.call_method1(intern!(p, "query_lit"), (pred, node))?;
@@ -687,6 +688,7 @@ fn ent_is_many<'py>(eng: &Bound<'py, PyAny>, node: &Bound<'py, PyAny>, preds: &B
     let n = todo.len() as i64 - i64::from(planted(ENT_IS_MANY_QUERIES_SHORT));
     bump(eng, QUERIES, n)?;
     let s = fresh_session(eng, None)?;
+    hand.give(&s, &[])?;
     let want = PySet::empty(p)?;
     for &k in &todo {
         want.add(&preds[k])?;
