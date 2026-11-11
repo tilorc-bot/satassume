@@ -890,3 +890,113 @@ its arguments, so an int arrives only from a registered fact or through `Engine.
   twins was not run, only `clear_cache()` and cache off. No twin class with `nan`/`oo` inside.
 - int: 7 variants, one symbol; the Rust carrier is inferred from `PROCESS.clear()` and item 3, not cleared by itself.
 - Not rerun: 255's other open points (the suite under `census.py`, `entry.py`).
+
+## The offline `value_units` table against `fn:value:sympy` live (sa-port-271; read-only, findings only)
+
+**Verdict. (1) The table holds, for each of the six VALUE_AT_INTEGER classes (factorial2, subfactorial, catalan,
+andre, partition, genocchi; exact class) at every integer |c| <= 200, the facts over `atoms._CONST_BASIS` of the
+value, or null: 2406 cells, 9 distinct fact sets, 500 nulls; it regenerates byte-identical from this tree and SymPy.
+(2) It matches what `fn:value:sympy` computes live: in the value workload (3742 queries) the 264 calls from
+`functions.py:427` are 264 distinct `(class, c)` pairs, each called once, all of exact class and |c| <= 200, and all
+264 MATCH their table cell, nulls included, on Python and on Rust alike; so do the 2 calls SymPy makes inside them.
+(3) So the 264 live calls could come from the table without SymPy, with three named limits: the table holds facts,
+not the value, and Rust's `value:input` route looks the value up in the query's term table (the derived route, which
+is what Python's reference computes, needs only the facts); a subclass is not in the table and keeps the callback; and
+under SymPy's global `evaluate(False)` the live call answers differently from the table (below). No workload or row
+here reaches either of the last two.**
+
+Base: the clone at abb69da (0192b35 plus this file only, `git diff --stat 0192b35 HEAD`: 1 file). rust-slice is at
+9151316; between 0192b35 and it, the only change under `satassume/knowledge`, `fn_tpl.rs`, `offline.rs`,
+`knowledge_live.py`, `offline_data.json` and `gen_offline_data.py` is `templates/_rows.py`, which is not on this path.
+Rust: the clone's `sa_solver.so`, sha256 `bfc06f0cd68a252a3382c5bb566fa881619a41bbf9619591e1841fa4c8586f11` (built
+after the last `solver_rs` change, loaded as built, the same .so as 255's census; `so_sha` in each Rust run's total
+line). SymPy 1.15.0.dev, Python 3.12.14, orion, SymPy's cache on (as in 255's census). Scratch
+`~/sa-rust-ids-work/sa-port-271/`: `summ_table.py`, `vu.py` (the recorder), `v3-py.json` / `v3-rust.json` (the runs
+quoted here; `v-*` and `v2-*` are the same runs before the nesting and per-pair fields were added, same outcomes),
+`ev.py`, `p-py.json` (plant), `ph-*.jsonl.handlers` (handler plant).
+
+Quiet catches: `live.py` installs `catch_count` and `handler_count` in every run. In the full value runs the handler
+file has **0** lines on both backends; with `SLICE_PLANT_HANDLER=verdict` (40 queries under `vu.py`) it has 2 lines
+(`_consistent`, planted ValueError) on each backend, so that zero is not void. `_value_units`'s own quiet `except
+(ValueError, TypeError, ArithmeticError)` (functions.py:428, and fn_tpl.rs's copy) caught **4** calls on each backend,
+all factorial2 ValueError (c = -200, -100, -4, -2); the table holds null for each, so they are in the MATCH count.
+Answers: Python and Rust both `answers_sha` 3ce3797a267d71a6 (None 853, ValueError 318, False 1180, True 1391), the
+same as 255's census runs: the recorder changed no answer.
+
+### (1) What the table holds (`gen_offline_data.py:141`, `offline_data.json` key `value_units`)
+
+`gen_offline_data.py --check`: `same`, sha256 59944c26. The header's load check (`offline.rs:313`) compares the
+SymPy *version string* and the satassume sources' sha256; SymPy's own source is not hashed, so a change to these
+classes' `eval` under the same version string passes the load and is caught only by a regenerate (`tests_offline.py`).
+
+| class | cells | null | null where | fact sets used |
+|---|---|---|---|---|
+| factorial2 | 401 | 100 | negative even c (ValueError) | 0,1,2,3,4,5,6,7 |
+| subfactorial | 401 | 200 | c <= -1 (unevaluated) | 3,4,6,7,8 |
+| catalan | 401 | 0 | | 0,3,4,5,6,7,8 |
+| andre | 401 | 200 | c <= -1 (unevaluated or a `Mul`) | 3,4,5,6,7 |
+| partition | 401 | 0 | | 3,4,5,6,7,8 |
+| genocchi | 401 | 200 | c <= -1 (unevaluated) | 2,3,5,7,8 |
+
+The 9 fact sets are: negative non-integer rational (0), positive non-integer rational (1), negative odd integer (2),
+odd 1 (3: positive, odd, not prime, not composite), 2 (4), odd prime (5), even composite (6), odd composite (7), zero
+(8), each as all 19 `_CONST_BASIS` facts. 10279 bytes of JSON.
+
+### (2) The live calls against the table (`vu.py`, `live.py value MODE --check plain`)
+
+`vu.py` wraps `FunctionClass.__call__` (pass-through to `type.__call__`, so SymPy's cache hits are seen) after
+`live.load()` returns, records each call of the six classes, and compares each against its cell, with the live value's
+facts computed by the generator's own rule (`const_value` over `_CONST_BASIS`; null when the call raises one of the
+three caught types, or the value is not an atom number, or is nan). Plant (`VU_PLANT=1`, one cell read as a non-fact):
+1 DIFFER, caught.
+
+| | Python | Rust |
+|---|---|---|
+| calls of the six after load | 266 | 266 |
+| of which direct (no other of the six on the stack) | 264 | 264 |
+| distinct direct `(class, c)` | 264 | 264 |
+| nested (inside factorial2's eval) | 2: factorial2(199), factorial2(198) | same |
+| kwargs, non-Integer argument, subclass, |c| > 200 | 0 | 0 |
+| innermost satassume/slice frame | `functions.py:427` (266) | `session_live.py:1014` (266, Rust's caller) |
+| global `evaluate` | True (266) | True (266) |
+| live facts / live null (not an atom) / live null (ValueError) | 238 / 24 / 4 | same |
+| **MATCH / DIFFER** | **266 / 0** | **266 / 0** |
+
+264 is 255's census count (`DefinedFunction.__new__` direct from `functions.py:427`) and bar 1's `fn:value:sympy`
+for value; 214's 265 distinct pairs with the cache off are these 264 plus the nested factorial2(198). Each class has 44
+arguments (-5..30, ±100 only -100, ±199, ±200, 50, 100, 150), factorial2 45 with the nested 198. The 24 live
+non-atom nulls: andre 8 (3 unevaluated, 5 a `Mul`), genocchi 8, subfactorial 8 (unevaluated). Rust's own counters
+(`fn:value:sympy`, `value:input` / `value:derived`) were not read here: `knowledge_live.DISPATCH[0].counts()` held no
+`value` key in this run and `K.COUNTS` stays empty under `p_install`; the recorder's counts stand in for them.
+
+### (3) Could the 264 come from the table without SymPy
+
+Every one of the 264 is in the table's domain (exact class, Integer, |c| <= 200) and matches it, so on this workload
+reading the cell in place of `expr.func(c)` gives the same facts on both backends. What reading it would and would not
+cover, from the code:
+
+- **The value itself.** Python's `value_units(v, expr)` (atoms.py:51) uses `v` only for its facts and for the
+  `_CACHE` key `('const', (type(v), v))` (`_common.py:340`), a memo of a pattern that depends on the facts alone.
+  Rust's `rust_compiled` (`knowledge_live.py:258`) also looks `v` up in the query's term table
+  (`q.ids.get(value)`, :266) and, when the value is an input term of its own class, reads that row
+  (`value:input`, :272); otherwise `kn.units(facts)` (`value:derived`). The table has no value, so a table read gives
+  the derived route only. The derived route is what Python's reference computes, and 6g's shadow compare finds the two
+  routes' patterns equal; keeping `value:input` would need the value in the table.
+- **Subclasses.** The table is keyed by exact class (`gen_offline_data.py:144`), so a subclass of one of the six
+  keeps `fn:value:sympy`. None in this workload.
+- **`evaluate(False)`.** `ev.py`, both backends: `ask(Q.positive(genocchi(8, evaluate=False)))` and three like it are
+  True / True / False / True normally and **None** inside `with evaluate(False)`, because `expr.func(c)` then returns
+  the unevaluated node, which is not an atom (`_value_units(8, genocchi(8))` returns `[]`). The table holds facts there,
+  so a table read would answer True where today's Python gives None. Control in the same block: `Q.positive(17)` stays
+  True; `Q.positive(x + 1)` raises TypeError on both, so `ask` under `evaluate(False)` is not otherwise sound ground
+  either. No workload query runs under `evaluate(False)` (266 of 266 calls saw `evaluate` True).
+- **SymPy's cache.** Each live call stores its `(class, c)` result in SymPy's `DefinedFunction.__new__` cache
+  (1000 entries, shared by every function class); a table read leaves 264 fewer entries there, which changes eviction
+  order for later SymPy work in the same process (255's cache channel). Not run.
+
+### Limits
+
+- One workload (value; the other 12 have 0 such calls by bar 1); the suite was not run under `vu.py`.
+- SymPy's cache on only; the cache-off pass is 214's (`vpairs-nocache.txt`, same pairs plus the nested one).
+- Rust's route split (`value:input` against `value:derived`) for the 264 was not counted (above).
+- Not touched: 255's and 256's open points (the suite under `census.py`, `entry.py`, eviction twins).
