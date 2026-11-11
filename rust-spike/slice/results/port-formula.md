@@ -677,3 +677,9 @@ removes only what is there): test_cache_fix.py 6 pass serially; 664 under -n 4 n
 between the two equal-class objects asks Python's own `term_id`, which is what relations.py does on every call, so
 the id is Python's (the test asserts `ids == [want] * 5`) and no answer or row moves: a Python call count, not a
 difference, so no known row. Size: cls on sa-port-274's tree 138 of 2,085 link calls (hit 1,374, resolved 621); scope 0.
+
+### 4f: the bar's invocation of the three files with their own (p1/one_test.sh)
+bar.sh's tests phase runs test_handler_count.py and test_catch_count.py by pytest with `-p rust_plugin -p handler_count`
+(SLICE_SUITE_OUT a fresh directory), and test_cf_diff.py as a script (seed 1, 20,000 ops; exit 1 unless `MISMATCHES 0`),
+in both TESTS_SPLIT modes. On orion (aarch64 .so of 376d759): 2 passed, 3 passed, `MISMATCHES 0 []`; test_term_live.py
+20 passed, 1 skipped (4f's two stale tests fixed at 271673f).
