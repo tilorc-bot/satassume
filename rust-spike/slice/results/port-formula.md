@@ -669,3 +669,11 @@ main every query runs relations.py in Python, so there is no fallback to count. 
 Kept tests on the head (orion, -n 4; `sa-port-276/kt`): 56 passed, 2 failed (664 under xdist, 666), 3 errors
 (test_cache_fix.py: `undo` ran twice and `NATIVE_EXTRA.remove` raised, since ded8c3f). Fixed in knowledge_live.py (undo
 removes only what is there): test_cache_fix.py 6 pass serially; 664 under -n 4 not rerun. 666 fails as above.
+
+## sa-port-278 (11 Nov): 4j, 4f, 4i, bar prep, bar
+
+### 4j: the join test's `link:second` 3 (one line, no row)
+`link:second` is a miss in `term_of`'s link memo (relations_core.rs:777: one object per (session, node)); each change
+between the two equal-class objects asks Python's own `term_id`, which is what relations.py does on every call, so
+the id is Python's (the test asserts `ids == [want] * 5`) and no answer or row moves: a Python call count, not a
+difference, so no known row. Size: cls on sa-port-274's tree 138 of 2,085 link calls (hit 1,374, resolved 621); scope 0.

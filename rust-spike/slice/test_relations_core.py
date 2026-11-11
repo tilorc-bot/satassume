@@ -1004,6 +1004,9 @@ def test_join_second_object_resolves_on_its_own():
         # The term's own object and the equal class's object both have the row's id, in either order: the query's class table
         # holds the two `Function('f')` as one class (term_live.py `same_class`). The memo holds one object per node, so each
         # change of object asks `term_id` again (`second`) and only the repeat is a hit.
+        # 4j: `second` 3 is a link-memo miss, not a difference: the id comes from Python's own `term_id` (the same call
+        # relations.py makes every time), so no answer or row moves; it costs one Python call per change of object (cls
+        # on 274's tree: 138 of 2,085 link calls; scope 0). Left as is: a memo of every object per node buys nothing here.
         assert o['ids'] == [o['want']] * 5, (order, o)
         assert o['none_yet'] and o['no_new_node'] and o['no_node'] == 1 and o['join_quiet'], (order, o)
         assert o['hit'] == 1 and o['second'] == 3 and o['none'] == 0, (order, o)
