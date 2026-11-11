@@ -185,6 +185,7 @@ class _Mark:
         self.engines = {}
         self.cache = []
         self.facts = {}
+        self.cache_n = len(_common._CACHE)
         for _, _, t in memos.PROCESS.items():
             # The pattern cache is not rolled back (the `_CACHE` fix, issue 323, sa-port-248; ruling R3). When that was
             # ruled, Rust's memo of compiled nodes (dispatch.rs `Dispatch.memo`, which stands in for
@@ -194,8 +195,8 @@ class _Mark:
             # on a derived term, left 1 key of Python's 6). Both are rolled back now (`_SPLIT` since 1a91a81, the dispatch
             # memo through `NATIVE_EXTRA`); `_CACHE` stays as ruled. Leaving its entries is safe because the key determines
             # the value (cache_det.py): the entry the discarded run left is the one any later run would build. Plant 666
-            # `mark-cuts-patterns` rolls it back as before.
-            if t is _common._CACHE and PLANT[0] != 'mark-cuts-patterns':
+            # `mark-wrong-pattern` breaks that at this site: one entry the run added gets another key's pattern.
+            if t is _common._CACHE:
                 continue
             self._note(t)
         for t in (constfield._CONSTANTS, constfield._BY_KEY):
@@ -231,6 +232,8 @@ class _Mark:
             self._note(t)
 
     def rollback(self):
+        if PLANT[0] == 'mark-wrong-pattern':
+            _wrong_pattern(self.cache_n)
         for facts, pred in reversed(self.cache):
             facts.pop(pred, None)
         for c, m in self.facts.values():
@@ -260,8 +263,6 @@ class _Mark:
                 del t[n:]
                 continue
             moved = stamp is not _NO_STAMP and t.stamp != stamp
-            if t is _common._CACHE and len(t) > n:
-                COUNTS['plant:mark-cuts-patterns'] += 1    # plant 666's firing: only that plant notes `_CACHE` (above)
             while len(t) > n:
                 t.popitem()
             if moved or len(t) < n or (n and next(reversed(t)) is not last):
@@ -349,9 +350,37 @@ KEY_BAD = []
 #: drops `_affine_strip` where it changed a side, 'key-reverse' flips a matched key, 'scaffold-form' fails the form check.
 #: Slice C's: 'le-swap', 'no-ext', 'is-number-false', 'affine-false', 'linked-drop', 'under-empty', 'interned-reversed',
 #: 'plan-drop', 'plan-pred', 'twin-one'. State step (iii)(a): plant 265 'int-as-number' (`_int_id`; counter 346 `term:int:*`).
-#: The formula step: 666 'mark-cuts-patterns' (`_Mark` rolls `_CACHE` back again), 667 'mark-leaves-entry' (`rollback` skips the
+#: The formula step: 666 'mark-wrong-pattern' (`_Mark.rollback` gives a `_CACHE` entry of the run another key's pattern), 667 'mark-leaves-entry' (`rollback` skips the
 #: first other table the run grew), 611 'mark-skips-native' (`rollback` leaves the Rust-native tables as the run left them).
 PLANT = [None]
+#: A compiled pattern's fields (cache_det.py's FIELDS): plant 666 picks a pattern that differs from the one it replaces.
+_PATTERN_FIELDS = ('rules', 'node', 'nobjs', 'clauses', 'used', 'child_preds', 'complete', 'wide')
+
+
+def _wrong_pattern(n):
+    """Plant 666 `mark-wrong-pattern` (`_Mark.rollback`): the first `_CACHE` entry the discarded run added (past the mark's
+    `n` keys) takes the pattern of another key whose pattern differs in some field. `_CACHE` is kept after a discard because
+    its key determines its value (ruling R3); after this the key no longer does, and cache_det.py (a hit's own build against
+    the cached pattern) and the digest's `_CACHE` row (keys and values against Python's) must see it."""
+    c = _common._CACHE
+    keys = list(c)
+    # first a pattern of the same shape (node slot and object count, which `_common.facts` checks and raises on), so the
+    # wrong value goes through quietly; else any pattern that differs
+    for shaped in (True, False):
+        for k in keys[n:]:
+            v = c[k]
+            if v is None:
+                continue
+            for k2 in keys:
+                w = c[k2]
+                if k2 == k or w is None or not any(getattr(w, f, None) != getattr(v, f, None) for f in _PATTERN_FIELDS):
+                    continue
+                if shaped and (getattr(w, 'node', None) != getattr(v, 'node', None) or getattr(w, 'nobjs', None) != getattr(v, 'nobjs', None)):
+                    continue
+                c[k] = w
+                COUNTS['plant:mark-wrong-pattern'] += 1
+                COUNTS['plant:mark-wrong-pattern:shaped' if shaped else 'plant:mark-wrong-pattern:any'] += 1
+                return
 
 
 def same_class(q, a, b):

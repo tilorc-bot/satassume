@@ -3,7 +3,8 @@
     cache_rollback.py py|rust [PLANT]
 
 One process, the installs in live.py's order, then the queries; prints one JSON line: the answers, `_CACHE`'s keys (repr, in
-order), `_SPLIT`'s row count, and term_live's refusals. PLANT is a term_live plant (666 `mark-cuts-patterns`).
+order), `_SPLIT`'s row count, term_live's refusals and plant firings, `_CACHE`'s keys and values as the digest's row reads
+them, and with CACHE_DET=1 cache_det.py's totals. PLANT is a term_live plant (666 `mark-wrong-pattern`).
 """
 import json
 import os
@@ -47,11 +48,22 @@ def main():
         import knowledge_live
         knowledge_live.from_env()
         backend.install()
+    if os.environ.get('CACHE_DET'):
+        import cache_det        # after the backend's install, as live.py's CACHE_DET=1
+        cache_det.install()
     answers = [sympy_api.ask(q) for q in queries()]
     if mode == 'rust':
         refused = {k: v for k, v in term_live.COUNTS.items() if k.startswith('refused')}
     split = [len(t) for name, _, t in memos.PROCESS.items() if name == 'satassume.engine._SPLIT']
-    print(json.dumps(dict(answers=answers, keys=[repr(k) for k in _common._CACHE], split=split, refused=refused)))
+    import moved_digest as md       # the digest's `_CACHE` row: keys and values, as text
+    vals = [(md.show(k), md.show(tuple(getattr(p, f, '<unset>') for f in md.CACHE_FIELDS))) for k, p in _common._CACHE.items()]
+    det = None
+    if os.environ.get('CACHE_DET'):
+        import cache_det
+        det = {k: v for k, v in cache_det.totals().items() if k != 'first'}
+    fired = {k: v for k, v in term_live.COUNTS.items() if k.startswith('plant:')} if mode == 'rust' else None
+    print(json.dumps(dict(answers=answers, keys=[repr(k) for k in _common._CACHE], split=split, refused=refused,
+                          vals=sorted(vals), det=det, fired=fired)))
 
 
 if __name__ == '__main__':
