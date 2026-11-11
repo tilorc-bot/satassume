@@ -576,3 +576,64 @@ chain suites end 127 failed / 5,991 passed / 23 skipped / 18 xfailed (1a91a81's 
 
 A suite total of `cls:eq` is therefore only comparable between runs with one process and one order; the bar reports
 it from `fixed270.sh`'s order next to the xdist total.
+
+## sa-port-274: the relations.py fallback carrier, item 4g, the plant table (part), item 4b
+
+### The relations.py fallback carrier (closed)
+pareto1, one process, `-p pycalls_suite -p pyc266 -p clseq`, output `~/sp19/sa-rust-ids-work/sa-port-274/carrier/` and
+`carrier2/` (read with `p1/carrier_sum.py`). Orders: sa-port-266's worker order (bis-order.txt, 217 tests) forward and
+reversed; test_relevance.py + test_transfer.py alone, plain (rel0) and with SymPy's cache emptied before each test (rel1).
+
+| tree | fwd | rev | rel0 | rel1 | cls:eq fwd |
+|---|---|---|---|---|---|
+| head 0993f1c | **0** | **0** | 0 | 0 | 369 |
+| head + plant 661 `class-is` | **527** | 0 | 0 | 0 | 0 |
+| base 9151316 | **511** | 0 | 0 | 0 | - |
+| 1e90a19 | 511 | | | | - |
+| **a5fa1f6** (first at 0) | 0 | | | | 369 |
+| 425ca5e | 0 | | | | 369 |
+
+- Every call sits in one test, test_relevance.py::test_split_relational_answer_is_the_part_answer (`_is_number`,
+  `_key`, `_relation_atom_py`, `_affine_strip`, `_structural_subterms`), only after the earlier tests of the forward
+  order.
+- The first SHA at 0 is **a5fa1f6** (WIP `ad:cbm_noid` fix: `same_class` on the query's own class table at 11 sites).
+  The three old SHAs did not compile as checked out (session.rs:1825 `PyBool` not imported, from the rebase at
+  78962f7); they were built with that one name written `pyo3::types::PyBool` (`carrier2/patch-*.txt`), no other change.
+- Cause: a row across two equal class objects was compared by identity and sent to Python; since a5fa1f6 the
+  query's class table makes them one class, the row stays in Rust and is counted `cls:eq` (369 where base had its 511).
+  Plant 661 (identity again) brings the calls back.
+- sa-port-270's guess (the calls need SymPy's lost cache entry) is **not shown**: alone, with the cache emptied before
+  each test, base makes 0 calls. They need state from the earlier tests of the forward order, not a cleared cache.
+- rel0/rel1 have 2 failures on every tree: test_transfer.py::test_protocol_on_fuzz and
+  test_models_respect_transfer, both in the base Rust suite's failures (pr328-check/suite-rust).
+
+### Item 4g (b18b064): the digest observes and never replaces
+On cls (Rust, `--check entry`): `sb:fwd_named` / `sb:fwd_direct` 306 / 147 with the old digest, **0 / 453** with the
+new digest and 0 / 453 with the digest off; dev 0 / 4,634 on and off. The old digest also moved state: the `_WANT` and
+`_SPLIT` value hashes differ from the new digest's at every engine point. mid_samples 180 with both digests; moved and
+moved_q rows equal on all 73 queries. Between two processes of the *same* digest only the value hashes of
+`_CLOSED` and `_SYMPY_ATOMS` differ (keys and counts equal): process-to-process variation, not looked into.
+Output orion `~/sa-rust-ids-work/sa-port-274/g4/new/`.
+
+### The plant table (part; the gate's classes)
+Caught means: a check that is not the plant's own counter fails. Workloads are the 19 short ones (sa-port-270's
+sweep1, tree 6648573) unless named.
+
+| plant | class | caught by (independent) | action |
+|---|---|---|---|
+| 601 `fm-atoms-drop-last` | wrong value | answers on 10, fm row on loop; kept test | - |
+| 602 `fm-atoms-no-dedupe` | **speed-only** (fired 16, moved nothing; `atoms_of` readers take a set) | - | **retired**, replaced by 612 (7ffe426) |
+| 612 `fm-atoms-merge-pred` | wrong value (dedupe keyed by predicate) | kept test test_formula_nodes.py only; fires on cls, dev, scope, loop, wiring and moves no answer or row there | **not shown on a workload**: run on all 20 at the bar |
+| 603 `fm-args-reverse` | **order-only** (And/Or commutative; fired 15, moved nothing) | - | **retired**, replaced by 613 (7ffe426) |
+| 613 `fm-args-drop-last` | wrong value | answers on all of cls, dev, scope, loop, wiring; kept test | - |
+| 604 `fm-implies-swap` | wrong value | answers on loop, scope, wiring | - |
+| 605 `fm-ite-swap` | **unreached** on the 19 | kept test test_formula_nodes.py builds an `ITE` | **suite-only reach: footnote** |
+| 606 `fm-not-drop` | wrong value | answers on all 14 it fires on | - |
+| 607 `fm-hand-no-give` | wrong count | fm row on 19; kept test | - |
+| 608 `fm-hand-kept` | ruled-out cache | fm row on 17; H2 kept test | **void on f6** (fires 0 though f6 has fm:again 896; not looked into) and twin (fm:again 0); lra's run not read |
+| 609, 610 | instrument / patched method | kept tests test_convert_once.py only | no workload registers an instrument or replaces a method |
+| 660 `ad-lra-class-is` | **path-only** (identity compare sends the read to Python; same answers) | **ad:cbm_noid on cls: 0 -> 264** (4b, 9453f12) | 4b's verdict line is its catch |
+| 661 `class-is` | wrong path + value | answers on twin, row on cls; ad:cbm_noid 264 on cls; carrier calls 527 | - |
+| 662 `ad-lra-atom-object` | **which-object (R1)**: equal objects by construction, so no answer can move; not speed-only, not redundant | R1's kept test test_native_results_hold_the_querys_own_rows | **to the planner**: the gate's classes don't fit; ad:cbm_noid stays 0 under it |
+| 663 `same-is` | **unreached** on the 19 | kept test test_cbm_noid.py (`same-is`) | **suite-only reach: footnote** |
+| 600, 611, 664-667 | not classified | their checks: kept_product mismatch, test_cache_fix.py, test_cache_rollback.py, test_discard_exempt.py, term_discard.py | firing not read |
