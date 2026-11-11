@@ -29,14 +29,10 @@ from sympy.functions.special.gamma_functions import multigamma
 
 from ._common import Rules, const_key, facts
 from .atoms import value_units
-from .functions import _unary, nary, shifted
+from .functions import nary, shifted
 from .registry import registry
 
 X, N, M, Q = 0, 1, 2, 3
-
-
-def _register(cls, tag, gen, slots=None):
-    registry.register(cls)(_unary(tag, gen, slots=slots))
 
 
 # ---------------------------------------------------------------------------
