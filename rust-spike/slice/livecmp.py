@@ -24,7 +24,7 @@ def main():
     end_only = "--end-only" in sys.argv
     n = dict(queries_a=len(a), queries_b=len(b), both=0, answer_diff=0, msg_diff=0, session_count_diff=0, sessions=0,
              end_diff=0, stream_diff=0, lra_diff=0, stats_diff=0, moved_diff=0, moved_order_differs=0, moved_rows=0,
-             moved_engine_points=0, moved_known_diff=0, moved_native_diff=0, moved_lra_python_only=0, group_counts={})
+             moved_engine_points=0, moved_known_diff=0, moved_cache_points=0, moved_cache_key_diff=0, moved_cache_value_diff=0, moved_native_diff=0, moved_lra_python_only=0, group_counts={})
     # The known differences (the planner's (A) ruling of 10 Nov, corrected by sa-port-239's read): Rust's atom templates
     # bypass the pattern cache, so `_SPLIT` holds second copies on Rust and `_CACHE` fewer keys. known_moved.json lists, per
     # workload and engine point, `[_SPLIT python, rust, _CACHE python, rust]`; any other counts are a DIFFER, and a workload
@@ -89,8 +89,10 @@ def main():
             n["moved_diff"] += 1
             first.setdefault("moved_eng", (q, "taken on one side only"))
         elif ex is not None:
-            # `_SPLIT` by its distinct rows and their number, `_CACHE` by its keys only where no difference is known; their
-            # counts against the known row of this engine point. Everything else by content (a multiset) and length.
+            # `_SPLIT` by its distinct rows and their number; its count and `_CACHE`'s against the known row of this engine
+            # point. Everything else by content (a multiset) and length, `_CACHE` included: its content is keys and
+            # patterns, and its keys alone are counted apart (4i: moved_cache_key_diff, then moved_cache_value_diff for a
+            # point whose keys agree and whose patterns don't).
             sk = [k for k in set(ex) | set(ey) if ":satassume.engine._SPLIT:" in k]
             got = [(ex.get(k) or [None] * 3)[2] for k in sk[:1]] + [(ey.get(k) or [None] * 3)[2] for k in sk[:1]] + [
                 (ex.get("process:_CACHE") or [None] * 3)[2], (ey.get("process:_CACHE") or [None] * 3)[2]]
@@ -100,7 +102,16 @@ def main():
             if got != want and (want is not None or got[0] != got[1] or got[2] != got[3]):
                 n["moved_known_diff"] += 1
                 first.setdefault("moved_known", (q, "point %d: _SPLIT python, rust, _CACHE python, rust" % at, got, "known", want))
-            skip = set(sk) | ({"process:_CACHE"} if got[2] != got[3] else set())
+            cx, cy = ex.get("process:_CACHE"), ey.get("process:_CACHE")
+            if cx is not None and cy is not None and len(cx) > 3 and len(cy) > 3:
+                n["moved_cache_points"] += 1
+                if cx[3] != cy[3]:
+                    n["moved_cache_key_diff"] += 1
+                    first.setdefault("moved_cache_key", (q, cx, cy))
+                elif cx[0] != cy[0]:
+                    n["moved_cache_value_diff"] += 1
+                    first.setdefault("moved_cache_value", (q, cx, cy))
+            skip = set(sk)
             names = sorted(k for k in set(ex) | set(ey) if k not in skip and (ex.get(k) or [None] * 3)[::2] != (ey.get(k) or [None] * 3)[::2])
             names += sorted(k for k in sk if (ex.get(k) or [None] * 4)[::3] != (ey.get(k) or [None] * 4)[::3])
             if names:

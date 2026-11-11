@@ -683,3 +683,12 @@ bar.sh's tests phase runs test_handler_count.py and test_catch_count.py by pytes
 (SLICE_SUITE_OUT a fresh directory), and test_cf_diff.py as a script (seed 1, 20,000 ops; exit 1 unless `MISMATCHES 0`),
 in both TESTS_SPLIT modes. On orion (aarch64 .so of 376d759): 2 passed, 3 passed, `MISMATCHES 0 []`; test_term_live.py
 20 passed, 1 skipped (4f's two stale tests fixed at 271673f).
+
+### 4i: the digest's `_CACHE` row compares keys and values
+moved_digest.py's `_CACHE` row is `[content, order, count, keys]` (content hashes each key with its pattern's fields;
+`keys` the keys alone). livecmp.py compares it at every engine point like any other row (no longer skipped when the
+counts differ; known_moved.json is empty), and counts `moved_cache_points`, `moved_cache_key_diff` and, where the keys
+agree, `moved_cache_value_diff`; both diffs are in the verdict. Kept test test_moved_digest.py
+`test_cache_row_keys_and_values_apart` (each counter fires on an edited row; twin plain 0/0, MATCH). On orion (aarch64
+.so of 376d759), wiring: plain Rust MATCH, 261 cache points, 0 key, 0 value; under plant 666 (SLICE_TERM_PLANT=
+mark-wrong-pattern) DIFFER: answers 40 (first q4264 False against True), cache keys 91 (first q4274, 61 against 62 keys).

@@ -417,7 +417,9 @@ class Moved:
         # keys and values (the `_CACHE` fix, issue 323: both backends fill one table under Python's keys, so the patterns
         # are compared too, field by field)
         rows = [(show(a), show(tuple(getattr(p, f, '<unset>') for f in CACHE_FIELDS))) for a, p in list(_common._CACHE.items())]
-        out[CACHE] = [_h(sorted(rows)), _h(rows), len(rows)]
+        # [content, order, count, keys]: content hashes key and pattern together; the fourth is the keys alone (4i), so a
+        # comparison tells a changed pattern under the same keys from a changed key set
+        out[CACHE] = [_h(sorted(rows)), _h(rows), len(rows), _h(sorted(r[0] for r in rows))]
         for name, v in self._engine(engine).items():
             out['engine:' + name] = v
         n = 0

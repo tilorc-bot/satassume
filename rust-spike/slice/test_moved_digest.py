@@ -108,3 +108,28 @@ def test_the_digest_observes_and_never_replaces(tmp_path):
             tot = json.loads(open(out).read().splitlines()[-1])['total']['moved']
             assert tot['mid_samples'] > 0, tot
     assert got['1'] == got['0'] and got['1']['sb:fwd_named'] == 0 and got['1']['sb:fwd_direct'] > 0, got
+
+
+def test_cache_row_keys_and_values_apart(tmp_path):
+    """4i: the digest's `_CACHE` row is `[content, order, count, keys]`; livecmp compares the content (keys with their
+    patterns) and counts a point whose keys differ (moved_cache_key_diff) apart from one whose keys agree and whose
+    patterns don't (moved_cache_value_diff). Each counter fires on a row edited in a copy of Rust's run, and both stay 0
+    on the plain comparison."""
+    py, rust = _live(tmp_path, 'py'), _live(tmp_path, 'rust')
+    n, first, verdict = _cmp(py, rust)
+    assert verdict == 'MATCH' and n['moved_cache_points'] >= 1, (n, first)
+    assert n['moved_cache_key_diff'] == 0 and n['moved_cache_value_diff'] == 0, (n, first)
+
+    def edited(at, name):
+        rows = [json.loads(l) for l in open(rust)]
+        r = next(r for r in rows if r.get('moved_eng', {}).get('process:_CACHE'))
+        assert len(r['moved_eng']['process:_CACHE']) == 4
+        r['moved_eng']['process:_CACHE'][at] = 'x' * 12
+        out = os.path.join(str(tmp_path), name)
+        open(out, 'w').write(''.join(json.dumps(r) + '\n' for r in rows))
+        return out
+
+    n, first, verdict = _cmp(py, edited(0, 'value.jsonl'))       # same keys, another pattern
+    assert verdict == 'DIFFER' and n['moved_cache_value_diff'] == 1 and n['moved_cache_key_diff'] == 0, (n, first)
+    n, first, verdict = _cmp(py, edited(3, 'key.jsonl'))         # another key set
+    assert verdict == 'DIFFER' and n['moved_cache_key_diff'] == 1, (n, first)
