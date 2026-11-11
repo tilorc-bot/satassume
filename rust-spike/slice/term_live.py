@@ -186,7 +186,14 @@ class _Mark:
         for c, m in self.facts.values():
             if c._fc_rollback(m):
                 COUNTS['rollback:cleared'] += 1
+        leave = PLANT[0] == 'mark-leaves-entry'
         for t, n, stamp, last in self.tables.values():
+            if leave and not isinstance(t, list) and t is not _common._CACHE and len(t) > n:
+                # plant 667: the first table the run grew keeps the run's entries (term_discard.py must name it; its
+                # `_CACHE` exemption must not cover any other container)
+                leave = False
+                COUNTS['plant:mark-leaves-entry'] += 1
+                continue
             if isinstance(t, list):
                 if len(t) < n:
                     COUNTS['rollback:cleared'] += 1
@@ -280,6 +287,8 @@ KEY_BAD = []
 #: drops `_affine_strip` where it changed a side, 'key-reverse' flips a matched key, 'scaffold-form' fails the form check.
 #: Slice C's: 'le-swap', 'no-ext', 'is-number-false', 'affine-false', 'linked-drop', 'under-empty', 'interned-reversed',
 #: 'plan-drop', 'plan-pred', 'twin-one'. State step (iii)(a): plant 265 'int-as-number' (`_int_id`; counter 346 `term:int:*`).
+#: The formula step: 666 'mark-cuts-patterns' (`_Mark` rolls `_CACHE` back again), 667 'mark-leaves-entry' (`rollback` skips the
+#: first other table the run grew).
 PLANT = [None]
 
 

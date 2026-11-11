@@ -39,6 +39,13 @@ SITES = (
     ('relations._termwise', R, '_termwise'),
     ('Relations._eq_links', R.Relations, '_eq_links'),
 )
+#: Left by rule, and only these (the planner's rulings 1 and 2 on e8d5adf, 10 Nov): the pattern cache is not rolled back
+#: (term_live.py `_Mark`), because Rust's memo of compiled nodes keeps the discarded run's nodes and the rerun never asks for
+#: their patterns again. It is safe because the key determines the value: cache_det.py rebuilt every hit and found 0
+#: mismatches on 20 workloads and the suite, both backends (sa-port-246's j1, results/port-formula.md). Exempt only when the
+#: run added entries and changed none that were there; counted `exempt:_CACHE`, never as clean by silence. Plant 667
+#: (term_live `mark-leaves-entry`) leaves another container's entries and must be counted as left.
+EXEMPT = ('process:satassume.knowledge.templates._common._CACHE', 'module:satassume.knowledge.templates._common._CACHE')
 COUNTS = collections.Counter()
 LEFT = collections.Counter()
 EXAMPLES = {}
@@ -129,6 +136,10 @@ def check():
             # `_Mark`'s documented path: a table restamped or cleared during the run is emptied, which holds nothing of the run's.
             COUNTS['emptied'] += 1
             LEFT[k + ':emptied'] += 1
+        elif not same and k in EXEMPT and isinstance(a, dict) and isinstance(b, dict) and len(b) > len(a) \
+                and all(x in b and b[x] is a[x] for x in a):
+            COUNTS['exempt:_CACHE'] += 1
+            LEFT[k + ':exempt'] += 1
         elif not same:
             clean = False
             LEFT[k] += 1
