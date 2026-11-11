@@ -882,27 +882,6 @@ def _coerce(x):
     return None
 
 
-def _coerce_foreign(x):
-    """For ``==``: a SymPy number as a Fraction or Element (``Integer(3)``,
-    ``pi/2``); TypeError for any other number (``3.0``, a SymPy ``Float``,
-    ``I`` or a closed expression that is not read), whose equality with an
-    exact real has no single meaning; None for a non-number (never equal:
-    ``None``, a string, a bool, ``Symbol('y')``, ``x + 1``, ``S.true``)."""
-    import numbers
-    if isinstance(x, bool):
-        return None
-    if type(x).__module__.startswith("sympy"):
-        if getattr(x, "is_number", False) is not True:
-            return None
-        r = from_sympy(x)
-        if r is None:
-            raise TypeError(f"cannot compare an exact number with {x!r}")
-        return r
-    if isinstance(x, numbers.Number):
-        raise TypeError(f"cannot compare an exact number with {x!r}")
-    return None
-
-
 class Element:
     """A number ``n/d`` of ``Q(constants)`` that is not rational formally
     (see the module docstring); operations with Fractions and ints return
@@ -1211,9 +1190,7 @@ class Element:
             return True
         o = _coerce(other)
         if o is None:
-            o = _coerce_foreign(other)
-            if o is None:
-                return NotImplemented            # not a number: never equal
+            return NotImplemented
         if type(o) is Element:
             if o._n == self._n and o._d == self._d:
                 return True
