@@ -692,3 +692,17 @@ agree, `moved_cache_value_diff`; both diffs are in the verdict. Kept test test_m
 `test_cache_row_keys_and_values_apart` (each counter fires on an edited row; twin plain 0/0, MATCH). On orion (aarch64
 .so of 376d759), wiring: plain Rust MATCH, 261 cache points, 0 key, 0 value; under plant 666 (SLICE_TERM_PLANT=
 mark-wrong-pattern) DIFFER: answers 40 (first q4264 False against True), cache keys 91 (first q4274, 61 against 62 keys).
+
+### Bar prep (started; read by sa-port-279)
+- .so rebuilt on pareto1 from 212a7d6: sha256 802adb75…; slice tests (TESTS=all, split): 62 files, all exit 0
+  (pareto1 `~/sp19/sa-rust-ids-work/sa-port-278/bar/tests.txt`). Suite and the 20 workloads (py/rust, cls and zero
+  twice for the digest) were running at handoff: end marker `bar/prep-end.txt`, verdicts `bar/wl/verdicts.txt`.
+- Aux on pareto0 (aux278.sh, done; orion copy `~/sa-rust-ids-work/sa-port-278/aux`, table `aux-rows.md` by rows278.py):
+  cache_det, `--check plain`, 20 workloads: **0 mismatches on both backends**; hits py/rust e.g. lra 10,859/6,138, budget
+  477/449, value 554/214, f6 615/50; plain answers py == rust on all 20.
+- Module-wide probe (pycalls, Rust, plain; base 9151316 -> head 212a7d6): `_table_get` falls (fuzz 218,742 -> 7,853, lra
+  102,174 -> 7,497); Formula callbacks (sat/formula.py + knowledge/compile.py) fall on all (fuzz 102,263 -> 68,692);
+  `_noncommutative_atoms` unchanged (lra 1,743 -> 1,768). **knowledge_live.py rises** (dev 184 -> 2,605, rootof 32 ->
+  9,603, wiring 164 -> 13,154): all of it `install_dispatch._Store._nt_mark`, state `noquery` (the Dispatch.memo mark that
+  ded8c3f added; one Python call per `_Mark`, outside any query). `_wrap` and `_derived_facts` 0 on the head. Not yet
+  judged against R3 / "no per-query Python": it runs per entry, not inside a converted query.
