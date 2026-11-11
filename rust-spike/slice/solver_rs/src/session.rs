@@ -736,13 +736,14 @@ struct SesScalars {
 /// (ses_cont.rs: a session dict's identity memo ignores the entry's generation), 616 `sc-key-id-weak` (the memo holds no
 /// reference to its objects), 617 `sc-key-id-shared` (one memo, process-wide), 618 `ent-method-first-self`
 /// (session_glue.rs `EntMethod`: an entry method binds the first engine it saw), 619 `gm-guard-skip` (`GuardMethod`: a
-/// session with no core is given the Rust entry).
+/// session with no core is given the Rust entry), 620 `cl-view-nodes-drop` (compile_loop.rs `view_core`: `_flush` reads the
+/// core's new nodes as none, so no child is queued).
 static SB_PLANT: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(0);
 const SB_PLANTS: [&str; 18] = ["sb-truncated-stale", "sb-link-pending-stale", "sb-neg-shared-stale", "sb-sel-zero", "sb-hold-zero",
     "sb-verdict-none", "sb-fwd-skip-link", "sb-solver-fresh", "sc-frontier-drop", "sc-pending-drop", "sc-pending_c-drop",
     "sc-demand-drop", "sc-deferred-drop", "sc-literals-drop", "sc-groups-drop", "sc-key-shared", "sb-core-unset", "sb-core-stale"];
-const A_PLANTS: [&str; 6] = ["sb-join-address", "sc-key-id-stale", "sc-key-id-weak", "sc-key-id-shared",
-    "ent-method-first-self", "gm-guard-skip"];
+const A_PLANTS: [&str; 7] = ["sb-join-address", "sc-key-id-stale", "sc-key-id-weak", "sc-key-id-shared",
+    "ent-method-first-self", "gm-guard-skip", "cl-view-nodes-drop"];
 const SB_JOIN_ADDRESS: u16 = 614;
 const SB_CORE_UNSET: u16 = 447;
 const SB_CORE_STALE: u16 = 448;
@@ -2320,7 +2321,7 @@ impl SessionCore {
         Ok(self.st.borrow_mut().node_base(n))
     }
 
-    fn base_of_get(&self, node: &Bound<'_, PyAny>) -> PyResult<Option<i32>> {
+    pub(crate) fn base_of_get(&self, node: &Bound<'_, PyAny>) -> PyResult<Option<i32>> {
         tick(TABLE);
         Ok(self.known(node)?.and_then(|n| self.st.borrow().base_of.get(n as usize).copied()).filter(|&b| b != 0))
     }
@@ -2379,19 +2380,19 @@ impl SessionCore {
         }
     }
 
-    fn new_nodes<'py>(&self, p: Python<'py>) -> PyResult<Bound<'py, PyList>> {
+    pub(crate) fn new_nodes<'py>(&self, p: Python<'py>) -> PyResult<Bound<'py, PyList>> {
         tick(TABLE);
         let objs = self.objs.borrow();
         let st = self.st.borrow();
         PyList::new(p, st.new_nodes.iter().map(|&n| objs[n as usize].clone_ref(p)))
     }
 
-    fn clear_new_nodes(&self) {
+    pub(crate) fn clear_new_nodes(&self) {
         tick(TABLE);
         self.st.borrow_mut().new_nodes.clear();
     }
 
-    fn new_custom<'py>(&self, p: Python<'py>) -> PyResult<Bound<'py, PyList>> {
+    pub(crate) fn new_custom<'py>(&self, p: Python<'py>) -> PyResult<Bound<'py, PyList>> {
         tick(TABLE);
         let got = self.st.borrow().new_custom.clone();
         let mut out = Vec::with_capacity(got.len());
@@ -2401,7 +2402,7 @@ impl SessionCore {
         PyList::new(p, out)
     }
 
-    fn clear_new_custom(&self) {
+    pub(crate) fn clear_new_custom(&self) {
         tick(TABLE);
         self.st.borrow_mut().new_custom.clear();
     }

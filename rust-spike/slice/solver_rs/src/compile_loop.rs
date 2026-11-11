@@ -119,14 +119,51 @@ pub(crate) fn emit_pattern(s: &Bound<'_, PyAny>, clauses: &Bound<'_, PyAny>, bas
     Ok(())
 }
 
+/// Plant 620 `cl-view-nodes-drop`: `_flush` reads the core's new nodes as none (a wrong-value plant at `view_core`'s read:
+/// no child is queued, so discovery stops at the first node).
+const CL_VIEW_NODES_DROP: u16 = 620;
+
+/// The part 3 follow-up, item (4): the session's core when its table is session_live's `TableView`, whose `new_custom`,
+/// `new_nodes` and `base_of` read the core (session_live.py `TableView`, `_BaseOf`): `_flush` and `_compile_patterns` then
+/// read the core with no Python frame. Any other table (ref.py's, one set before `install()`, a subclass) is read by
+/// attribute, as Python reads it.
+fn view_core<'py>(s: &Bound<'py, PyAny>, table: &Bound<'py, PyAny>) -> Option<Bound<'py, crate::session::SessionCore>> {
+    let p = s.py();
+    let t = table.get_type();
+    if t.qualname().ok()?.to_str().ok()? != "TableView" || t.module().ok()?.to_str().ok()? != "session_live" {
+        return None;
+    }
+    let c = s.getattr(intern!(p, "_core")).ok()?.cast_into::<crate::session::SessionCore>().ok()?;
+    let tc = table.getattr(intern!(p, "core")).ok()?;
+    if tc.is(&c) { Some(c) } else { None }
+}
+
 /// `Session._flush`.
 pub(crate) fn flush(s: &Bound<'_, PyAny>, node: &Bound<'_, PyAny>) -> PyResult<()> {
     tick(SES_FLUSH);
     let p = s.py();
     let table = crate::session::table_of(s)?;
-    while table.getattr(intern!(p, "new_custom"))?.is_truthy()? {
-        let atoms = table.getattr(intern!(p, "new_custom"))?;
-        table.setattr(intern!(p, "new_custom"), PyList::empty(p))?;
+    let vc = view_core(s, &table);
+    loop {
+        let atoms = match &vc {
+            Some(c) => {
+                let c = c.borrow();
+                let a = c.new_custom(p)?;
+                if a.is_empty() {
+                    break;
+                }
+                c.clear_new_custom();
+                a.into_any()
+            }
+            None => {
+                if !table.getattr(intern!(p, "new_custom"))?.is_truthy()? {
+                    break;
+                }
+                let a = table.getattr(intern!(p, "new_custom"))?;
+                table.setattr(intern!(p, "new_custom"), PyList::empty(p))?;
+                a
+            }
+        };
         if planted(DROP_FLUSH_CUSTOM) {
             continue;
         }
@@ -138,7 +175,12 @@ pub(crate) fn flush(s: &Bound<'_, PyAny>, node: &Bound<'_, PyAny>) -> PyResult<(
     let direct = if node.is_none() { None } else { node.getattr_opt(intern!(p, "args"))?.filter(|d| !d.is_none()) };
     let core = core_of(s)?;
     let c = core.borrow();
-    for child in table.getattr(intern!(p, "new_nodes"))?.try_iter()? {
+    let nodes = match &vc {
+        Some(_) if crate::session::sb_planted(CL_VIEW_NODES_DROP) => PyList::empty(p).into_any(),
+        Some(v) => v.borrow().new_nodes(p)?.into_any(),
+        None => table.getattr(intern!(p, "new_nodes"))?,
+    };
+    for child in nodes.try_iter()? {
         let child = child?;
         if c.base_get(&child)?.is_some() {
             continue;
@@ -148,7 +190,13 @@ pub(crate) fn flush(s: &Bound<'_, PyAny>, node: &Bound<'_, PyAny>) -> PyResult<(
             _ => c.sq_push(SQ_FRONTIER, &child),
         };
     }
-    table.setattr(intern!(p, "new_nodes"), PyList::empty(p))
+    match &vc {
+        Some(v) => {
+            v.borrow().clear_new_nodes();
+            Ok(())
+        }
+        None => table.setattr(intern!(p, "new_nodes"), PyList::empty(p)),
+    }
 }
 
 /// `Session._compile`.
@@ -251,7 +299,11 @@ pub(crate) fn compile_patterns(s: &Bound<'_, PyAny>, node: &Bound<'_, PyAny>, co
     tick(SES_COMPILE_PATTERNS);
     let p = s.py();
     let table = crate::session::table_of(s)?;
-    let base_of = table.getattr(intern!(p, "base_of"))?;
+    let vc = view_core(s, &table);
+    let base_of = match &vc {
+        Some(_) => None,
+        None => Some(table.getattr(intern!(p, "base_of"))?),
+    };
     let ses = Ses::of(s);
     let want = if demanded.is_none() { p.None().into_bound(p) } else { want_of(demanded)? };
     for comp in compiled.try_iter()? {
@@ -262,7 +314,11 @@ pub(crate) fn compile_patterns(s: &Bound<'_, PyAny>, node: &Bound<'_, PyAny>, co
         for k in pat.getattr(intern!(p, "used"))?.try_iter()? {
             let k = k?;
             let o = objs.get_item(&k)?;
-            let mut bb = base_of.call_method1(intern!(p, "get"), (&o,))?;
+            let mut bb = match (&vc, &base_of) {
+                (Some(c), _) => c.borrow().base_of_get(&o)?.into_pyobject(p)?.into_any(),
+                (None, Some(b)) => b.call_method1(intern!(p, "get"), (&o,))?,
+                (None, None) => unreachable!(),
+            };
             if bb.is_none() {
                 bb = table.call_method1(intern!(p, "node_base"), (&o,))?;
                 new.push(k.clone());
@@ -305,7 +361,13 @@ pub(crate) fn compile_patterns(s: &Bound<'_, PyAny>, node: &Bound<'_, PyAny>, co
             }
         }
     }
-    table.setattr(intern!(p, "new_nodes"), PyList::empty(p))
+    match &vc {
+        Some(c) => {
+            c.borrow().clear_new_nodes();
+            Ok(())
+        }
+        None => table.setattr(intern!(p, "new_nodes"), PyList::empty(p)),
+    }
 }
 
 /// `Session._custom`: a custom-predicate atom was allocated. A relation atom goes to the session's `Relations` (made here, and

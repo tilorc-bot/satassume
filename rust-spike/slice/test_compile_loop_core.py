@@ -18,7 +18,8 @@ import pytest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PLANTS = ('drop-split-later', 'drop-emit-ment', 'drop-flush-custom', 'drop-compile-demand', 'drop-pend-compile', 'want-empty',
-          'drop-pat-demand', 'drop-custom-rel', 'drop-custom-facts', 'drop-visit-items', 'drop-dv-link')
+          'drop-pat-demand', 'drop-custom-rel', 'drop-custom-facts', 'drop-visit-items', 'drop-dv-link',
+          'cl-view-nodes-drop')     # the part 3 follow-up (4): compile_loop.rs view_core's read
 
 
 def _cases():
