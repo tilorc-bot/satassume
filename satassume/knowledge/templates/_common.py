@@ -69,6 +69,17 @@ class Rules:
                            conclusion if isinstance(conclusion, list) else [conclusion]))
 
 
+def ge2_alternatives(k: int):
+    """Premise alternatives meaning ``objs[k]`` is an integer >= 2.
+
+    Nothing in this package calls it since the ``'int>=2'`` row premise was
+    removed.  It stays because the Rust slice's ``knowledge_common_live``
+    binds it from this module by name at install; remove it together with
+    that read."""
+    return ([(k, 'prime', True)], [(k, 'composite', True)],
+            [(k, 'even', True), (k, 'positive', True)])
+
+
 def const_value(c, pred: str):
     """Static truth value of ``pred`` for the constant ``c`` (None if the
     constant does not decide it).  Beyond the old-system property this
