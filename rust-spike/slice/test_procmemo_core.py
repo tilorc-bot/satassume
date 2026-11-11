@@ -9,6 +9,7 @@ process.
   caller is tests/test_engine.py:195, which runs Rust's under rust_plugin but can't see plants 183 or 184: the predicate is
   in its own rule clauses there, and `odd`'s two sides share the planted first entry. `polar` is in no rule clause, so 183
   shows only on it.
+- `items()` order: `_NEIGH`'s keys and 40 fresh `_SPLIT` keys in Python's insertion order (a `HashMap`'s order before).
 Each plant must fire and move some case; the counters `pm:full`, `pm:neigh` and `pm:cb_rules` must fire on Rust.
 """
 import json
@@ -21,6 +22,7 @@ import pytest
 HERE = os.path.dirname(os.path.abspath(__file__))
 PLANTS = ('pm-split-no-full-clear', 'pm-split-clear-skip', 'pm-neigh-no-self', 'pm-neigh-memo-first')
 N_SPLIT = 100_001
+ORDER = [(i * 7) % 40 for i in range(40)]
 
 
 def _main(mode):
@@ -60,6 +62,15 @@ def _main(mode):
     cases['neigh:index'] = [(i, sorted(neighbourhood(i))) for i in range(R.NPRED)]
     cases['neigh:index_rev'] = [(i, sorted(neighbourhood(i))) for i in reversed(range(R.NPRED))]
     cases['neigh:same'] = all(neighbourhood(i) is neighbourhood(i) for i in range(R.NPRED))
+    # items() in insertion order, as a dict iterates (procmemo.rs read its HashMap's per-process order before, so the
+    # digest's order hash of these memos differed between two processes of one source; issue 323)
+    cases['neigh:order'] = [repr(k) for n, _, c in memos.PROCESS.items() if n.endswith('._NEIGH') for k, _ in c.items()]
+    memos.PROCESS.clear()
+    fresh = [[] for _ in range(40)]
+    for i in ORDER:
+        split(fresh[i], None)
+    pos = {id(cl): i for i, cl in enumerate(fresh)}
+    cases['split:order'] = [pos.get(k[0], -1) for n, _, c in memos.PROCESS.items() if n.endswith('._SPLIT') for k, _ in c.items()]
     json.dump(dict(cases=cases, counts=live.counts() if live else None), sys.stdout)
 
 
@@ -86,6 +97,7 @@ def test_same_as_python(both):
     assert py['cases']['split:lens'] == [[1], [100_000], [1]]
     assert py['cases']['split:after_clear'] == [0]
     assert py['cases']['neigh:index'][10] == [10, [10]]      # polar: in no rule clause
+    assert py['cases']['split:order'] == ORDER and len(py['cases']['neigh:order']) > 10
 
 
 def test_counters_fire(both):

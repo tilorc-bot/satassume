@@ -138,7 +138,7 @@ impl PyKeyMap {
     }
 
     fn items(&self, p: Python<'_>) -> Vec<(Py<PyAny>, Py<PyAny>)> {
-        self.buckets.values().flat_map(|b| b.iter().map(|(k, v)| (k.clone_ref(p), v.clone_ref(p)))).collect()
+        self.log.in_order(&self.buckets).into_iter().map(|(k, v)| (k.clone_ref(p), v.clone_ref(p))).collect()
     }
 }
 
@@ -235,10 +235,18 @@ pub(crate) fn split_rollback(mark: (usize, u64)) -> bool {
 /// `[((id(clauses), want), r)]`, as Python's keys read.
 pub(crate) fn split_items(p: Python<'_>) -> PyResult<Vec<(Py<PyAny>, Py<PyAny>)>> {
     let rows: Vec<(usize, Option<Py<PyAny>>, Py<PyTuple>)> = SPLIT.with(|m| {
-        m.borrow()
-            .buckets
+        let m = m.borrow();
+        // in insertion order, as Python's dict (`AddLog::in_order`); the log's key carries `id(clauses)`
+        let mut at: HashMap<&(usize, Option<isize>), usize> = HashMap::new();
+        m.log
+            .keys()
             .iter()
-            .flat_map(|((id, _), b)| b.iter().map(move |(w, r)| (*id, w.as_ref().map(|w| w.clone_ref(p)), r.clone_ref(p))))
+            .filter_map(|k| {
+                let i = at.entry(k).or_insert(0);
+                let e = m.buckets.get(k).and_then(|b| b.get(*i));
+                *i += 1;
+                e.map(|(w, r)| (k.0, w.as_ref().map(|w| w.clone_ref(p)), r.clone_ref(p)))
+            })
             .collect()
     });
     rows.into_iter()

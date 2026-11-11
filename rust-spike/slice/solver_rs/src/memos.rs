@@ -50,8 +50,30 @@ impl<K> AddLog<K> {
         self.keys.clear();
         self.emptied += 1;
     }
+    pub(crate) fn keys(&self) -> &[K] {
+        &self.keys
+    }
     pub(crate) fn mark(&self) -> (usize, u64) {
         (self.keys.len(), self.emptied)
+    }
+    /// The map's entries in the order they were added, as a Python dict iterates: the log holds each append since the
+    /// last clear (a rollback takes its tail out with the entries), and a bucket appends, so the i-th time a key is in
+    /// the log is the i-th entry of its bucket. A `HashMap`'s own order follows its per-process random state, which made
+    /// the digest's order hash of `_CLOSED`/`_SYMPY_ATOMS` differ between two processes of one source (issue 323).
+    pub(crate) fn in_order<'a, E>(&self, buckets: &'a std::collections::HashMap<K, Vec<E>>) -> Vec<&'a E>
+    where
+        K: std::hash::Hash + Eq,
+    {
+        let mut at: std::collections::HashMap<&K, usize> = std::collections::HashMap::new();
+        let mut out = Vec::with_capacity(self.keys.len());
+        for k in &self.keys {
+            let i = at.entry(k).or_insert(0);
+            if let Some(e) = buckets.get(k).and_then(|b| b.get(*i)) {
+                out.push(e);
+            }
+            *i += 1;
+        }
+        out
     }
     pub(crate) fn since(&mut self, mark: (usize, u64)) -> Option<Vec<K>> {
         if mark.1 != self.emptied || mark.0 > self.keys.len() {
