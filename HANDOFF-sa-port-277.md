@@ -25,13 +25,11 @@ the numbers are in the commit messages below (copy them into a "sa-port-277" sec
 - **3d2fe5d, 4h**: test_clear_sequence.py: 1/One sequence (cond, eng; orders 12, 21) with PROCESS.clear() + clear_cache():
   Rust's answers and state equal Python's (5 pass). Answers: [None, True] / [True, None] (int 1 None is #96, held fix).
 - **d6b5701, 4e**: two_order.py + test_two_order_twins.py (160 queries, py and rust): head 5 pass; base Python fails
-  (twin 30/160, two-order 60/320 differ). **Rust on base not read**: base worktree
-  `~/sa-rust-ids-work/sa-port-277/base` (9151316, two test files copied in) was building its .so at handoff
-  (log `~/sa-rust-ids-work/sa-port-277/build-base.log`). Read: `cd base/rust-spike/slice; PYTHONPATH=$B:$W/sympy:$W/shim
-  $PY -m pytest -q test_two_order_twins.py -k rust`. Then `git worktree remove` it.
+  (twin 30/160, two-order 60/320 differ); **base Rust fails the same: 30/160, 60/320** (base worktree at 9151316, own
+  .so; worktree removed).
 
 ## Not done (gate order)
-1. 4e's Rust-on-base line (above).
+1. (4e done.)
 2. 4j: `link:second 3` in the join test (test_relations_core.py:744 computes `second`; HANDOFF-sa-port-260.md:31: two
    equal-class objects alternating on one node ask `term_id` in Python each time). One line or an exact row.
 3. 4f: bar.sh invocation of test_handler_count.py and test_catch_count.py with `-p rust_plugin -p handler_count`, and
