@@ -24,6 +24,14 @@ MOVED = ('query_lit', 'prepare_query', 'emit', 'query_literal', 'query_all', 'li
          'ensure_twins')
 
 
+
+def _type_error(f):
+    """`f()`'s repr, or the TypeError it raised (an explicit None where the def iterates)."""
+    try:
+        return repr(f())
+    except TypeError as e:
+        return 'TypeError: ' + str(e)
+
 def _qstate(s, base):
     import test_relations_core as R
     from satassume.knowledge.rules import BASIS_INDEX
@@ -151,6 +159,12 @@ def _cases():
         # under `d`, q's block implies rational and algebraic, which no clause mentions: written to the trail, and so
         # settled without search, only once the query mentions them
         yield 'block', caught(lambda: s.query_literal(s.query_lit('rational', x * y), [v['d']], False))
+        # the defaults (assumptions=(), search=True; query.rs gives the Rust entry the def's signature), by position and
+        # keyword, and an explicit None, which the def passes on
+        yield 'default', caught(lambda: s.query_literal(v['q']))
+        yield 'default:kw', caught(lambda: s.query_literal(v['q'], search=False))
+        yield 'default:assume', caught(lambda: s.query_literal(v['r'], assumptions=[v['a']]))
+        yield 'none', lambda: _type_error(lambda: s.query_literal(v['q'], None))
         yield 'block:all', caught(lambda: s.query_literal(('&', (s.query_lit('algebraic', x * y), s.query_lit('complex', x * y))), [v['d']], False))
         yield 'propagated', caught(lambda: s.query_literal(v['q'], [v['a']], True))
         yield 'propagated:neg', caught(lambda: s.query_literal(v['r'], [v['a']], False))
@@ -198,6 +212,15 @@ def _differ(a, b):
 def test_same_as_python(both):
     py, rust = both
     assert _differ(py, rust) == []
+
+
+def test_query_literal_defaults_are_the_defs(both):
+    py, rust = both
+    st = {k: {n: r for n, r, _, _ in c['steps']} for k, c in rust['cases'].items()}['forged']
+    sp = {k: {n: r for n, r, _, _ in c['steps']} for k, c in py['cases'].items()}['forged']
+    keys = ('default', 'default:kw', 'default:assume', 'none')
+    assert [st[k] for k in keys] == [sp[k] for k in keys], ([st[k] for k in keys], [sp[k] for k in keys])
+    assert 'TypeError' in st['none'], st['none']
 
 
 def test_cases_run_and_reach_what_they_say(both):

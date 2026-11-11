@@ -337,14 +337,21 @@ fn ses_emit(s: &Bound<'_, PyAny>, clause: &Bound<'_, PyAny>) -> PyResult<()> {
     emit(s, clause)
 }
 
+/// `Session.query_literal(lit, assumptions=(), search=True)`'s parameters and defaults, so session_live `_frameless` installs
+/// it as a `GuardMethod` (the part 3 follow-up, item (4)). A default is made only when the argument is absent; an explicit
+/// `None` passes through, as it does to the def.
 #[pyfunction]
+#[pyo3(signature = (s, lit, assumptions = Python::attach(|p| PyTuple::empty(p).into_any().unbind()),
+                    search = Python::attach(|p| pyo3::types::PyBool::new(p, true).to_owned().into_any().unbind())),
+       text_signature = "(s, lit, assumptions=(), search=True)")]
 fn ses_query_literal<'py>(
+    p: Python<'py>,
     s: &Bound<'py, PyAny>,
     lit: &Bound<'py, PyAny>,
-    assumptions: &Bound<'py, PyAny>,
-    search: &Bound<'py, PyAny>,
+    assumptions: Py<PyAny>,
+    search: Py<PyAny>,
 ) -> PyResult<Bound<'py, PyAny>> {
-    query_literal(s, lit, assumptions, search)
+    query_literal(s, lit, assumptions.bind(p), search.bind(p))
 }
 
 #[pyfunction]
