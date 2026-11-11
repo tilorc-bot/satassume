@@ -995,6 +995,12 @@ pub(crate) const XTH: usize = 0;
 pub(crate) const XSEL: usize = 1;
 pub(crate) const XAD: usize = 2;
 
+impl formula::Nodes for SessionCore {
+    fn atoms<'py>(&self, f: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyTuple>> {
+        self.atoms_of(f)
+    }
+}
+
 impl SessionCore {
     /// `s.solver` for the Rust readers that moved off Python's attribute.
     pub(crate) fn solver_direct<'py>(&self, p: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
@@ -1323,6 +1329,16 @@ impl SessionCore {
             }
             Err(w) => Err(w),
         })
+    }
+
+    /// The entry's node of the object at `k`, unless the session has its own already. True if taken.
+    pub(crate) fn take_node(&self, k: usize, node: impl FnOnce() -> Rc<FNode>) -> bool {
+        let mut m = self.fnodes.borrow_mut();
+        if m.contains_key(&k) {
+            return false;
+        }
+        m.insert(k, node());
+        true
     }
 
     /// `atoms_of(f)`, from the session's node. Where the conversion refuses, Python's own `atoms_of` (`fm:atoms_py`).

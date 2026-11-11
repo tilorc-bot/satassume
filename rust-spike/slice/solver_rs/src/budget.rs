@@ -16,6 +16,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyFrozenSet, PyInt, PyList, PySet, PyTuple};
 
 use crate::engmemo;
+use crate::formula::{Hand, Nodes};
 use crate::relations_core::{planted, CONE_CONES_NO_BOUND, CONE_DROP_SKIP_CONES, CONE_INFO_OVER_FITS, CONE_KIDS_NO_BOUND,
     CONE_STRUCT_WEIGHT_ONE, CONE_STRUCT_WIDE_SKIP, EM_KIDS_SET_DROP, EM_QCONES_CLEAR_SKIP, EM_QCONE_KEY_F, EM_QCONE_NO_SUMS, NOTE_BUDGET_KEEP_FLAG, OVER_BUDGET_NO_FLAG, UNION_SKIP_OVERLAP, WITHIN_NO_LINK};
 use crate::session::{
@@ -46,8 +47,8 @@ fn py_method<'py>(eng: &Bound<'py, PyAny>, name: &str) -> PyResult<Bound<'py, Py
 }
 
 /// `self._struct(x)[1]` (Rust's since 5c10c).
-fn struct_weight(eng: &Bound<'_, PyAny>, x: &Bound<'_, PyAny>, budget: i64) -> PyResult<i64> {
-    struct_(eng, x, budget)?.get_item(1)?.extract()
+fn struct_weight(eng: &Bound<'_, PyAny>, x: &Bound<'_, PyAny>, budget: i64, nodes: &dyn Nodes) -> PyResult<i64> {
+    struct_(eng, x, budget, nodes)?.get_item(1)?.extract()
 }
 
 /// Calls the module global `f` with one argument (`atoms_of`, `_kid`), counted as `global` does.
@@ -57,8 +58,8 @@ fn call_global<'py>(f: &Bound<'py, PyAny>, arg: &Bound<'py, PyAny>) -> PyResult<
 }
 
 /// `k.update(_kid(a) for a in atoms_of(f))`.
-fn add_kids_of(k: &Bound<'_, PySet>, f: &Bound<'_, PyAny>, kid: &Bound<'_, PyAny>) -> PyResult<()> {
-    for a in crate::formula::atoms_nosession(f)?.iter() {
+fn add_kids_of(k: &Bound<'_, PySet>, f: &Bound<'_, PyAny>, kid: &Bound<'_, PyAny>, nodes: &dyn Nodes) -> PyResult<()> {
+    for a in nodes.atoms(f)?.iter() {
         k.add(call_global(kid, &a)?)?;
     }
     Ok(())
@@ -74,7 +75,7 @@ fn store_kids(kids: &Bound<'_, PyAny>, o: &Bound<'_, PyAny>, r: &Bound<'_, PyAny
 
 /// `Engine._struct` (engine.py:1609 on 4215655): `(kids, weight)` of the cone object `o`, memoized in `_kids` (emptied at
 /// 200,000 entries). The kid sets are Python sets filled in Python's order, so `_cone_info`'s walk visits them as Python's does.
-pub(crate) fn struct_<'py>(eng: &Bound<'py, PyAny>, o: &Bound<'py, PyAny>, budget: i64) -> PyResult<Bound<'py, PyAny>> {
+pub(crate) fn struct_<'py>(eng: &Bound<'py, PyAny>, o: &Bound<'py, PyAny>, budget: i64, nodes: &dyn Nodes) -> PyResult<Bound<'py, PyAny>> {
     tick(BUD_STRUCT);
     let p = eng.py();
     let kids = eng.getattr(intern!(p, "_kids"))?;
@@ -111,7 +112,7 @@ pub(crate) fn struct_<'py>(eng: &Bound<'py, PyAny>, o: &Bound<'py, PyAny>, budge
         if !ext.is_none() {
             tick(BUD_CB_EXT);
             for f in ext.call_method1(intern!(p, "facts_for"), (o,))?.try_iter()? {
-                add_kids_of(&k, &f?, &kid)?;
+                add_kids_of(&k, &f?, &kid, nodes)?;
             }
             k.discard(o)?;
         }
@@ -195,7 +196,7 @@ pub(crate) fn struct_<'py>(eng: &Bound<'py, PyAny>, o: &Bound<'py, PyAny>, budge
         }
     }
     for f in formulas.try_iter()? {
-        add_kids_of(&k, &f?, &kid)?;
+        add_kids_of(&k, &f?, &kid, nodes)?;
     }
     k.discard(o)?;
     let w: i64 = if compiled.is_truthy()? && formulas.is_truthy()? && !planted(CONE_STRUCT_WEIGHT_ONE) { 2 } else { 1 };
@@ -206,7 +207,7 @@ pub(crate) fn struct_<'py>(eng: &Bound<'py, PyAny>, o: &Bound<'py, PyAny>, budge
 
 /// `Engine._cone_info` (engine.py:1676 on 4215655): `(cone, weight, rel)` of the cone object `d`, memoized in `_cones`
 /// (emptied at 100,000 entries).
-pub(crate) fn cone_info<'py>(eng: &Bound<'py, PyAny>, d: &Bound<'py, PyAny>, budget: i64) -> PyResult<Bound<'py, PyAny>> {
+pub(crate) fn cone_info<'py>(eng: &Bound<'py, PyAny>, d: &Bound<'py, PyAny>, budget: i64, nodes: &dyn Nodes) -> PyResult<Bound<'py, PyAny>> {
     tick(BUD_CONE_INFO);
     let p = eng.py();
     let cones = eng.getattr(intern!(p, "_cones"))?;
@@ -223,7 +224,7 @@ pub(crate) fn cone_info<'py>(eng: &Bound<'py, PyAny>, d: &Bound<'py, PyAny>, bud
     let mut rel = false;
     let mut over = false;
     while let Some(o) = stack.pop() {
-        let s = struct_(eng, &o, budget)?;
+        let s = struct_(eng, &o, budget, nodes)?;
         let (k, w) = (s.get_item(0)?, s.get_item(1)?.extract::<i64>()?);
         total += w;
         if o.get_type().is(&pcls) && ratoms.contains(o.getattr(intern!(p, "pred"))?)? {
@@ -242,7 +243,7 @@ pub(crate) fn cone_info<'py>(eng: &Bound<'py, PyAny>, d: &Bound<'py, PyAny>, bud
                 let x = x?;
                 if !seen.contains(&x)? {
                     seen.add(&x)?;
-                    total += struct_weight(eng, &x, budget)?;
+                    total += struct_weight(eng, &x, budget, nodes)?;
                 }
             }
         } else {
@@ -293,7 +294,7 @@ pub(crate) fn drop_cones(eng: &Bound<'_, PyAny>) -> PyResult<()> {
 fn bud_struct<'py>(eng: &Bound<'py, PyAny>, o: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
     tick(BUD_PY_STRUCT);
     match budget_of(eng)? {
-        Some(b) => struct_(eng, o, b),
+        Some(b) => struct_(eng, o, b, &Hand::enter_inner()),
         None => py_method(eng, "_struct")?.call1((eng, o)),
     }
 }
@@ -302,7 +303,7 @@ fn bud_struct<'py>(eng: &Bound<'py, PyAny>, o: &Bound<'py, PyAny>) -> PyResult<B
 fn bud_cone_info<'py>(eng: &Bound<'py, PyAny>, d: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
     tick(BUD_PY_CONE_INFO);
     match budget_of(eng)? {
-        Some(b) => cone_info(eng, d, b),
+        Some(b) => cone_info(eng, d, b, &Hand::enter_inner()),
         None => py_method(eng, "_cone_info")?.call1((eng, d)),
     }
 }
@@ -315,14 +316,14 @@ fn bud_drop_cones(eng: &Bound<'_, PyAny>) -> PyResult<()> {
 
 /// `Engine._union`: `(cone, weight, rel)` of the union of the cones of `objs`, cone None past the budget.
 /// `Ok(None)`: the budget isn't an int, and Python's method answered instead (returned by the caller).
-pub(crate) fn union<'py>(eng: &Bound<'py, PyAny>, objs: &Bound<'py, PyAny>, budget: i64) -> PyResult<Bound<'py, PyTuple>> {
+pub(crate) fn union<'py>(eng: &Bound<'py, PyAny>, objs: &Bound<'py, PyAny>, budget: i64, nodes: &dyn Nodes) -> PyResult<Bound<'py, PyTuple>> {
     let p = eng.py();
     let mut cone = PyFrozenSet::empty(p)?;
     let mut weight: i64 = 0;
     let mut rel = false;
     for o in objs.try_iter()? {
         let o = o?;
-        let ci = cone_info(eng, &o, budget)?;
+        let ci = cone_info(eng, &o, budget, nodes)?;
         let (c, w, r) = (ci.get_item(0)?, ci.get_item(1)?, ci.get_item(2)?);
         if c.is_none() {
             tick(BUD_UNION_CONE_NONE);
@@ -342,7 +343,7 @@ pub(crate) fn union<'py>(eng: &Bound<'py, PyAny>, objs: &Bound<'py, PyAny>, budg
             } else {
                 tick(BUD_UNION_PARTIAL);
                 for x in new.iter() {
-                    weight += struct_weight(eng, &x, budget)?;
+                    weight += struct_weight(eng, &x, budget, nodes)?;
                 }
             }
             if weight > budget {
@@ -361,7 +362,7 @@ fn rel_obj(p: Python<'_>, rel: bool) -> Bound<'_, PyAny> {
 
 /// `Engine._query_cone` (engine.py:1726 on 2b98ab4): `(cone, weight, rel, sums, zs)` for `f`, memoized per engine in
 /// `_qcones` (Rust-native since 5c9c, engmemo.rs), keyed `(f, link)`, emptied at 50,000 entries as Python's.
-pub(crate) fn query_cone<'py>(eng: &Bound<'py, PyAny>, f: &Bound<'py, PyAny>, link: bool, budget: i64) -> PyResult<Bound<'py, PyAny>> {
+pub(crate) fn query_cone<'py>(eng: &Bound<'py, PyAny>, f: &Bound<'py, PyAny>, link: bool, budget: i64, nodes: &dyn Nodes) -> PyResult<Bound<'py, PyAny>> {
     tick(BUD_QUERY_CONE);
     let p = eng.py();
     let key = if planted(EM_QCONE_KEY_F) { f.clone() } else { PyTuple::new(p, [f.clone(), rel_obj(p, link)])?.into_any() };
@@ -370,7 +371,7 @@ pub(crate) fn query_cone<'py>(eng: &Bound<'py, PyAny>, f: &Bound<'py, PyAny>, li
         return Ok(r);
     }
     let em = engine_mod(p)?;
-    let atoms = crate::formula::atoms_nosession(f)?.into_any();
+    let atoms = nodes.atoms(f)?.into_any();
     let specs = eng.getattr(intern!(p, "_relation_specs"))?;
     let src = if specs.is_truthy()? { global(&em, intern!(p, "glue_atoms"), &atoms)? } else { atoms.clone() };
     let kid = em.getattr(intern!(p, "_kid"))?;
@@ -420,7 +421,7 @@ pub(crate) fn query_cone<'py>(eng: &Bound<'py, PyAny>, f: &Bound<'py, PyAny>, li
         }
     }
     let sums = PyFrozenSet::new(p, sums.iter())?;
-    let u = union(eng, objs.as_any(), budget)?;
+    let u = union(eng, objs.as_any(), budget, nodes)?;
     let zs = global(&em, intern!(p, "zero_args"), &atoms)?;
     let r = PyTuple::new(p, [u.get_item(0)?, u.get_item(1)?, u.get_item(2)?, sums.into_any(), zs])?.into_any();
     if engmemo::len(&qc)? >= 50_000 {
@@ -435,7 +436,7 @@ pub(crate) fn query_cone<'py>(eng: &Bound<'py, PyAny>, f: &Bound<'py, PyAny>, li
 #[pyfunction]
 fn bud_query_cone<'py>(eng: &Bound<'py, PyAny>, f: &Bound<'py, PyAny>, link: bool) -> PyResult<Bound<'py, PyAny>> {
     match budget_of(eng)? {
-        Some(b) => query_cone(eng, f, link, b),
+        Some(b) => query_cone(eng, f, link, b, &Hand::enter_inner()),
         None => py_method(eng, "_query_cone")?.call1((eng, f, link)),
     }
 }
@@ -446,24 +447,24 @@ fn global<'py>(em: &Bound<'py, PyModule>, name: &Bound<'py, pyo3::types::PyStrin
 }
 
 /// `Engine._within_budget`.
-fn within_budget(eng: &Bound<'_, PyAny>, prop: &Bound<'_, PyAny>, assumptions: Option<&Bound<'_, PyAny>>, budget: i64) -> PyResult<bool> {
+fn within_budget(eng: &Bound<'_, PyAny>, prop: &Bound<'_, PyAny>, assumptions: Option<&Bound<'_, PyAny>>, budget: i64, nodes: &dyn Nodes) -> PyResult<bool> {
     let p = eng.py();
-    let r = query_cone(eng, prop, false, budget)?;
+    let r = query_cone(eng, prop, false, budget, nodes)?;
     let mut rel = r.get_item(2)?.is_truthy()?;
     let mut sums = r.get_item(3)?;
     let zp = r.get_item(4)?.cast_into::<PyTuple>()?;
     let mut cross: Option<Bound<'_, PyList>> = None;
     let specs = eng.getattr(intern!(p, "_relation_specs"))?.is_truthy()?;
     if let Some(a) = assumptions {
-        let ra = query_cone(eng, a, false, budget)?;
+        let ra = query_cone(eng, a, false, budget, nodes)?;
         rel = rel || ra.get_item(2)?.is_truthy()?;
         sums = sums.call_method1(intern!(p, "__or__"), (ra.get_item(3)?,))?;
         let za = ra.get_item(4)?.cast_into::<PyTuple>()?;
         if (!zp.is_empty() || !za.is_empty()) && specs {
             let em = engine_mod(p)?;
             let (uo, zt) = (intern!(p, "under_of"), intern!(p, "zero_twin"));
-            let up = global(&em, uo, &crate::formula::atoms_nosession(prop)?.into_any())?;
-            let ua = global(&em, uo, &crate::formula::atoms_nosession(a)?.into_any())?;
+            let up = global(&em, uo, &nodes.atoms(prop)?.into_any())?;
+            let ua = global(&em, uo, &nodes.atoms(a)?.into_any())?;
             let keys = PyDict::new(p);
             for e in zp.iter().chain(za.iter()) {
                 keys.set_item(e, p.None())?;
@@ -487,14 +488,14 @@ fn within_budget(eng: &Bound<'_, PyAny>, prop: &Bound<'_, PyAny>, assumptions: O
         }
     }
     let link = specs && (rel || sums.len()? >= 2) && !planted(WITHIN_NO_LINK);
-    let rp = query_cone(eng, prop, link, budget)?;
+    let rp = query_cone(eng, prop, link, budget, nodes)?;
     let cp = rp.get_item(0)?;
     if cp.is_none() {
         return Ok(false);
     }
     let Some(a) = assumptions else { return Ok(true) };
     let wp: i64 = rp.get_item(1)?.extract()?;
-    let ra = query_cone(eng, a, link, budget)?;
+    let ra = query_cone(eng, a, link, budget, nodes)?;
     let mut ca = ra.get_item(0)?;
     if ca.is_none() {
         return Ok(false);
@@ -507,7 +508,7 @@ fn within_budget(eng: &Bound<'_, PyAny>, prop: &Bound<'_, PyAny>, assumptions: O
         for x in cross.iter() {
             objs.add(global(&em, kid, &x)?)?;
         }
-        let u = union(eng, objs.as_any(), budget)?;
+        let u = union(eng, objs.as_any(), budget, nodes)?;
         let cx = u.get_item(0)?;
         if cx.is_none() {
             return Ok(false);
@@ -523,7 +524,7 @@ fn within_budget(eng: &Bound<'_, PyAny>, prop: &Bound<'_, PyAny>, assumptions: O
     for x in ca.try_iter()? {
         let x = x?;
         if !cp.contains(&x)? {
-            total += struct_weight(eng, &x, budget)?;
+            total += struct_weight(eng, &x, budget, nodes)?;
         }
     }
     Ok(total <= budget)
@@ -533,19 +534,18 @@ fn within_budget(eng: &Bound<'_, PyAny>, prop: &Bound<'_, PyAny>, assumptions: O
 fn bud_union<'py>(eng: &Bound<'py, PyAny>, objs: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
     tick(BUD_UNION);
     match budget_of(eng)? {
-        Some(b) => Ok(union(eng, objs, b)?.into_any()),
+        Some(b) => Ok(union(eng, objs, b, &Hand::enter_inner())?.into_any()),
         None => py_method(eng, "_union")?.call1((eng, objs)),
     }
 }
 
-#[pyfunction]
-#[pyo3(signature = (eng, proposition, assumptions=None))]
-fn bud_within_budget<'py>(eng: &Bound<'py, PyAny>, proposition: &Bound<'py, PyAny>, assumptions: Option<&Bound<'py, PyAny>>) -> PyResult<Bound<'py, PyAny>> {
+/// `Engine._within_budget` with the caller's nodes.
+fn within<'py>(eng: &Bound<'py, PyAny>, proposition: &Bound<'py, PyAny>, assumptions: Option<&Bound<'py, PyAny>>, nodes: &dyn Nodes) -> PyResult<Bound<'py, PyAny>> {
     tick(BUD_WITHIN_BUDGET);
     let p = eng.py();
     match budget_of(eng)? {
         Some(b) => {
-            let ok = within_budget(eng, proposition, assumptions.filter(|a| !a.is_none()), b)?;
+            let ok = within_budget(eng, proposition, assumptions.filter(|a| !a.is_none()), b, nodes)?;
             if !ok {
                 tick(BUD_WITHIN_FALSE);
             }
@@ -553,6 +553,25 @@ fn bud_within_budget<'py>(eng: &Bound<'py, PyAny>, proposition: &Bound<'py, PyAn
         }
         None => py_method(eng, "_within_budget")?.call1((eng, proposition, assumptions)),
     }
+}
+
+/// `self._within_budget(proposition, assumptions)` for a caller that holds nodes: Rust's own directly while the engine's
+/// method is the installed one; a patched one is called, with the objects.
+pub(crate) fn within_from<'py>(eng: &Bound<'py, PyAny>, proposition: &Bound<'py, PyAny>, assumptions: Option<&Bound<'py, PyAny>>, nodes: &dyn Nodes) -> PyResult<bool> {
+    let p = eng.py();
+    match crate::context::patched_method(eng, "_within_budget")? {
+        None => within(eng, proposition, assumptions, nodes)?.is_truthy(),
+        Some(f) => match assumptions {
+            Some(a) => f.call1((proposition, a))?.is_truthy(),
+            None => f.call1((proposition, p.None()))?.is_truthy(),
+        },
+    }
+}
+
+#[pyfunction]
+#[pyo3(signature = (eng, proposition, assumptions=None))]
+fn bud_within_budget<'py>(eng: &Bound<'py, PyAny>, proposition: &Bound<'py, PyAny>, assumptions: Option<&Bound<'py, PyAny>>) -> PyResult<Bound<'py, PyAny>> {
+    within(eng, proposition, assumptions, &Hand::enter_inner())
 }
 
 /// `Engine._over_budget`: a query over the discovery budget, None, no session touched. Step 5c10d: writes the Rust-owned
@@ -595,9 +614,9 @@ fn bud_note_budget(eng: &Bound<'_, PyAny>, s: &Bound<'_, PyAny>) -> PyResult<()>
 }
 
 /// `self._cone_info(d)` from Rust (entry.rs): Python's for a budget that isn't an int, as `bud_cone_info`.
-pub(crate) fn cone_info_any<'py>(eng: &Bound<'py, PyAny>, d: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+pub(crate) fn cone_info_any<'py>(eng: &Bound<'py, PyAny>, d: &Bound<'py, PyAny>, nodes: &dyn Nodes) -> PyResult<Bound<'py, PyAny>> {
     match budget_of(eng)? {
-        Some(b) => cone_info(eng, d, b),
+        Some(b) => cone_info(eng, d, b, nodes),
         None => py_method(eng, "_cone_info")?.call1((eng, d)),
     }
 }

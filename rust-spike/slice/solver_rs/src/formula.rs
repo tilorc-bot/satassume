@@ -24,6 +24,7 @@ use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyList, PyTuple};
 use std::cell::Cell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 /// Deeper formulas compile on Python, over this same table. Python's own limit depends on the caller's stack, so it isn't
@@ -58,7 +59,7 @@ pub(crate) struct Occ {
     pub atom: u32,
 }
 
-const NAMES: [&str; 18] = [
+const NAMES: [&str; 20] = [
     "fm:convert",       // 630: conversions run
     "fm:nodes",         // 631: nodes built
     "fm:atom_occ",      // 632: atom occurrences read (`.pred`, `.expr`)
@@ -73,7 +74,9 @@ const NAMES: [&str; 18] = [
     "fm:to_f",          // 641: a node walked into ids for the compiler
     "fm:atoms_py",      // 642: Python's `atoms_of` called for a refused formula
     "fm:atoms_node",    // 643: an engine `atoms_of` site answered from the session's node
-    "fm:nosession",     // 644: an engine `atoms_of` site with no session at hand: converted there, kept by nothing
+    "fm:nosession",     // 644: a scope or cone function entered by name from inside a Rust entry: no node was handed to it
+    "fm:twice",         // 645: an object converted a second time inside one outermost entry
+    "fm:give",          // 646: nodes an entry handed to a session
     "cls:eq",           // 670: `same_class`: two class objects with one id in the query's class table
     "cls:differs",      // 671: `same_class`: two class objects, not one class to the query
     "same:eq",          // 672: wiring's 'same' shape or the Pow key met two equal, distinct objects (`==`, not `is`)
@@ -95,7 +98,7 @@ pub(crate) const ATOMS_NODE: usize = 13;
 const NOSESSION: usize = 14;
 
 /// Plants 601-606, each the control of one comparison in test_formula_nodes.py.
-const PLANTS: [&str; 10] = [
+const PLANTS: [&str; 11] = [
     "fm-atoms-drop-last",  // 601: `atoms` without its last atom
     "fm-atoms-no-dedupe",  // 602: every occurrence its own atom
     "fm-args-reverse",     // 603: `And`/`Or` arguments reversed
@@ -106,14 +109,19 @@ const PLANTS: [&str; 10] = [
     "class-is",            // 661: `same_class` by identity again, at every site, Rust's and term_live's
     "ad-lra-atom-object",  // 662: a native reader result holds the atom's own object, not the query's first (its row)
     "same-is",             // 663: wiring's 'same' shape and the Pow key's `b == e` by identity again (rows_tpl.rs)
+    "fm-hand-no-give",     // 607: `Hand::give` hands nothing over
 ];
 
 thread_local! {
-    static COUNTS: [Cell<u64>; 18] = const { [const { Cell::new(0) }; 18] };
+    static COUNTS: [Cell<u64>; 20] = const { [const { Cell::new(0) }; 20] };
     /// The nine classes for a site with no session: `SessionRules`' list (session_live.py `_core_rules`), read once.
     static CLASSES: std::cell::RefCell<Option<Rc<Vec<Py<PyAny>>>>> = const { std::cell::RefCell::new(None) };
     /// 0: none; else 1 + the index into `PLANTS`.
     static PLANT: Cell<u8> = const { Cell::new(0) };
+    /// How many `Hand`s are live on this thread's stack: 0 outside any entry.
+    static ENTRIES: Cell<u32> = const { Cell::new(0) };
+    /// The objects converted since the outermost entry began, held until it ends (`fm:twice` only; nothing reads a node here).
+    static SEEN: std::cell::RefCell<HashMap<usize, Py<PyAny>>> = std::cell::RefCell::new(HashMap::new());
 }
 
 pub(crate) fn tick(i: usize) {
@@ -130,9 +138,13 @@ fn planted(i: u8) -> bool {
     on
 }
 
-const CLS_EQ: usize = 15;
-const CLS_DIFFERS: usize = 16;
-const SAME_EQ: usize = 17;
+const TWICE: usize = 15;
+const GIVE: usize = 16;
+const CLS_EQ: usize = 17;
+const CLS_DIFFERS: usize = 18;
+const SAME_EQ: usize = 19;
+/// Plant 607: the entry hands no node to the session, which converts the query's formulas again (`fm:twice`).
+const HAND_NO_GIVE: u8 = 10;
 pub(crate) const AD_LRA_CLASS_IS: u8 = 6;
 const CLASS_IS: u8 = 7;
 const AD_LRA_ATOM_OBJECT: u8 = 8;
@@ -338,6 +350,18 @@ pub struct FNode {
 }
 
 impl FNode {
+    /// A node of the same formula with its own references: each holder the collector visits owns what it visits.
+    pub(crate) fn share(&self, p: Python<'_>) -> FNode {
+        FNode {
+            root: self.root.clone(),
+            occ: self.occ.iter().map(|o| Occ { obj: o.obj.clone_ref(p), pred: o.pred.clone_ref(p), expr: o.expr.clone_ref(p), atom: o.atom }).collect(),
+            atoms: self.atoms.clone_ref(p),
+            bad: self.bad.iter().map(|b| b.clone_ref(p)).collect(),
+            source: self.source.clone_ref(p),
+            nodes: self.nodes,
+        }
+    }
+
     /// Every object the node holds, for the collector (the session's cache keeps nodes alive).
     pub(crate) fn visit(&self, visit: &pyo3::PyVisit<'_>) -> Result<(), pyo3::PyTraverseError> {
         visit.call(&self.source)?;
@@ -468,6 +492,9 @@ pub(crate) fn convert_or(f: &Bound<'_, PyAny>, classes: &[Py<PyAny>]) -> PyResul
         Err(Stop::Py(e)) => return Err(e),
     };
     COUNTS.with(|c| c[NODES].set(c[NODES].get() + u64::from(w.nodes)));
+    if ENTRIES.with(|d| d.get()) > 0 && SEEN.with(|s| s.borrow_mut().insert(f.as_ptr() as usize, f.clone().unbind())).is_some() {
+        tick(TWICE);
+    }
     let mut firsts = w.firsts;
     if !firsts.is_empty() && planted(0) {
         firsts.pop();
@@ -498,14 +525,91 @@ pub(crate) fn atoms_py<'py>(f: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyTupl
     Ok(a.cast_into::<PyTuple>()?)
 }
 
-/// `atoms_of(f)` where no session is at hand (`theory_scope`, the cones): one walk of the object here, and the node is
-/// dropped. Counted (`fm:nosession`): a formula the session also converts is read twice until the entry hands nodes down.
-pub(crate) fn atoms_nosession<'py>(f: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyTuple>> {
-    let p = f.py();
-    tick(NOSESSION);
-    match convert_or(f, &classes(p)?)? {
-        Ok(n) => Ok(n.atoms_of(p)),
-        Err(_) => atoms_py(f),
+/// Who holds a query's nodes: the entry's `Hand` before a session exists, the session's core after.
+pub(crate) trait Nodes {
+    /// `atoms_of(f)` from the holder's node of `f`; Python's own where the conversion refuses (`fm:atoms_py`).
+    fn atoms<'py>(&self, f: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyTuple>>;
+}
+
+/// The nodes an entry holds for the length of its call: each formula it is given (and each one a callback hands it:
+/// the extensions' facts, a template's formulas) is converted the first time something needs it and never again. It
+/// is an argument, handed down to the scope and cone functions and, by `give`, to each session the entry makes. Found
+/// by the object's identity; the node holds the object.
+pub(crate) struct Hand {
+    nodes: std::cell::RefCell<HashMap<usize, Rc<FNode>>>,
+}
+
+impl Hand {
+    /// An entry begins.
+    pub(crate) fn enter() -> Hand {
+        ENTRIES.with(|d| d.set(d.get() + 1));
+        Hand { nodes: std::cell::RefCell::new(HashMap::new()) }
+    }
+
+    /// `enter` for a scope or cone function called from Python. Reached from inside another entry, a by-name call
+    /// dropped the caller's nodes on the way (`fm:nosession`).
+    pub(crate) fn enter_inner() -> Hand {
+        if ENTRIES.with(|d| d.get()) > 0 {
+            tick(NOSESSION);
+        }
+        Hand::enter()
+    }
+
+    pub(crate) fn node(&self, f: &Bound<'_, PyAny>) -> PyResult<Result<Rc<FNode>, Refused>> {
+        let k = f.as_ptr() as usize;
+        if let Some(n) = self.nodes.borrow().get(&k) {
+            tick(CACHE_HIT);
+            return Ok(Ok(n.clone()));
+        }
+        Ok(match convert_or(f, &classes(f.py())?)? {
+            Ok(n) => {
+                let n = Rc::new(n);
+                self.nodes.borrow_mut().insert(k, n.clone());
+                Ok(n)
+            }
+            Err(w) => Err(w),
+        })
+    }
+
+    /// Hands the session `s` a node of its own for each formula held (the same tree, its own references), so the
+    /// session converts none of them again. `needed`: formulas the session is about to compile, converted now if
+    /// nothing needed them yet.
+    pub(crate) fn give(&self, s: &Bound<'_, PyAny>, needed: &[&Bound<'_, PyAny>]) -> PyResult<()> {
+        let p = s.py();
+        for f in needed {
+            if !f.is_none() {
+                self.node(f)?.ok();
+            }
+        }
+        if planted(HAND_NO_GIVE) {
+            return Ok(());
+        }
+        let Ok(core) = crate::session::core_of(s) else { return Ok(()) };
+        let core = core.borrow();
+        for (k, n) in self.nodes.borrow().iter() {
+            if core.take_node(*k, || Rc::new(n.share(p))) {
+                tick(GIVE);
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Drop for Hand {
+    fn drop(&mut self) {
+        if ENTRIES.with(|d| { d.set(d.get() - 1); d.get() }) == 0 {
+            let seen = SEEN.with(|s| std::mem::take(&mut *s.borrow_mut()));
+            drop(seen);
+        }
+    }
+}
+
+impl Nodes for Hand {
+    fn atoms<'py>(&self, f: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyTuple>> {
+        match self.node(f)? {
+            Ok(n) => Ok(n.atoms_of(f.py())),
+            Err(_) => atoms_py(f),
+        }
     }
 }
 

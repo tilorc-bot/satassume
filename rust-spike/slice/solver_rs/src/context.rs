@@ -21,6 +21,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyTuple};
 
 use crate::engmemo;
+use crate::formula::Hand;
 use crate::theory_flags::{theory_flag, Flag};
 use crate::relations_core::{
     planted, CTX_BUILD_NO_FALLBACK, CTX_BUILD_NO_LINK, CTX_CHECK_NO_ESCALATE, CTX_CHECK_NO_TRUNCATED, CTX_CHECK_RAISE,
@@ -60,6 +61,24 @@ fn patched<'py>(eng: &Bound<'py, PyAny>, name: &str) -> PyResult<Option<Bound<'p
     Ok(Some(eng.getattr(name)?))
 }
 
+/// The engine's method `name` when it isn't the one session_live installed (`OURS`): a caller holding nodes calls Rust's
+/// own directly on None, and the returned method, with the objects, otherwise.
+pub(crate) fn patched_method<'py>(eng: &Bound<'py, PyAny>, name: &str) -> PyResult<Option<Bound<'py, PyAny>>> {
+    let p = eng.py();
+    if let Ok(d) = eng.getattr(intern!(p, "__dict__")) {
+        if let Ok(d) = d.cast_into::<PyDict>() {
+            if d.contains(name)? {
+                return Ok(Some(eng.getattr(name)?));
+            }
+        }
+    }
+    let ours = p.import(intern!(p, "session_live"))?.getattr(intern!(p, "OURS"))?.cast_into::<PyDict>()?.get_item(name)?;
+    match ours {
+        Some(o) if eng.get_type().getattr(name)?.is(&o) => Ok(None),
+        _ => Ok(Some(eng.getattr(name)?)),
+    }
+}
+
 fn epoch_check(eng: &Bound<'_, PyAny>) -> PyResult<()> {
     let p = eng.py();
     let cur = engine_mod(p)?.getattr(intern!(p, "_EPOCH"))?.get_item(0)?;
@@ -85,6 +104,26 @@ fn split(r: Bound<'_, PyAny>) -> PyResult<Built<'_>> {
 #[pyfunction]
 #[pyo3(signature = (eng, assumptions, proposition=None))]
 fn ctx_context_session<'py>(eng: &Bound<'py, PyAny>, assumptions: &Bound<'py, PyAny>, proposition: Option<&Bound<'py, PyAny>>) -> PyResult<Bound<'py, PyTuple>> {
+    context_session(eng, assumptions, proposition, &Hand::enter())
+}
+
+/// `self._context_session(assumptions, proposition)` for a caller that holds nodes (see `budget::within_from`).
+pub(crate) fn context_session_from<'py>(eng: &Bound<'py, PyAny>, assumptions: &Bound<'py, PyAny>, proposition: &Bound<'py, PyAny>, hand: &Hand) -> PyResult<Bound<'py, PyAny>> {
+    match patched_method(eng, "_context_session")? {
+        None => Ok(context_session(eng, assumptions, Some(proposition), hand)?.into_any()),
+        Some(f) => f.call1((assumptions, proposition)),
+    }
+}
+
+/// `self.verdict(assumptions)` for a caller that holds nodes.
+pub(crate) fn verdict_from<'py>(eng: &Bound<'py, PyAny>, assumptions: &Bound<'py, PyAny>, hand: &Hand) -> PyResult<Bound<'py, PyAny>> {
+    match patched_method(eng, "verdict")? {
+        None => verdict(eng, assumptions, hand),
+        Some(f) => f.call1((assumptions,)),
+    }
+}
+
+fn context_session<'py>(eng: &Bound<'py, PyAny>, assumptions: &Bound<'py, PyAny>, proposition: Option<&Bound<'py, PyAny>>, hand: &Hand) -> PyResult<Bound<'py, PyTuple>> {
     tick(CTX_CONTEXT_SESSION);
     let p = eng.py();
     epoch_check(eng)?;
@@ -96,7 +135,7 @@ fn ctx_context_session<'py>(eng: &Bound<'py, PyAny>, assumptions: &Bound<'py, Py
             return Err(inconsistent_err(p)?);
         }
     }
-    let (s, lits) = memoized(eng, assumptions, proposition)?;
+    let (s, lits) = memoized(eng, assumptions, proposition, hand)?;
     if crate::session::ses_verdict(&s)?.is(&inc) && !planted(CTX_SESSION_INCONSISTENT_PASS) {
         return Err(inconsistent_err(p)?);
     }
@@ -106,14 +145,14 @@ fn ctx_context_session<'py>(eng: &Bound<'py, PyAny>, assumptions: &Bound<'py, Py
     PyTuple::new(p, [s, lits])
 }
 
-fn memoized<'py>(eng: &Bound<'py, PyAny>, assumptions: &Bound<'py, PyAny>, proposition: Option<&Bound<'py, PyAny>>) -> PyResult<Built<'py>> {
+fn memoized<'py>(eng: &Bound<'py, PyAny>, assumptions: &Bound<'py, PyAny>, proposition: Option<&Bound<'py, PyAny>>, hand: &Hand) -> PyResult<Built<'py>> {
     if let Some(f) = patched(eng, "_build_context_memoized")? {
         return split(f.call1((assumptions, proposition))?);
     }
-    build_memoized(eng, assumptions, proposition)
+    build_memoized(eng, assumptions, proposition, hand)
 }
 
-fn build_memoized<'py>(eng: &Bound<'py, PyAny>, assumptions: &Bound<'py, PyAny>, proposition: Option<&Bound<'py, PyAny>>) -> PyResult<Built<'py>> {
+fn build_memoized<'py>(eng: &Bound<'py, PyAny>, assumptions: &Bound<'py, PyAny>, proposition: Option<&Bound<'py, PyAny>>, hand: &Hand) -> PyResult<Built<'py>> {
     tick(CTX_BUILD_MEMOIZED);
     let p = eng.py();
     let failed = eng.getattr(intern!(p, "_failed"))?;
@@ -124,7 +163,7 @@ fn build_memoized<'py>(eng: &Bound<'py, PyAny>, assumptions: &Bound<'py, PyAny>,
     }
     let built = match patched(eng, "_build_context")? {
         Some(f) => f.call1((assumptions, proposition)).and_then(split),
-        None => build_context(eng, assumptions, proposition),
+        None => build_context(eng, assumptions, proposition, hand),
     };
     let (s, lits) = match built {
         Ok(b) => b,
@@ -150,26 +189,29 @@ fn build_memoized<'py>(eng: &Bound<'py, PyAny>, assumptions: &Bound<'py, PyAny>,
 #[pyfunction]
 #[pyo3(signature = (eng, assumptions, proposition=None))]
 fn ctx_build_context_memoized<'py>(eng: &Bound<'py, PyAny>, assumptions: &Bound<'py, PyAny>, proposition: Option<&Bound<'py, PyAny>>) -> PyResult<Bound<'py, PyTuple>> {
-    let (s, l) = build_memoized(eng, assumptions, proposition)?;
+    let (s, l) = build_memoized(eng, assumptions, proposition, &Hand::enter())?;
     PyTuple::new(eng.py(), [s, l])
 }
 
-fn fresh<'py>(eng: &Bound<'py, PyAny>, scope: &Bound<'py, PyAny>, assumptions: &Bound<'py, PyAny>) -> PyResult<Built<'py>> {
+fn fresh<'py>(eng: &Bound<'py, PyAny>, scope: &Bound<'py, PyAny>, assumptions: &Bound<'py, PyAny>, hand: &Hand) -> PyResult<Built<'py>> {
     let p = eng.py();
     tick(CTX_CB_FRESH_SESSION);
     let s = eng.call_method1(intern!(p, "_fresh_session"), (scope,))?;
+    hand.give(&s, &[assumptions])?;
     let lits = s.call_method1(intern!(p, "assume_formula"), (assumptions,))?;
     Ok((s, lits))
 }
 
-fn build_context<'py>(eng: &Bound<'py, PyAny>, assumptions: &Bound<'py, PyAny>, proposition: Option<&Bound<'py, PyAny>>) -> PyResult<Built<'py>> {
+fn build_context<'py>(eng: &Bound<'py, PyAny>, assumptions: &Bound<'py, PyAny>, proposition: Option<&Bound<'py, PyAny>>, hand: &Hand) -> PyResult<Built<'py>> {
     tick(CTX_BUILD_CONTEXT);
     let p = eng.py();
     tick(CTX_PY_STATS);
     crate::entry::bump(eng, crate::entry::SET_CHECKS, 1)?;
     let em = engine_mod(p)?;
-    let scope = em.getattr(intern!(p, "theory_scope"))?.call1((assumptions, proposition, eng.getattr(intern!(p, "_extensions"))?))?;
-    let (mut s, mut lits) = fresh(eng, &scope, assumptions)?;
+    let none = p.None().into_bound(p);
+    let scope = crate::scope_core::theory_scope_from(em.as_any(), "theory_scope", assumptions, proposition.unwrap_or(&none),
+                                                     &eng.getattr(intern!(p, "_extensions"))?, hand)?;
+    let (mut s, mut lits) = fresh(eng, &scope, assumptions, hand)?;
     let checked = (|| -> PyResult<Bound<'py, PyAny>> {
         let al = s.call_method0(intern!(p, "assumption_lits"))?;
         match patched(eng, "_complete_check")? {
@@ -200,7 +242,7 @@ fn build_context<'py>(eng: &Bound<'py, PyAny>, assumptions: &Bound<'py, PyAny>, 
         Some(v) if !theory_flag(&s, Flag::GaveUp)? || planted(CTX_BUILD_NO_FALLBACK) => v,
         _ => {
             tick(CTX_FALLBACK);
-            (s, lits) = fresh(eng, &scope, assumptions)?;
+            (s, lits) = fresh(eng, &scope, assumptions, hand)?;
             konst(p, "UNKNOWN")?
         }
     };
@@ -226,13 +268,17 @@ fn handler_row(p: Python<'_>, site: &str, err: &PyErr) -> PyResult<()> {
 #[pyfunction]
 #[pyo3(signature = (eng, assumptions, proposition=None))]
 fn ctx_build_context<'py>(eng: &Bound<'py, PyAny>, assumptions: &Bound<'py, PyAny>, proposition: Option<&Bound<'py, PyAny>>) -> PyResult<Bound<'py, PyTuple>> {
-    let (s, l) = build_context(eng, assumptions, proposition)?;
+    let (s, l) = build_context(eng, assumptions, proposition, &Hand::enter())?;
     PyTuple::new(eng.py(), [s, l])
 }
 
 /// `Engine.verdict`.
 #[pyfunction]
 fn ctx_verdict<'py>(eng: &Bound<'py, PyAny>, assumptions: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    verdict(eng, assumptions, &Hand::enter())
+}
+
+fn verdict<'py>(eng: &Bound<'py, PyAny>, assumptions: &Bound<'py, PyAny>, hand: &Hand) -> PyResult<Bound<'py, PyAny>> {
     tick(CTX_VERDICT);
     let p = eng.py();
     epoch_check(eng)?;
@@ -240,14 +286,14 @@ fn ctx_verdict<'py>(eng: &Bound<'py, PyAny>, assumptions: &Bound<'py, PyAny>) ->
     if engine_mod(p)?.getattr(intern!(p, "_noncommutative_atoms"))?.call1((assumptions,))?.is_truthy()? {
         return konst(p, "UNKNOWN");
     }
-    if !planted(CTX_VERDICT_SKIP_BUDGET) && !eng.call_method1(intern!(p, "_within_budget"), (assumptions,))?.is_truthy()? {
+    if !planted(CTX_VERDICT_SKIP_BUDGET) && !crate::budget::within_from(eng, assumptions, None, hand)? {
         return konst(p, "UNKNOWN");
     }
     if let Some(v) = engmemo::get(&eng.getattr(intern!(p, "_verdict"))?, assumptions)? {
         tick(CTX_VERDICT_HIT);
         return Ok(v);
     }
-    crate::session::ses_verdict(&memoized(eng, assumptions, None)?.0)
+    crate::session::ses_verdict(&memoized(eng, assumptions, None, hand)?.0)
 }
 
 /// `Engine._complete_check` (a staticmethod).

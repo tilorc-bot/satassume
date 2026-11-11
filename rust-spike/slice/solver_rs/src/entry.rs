@@ -29,6 +29,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyList, PySet, PyString, PyTuple};
 
 use crate::engmemo;
+use crate::formula::{Hand, Nodes};
 use crate::relations_core::{
     planted, ENT_ASK_NO_CLEAR_FLAG, ENT_ASK_NO_GAVE_UP, ENT_CHECK_VERSION_NO_SYNC, ENT_DECIDE_NO_ESCALATE,
     ENT_DROP_MEMOS_KEEP_ANSWERS, ENT_FRESH_NO_COUNT, ENT_IS_CUSTOM_NO_HIT, ENT_IS_MANY_QUERIES_SHORT, ENT_IS_NO_HIT_COUNT,
@@ -554,17 +555,17 @@ fn by_definition(p: Python<'_>, pred: &Bound<'_, PyAny>) -> PyResult<Option<bool
     Ok(Some(em.getattr(intern!(p, "basis_lits"))?.call1((pred,))?.get_item(0)?.eq("&")?))
 }
 
-fn cone_head<'py>(eng: &Bound<'py, PyAny>, node: &Bound<'py, PyAny>, memo_first: bool) -> PyResult<Bound<'py, PyAny>> {
+fn cone_head<'py>(eng: &Bound<'py, PyAny>, node: &Bound<'py, PyAny>, memo_first: bool, nodes: &dyn Nodes) -> PyResult<Bound<'py, PyAny>> {
     let p = eng.py();
     if memo_first {
         if let Some(c) = engmemo::get(&eng.getattr(intern!(p, "_cones"))?, node)? {
             return c.get_item(0);
         }
     }
-    crate::budget::cone_info_any(eng, node)?.get_item(0)
+    crate::budget::cone_info_any(eng, node, nodes)?.get_item(0)
 }
 
-fn is_<'py>(eng: &Bound<'py, PyAny>, node: &Bound<'py, PyAny>, pred: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+fn is_<'py>(eng: &Bound<'py, PyAny>, node: &Bound<'py, PyAny>, pred: &Bound<'py, PyAny>, hand: &Hand) -> PyResult<Bound<'py, PyAny>> {
     tick(ENT_IS);
     let p = eng.py();
     if stale(eng, Some(intern!(p, "cache")))? {
@@ -572,7 +573,7 @@ fn is_<'py>(eng: &Bound<'py, PyAny>, node: &Bound<'py, PyAny>, pred: &Bound<'py,
     }
     let em = engine_mod(p)?;
     if !em.getattr(intern!(p, "PRED_INDEX"))?.contains(pred)? {
-        return is_custom(eng, node, pred);
+        return is_custom(eng, node, pred, hand);
     }
     if noncommutative(p, node)? {
         return noncomm_answer(p, construction_level(p, node)?, pred);
@@ -580,7 +581,7 @@ fn is_<'py>(eng: &Bound<'py, PyAny>, node: &Bound<'py, PyAny>, pred: &Bound<'py,
     if engmemo::contains(&eng.getattr(intern!(p, "_constructing"))?, node)? {
         return Ok(p.None().into_bound(p));
     }
-    if cone_head(eng, node, true)?.is_none() {
+    if cone_head(eng, node, true, hand)?.is_none() {
         return crate::budget::over_budget(eng);
     }
     let cache = eng.getattr(intern!(p, "cache"))?;
@@ -611,11 +612,12 @@ fn is_<'py>(eng: &Bound<'py, PyAny>, node: &Bound<'py, PyAny>, pred: &Bound<'py,
 
 #[pyfunction]
 fn ent_is<'py>(eng: &Bound<'py, PyAny>, node: &Bound<'py, PyAny>, pred: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
-    is_(eng, node, pred)
+    is_(eng, node, pred, &Hand::enter())
 }
 
 #[pyfunction]
 fn ent_is_many<'py>(eng: &Bound<'py, PyAny>, node: &Bound<'py, PyAny>, preds: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyList>> {
+    let hand = &Hand::enter();
     tick(ENT_IS_MANY);
     let p = eng.py();
     if stale(eng, Some(intern!(p, "cache")))? {
@@ -630,7 +632,7 @@ fn ent_is_many<'py>(eng: &Bound<'py, PyAny>, node: &Bound<'py, PyAny>, preds: &B
     let index = engine_mod(p)?.getattr(intern!(p, "PRED_INDEX"))?;
     for (k, pred) in preds.iter().enumerate() {
         if !index.contains(pred)? {
-            out[k] = is_custom(eng, node, pred)?;
+            out[k] = is_custom(eng, node, pred, hand)?;
         } else if noncomm {
             if level.is_none() {
                 level = Some(construction_level(p, node)?);
@@ -644,7 +646,7 @@ fn ent_is_many<'py>(eng: &Bound<'py, PyAny>, node: &Bound<'py, PyAny>, preds: &B
     if todo.is_empty() || engmemo::contains(&eng.getattr(intern!(p, "_constructing"))?, node)? {
         return done(out);
     }
-    if cone_head(eng, node, true)?.is_none() {
+    if cone_head(eng, node, true, hand)?.is_none() {
         for _ in &todo {
             crate::budget::over_budget(eng)?;
         }
@@ -700,20 +702,20 @@ fn ent_is_many<'py>(eng: &Bound<'py, PyAny>, node: &Bound<'py, PyAny>, preds: &B
     done(out)
 }
 
-fn theory_scope<'py>(eng: &Bound<'py, PyAny>, f: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+fn theory_scope<'py>(eng: &Bound<'py, PyAny>, f: &Bound<'py, PyAny>, hand: &Hand) -> PyResult<Bound<'py, PyAny>> {
     tick(ENT_CB_SCOPE);
     let p = eng.py();
-    engine_mod(p)?.getattr(intern!(p, "theory_scope"))?.call1((p.None(), f, eng.getattr(intern!(p, "_extensions"))?))
+    crate::scope_core::theory_scope_from(engine_mod(p)?.as_any(), "theory_scope", &p.None().into_bound(p), f, &eng.getattr(intern!(p, "_extensions"))?, hand)
 }
 
-fn is_custom<'py>(eng: &Bound<'py, PyAny>, node: &Bound<'py, PyAny>, pred: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+fn is_custom<'py>(eng: &Bound<'py, PyAny>, node: &Bound<'py, PyAny>, pred: &Bound<'py, PyAny>, hand: &Hand) -> PyResult<Bound<'py, PyAny>> {
     tick(ENT_IS_CUSTOM);
     let p = eng.py();
     if stale(eng, Some(intern!(p, "custom_cache")))? {
         check_version(eng)?;
     }
     let atom = engine_mod(p)?.getattr(intern!(p, "P"))?.call1((pred, node))?;
-    if cone_head(eng, &atom, false)?.is_none() {
+    if cone_head(eng, &atom, false, hand)?.is_none() {
         return crate::budget::over_budget(eng);
     }
     let cache = eng.getattr(intern!(p, "custom_cache"))?;
@@ -724,8 +726,9 @@ fn is_custom<'py>(eng: &Bound<'py, PyAny>, node: &Bound<'py, PyAny>, pred: &Boun
         return facts.get_item(pred);
     }
     bump(eng, QUERIES, 1)?;
-    let scope = theory_scope(eng, &atom)?;
+    let scope = theory_scope(eng, &atom, hand)?;
     let s = fresh_session(eng, Some(&scope))?;
+    hand.give(&s, &[&atom])?;
     let lit = s.call_method1(intern!(p, "literal_of"), (&atom,))?;
     let lits = s.call_method1(intern!(p, "assumption_lits"), (&atom,))?;
     let r = decide(eng, &s, &lit, &lits)?;
@@ -735,7 +738,7 @@ fn is_custom<'py>(eng: &Bound<'py, PyAny>, node: &Bound<'py, PyAny>, pred: &Boun
 
 #[pyfunction]
 fn ent_is_custom<'py>(eng: &Bound<'py, PyAny>, node: &Bound<'py, PyAny>, pred: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
-    is_custom(eng, node, pred)
+    is_custom(eng, node, pred, &Hand::enter())
 }
 
 #[pyfunction]
@@ -759,12 +762,13 @@ fn ent_ask<'py>(eng: &Bound<'py, PyAny>, proposition: &Bound<'py, PyAny>, assump
     if em.getattr(intern!(p, "_noncommutative_atoms"))?.call1((proposition, &ctx_or_none))?.is_truthy()? {
         return Ok(none);
     }
+    let hand = Hand::enter();
     let within = |f: &Bound<'py, PyAny>, a: &Bound<'py, PyAny>| -> PyResult<bool> {
-        eng.call_method1(intern!(p, "_within_budget"), (f, a))?.is_truthy()
+        crate::budget::within_from(eng, f, Some(a), &hand)
     };
     if !within(proposition, &ctx_or_none)? {
         if contextual && within(&assumptions, &none)? {
-            let v = eng.call_method1(intern!(p, "verdict"), (&assumptions,))?;
+            let v = crate::context::verdict_from(eng, &assumptions, &hand)?;
             if v.is(&em.getattr(intern!(p, "INCONSISTENT"))?) {
                 let e = em.getattr(intern!(p, "InconsistentAssumptions"))?.call1(("inconsistent assumptions",))?;
                 return Err(PyErr::from_value(e));
@@ -786,12 +790,13 @@ fn ent_ask<'py>(eng: &Bound<'py, PyAny>, proposition: &Bound<'py, PyAny>, assump
         }
     }
     let (s, lits) = if contextual {
-        let sl = eng.call_method1(intern!(p, "_context_session"), (&assumptions, proposition))?;
+        let sl = crate::context::context_session_from(eng, &assumptions, proposition, &hand)?;
         (sl.get_item(0)?, sl.get_item(1)?)
     } else {
-        let scope = theory_scope(eng, proposition)?;
+        let scope = theory_scope(eng, proposition, &hand)?;
         (fresh_session(eng, Some(&scope))?, PyList::empty(p).into_any())
     };
+    hand.give(&s, &[proposition])?;
     ask_inner(eng, &s, &lits, proposition, contextual)
 }
 

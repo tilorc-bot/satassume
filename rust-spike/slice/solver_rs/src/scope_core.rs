@@ -19,6 +19,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyFrozenSet, PyList, PySet, PySlice, PyTuple};
 use pyo3::{intern, IntoPyObjectExt};
 
+use crate::formula::{Hand, Nodes};
 use crate::relations_core::{self, planted};
 use crate::session::{self, tick};
 
@@ -237,7 +238,7 @@ fn scope_scope_of_atoms<'py>(atoms: &Bound<'py, PyAny>) -> PyResult<Bound<'py, P
 }
 
 /// `extension_atoms`: the atoms of the facts `extensions` generates for the custom atoms, transitively, in Python's order.
-fn extension_atoms<'py>(p: Python<'py>, h: &Hooks, atoms: &Bound<'py, PyAny>, extensions: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyList>> {
+fn extension_atoms<'py>(p: Python<'py>, h: &Hooks, atoms: &Bound<'py, PyAny>, extensions: &Bound<'py, PyAny>, nodes: &dyn Nodes) -> PyResult<Bound<'py, PyList>> {
     tick(session::SCOPE_EXTENSION_ATOMS);
     let (index, rel) = tables(p, h)?;
     let out = PyList::empty(p);
@@ -256,7 +257,7 @@ fn extension_atoms<'py>(p: Python<'py>, h: &Hooks, atoms: &Bound<'py, PyAny>, ex
         seen.add(&a)?;
         tick(session::SCOPE_CB_FACTS_FOR);
         for f in extensions.call_method1(intern!(p, "facts_for"), (&a,))?.try_iter()? {
-            for b in crate::formula::atoms_nosession(&f?)?.iter() {
+            for b in nodes.atoms(&f?)?.iter() {
                 out.append(&b)?;
                 if custom_pred(&b, &index, &rel)? && !planted(relations_core::EXT_SHALLOW) {
                     stack.push(b);
@@ -269,13 +270,12 @@ fn extension_atoms<'py>(p: Python<'py>, h: &Hooks, atoms: &Bound<'py, PyAny>, ex
 
 #[pyfunction]
 fn scope_extension_atoms<'py>(atoms: &Bound<'py, PyAny>, extensions: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyList>> {
-    extension_atoms(atoms.py(), &*hooks()?, atoms, extensions)
+    extension_atoms(atoms.py(), &*hooks()?, atoms, extensions, &Hand::enter_inner())
 }
 
 /// `theory_scope`: the atoms of the two formulas (None and True have none), the extensions' atoms, then `scope_of_atoms`.
-#[pyfunction]
-#[pyo3(signature = (assumptions, proposition, extensions=None))]
-fn scope_theory_scope<'py>(assumptions: &Bound<'py, PyAny>, proposition: &Bound<'py, PyAny>, extensions: Option<&Bound<'py, PyAny>>) -> PyResult<Bound<'py, PyAny>> {
+/// The atoms come from `nodes`, the caller's holder: nothing is converted here.
+pub(crate) fn theory_scope<'py>(assumptions: &Bound<'py, PyAny>, proposition: &Bound<'py, PyAny>, extensions: Option<&Bound<'py, PyAny>>, nodes: &dyn Nodes) -> PyResult<Bound<'py, PyAny>> {
     let p = assumptions.py();
     let h = hooks()?;
     tick(session::SCOPE_THEORY_SCOPE);
@@ -288,17 +288,35 @@ fn scope_theory_scope<'py>(assumptions: &Bound<'py, PyAny>, proposition: &Bound<
         if k == 0 && planted(relations_core::THEORY_NO_ASSUME) {
             continue;
         }
-        for a in crate::formula::atoms_nosession(f)?.iter() {
+        for a in nodes.atoms(f)?.iter() {
             atoms.append(a)?;
         }
     }
     if let Some(ext) = extensions.filter(|e| !e.is_none()) {
-        let more = extension_atoms(p, &h, atoms.as_any(), ext)?;
+        let more = extension_atoms(p, &h, atoms.as_any(), ext, nodes)?;
         for b in more.iter() {
             atoms.append(b)?;
         }
     }
     scope_of_atoms(p, &h, atoms.as_any())
+}
+
+/// `theory_scope` for a caller that holds nodes: Rust's own directly while the name `theory_scope` in `module` (the
+/// engine's, or sympy_api's `_theory_scope`) is still the installed one; a patched name is called, with the objects.
+pub(crate) fn theory_scope_from<'py>(module: &Bound<'py, PyAny>, name: &str, assumptions: &Bound<'py, PyAny>, proposition: &Bound<'py, PyAny>,
+                                     extensions: &Bound<'py, PyAny>, nodes: &dyn Nodes) -> PyResult<Bound<'py, PyAny>> {
+    let p = module.py();
+    let f = module.getattr(name)?;
+    if f.is(&p.import(intern!(p, "sa_solver"))?.getattr(intern!(p, "scope_theory_scope"))?) {
+        return theory_scope(assumptions, proposition, Some(extensions), nodes);
+    }
+    f.call1((assumptions, proposition, extensions))
+}
+
+#[pyfunction]
+#[pyo3(signature = (assumptions, proposition, extensions=None))]
+fn scope_theory_scope<'py>(assumptions: &Bound<'py, PyAny>, proposition: &Bound<'py, PyAny>, extensions: Option<&Bound<'py, PyAny>>) -> PyResult<Bound<'py, PyAny>> {
+    theory_scope(assumptions, proposition, extensions, &Hand::enter_inner())
 }
 
 /// Install: `scope` is the module; returns `EMPTY`, which session_live sets in place of Python's.

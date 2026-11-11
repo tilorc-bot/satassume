@@ -931,6 +931,9 @@ def _install_glue():
 #: `_over_budget` and `_note_budget` write `last_budget_limited` and `stats`, so by the planner's inventory ruling (8 Nov ~06:22)
 #: they go to 5c10d: `_install_entry` binds them (budget.rs, writing entry.rs's Rust-owned counters).
 PY_BUDGET = {}
+#: The Engine methods as installed here, by name: a Rust caller holding nodes calls Rust's own directly while the class
+#: still has this one (context.rs `patched_method`), and the patched method, with the objects, otherwise.
+OURS = {}
 _BUDGET_METHODS = {'_union': 'bud_union', '_within_budget': 'bud_within_budget', '_query_cone': 'bud_query_cone',
                    '_struct': 'bud_struct', '_cone_info': 'bud_cone_info', '_drop_cones': 'bud_drop_cones'}
 _BUDGET_PLANTS = ('union-skip-overlap', 'within-no-link', 'over-budget-no-flag', 'note-budget-keep-flag')
@@ -951,10 +954,12 @@ def _install_budget():
     PY_BUDGET.update(saved)
     for n, rn in _BUDGET_METHODS.items():
         setattr(E, n, _bud(n, getattr(sa_solver, rn)))
+        OURS[n] = E.__dict__[n]
 
     def undo():
         for n, f in saved.items():
             setattr(E, n, f)
+            OURS.pop(n, None)
     return undo
 
 
@@ -1142,11 +1147,14 @@ def _install_context():
         f.__doc__ = saved[f.__name__].__doc__
         f.__qualname__ = 'Engine.' + f.__name__
         CTX_RUST[f.__name__] = f
+        if f.__name__ != '_complete_check':
+            OURS[f.__name__] = f
         setattr(E, f.__name__, staticmethod(f) if f.__name__ == '_complete_check' else f)
 
     def undo():
         for n, f in saved.items():
             setattr(E, n, f)
+            OURS.pop(n, None)
         CTX_RUST.clear()
     return undo
 
