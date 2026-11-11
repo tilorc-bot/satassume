@@ -98,14 +98,37 @@ fn method_of<'py>(eng: &Bound<'py, PyAny>, name: &str) -> PyResult<Method<'py>> 
     Ok(Method::Patched(eng.getattr(name)?))
 }
 
-/// The engine's method `name` when it isn't the one session_live installed (`OURS`): a caller holding nodes calls Rust's
-/// own directly on None, and the returned method, with the objects, otherwise.
-pub(crate) fn patched_method<'py>(eng: &Bound<'py, PyAny>, name: &str) -> PyResult<Option<Bound<'py, PyAny>>> {
-    Ok(match method_of(eng, name)? {
-        Method::Ours => None,
-        Method::Instrument(..) => Some(eng.getattr(name)?),
-        Method::Patched(f) => Some(f),
-    })
+/// `self.NAME(...)` for a Rust caller that holds nodes: the one rule for `verdict`, `_context_session` and
+/// `_within_budget` (the verdict ruling and the second ruling for sa-port-268). While the engine's method is the one
+/// session_live installed, or a registered instrument's wrapper over it, Rust's own (`ours`) runs directly with the nodes;
+/// the instrument's `before()` runs first and its `raised(token, exc)` sees an Exception. Anything else is the user's and
+/// is called by name with the objects (`by_name`), its result used: the entry behind that call has its own `Hand`, so
+/// what it converts again is `fm:twice:patched` (`formula::Patched`). Plant 609 calls an instrument by name; plant 610
+/// passes the user's method over.
+pub(crate) fn call_from<'py, T>(
+    eng: &Bound<'py, PyAny>,
+    name: &str,
+    ours: impl FnOnce() -> PyResult<T>,
+    by_name: impl FnOnce(&Bound<'py, PyAny>) -> PyResult<T>,
+) -> PyResult<T> {
+    match method_of(eng, name)? {
+        Method::Ours => ours(),
+        Method::Instrument(before, raised) => {
+            let token = before.call0()?;
+            let r = ours();
+            if let Err(e) = &r {
+                if e.is_instance_of::<pyo3::exceptions::PyException>(eng.py()) {
+                    raised.call1((token, e.value(eng.py())))?;
+                }
+            }
+            r
+        }
+        Method::Patched(_) if crate::formula::plant_patched_direct() => ours(),
+        Method::Patched(f) => {
+            let _scope = crate::formula::Patched::enter();
+            by_name(&f)
+        }
+    }
 }
 
 fn epoch_check(eng: &Bound<'_, PyAny>) -> PyResult<()> {
@@ -136,34 +159,19 @@ fn ctx_context_session<'py>(eng: &Bound<'py, PyAny>, assumptions: &Bound<'py, Py
     context_session(eng, assumptions, proposition, &Hand::enter())
 }
 
-/// `self._context_session(assumptions, proposition)` for a caller that holds nodes (see `budget::within_from`).
+/// `self._context_session(assumptions, proposition)` for a caller that holds nodes (`call_from`).
 pub(crate) fn context_session_from<'py>(eng: &Bound<'py, PyAny>, assumptions: &Bound<'py, PyAny>, proposition: &Bound<'py, PyAny>, hand: &Hand) -> PyResult<Bound<'py, PyAny>> {
-    match patched_method(eng, "_context_session")? {
-        None => Ok(context_session(eng, assumptions, Some(proposition), hand)?.into_any()),
-        Some(f) => f.call1((assumptions, proposition)),
-    }
+    call_from(
+        eng,
+        "_context_session",
+        || Ok(context_session(eng, assumptions, Some(proposition), hand)?.into_any()),
+        |f| f.call1((assumptions, proposition)),
+    )
 }
 
-/// `self.verdict(assumptions)` for a caller that holds nodes.
+/// `self.verdict(assumptions)` for a caller that holds nodes (`call_from`).
 pub(crate) fn verdict_from<'py>(eng: &Bound<'py, PyAny>, assumptions: &Bound<'py, PyAny>, hand: &Hand) -> PyResult<Bound<'py, PyAny>> {
-    match method_of(eng, "verdict")? {
-        Method::Ours => verdict(eng, assumptions, hand),
-        Method::Instrument(before, raised) => {
-            let token = before.call0()?;
-            let r = verdict(eng, assumptions, hand);
-            if let Err(e) = &r {
-                if e.is_instance_of::<pyo3::exceptions::PyException>(eng.py()) {
-                    raised.call1((token, e.value(eng.py())))?;
-                }
-            }
-            r
-        }
-        Method::Patched(_) if crate::formula::plant_patched_direct() => verdict(eng, assumptions, hand),
-        Method::Patched(f) => {
-            let _scope = crate::formula::Patched::enter();
-            f.call1((assumptions,))
-        }
-    }
+    call_from(eng, "verdict", || verdict(eng, assumptions, hand), |f| f.call1((assumptions,)))
 }
 
 fn context_session<'py>(eng: &Bound<'py, PyAny>, assumptions: &Bound<'py, PyAny>, proposition: Option<&Bound<'py, PyAny>>, hand: &Hand) -> PyResult<Bound<'py, PyTuple>> {

@@ -169,7 +169,7 @@ const AGAIN: usize = 20;
 pub(crate) fn plant_instrument_by_name() -> bool {
     planted(12)
 }
-/// Plant 610 (context.rs `verdict_from`).
+/// Plant 610 (context.rs `call_from`).
 pub(crate) fn plant_patched_direct() -> bool {
     planted(13)
 }
@@ -609,7 +609,9 @@ impl Hand {
     /// `enter` for a scope or cone function called from Python. Reached from inside another entry, a by-name call
     /// dropped the caller's nodes on the way (`fm:nosession`).
     pub(crate) fn enter_inner() -> Hand {
-        if ENTRIES.with(|d| d.get()) > 0 {
+        // Behind a user's replaced method the by-name call is the ruled one (`Patched`): what it converts again is
+        // `fm:twice:patched`, and `fm:nosession` stays the count of by-name calls of our own.
+        if ENTRIES.with(|d| d.get()) > 0 && SCOPE.with(|c| c.get()) == 0 {
             tick(NOSESSION);
         }
         Hand::enter()
@@ -672,8 +674,8 @@ impl Hand {
     }
 }
 
-/// A by-name call of an `Engine.verdict` that is neither session_live's nor a registered instrument's (context.rs
-/// `verdict_from`): the caller's nodes can't go with the objects, so the entry behind the call starts its own `Hand`.
+/// A by-name call of an `Engine` method (`verdict`, `_context_session`, `_within_budget`) that is neither session_live's nor a registered instrument's (context.rs
+/// `call_from`): the caller's nodes can't go with the objects, so the entry behind the call starts its own `Hand`.
 /// What it converts again is counted apart, `fm:twice:patched`, until the call returns.
 pub(crate) struct Patched {
     outer: u32,

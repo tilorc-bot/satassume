@@ -555,17 +555,20 @@ fn within<'py>(eng: &Bound<'py, PyAny>, proposition: &Bound<'py, PyAny>, assumpt
     }
 }
 
-/// `self._within_budget(proposition, assumptions)` for a caller that holds nodes: Rust's own directly while the engine's
-/// method is the installed one; a patched one is called, with the objects.
+/// `self._within_budget(proposition, assumptions)` for a caller that holds nodes (context.rs `call_from`: Rust's own
+/// directly while the engine's method is the installed one or a registered instrument's; a user's is called by name,
+/// with the objects).
 pub(crate) fn within_from<'py>(eng: &Bound<'py, PyAny>, proposition: &Bound<'py, PyAny>, assumptions: Option<&Bound<'py, PyAny>>, nodes: &dyn Nodes) -> PyResult<bool> {
     let p = eng.py();
-    match crate::context::patched_method(eng, "_within_budget")? {
-        None => within(eng, proposition, assumptions, nodes)?.is_truthy(),
-        Some(f) => match assumptions {
+    crate::context::call_from(
+        eng,
+        "_within_budget",
+        || within(eng, proposition, assumptions, nodes)?.is_truthy(),
+        |f| match assumptions {
             Some(a) => f.call1((proposition, a))?.is_truthy(),
             None => f.call1((proposition, p.None()))?.is_truthy(),
         },
-    }
+    )
 }
 
 #[pyfunction]

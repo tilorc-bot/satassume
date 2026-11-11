@@ -150,6 +150,63 @@ def _main(plant):
         step('patched:no', over)
     finally:
         Engine.verdict = real
+
+    # `_context_session` and `_within_budget` by the same rule (context.rs `call_from`; the second ruling for sa-port-268):
+    # an instrument registered over session_live's method, then a user's own method, then a user's that answers otherwise
+    import session_live
+    asked, flipped = [], (Q.positive(z), Q.negative(z) & Q.negative(w))
+
+    def never(self, proposition, assumptions=None):
+        mine['_within_budget:other'] += 1
+        return False
+
+    def elsewhere(self, assumptions, proposition=None):       # the session of the last query's assumptions, whatever is asked
+        mine['_context_session:other'] += 1
+        return session_live.OURS['_context_session'](self, asked[-1], proposition)
+    for name, other in (('_context_session', elsewhere), ('_within_budget', never)):
+        ours = session_live.OURS[name]
+        assert Engine.__dict__[name] is ours
+        mine.update({name + ':' + k: 0 for k in ('wrapper', 'before', 'raised', 'user', 'other')})
+
+        def wrapper(self, *a, _ours=ours, _name=name, **k):
+            mine[_name + ':wrapper'] += 1
+            return _ours(self, *a, **k)
+
+        def before(_name=name):
+            mine[_name + ':before'] += 1
+
+        def raised(token, exc, _name=name):
+            mine[_name + ':raised'] += 1
+
+        def user(self, *a, _ours=ours, _name=name, **k):
+            mine[_name + ':user'] += 1
+            if _name == '_context_session':
+                asked.append(a[0])
+            return _ours(self, *a, **k)
+        try:
+            setattr(Engine, name, wrapper)
+            session_live.register_instrument(name, wrapper, ours, before, raised)
+            e = Engine()
+            for p, a in split:
+                step('instr' + name, lambda: A.ask(p, a, engine=e))
+            step('instr' + name + ':over', over)
+            Engine._build_context_memoized = boom
+            try:
+                step('instr' + name + ':raise', lambda: A.ask(Q.positive(z + w), Q.positive(z) & Q.real(w), engine=Engine()))
+            finally:
+                Engine._build_context_memoized = memoized
+            session_live.INSTRUMENTS.pop(name)
+            setattr(Engine, name, user)
+            e = Engine()
+            for p, a in split:
+                step('patched' + name, lambda: A.ask(p, a, engine=e))
+            step('patched' + name + ':over', over)
+            step('flipped' + name, lambda: A.ask(*flipped, engine=e))
+            setattr(Engine, name, other)
+            step('other' + name, lambda: A.ask(*split[0], engine=Engine()))
+        finally:
+            setattr(Engine, name, ours)
+            session_live.INSTRUMENTS.pop(name, None)
     sa_solver.formula_plant(None)
     json.dump(dict(rows=rows, inside=inside, calls=calls, caught=caught, mine=mine), sys.stdout)
 
@@ -236,7 +293,7 @@ def test_plant_609_an_instrument_called_by_name_is_caught(plain):
 def test_plant_610_a_patched_verdict_passed_over_is_caught(plain):
     got = _run('fm-hand-patched-direct')
     assert _sum(got, 'fm:plant_fired') > 0
-    assert got['mine'] == {'as_real': 0, 'no': 0}
+    assert (got['mine']['as_real'], got['mine']['no']) == (0, 0)
     assert _group(got, 'patched:no') == _group(plain, 'over')
 
 
@@ -257,3 +314,56 @@ def test_plant_608_a_hand_kept_across_queries_is_caught(plain):
 
 if __name__ == '__main__':
     _main(sys.argv[1])
+
+
+# The second ruling for sa-port-268: `_context_session` and `_within_budget` go by `verdict`'s rule, through one helper
+# (context.rs `call_from`).
+BOTH = ['_context_session', '_within_budget']
+
+
+@pytest.fixture(scope='module')
+def p609():
+    return _run('fm-hand-instrument-by-name')
+
+
+@pytest.fixture(scope='module')
+def p610():
+    return _run('fm-hand-patched-direct')
+
+
+@pytest.mark.parametrize('name', BOTH)
+def test_a_registered_instrument_over_the_method_keeps_the_direct_call(plain, name):
+    m = plain['mine']
+    assert m[name + ':wrapper'] == 0 and m[name + ':before'] > 0        # Rust's own ran, after the instrument's before()
+    for g in ('instr' + name, 'instr' + name + ':over', 'instr' + name + ':raise'):
+        assert [_sum(plain, k, g) for k in ('fm:twice', 'fm:twice:patched', 'fm:nosession')] == [0, 0, 0], g
+    assert _group(plain, 'instr' + name) == _group(plain, 'split')
+    assert _group(plain, 'instr' + name + ':over') == _group(plain, 'over')
+    assert _group(plain, 'instr' + name + ':raise') == ['RuntimeError']
+    # the instrument sees the raise where its method raises (`_within_budget` has no raise to plant here)
+    assert m[name + ':raised'] == (1 if name == '_context_session' else 0)
+
+
+@pytest.mark.parametrize('name', BOTH)
+def test_a_users_patched_method_is_called_and_its_result_is_used(plain, name):
+    m = plain['mine']
+    assert m[name + ':user'] >= 4 and m[name + ':other'] >= 1
+    assert _group(plain, 'patched' + name) == _group(plain, 'split') == ['True'] * 4
+    assert _group(plain, 'patched' + name + ':over') == _group(plain, 'over')
+    assert _sum(plain, 'fm:twice:patched', 'patched' + name) > 0 and _sum(plain, 'fm:twice', 'patched' + name) == 0
+    # a user's method that answers otherwise decides the query: the session of other assumptions, or no budget at all
+    assert _group(plain, 'other' + name) == [{'_context_session': 'False', '_within_budget': 'None'}[name]]
+
+
+@pytest.mark.parametrize('name', BOTH)
+def test_plant_609_an_instrument_over_the_method_called_by_name_is_caught(plain, p609, name):
+    m = p609['mine']
+    assert m[name + ':wrapper'] > 0 and m[name + ':before'] == 0
+    assert _sum(p609, 'fm:twice:patched', 'instr' + name) > 0 and _sum(plain, 'fm:twice:patched', 'instr' + name) == 0
+
+
+@pytest.mark.parametrize('name', BOTH)
+def test_plant_610_a_patched_method_passed_over_is_caught(plain, p610, name):
+    m = p610['mine']
+    assert m[name + ':user'] == 0 and m[name + ':other'] == 0
+    assert _group(p610, 'other' + name) == ['True'] != _group(plain, 'other' + name)
