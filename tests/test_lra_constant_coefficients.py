@@ -386,6 +386,21 @@ def test_general_constants_are_numbers():
     assert _ask(Q.lt(near, log(2))) is True
 
 
+def test_constant_terms_get_their_bounds(monkeypatch):
+    """With ``GENERIC_CONSTANTS`` off, ``log(2)`` and ``sin(1)`` are LRA
+    terms rather than numbers of the field: only their asserted rational
+    bounds (``Relations._bound``, ``LRAAdapter.register_bounds``) relate
+    them to ``1``."""
+    from sympy import log, sin
+    from satassume.theories.lra import lra_adapter as ad
+    monkeypatch.setattr(ad, "GENERIC_CONSTANTS", False)
+    assert ad.terms(Q.lt(xr, log(2))) == [xr, log(2)]
+    assert _ask(Q.gt(xr, log(2)), Q.gt(xr, 1)) is True
+    assert _ask(Q.lt(xr, 1), Q.lt(xr, log(2))) is True
+    assert _ask(Q.gt(xr, sin(1)), Q.gt(xr, 1)) is True
+    assert _ask(Q.gt(xr, 0), Q.gt(xr, log(2))) is True
+    assert _ask(Q.gt(xr, 1), Q.gt(xr, log(2))) is None
+
 def test_inconsistent_with_constant_coefficients():
     assert _ask(Q.positive(xr), Q.gt(pi * xr, 4) & Q.lt(xr, 1)) == "inconsistent"
     assert _ask(Q.positive(xr), Q.gt(pi * xr, 3) & Q.lt(xr, 1)) is True
