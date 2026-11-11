@@ -539,3 +539,40 @@ failed, test_cf_diff.py 1 collection error, test_handler_count.py 2 failed, the 
 gate 4f), then the fm counters on 19 workloads and lra (`all.sh`: `a1` with `fm:again` over the workload, `a1q` inside
 one ask, `b0` the before on 78962f7; end marker `all-end.txt`). j1 (`sa-port-260/j1`) had no end.txt at 00:56Z: not read.
 Gate items 2 (rest), 3, 4, 5.
+
+## sa-port-270 (11 Nov): `cls:eq` in the suite is not a series by commit. Unbarred, unlanded.
+
+The planner's gate item (3) for sa-port-269 asked why the suite's `cls:eq` went 722 (f42047a), 457 (f848edd), 30
+(1a91a81). **It did not fall. The count follows what SymPy's cache holds in each xdist worker, not the commit.**
+
+What `cls:eq` counts: `same_class` (formula.rs :214, term_live.py :355) asked about two class objects that have one id
+in the query's class table. Two such objects exist in one query only when SymPy's cache has lost an entry:
+`Function('f')` is itself cached, so two test files that each write `f = Function('f')` hold one class object while the
+entry lives. Once it is evicted (the cache is an LRU of 1,000 per function) the next `Function('f')` is a new class,
+equal to the old one, and `f(x)` on it still returns the cached application, whose class is the old object
+(`~/sa-rust-ids-work/sa-port-270/mech.py` prints each step). Which entries a worker has lost depends on the tests it
+ran before, and xdist hands tests out differently on every run. No test under tests/ calls `clear_cache`, so in the
+suite the loss is eviction; that is inferred from the two modes below, the evictions themselves were not traced.
+
+Evidence (pareto1, 269's built trees, x86-64):
+- 269's chain, six suites at `-n 8`, `cls:eq` per run: 4d34c27 **105**, f848edd **67**, f848edd with plant 609 **144**,
+  1a91a81 **343**, 1a91a81 with plant 611 **434**, af8cc0b **140**. The same SHA gives two numbers: f848edd 457 (267's
+  run) and 67; 1a91a81 30 (268's run) and 343. In every run the whole count sits in one or two of the eight workers,
+  in a run of neighbouring tests, and in different test files each time (test_zero_glue, test_p7_review..., test_scope,
+  test_relevance, test_ref, test_switched_glue, test_registry_versioning, test_transfer).
+- The same eight files in one process and a fixed order (`p1/fixed270.sh`, `-p no:xdist`): **118 on 4d34c27, f848edd,
+  1a91a81 and af8cc0b**, and 118 on af8cc0b a second time. With SymPy's cache emptied before every test (`clr270.py`,
+  415 calls): **300 on all four**, and 300 again. Per test, 0 tests differ between any two of these runs in either
+  mode; term_live's own `class:eq` is 53 and 333 on all of them.
+- The plants in the fixed order: plant 609 on f848edd 118 and 300 (`fm:plant_fired` 366, `fm:twice:patched` 14), plant
+  611 on 1a91a81 118 and 300 (these eight files have no refused run, so 611 has nothing to skip there). Neither moves
+  the count, so no table is named by `mark-skips-native:NAME`.
+
+So no path stopped and no work was removed between those commits; nothing goes to the planner as a fall. The path
+itself is held by tests that do not depend on the cache: test_cbm_noid.py (`cls:eq > 0`, plants 660-662) and workload
+cls. Answers: the two-order harness on af8cc0b (269) has 560 rows in each order equal to 1a91a81's, 0 flips. All six
+chain suites end 127 failed / 5,991 passed / 23 skipped / 18 xfailed (1a91a81's earlier 128 was the wall-clock test
+`test_wide_or_compiles_in_linear_time[nonnegative]`).
+
+A suite total of `cls:eq` is therefore only comparable between runs with one process and one order; the bar reports
+it from `fixed270.sh`'s order next to the xdist total.
