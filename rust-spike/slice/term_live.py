@@ -1105,7 +1105,14 @@ def _install(keys, terms):
         finally:
             s.pop()
 
-    sympy_api._ask = _ask
+    def _ask_once(proposition, assumptions, eng):
+        # the top-level ask runs as one Rust call that holds one node map for all its entries (formula.rs `formula_ask`):
+        # no object is converted twice within an ask, the second run after a refusal included
+        if stack():
+            return _ask(proposition, assumptions, eng)
+        return sa_solver.formula_ask(_ask, proposition, assumptions, eng)
+
+    sympy_api._ask = _ask_once
     # Step 5c10a: a Rust-native fact cache rolls back by its own mark (`_Mark.add`); `_journaled_put` stays for SLICE_FACTCACHE=py.
     import session_live
     if not session_live.factcache_native():

@@ -100,7 +100,7 @@ pub(crate) const ATOMS_NODE: usize = 13;
 const NOSESSION: usize = 14;
 
 /// Plants 601-606, each the control of one comparison in test_formula_nodes.py.
-const PLANTS: [&str; 14] = [
+const PLANTS: [&str; 15] = [
     "fm-atoms-drop-last",  // 601: `atoms` without its last atom
     "fm-atoms-merge-pred", // 612: the dedupe keyed by the predicate alone, so two atoms with one predicate are one (replaces 602
                            //      `fm-atoms-no-dedupe`, speed-only: every reader of the atoms is idempotent; sa-port-274)
@@ -117,6 +117,7 @@ const PLANTS: [&str; 14] = [
     "fm-hand-kept",        // 608: an entry's nodes outlive it and answer the next entry (a `Hand` reused across queries)
     "fm-hand-instrument-by-name",  // 609: a registered instrument's `verdict` wrapper is called by name, as a user's patch is
     "fm-hand-patched-direct",   // 610: a user's replaced `Engine.verdict` is passed over: Rust calls its own directly
+    "fm-hand-per-entry",   // 622: each outermost entry inside an ask makes its own map again (`formula_ask` shares none)
 ];
 
 thread_local! {
@@ -141,6 +142,9 @@ thread_local! {
     static HELD: Cell<usize> = const { Cell::new(0) };
     /// Plant 608's store: the nodes of ended entries.
     static KEPT: std::cell::RefCell<HashMap<usize, Rc<FNode>>> = std::cell::RefCell::new(HashMap::new());
+    /// The node map of the top-level ask running on this thread (`formula_ask`), shared by each outermost `Hand` made
+    /// inside it, so a later entry of the same ask finds what an earlier one converted. `None` outside any ask.
+    static ASK: std::cell::RefCell<Option<Rc<std::cell::RefCell<HashMap<usize, Held>>>>> = const { std::cell::RefCell::new(None) };
 }
 
 pub(crate) fn tick(i: usize) {
@@ -166,6 +170,8 @@ const SAME_EQ: usize = 19;
 const HAND_NO_GIVE: u8 = 10;
 /// Plant 608: the ruled-out cache, a `Hand` whose nodes survive into the next entry.
 const HAND_KEPT: u8 = 11;
+/// Plant 622: one node map per entry again, not per ask (`fm:again` within an ask).
+const HAND_PER_ENTRY: u8 = 14;
 const AGAIN: usize = 20;
 /// Plant 609 (context.rs `method_of`).
 pub(crate) fn plant_instrument_by_name() -> bool {
@@ -600,7 +606,9 @@ pub(crate) trait Nodes {
 /// by the object's identity; the node holds the object, and a refusal is kept with the object it refused, so no object
 /// is walked twice in one entry. Nothing here outlives the entry's call: the next query starts with none.
 pub(crate) struct Hand {
-    nodes: std::cell::RefCell<HashMap<usize, Held>>,
+    /// Shared with `ASK` when the entry is an outermost one inside a top-level ask (H2's "one entry call" is then the
+    /// ask's: its node map ends with `formula_ask`'s call).
+    nodes: Rc<std::cell::RefCell<HashMap<usize, Held>>>,
 }
 
 enum Held {
@@ -612,8 +620,11 @@ enum Held {
 impl Hand {
     /// An entry begins.
     pub(crate) fn enter() -> Hand {
-        ENTRIES.with(|d| d.set(d.get() + 1));
-        Hand { nodes: std::cell::RefCell::new(HashMap::new()) }
+        let outer = ENTRIES.with(|d| { d.set(d.get() + 1); d.get() == 1 });
+        // only an outermost entry shares the ask's map: nested ones (`enter_inner`'s `fm:nosession`, a by-name call's
+        // `fm:twice:patched`) start their own as before
+        let ask = if outer && !planted(HAND_PER_ENTRY) { ASK.with(|a| a.borrow().clone()) } else { None };
+        Hand { nodes: ask.unwrap_or_default() }
     }
 
     /// `enter` for a scope or cone function called from Python. Reached from inside another entry, a by-name call
@@ -704,9 +715,8 @@ impl Drop for Patched {
     }
 }
 
-impl Drop for Hand {
-    fn drop(&mut self) {
-        let nodes = std::mem::take(&mut *self.nodes.borrow_mut());
+/// The end of a node map's life (an entry's, or an ask's): what it held is no longer held.
+fn release(nodes: HashMap<usize, Held>) {
         if plant_set(HAND_KEPT) {
             // the plant: what the entry held stays, and stays counted as held
             KEPT.with(|m| m.borrow_mut().extend(nodes.into_iter().filter_map(|(k, h)| match h {
@@ -715,6 +725,14 @@ impl Drop for Hand {
             })));
         } else {
             HELD.with(|h| h.set(h.get() - nodes.len()));
+        }
+}
+
+impl Drop for Hand {
+    fn drop(&mut self) {
+        // the ask's map ends with the ask (`formula_ask`), not with this entry
+        if !ASK.with(|a| a.borrow().as_ref().is_some_and(|m| Rc::ptr_eq(m, &self.nodes))) {
+            release(std::mem::take(&mut *self.nodes.borrow_mut()));
         }
         if ENTRIES.with(|d| { d.set(d.get() - 1); d.get() }) == 0 {
             let seen = SEEN.with(|s| std::mem::take(&mut *s.borrow_mut()));
@@ -731,6 +749,29 @@ impl Nodes for Hand {
             Err(_) => atoms_py(f),
         }
     }
+}
+
+/// `f(*args)` as one top-level ask (term_live.py `_ask`, the outermost one): every outermost entry inside it shares one
+/// node map, so no object is converted twice within an ask (`fm:again` within an ask is 0; across asks it stays
+/// information). Doesn't raise `ENTRIES`: a scope or cone function called from Python inside the ask is still an entry
+/// of its own, not a by-name call (`fm:nosession`). Nested inside another ask, it is just the call.
+#[pyfunction]
+#[pyo3(signature = (f, *args))]
+fn formula_ask<'py>(f: &Bound<'py, PyAny>, args: &Bound<'py, PyTuple>) -> PyResult<Bound<'py, PyAny>> {
+    if ASK.with(|a| a.borrow().is_some()) {
+        return f.call1(args);
+    }
+    struct End;
+    impl Drop for End {
+        fn drop(&mut self) {
+            if let Some(m) = ASK.with(|a| a.borrow_mut().take()) {
+                release(std::mem::take(&mut *m.borrow_mut()));
+            }
+        }
+    }
+    ASK.with(|a| *a.borrow_mut() = Some(Rc::default()));
+    let _end = End;
+    f.call1(args)
 }
 
 #[pyfunction]
@@ -829,6 +870,7 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(formula_seen_restore, m)?)?;
     m.add_function(wrap_pyfunction!(formula_kept_rows, m)?)?;
     m.add_function(wrap_pyfunction!(formula_track, m)?)?;
+    m.add_function(wrap_pyfunction!(formula_ask, m)?)?;
     m.add_function(wrap_pyfunction!(class_is_plant, m)?)?;
     Ok(())
 }
