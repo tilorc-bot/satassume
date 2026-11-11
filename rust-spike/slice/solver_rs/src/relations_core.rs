@@ -781,7 +781,8 @@ fn session_of<'py>(p: Python<'py>, h: &Hooks, rel: &Bound<'py, PyAny>) -> PyResu
         p,
         h,
         "session",
-        s.getattr(intern!(p, "table")).and_then(|t| t.getattr(intern!(p, "core"))).and_then(|c| c.cast_into::<SessionCore>().map_err(Into::into)),
+        // the core from the session's plain attribute, not the `table` property (a Python frame per read)
+        session::core_of(&s),
     )?;
     Ok((s, c))
 }
@@ -2265,7 +2266,7 @@ fn rel_share<'py>(rel: &Bound<'py, PyAny>) -> PyResult<bool> {
         }
         let eqa = r.getattr(intern!(p, "relation_atom"))?.call1((intern!(p, "eq"), &a, &b))?;
         let s = rel.getattr(intern!(p, "session"))?;
-        if !s.getattr(intern!(p, "table"))?.getattr(intern!(p, "custom"))?.contains(&eqa)? {
+        if !session::table_of(&s)?.getattr(intern!(p, "custom"))?.contains(&eqa)? {
             RSet::of(rel, session::RS_AUX_EQ)?.add(&eqa)?;
         }
         tick(session::REL_CB_ATOM_VAR);
@@ -2327,7 +2328,7 @@ fn rel_process<'py>(rel: &Bound<'py, PyAny>, user_atoms: Option<&Bound<'py, PyAn
             }
             tick(session::REL_CB_NOTE_SIDES);
             rel.call_method1(intern!(p, "_note_sides"), (a, 2))?;
-            let var = s.getattr(intern!(p, "table"))?.getattr(intern!(p, "custom"))?.call_method1(intern!(p, "get"), (a,))?;
+            let var = session::table_of(&s)?.getattr(intern!(p, "custom"))?.call_method1(intern!(p, "get"), (a,))?;
             let user_eq = RSet::of(rel, session::RS_USER_EQ)?;
             if !var.is_none() && !user_eq.contains(a)? {
                 user_eq.add(a)?;
@@ -2463,7 +2464,7 @@ fn rel_atom_selector<'py>(rel: &Bound<'py, PyAny>, atom: &Bound<'py, PyAny>) -> 
 fn rel_atom_var<'py>(rel: &Bound<'py, PyAny>, f: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
     let p = rel.py();
     tick(session::REL_ATOM_VAR);
-    let table = rel.getattr(intern!(p, "session"))?.getattr(intern!(p, "table"))?;
+    let table = session::table_of(&rel.getattr(intern!(p, "session"))?)?;
     let v = table.call_method1(intern!(p, "var"), (f,))?;
     if plant_on(ATOM_VAR_SKEW) {
         return v.neg();
