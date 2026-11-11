@@ -461,5 +461,80 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(ses_assumption_lits, m)?)?;
     m.add_function(wrap_pyfunction!(ses_set_glue, m)?)?;
     m.add_function(wrap_pyfunction!(ses_group_sel, m)?)?;
-    m.add_function(wrap_pyfunction!(ses_glue_of, m)?)
+    m.add_function(wrap_pyfunction!(ses_glue_of, m)?)?;
+    m.add_class::<EntMethod>()
+}
+
+// --------------------------------------------------------------------------------------------------------------------
+// The part 3 follow-up, item C7 (group-d-cause.md, "per-ask entry frame"): an Engine method over a Rust entry (`ent_ask`,
+// `ent_is`, the record methods; session_live.py `_ENTRY_METHODS`) with no Python frame between the caller and Rust. A
+// pyfunction is a builtin, which doesn't bind, so session_live wrapped each in a `def f(self, *a, **k)`: one Python
+// frame per entry call. `EntMethod` binds as a function does (`PyMethod_New`, the bound method Python makes for a `def`),
+// and the bound method's call is the pyfunction's own vectorcall.
+
+extern "C" {
+    /// CPython's `types.MethodType(f, obj)` (Objects/classobject.c, stable since 3.0; not in pyo3-ffi 0.30).
+    fn PyMethod_New(f: *mut pyo3::ffi::PyObject, obj: *mut pyo3::ffi::PyObject) -> *mut pyo3::ffi::PyObject;
+}
+
+/// Plant 618 `ent-method-first-self`: every entry method binds the first engine it was read from (a wrong-value plant at
+/// the binding: a second engine's calls act on the first). Caught by test_entry_frame.py, which reads each engine's stats.
+pub(crate) const ENT_FIRST_SELF_PLANT: u16 = 618;
+
+thread_local! {
+    static FIRST_SELF: std::cell::RefCell<Option<Py<PyAny>>> = const { std::cell::RefCell::new(None) };
+}
+
+/// A method descriptor over a Rust entry `f`: `eng.name` is `f` bound to `eng`, `Engine.name` is the descriptor itself
+/// (so the identity checks over the class, `patched` in context.rs, see what was installed), and calling the descriptor
+/// calls `f` with the instance first, as `Engine.ask(eng, p)` calls a `def`.
+#[pyclass(module = "sa_solver", frozen)]
+pub(crate) struct EntMethod {
+    f: Py<PyAny>,
+    #[pyo3(get, name = "__name__")]
+    name: Py<PyAny>,
+    #[pyo3(get, name = "__qualname__")]
+    qualname: Py<PyAny>,
+    #[pyo3(get, name = "__doc__")]
+    doc: Py<PyAny>,
+}
+
+#[pymethods]
+impl EntMethod {
+    #[new]
+    #[pyo3(signature = (f, name, qualname, doc=None))]
+    fn new(p: Python<'_>, f: Py<PyAny>, name: Py<PyAny>, qualname: Py<PyAny>, doc: Option<Py<PyAny>>) -> Self {
+        EntMethod { f, name, qualname, doc: doc.unwrap_or_else(|| p.None()) }
+    }
+
+    fn __get__<'py>(slf: &Bound<'py, Self>, obj: Option<&Bound<'py, PyAny>>, _typ: Option<&Bound<'py, PyAny>>) -> PyResult<Bound<'py, PyAny>> {
+        let p = slf.py();
+        match obj {
+            Some(o) if !o.is_none() => {
+                let o = if crate::session::sb_planted(ENT_FIRST_SELF_PLANT) {
+                    FIRST_SELF.with(|c| c.borrow_mut().get_or_insert_with(|| o.clone().unbind()).bind(p).clone())
+                } else {
+                    o.clone()
+                };
+                unsafe { Bound::from_owned_ptr_or_err(p, PyMethod_New(slf.get().f.as_ptr(), o.as_ptr())) }
+            }
+            _ => Ok(slf.clone().into_any()),
+        }
+    }
+
+    #[pyo3(signature = (*args, **kwargs))]
+    fn __call__<'py>(
+        &self,
+        p: Python<'py>,
+        args: &Bound<'py, pyo3::types::PyTuple>,
+        kwargs: Option<&Bound<'py, pyo3::types::PyDict>>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        self.f.bind(p).call(args, kwargs)
+    }
+
+    /// The Rust entry under the method (session_live's tests, and a tool that wants the function).
+    #[getter]
+    fn __func__(&self, p: Python<'_>) -> Py<PyAny> {
+        self.f.clone_ref(p)
+    }
 }

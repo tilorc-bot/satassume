@@ -1096,7 +1096,7 @@ _SB_PLANTS = ('sb-truncated-stale', 'sb-link-pending-stale', 'sb-neg-shared-stal
               'sb-verdict-none', 'sb-fwd-skip-link', 'sb-solver-fresh', 'sc-frontier-drop', 'sc-pending-drop',
               'sc-pending_c-drop', 'sc-demand-drop', 'sc-deferred-drop', 'sc-literals-drop', 'sc-groups-drop', 'sc-key-shared',
               'sb-core-unset', 'sb-core-stale', 'sb-join-address', 'sc-key-id-stale',
-              'sc-key-id-weak', 'sc-key-id-shared')
+              'sc-key-id-weak', 'sc-key-id-shared', 'ent-method-first-self')
 
 
 def entry_native():
@@ -1104,12 +1104,20 @@ def entry_native():
     return cones_native() and context_native() and os.environ.get('SLICE_ENTRY', 'rust') == 'rust'
 
 
-def _ent(name, rf):
-    """A method over the pyfunction `rf` (a builtin doesn't bind)."""
-    def f(self, *a, **k):
-        return rf(self, *a, **k)
-    f.__name__ = name
-    return f
+def _ent(name, rf, doc=None):
+    """A method over the pyfunction `rf`. A builtin doesn't bind, so this was a `def f(self, *a, **k)`: a Python frame on
+    every entry call (group-d-cause.md C7). `EntMethod` (session_glue.rs) binds `rf` as a function binds, with no frame
+    between; `ENTRY_FRAME=py` (SLICE_ENTRY_FRAME) puts the `def` back, for a before/after."""
+    if ENTRY_FRAME[0] == 'py' or not hasattr(sa_solver, 'EntMethod'):
+        def f(self, *a, **k):
+            return rf(self, *a, **k)
+        f.__name__ = name
+        return f
+    return sa_solver.EntMethod(rf, name, 'Engine.' + name, doc)
+
+
+#: The part 3 follow-up, C7: 'rust' (default) installs each entry as an `EntMethod`; 'py' as the Python `def` before it.
+ENTRY_FRAME = [os.environ.get('SLICE_ENTRY_FRAME', 'rust')]
 
 
 def _install_entry():
@@ -1119,7 +1127,7 @@ def _install_entry():
     saved = {n: E.__dict__[n] for n in names if n in E.__dict__}
     PY_ENTRY.update(saved)
     for n, rn in _ENTRY_METHODS.items():
-        setattr(E, n, _ent(n, getattr(sa_solver, rn)))
+        setattr(E, n, _ent(n, getattr(sa_solver, rn), getattr(saved.get(n), '__doc__', None)))
     E.stats = sa_solver.StatsSlot(False)
     E.last_budget_limited = sa_solver.StatsSlot(True)
 
