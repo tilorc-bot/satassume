@@ -527,6 +527,97 @@ impl<'py> W<'py> {
     }
     //@end klass
 
+    //@begin term_row
+    /// `_Walk.term_row`: one term's row.
+    fn term_row_native(&self, t: &Bound<'py, PyAny>, out: &Bound<'py, PyList>) -> PyResult<()> {
+        let py = self.py;
+        let cx = self.cx.get();
+        let ty = t.get_type();
+        let c = self.classes.get_item(&ty)?.ok_or_else(|| PyKeyError::new_err((ty.clone().unbind(),)))?;
+        let args = t.getattr(intern!(py, "args"))?;
+        let n = args.len()?;
+        out.append(T_TUPLE)?;
+        out.append(6)?;
+        out.append(T_INT)?;
+        out.append(c)?;
+        out.append(T_TUPLE)?;
+        out.append(n)?;
+        for a in args.try_iter()? {
+            let a = a?;
+            let i = self.ids.get_item(&a)?.ok_or_else(|| PyKeyError::new_err((a.clone().unbind(),)))?;
+            out.append(T_TERM)?;
+            out.append(i)?;
+        }
+        let hc = intern!(py, "_hashable_content");
+        let base = self.slf.borrow().basic_content.as_ref().map(|x| x.bind(py).clone());
+        let base = match base {
+            Some(b) => b,
+            None => {
+                let b = cx.basic.bind(py).getattr(hc)?;
+                self.slf.borrow_mut().basic_content = Some(b.clone().unbind());
+                b
+            }
+        };
+        if ty.getattr(hc)?.is(&base) {
+            out.append(T_NONE)?;
+        } else {
+            let content = t.call_method0(hc)?;
+            let content = match content.cast_exact::<PyTuple>() {
+                Ok(x) => x.clone(),
+                Err(_) => PyTuple::new(py, content.try_iter()?.collect::<PyResult<Vec<_>>>()?)?,
+            };
+            self.enc(content.as_any(), out, false)?;
+        }
+        if t.is_instance(cx.skeleton.bind(py))? {
+            for x in [T_NONE, T_INT, 0, T_INT, 0] {
+                out.append(x)?;
+            }
+            return Ok(());
+        }
+        if t.is(cx.nan.bind(py)) {
+            self.term(cx.neg_inf.bind(py))?;
+        }
+        let free = t.getattr(intern!(py, "free_symbols"))?;
+        let mut fid = Vec::new();
+        for x in free.try_iter()? {
+            fid.push(self.term(&x?)?.extract::<i64>()?);
+        }
+        fid.sort_unstable();
+        out.append(T_TUPLE)?;
+        out.append(fid.len())?;
+        for i in fid {
+            out.append(T_TERM)?;
+            out.append(i)?;
+        }
+        let no = PyBool::new(py, false).to_owned();
+        let number = self.getattr3(t, intern!(py, "is_number"), no.as_any())?.is(&PyBool::new(py, true).to_owned());
+        let mut bits = F_READ;
+        if number && !planted(PLANT_TERM_ROW) {
+            bits |= F_NUMBER;
+        }
+        let has = intern!(py, "has");
+        if t.call_method1(has, (cx.nan.bind(py),))?.is_truthy()? {
+            bits |= F_NAN;
+        }
+        if t.call_method1(has, cx.bad.bind(py))?.is_truthy()? {
+            bits |= F_BAD;
+        }
+        if t.call_method1(has, (cx.float.bind(py),))?.is_truthy()? {
+            bits |= F_FLOAT;
+        }
+        if t.call_method1(intern!(py, "atoms"), (cx.applied_undef.bind(py),))?.is_truthy()? {
+            bits |= F_UNDEF;
+        }
+        if cx.may_be_nan.bind(py).call1((t,))?.is_truthy()? {
+            bits |= F_MAYBE_NAN;
+        }
+        let nc = cx.constructed_nc.bind(py).call1((t,))?;
+        out.append(T_INT)?;
+        out.append(bits)?;
+        out.append(T_INT)?;
+        out.append(nc)
+    }
+    //@end term_row
 }
 
 #[pymethods]
@@ -563,6 +654,7 @@ impl Walk {
     // Each takes the owner first: the `_Walk` whose Python methods answer the items that are off.
     fn enc<'py>(slf: &Bound<'py, Self>, o: &Bound<'py, PyAny>, v: &Bound<'py, PyAny>, out: &Bound<'py, PyList>, key: bool) -> PyResult<()> { W::new(slf, o)?.enc_native(v, out, key) } //@call enc
     fn klass<'py>(slf: &Bound<'py, Self>, o: &Bound<'py, PyAny>, cls: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> { W::new(slf, o)?.klass_native(cls) } //@call klass
+    fn term_row<'py>(slf: &Bound<'py, Self>, o: &Bound<'py, PyAny>, t: &Bound<'py, PyAny>, out: &Bound<'py, PyList>) -> PyResult<()> { W::new(slf, o)?.term_row_native(t, out) } //@call term_row
 }
 
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
