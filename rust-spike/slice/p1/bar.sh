@@ -15,6 +15,7 @@
 #   build        cargo build of the clone's crate (x86-64), copied to rust-spike/slice/sa_solver.so
 #   tests        TESTS by pytest and DIRECT scripts, in rust-spike/slice
 #   suite        the suite with rust_plugin and handler_count, rows in $B/suite                     (bar 1, 4)
+#   convdiff     (not in the default list) the convert step's differential, p1/convert_diff.sh, and CONVERT_PLANTS under it
 #   live         run_live.sh: dev and fuzz, Python twice and Rust, traced and untraced              (bar 2)
 #   plants       each of PLANTS on dev and fuzz against this run's Python                           (bar 3)
 #   seed1        dev and fuzz at PYTHONHASHSEED=1, Python against Rust (only if SEED1=1)
@@ -81,8 +82,9 @@ mkdir -p $B; CMDS=$B/commands.txt
 export PY W SA_EVAL_DATA PYTHONHASHSEED PYTHONPATH=$T:$W/sympy:$W/shim
 run() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$1" | tee -a $CMDS; eval "$1"; }
 phase() { echo "$1 $(date -u +%FT%TZ) exit ${2:-0}" >> $B/phases.txt; }
-# penv PLANT: the variable that carries a plant: term_live's (`term:NAME`) or session_live's (everything else)
-penv() { case $1 in term:*) echo "SLICE_TERM_PLANT=${1#term:}";; *) echo "SLICE_SESSION_PLANT=$1";; esac; }
+# penv PLANT: the variable that carries a plant: term_live's (`term:NAME`), the Rust walker's (`convert:NAME`, plants
+# 670-674: they act only where SLICE_CONVERT turns the Rust walker on) or session_live's (everything else)
+penv() { case $1 in term:*) echo "SLICE_TERM_PLANT=${1#term:}";; convert:*) echo "SLICE_CONVERT_PLANT=${1#convert:}";; *) echo "SLICE_SESSION_PLANT=$1";; esac; }
 export -f penv
 
 echo "== bar.sh $NAME $BR phases: $PHASES; script sha256 $(sha256sum "$0" | cut -c1-12)" | tee -a $CMDS
@@ -174,6 +176,15 @@ fmrows)
   fmrows $B/fmrows
   for pl in ${FM_PLANTS:-}; do fmrows $B/fmrows-$pl $pl; done
   phase fmrows;;
+convdiff)
+  # the convert step's differential (p1/convert_diff.sh): both walkers on every input of the 20 workloads and the suite,
+  # and the answers under both; then each of CONVERT_PLANTS, caught when its differential finds differences (exit 1)
+  run "bash $S/p1/convert_diff.sh $B/convdiff > $B/convdiff.log 2>&1; cat $B/convdiff/total.txt | cut -c1-300"
+  : > $B/convdiff-plants.txt
+  for pl in ${CONVERT_PLANTS:-}; do
+    run "bash $S/p1/convert_diff.sh $B/convdiff-$pl $pl > $B/convdiff-$pl.log 2>&1; echo \"$pl: \$(head -n 1 $B/convdiff-$pl/total.txt | cut -c1-160) \$(tail -n 1 $B/convdiff-$pl/total.txt)\" >> $B/convdiff-plants.txt"
+  done
+  phase convdiff;;
 sum) run "\$PY $S/p1/bar_sum.py $B $BASE > $B/sum.txt 2>&1; cat $B/sum.txt"; phase sum;;
 *) echo "unknown phase $ph" | tee -a $CMDS;;
 esac; done

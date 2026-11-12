@@ -14,9 +14,9 @@ WLS=${WLS:-"f6 wiring scope dev fuzz ground port loop zero cert budget core opaq
 if [ -n "$PL" ]; then export SLICE_CONVERT_PLANT=$PL; WLS=${PLANT_WLS:-"dev fuzz"}; fi
 mkdir -p "$O"; cd "$S" || exit 2; export O
 $PY -c 'import satassume, convert, sa_solver; print(satassume.__file__, convert.__file__, sa_solver.__file__)' > $O/tree.txt
-printf '%s\n' $WLS | xargs -P $P -I{} bash -c 'n=$(echo {} | tr -d :); SLICE_CONVERT_DIFF=$O/wl-$n $PY live.py {} rust $O/$n-rust-cpy.jsonl --check entry > $O/$n-rust-cpy.tot 2> $O/$n-rust-cpy.err; echo "{} exit $?" >> $O/wl-exit.txt'
+printf '%s\n' $WLS | xargs -P $P -I{} bash -c 'n=$(echo {} | tr -d :); SLICE_CONVERT=py SLICE_CONVERT_DIFF=$O/wl-$n $PY live.py {} rust $O/$n-rust-cpy.jsonl --check entry > $O/$n-rust-cpy.tot 2> $O/$n-rust-cpy.err; echo "{} exit $?" >> $O/wl-exit.txt'
 if [ -z "$PL" ]; then
-  ( export SLICE_CONVERT_DIFF=$O/suite SLICE_SUITE_OUT=$O/suite-rows SLICE_SUITE_BACKEND=rust PYTHONPATH=$PYTHONPATH:$S HYPOTHESIS_STORAGE_DIRECTORY=$O/hyp
+  ( export SLICE_CONVERT=py SLICE_CONVERT_DIFF=$O/suite SLICE_SUITE_OUT=$O/suite-rows SLICE_SUITE_BACKEND=rust PYTHONPATH=$PYTHONPATH:$S HYPOTHESIS_STORAGE_DIRECTORY=$O/hyp
     mkdir -p $O/suite-rows; cd "$T" || exit 2
     $PY -m pytest -p rust_plugin -p handler_count -p plant_count -n $N -q --tb=short -p no:cacheprovider tests > $O/suite-pytest.log 2>&1; echo "$? $(tail -n 1 $O/suite-pytest.log)" > $O/suite-exit.txt )
 fi
