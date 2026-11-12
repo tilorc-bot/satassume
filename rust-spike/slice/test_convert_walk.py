@@ -160,14 +160,29 @@ def test_reads_are_compared_in_fresh_state():
     pr, asm = Q.positive(p * ComplexRootOf._new(Poly(z**5 + z + 1, z), 1)), Q.positive(p)
     rust = convert.rust_walk(convert.RUST_ITEMS)
     wrong = type('WrongFinite', (convert._Walk,), {'_read_finite': lambda self, t: True})
-    again = []
+    seen, again = {}, []
     for seed in range(6):
         sympy_random._assumptions_rng.seed(seed)
-        assert diff(outcome(None, pr, asm), outcome(None, pr, asm), None, again) == []
+        assert diff(outcome(None, pr, asm), outcome(None, pr, asm), None, seen) == [] and seen['reads'] and not seen['slow']
+        again += seen['reread']
         assert diff(outcome(None, pr, asm), outcome(rust, pr, asm)) == []
     assert any(name.startswith('finite ') for name in again)
     found = diff(outcome(None, pr, asm), outcome(wrong, pr, asm))
     assert found and all(name.startswith('read finite ') or name == 'counts' for name in found)
+
+
+def test_a_read_past_its_time_stops_both_children_alike(monkeypatch):
+    """`complex(sin(exp(exp(exp(5)))))` doesn't end. Each child is killed at that read: the reads before it are compared,
+    the input is named under `slow` and isn't a difference; a walker that answers where the other is killed is one."""
+    import convert_diff
+    monkeypatch.setattr(convert_diff, 'READ_SECONDS', 2.0)
+    pr, asm = Q.lt(x, sin(exp(exp(exp(5))))), Q.positive(x)
+    quick = type('QuickComplex', (convert._Walk,), {'_read_complex': lambda self, t: (0, 0)})
+    seen = {}
+    assert diff(outcome(None, pr, asm), outcome(convert.rust_walk(convert.RUST_ITEMS), pr, asm), None, seen) == []
+    assert seen['slow'].startswith('complex ') and seen['reads'] > 0
+    found = diff(outcome(None, pr, asm), outcome(quick, pr, asm))
+    assert any(name.startswith('reads stopped ') for name in found)
 
 
 def run(plant=None, items=None):

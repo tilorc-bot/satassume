@@ -18,10 +18,16 @@ made one after the other in one process compare the askers' order, not the walke
 value, the counts and what raised. Python's own second ask, in its child after the first, is recorded too: an input
 where it answers differently counts under `reread` (history dependence in pure Python, reported with its inputs; not
 a difference between the walkers, and nothing here hides one: both walkers' first asks are still compared).
+
+A read gets READ_SECONDS of the child's CPU time (SLICE_CONVERT_DIFF_READ_SECONDS); past it the child is killed, and
+the reads it had answered are still compared, each having been sent as it was made. When both children stop at the
+same read, the input counts under `slow` (listed, not a difference: the reads after that one weren't compared); when
+they stop at different reads, or only one stops, that is a difference. `reads` is the number of reads compared.
 """
 import collections
 import glob
 import json
+import io
 import os
 import pickle
 import signal
@@ -31,12 +37,14 @@ import warnings
 import convert
 
 MAX_EXAMPLES = 20
-MAX_REREAD = 400            # every `reread` input is listed, up to this many per process
+MAX_REREAD = 400            # every `reread` and `slow` input is listed, up to this many of each per process
 WRITE_EVERY = 50
-CHILD_SECONDS = 600         # a child that reads for longer is killed, and that is a difference
+READ_SECONDS = float(os.environ.get('SLICE_CONVERT_DIFF_READ_SECONDS', 30))     # CPU time one read gets in its child
+CHILD_SECONDS = 1800        # wall time a child gets in all
 COUNTS = collections.Counter()
 EXAMPLES = []
 REREAD = []
+SLOW = []
 
 
 def typed(v):
@@ -44,9 +52,9 @@ def typed(v):
 
 
 def fresh(*fns):
-    """Each `fn()` in its own forked child, all forked before any is waited for: for each, ('ok', its picklable result),
-    ('raised', type, message), or ('died', wait status). A child starts from this process's state as it is now, the
-    same for all of them, and takes its own changes with it."""
+    """Each `fn(emit)` in its own forked child, all forked before any is waited for: for each, the list of what it gave
+    `emit`, in order, then ('raised', type, message) if it raised. A child that is killed leaves what it had emitted.
+    A child starts from this process's state as it is now, the same for all of them, and takes its own changes with it."""
     started = [_fork(fn) for fn in fns]
     return [_collect(pid, rd) for pid, rd in started]
 
@@ -60,13 +68,16 @@ def _fork(fn):
         try:
             os.close(rd)
             signal.signal(signal.SIGALRM, signal.SIG_DFL)
+            signal.signal(signal.SIGVTALRM, signal.SIG_DFL)
             signal.alarm(CHILD_SECONDS)
-            try:
-                got = pickle.dumps(('ok', fn()))
-            except BaseException as e:
-                got = pickle.dumps(('raised', type(e).__name__, str(e)))
             with os.fdopen(wr, 'wb') as f:
-                f.write(got)
+                def emit(v):
+                    pickle.dump(v, f)
+                    f.flush()
+                try:
+                    fn(emit)
+                except BaseException as e:
+                    emit(('raised', type(e).__name__, str(e)))
         finally:
             os._exit(0)
     os.close(wr)
@@ -75,29 +86,41 @@ def _fork(fn):
 
 def _collect(pid, rd):
     with os.fdopen(rd, 'rb') as f:
-        got = f.read()
-    status = os.waitpid(pid, 0)[1]
-    return pickle.loads(got) if got else ('died', status)
+        got = io.BytesIO(f.read())
+    os.waitpid(pid, 0)
+    out = []
+    try:
+        while True:
+            out.append(pickle.load(got))
+    except Exception:           # the end, or a last one cut short by the kill
+        return out
 
 
-def reads(c, n, again=False):
-    """Every lazy read of the first `n` terms of a `Converted`, kind by kind, then its counts and what raised. With
-    `again`, then the names of the reads that answer differently when asked a second time, here, after all of those."""
+def reads(c, n, emit, again=False):
+    """In a child: every lazy read of the first `n` terms of a `Converted`, kind by kind, each emitted as ('v', value)
+    and each with READ_SECONDS of CPU time before the kill; then ('end', its counts, what raised, and with `again` the
+    names of the reads that answer differently when asked a second time, here, after all of those)."""
     ask = c.tables['reads']
     order = [(kind, i) for kind in range(len(convert.READS)) for i in range(n)]
-    values = [ask(kind, i) for kind, i in order]
+    values = []
+    for kind, i in order:
+        signal.setitimer(signal.ITIMER_VIRTUAL, READ_SECONDS)
+        values.append(ask(kind, i))
+        emit(('v', values[-1]))
+    signal.setitimer(signal.ITIMER_VIRTUAL, 0)
     counts, raised = dict(c.counts), list(c.raised)
     second = [f'{convert.READS[kind]} {i}' for (kind, i), v in zip(order, values) if ask(kind, i) != v] if again else []
-    return values, counts, raised, second
+    emit(('end', counts, raised, second))
 
 
-def diff(a, b, read_terms=None, reread=None):
+def diff(a, b, read_terms=None, seen=None):
     """What differs between two outcomes (a `Converted`, a `Kept`, or the exception raised), as names. Empty: the same.
     The same: the reason and detail of a `Kept`; an exception's type and message; tables equal token for token and type
     for type; `ids` with the same objects under the same ids in the same order; `objects` and `classes` the same objects;
     then each lazy read of each term (of the first `read_terms`, if given) answering alike, and the counts after, each
-    outcome's reads in its own forked child (`fresh`). `reread`, a list, gets the names of `a`'s reads that answered
-    differently when asked a second time in `a`'s child."""
+    outcome's reads in its own forked child (`fresh`). `seen`, a dict, gets `reads`, the number of reads compared;
+    `reread`, the names of `a`'s reads that answered differently when asked a second time in `a`'s child; and `slow`,
+    the read both children stopped at, if they did."""
     if type(a) is not type(b):
         return [f'outcome {type(a).__name__} {type(b).__name__}']
     if isinstance(a, BaseException):
@@ -121,15 +144,21 @@ def diff(a, b, read_terms=None, reread=None):
     if out:
         return out
     n = len(a.objects) if read_terms is None else min(read_terms, len(a.objects))
-    ra, rb = fresh(lambda: reads(a, n, reread is not None), lambda: reads(b, n))
-    if ra[0] != 'ok' or rb[0] != 'ok':
-        return [] if ra == rb and ra[0] == 'raised' else [f'reads {ra[:2]} | {rb[:2]}']
-    (va, ca, xa, second), (vb, cb, xb, _) = ra[1], rb[1]
-    out += [f'read {convert.READS[k // n]} {k % n}' for k in range(len(va)) if va[k] != vb[k]]
-    if ca != cb or xa != xb:
-        out.append('counts')
-    if reread is not None:
-        reread += second
+    fa, fb = fresh(lambda emit: reads(a, n, emit, seen is not None), lambda emit: reads(b, n, emit))
+    va, vb = [f[1] for f in fa if f[0] == 'v'], [f[1] for f in fb if f[0] == 'v']
+    ea, eb = fa[len(va):], fb[len(vb):]           # the end, or what it raised, or nothing: killed
+    k = min(len(va), len(vb))
+    name = lambda j: f'{convert.READS[j // n]} {j % n}'
+    out += ['read ' + name(j) for j in range(k) if va[j] != vb[j]]
+    ended = bool(ea) and bool(eb) and ea[0][0] == eb[0][0] == 'end'
+    if ended:
+        if ea[0][1:3] != eb[0][1:3]:
+            out.append('counts')
+    elif len(va) != len(vb) or [e[:2] for e in ea] != [e[:2] for e in eb]:
+        out.append(f'reads stopped {len(va)} {[e[:2] for e in ea]} | {len(vb)} {[e[:2] for e in eb]}')
+    if seen is not None:
+        seen.update(reads=k, reread=ea[0][3] if ended else [],
+                    slow=None if ended else (name(k) if k < len(convert.READS) * n else 'after the reads') + f' {[e[:2] for e in ea]}')
     return out
 
 
@@ -156,8 +185,14 @@ def install(out, read_terms=None, control=False):
     def both(proposition, assumptions, eng):
         a = outcome(None, proposition, assumptions, eng, real)
         b = outcome(rust, proposition, assumptions, eng, real)
-        again = []
-        d = diff(a, b, read_terms, again)
+        seen = dict(reads=0, reread=[], slow=None)
+        d = diff(a, b, read_terms, seen)
+        again = seen['reread']
+        COUNTS['reads'] += seen['reads']
+        if seen['slow']:
+            COUNTS['slow'] += 1
+            if len(SLOW) < MAX_REREAD:
+                SLOW.append([seen['slow'], repr(proposition)[:300], repr(assumptions)[:200]])
         COUNTS['inputs'] += 1
         COUNTS['outcome:' + (a.reason if isinstance(a, convert.Kept) else type(a).__name__)] += 1
         if isinstance(a, convert.Converted):
@@ -170,7 +205,7 @@ def install(out, read_terms=None, control=False):
             COUNTS['reread'] += 1
             if len(REREAD) < MAX_REREAD:
                 REREAD.append([again[:6], repr(proposition)[:200], repr(assumptions)[:200]])
-        if d or again or COUNTS['inputs'] % WRITE_EVERY == 0:
+        if d or again or seen['slow'] or COUNTS['inputs'] % WRITE_EVERY == 0:
             write()
         return real(proposition, assumptions, eng)
 
@@ -178,35 +213,38 @@ def install(out, read_terms=None, control=False):
         os.makedirs(out, exist_ok=True)
         p = os.path.join(out, f'diff.{os.getpid()}.json')
         with open(p + '.tmp', 'w') as f:
-            json.dump(dict(counts=COUNTS, examples=EXAMPLES, reread=REREAD, items=list(rust.ITEMS),
+            json.dump(dict(counts=COUNTS, examples=EXAMPLES, reread=REREAD, slow=SLOW, items=list(rust.ITEMS),
                            walk=getattr(convert.WALK[0], 'ITEMS', 'py'), read_terms=read_terms), f)
         os.replace(p + '.tmp', p)
 
-    os.register_at_fork(after_in_child=lambda: (COUNTS.clear(), EXAMPLES.clear(), REREAD.clear()))   # a forked child counts its own
+    os.register_at_fork(after_in_child=lambda: (COUNTS.clear(), EXAMPLES.clear(), REREAD.clear(), SLOW.clear()))   # a forked child counts its own
     both.differential = True
     convert.convert = both
     atexit.register(write)
 
 
 def total(dirs):
-    c, ex, re, files = collections.Counter(), [], [], 0
+    c, ex, re, slow, files = collections.Counter(), [], [], [], 0
     for d in dirs:
         for p in sorted(glob.glob(os.path.join(d, 'diff.*.json'))):
             r = json.load(open(p))
             c.update(r['counts'])
             ex += r['examples']
             re += [[os.path.basename(d)] + e for e in r.get('reread', [])]
+            slow += [[os.path.basename(d)] + e for e in r.get('slow', [])]
             files += 1
-    return files, c, ex, re
+    return files, c, ex, re, slow
 
 
 if __name__ == '__main__':
-    files, c, ex, re = total(sys.argv[1:])
-    print(json.dumps(dict(files=files, inputs=c['inputs'], differences=c['differences'], terms=c['terms'], reread=c['reread'],
+    files, c, ex, re, slow = total(sys.argv[1:])
+    print(json.dumps(dict(files=files, inputs=c['inputs'], differences=c['differences'], terms=c['terms'], reads=c['reads'], slow=c['slow'], reread=c['reread'],
                           reread_by_dir=dict(collections.Counter(e[0] for e in re)),
                           outcomes={k[8:]: v for k, v in sorted(c.items()) if k.startswith('outcome:')})))
     for e in ex[:10]:
         print('DIFF', e)
+    for e in slow:
+        print('SLOW', e)
     for e in re:
         print('REREAD', e)
     raise SystemExit(1 if c['differences'] or not c['inputs'] else 0)
