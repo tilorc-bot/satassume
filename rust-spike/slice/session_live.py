@@ -1201,14 +1201,15 @@ def _frameless(f):
         g = (entry, globals()[dname], key, via, False)
     entry, d, key, via, positional = g
     name = key if isinstance(key, str) else f.__name__
-    qualname, doc = ('Relations.' if via else 'Session.') + name, f.__doc__
+    qualname, doc, module = ('Relations.' if via else 'Session.') + name, f.__doc__, f.__module__
     try:
         py = d[key]
     except (KeyError, TypeError):
         py = None
     if py is not None:      # named as the Python method it stands for (the planner's ruling (3) on 293's deviations)
-        name, qualname, doc = py.__name__, py.__qualname__, py.__doc__
-    return sa_solver.GuardMethod(getattr(sa_solver, entry), d, key, via, positional, TableView, f, name, qualname, doc)
+        name, qualname, doc, module = py.__name__, py.__qualname__, py.__doc__, py.__module__
+    return sa_solver.GuardMethod(getattr(sa_solver, entry), d, key, via, positional, TableView, f, name, qualname, doc,
+                                 module)
 
 
 def _install_entry():

@@ -500,6 +500,10 @@ pub(crate) struct EntMethod {
     /// getter named `__doc__` is shadowed; session_live `_method_docs` puts this one under `__doc__`.
     #[pyo3(get, name = "_method_doc")]
     doc: Py<PyAny>,
+    /// The Python method's `__module__` (OWED [128]); `sa_solver` when made without one. The getter named `__module__` is
+    /// in the type's dict before PyType_FromSpec would write the type's own `__module__` there, so it is the instance's.
+    #[pyo3(get, name = "__module__")]
+    module: Py<PyAny>,
 }
 
 /// The planner's ruling (3) on 293's deviations: a bound entry method must look like the Python method it replaces, since
@@ -547,15 +551,15 @@ impl EntMethod {
         module: Option<Py<PyAny>>,
     ) -> PyResult<Self> {
         let doc = doc.unwrap_or_else(|| p.None());
-        let f = match (owner, module) {
+        let (f, module) = match (owner, module) {
             (Some(o), Some(m)) => {
                 let n: String = name.bind(p).extract()?;
                 let d: Option<String> = doc.bind(p).extract()?;
-                renamed_entry(p, f.bind(p), &n, d.as_deref(), o.bind(p), m.bind(p))?
+                (renamed_entry(p, f.bind(p), &n, d.as_deref(), o.bind(p), m.bind(p))?, m)
             }
-            _ => f,
+            _ => (f, intern!(p, "sa_solver").clone().into_any().unbind()),
         };
-        Ok(EntMethod { f, name, qualname, doc })
+        Ok(EntMethod { f, name, qualname, doc, module })
     }
 
     fn __get__<'py>(slf: &Bound<'py, Self>, obj: Option<&Bound<'py, PyAny>>, _typ: Option<&Bound<'py, PyAny>>) -> PyResult<Bound<'py, PyAny>> {
@@ -587,6 +591,12 @@ impl EntMethod {
     #[getter]
     fn __func__(&self, p: Python<'_>) -> Py<PyAny> {
         self.f.clone_ref(p)
+    }
+
+    /// Pickled by reference, as a function is (`pickle` `save_global`): `__module__` then `__qualname__`, which finds the
+    /// class's attribute, this object (`__get__` with no instance gives itself). OWED [128].
+    fn __reduce__(&self, p: Python<'_>) -> Py<PyAny> {
+        self.qualname.clone_ref(p)
     }
 }
 
@@ -620,15 +630,19 @@ pub(crate) struct GuardMethod {
     /// getter named `__doc__` is shadowed; session_live `_method_docs` puts this one under `__doc__`.
     #[pyo3(get, name = "_method_doc")]
     doc: Py<PyAny>,
+    /// The Python method's `__module__` (OWED [128]); `sa_solver` when made without one. The getter named `__module__` is
+    /// in the type's dict before PyType_FromSpec would write the type's own `__module__` there, so it is the instance's.
+    #[pyo3(get, name = "__module__")]
+    module: Py<PyAny>,
 }
 
 #[pymethods]
 impl GuardMethod {
     /// `f` the Rust entry; `py_methods[key]` Python's method; `via_session`: the test reads `self.session` (a
     /// `Relations`); `positional`: keyword arguments are refused, as `def f(self, *a)` refuses them; `view` the class
-    /// `TableView`.
+    /// `TableView`; `module` the Python method's `__module__`.
     #[new]
-    #[pyo3(signature = (f, py_methods, key, via_session, positional, view, origin, name, qualname, doc=None))]
+    #[pyo3(signature = (f, py_methods, key, via_session, positional, view, origin, name, qualname, doc=None, module=None))]
     #[allow(clippy::too_many_arguments)]
     fn new(
         p: Python<'_>,
@@ -642,8 +656,10 @@ impl GuardMethod {
         name: Py<PyAny>,
         qualname: Py<PyAny>,
         doc: Option<Py<PyAny>>,
+        module: Option<Py<PyAny>>,
     ) -> Self {
-        GuardMethod { f, py_methods, key, via_session, positional, view, origin, name, qualname, doc: doc.unwrap_or_else(|| p.None()) }
+        let module = module.unwrap_or_else(|| intern!(p, "sa_solver").clone().into_any().unbind());
+        GuardMethod { f, py_methods, key, via_session, positional, view, origin, name, qualname, doc: doc.unwrap_or_else(|| p.None()), module }
     }
 
     fn __get__<'py>(slf: &Bound<'py, Self>, obj: Option<&Bound<'py, PyAny>>, _typ: Option<&Bound<'py, PyAny>>) -> PyResult<Bound<'py, PyAny>> {
@@ -676,6 +692,12 @@ impl GuardMethod {
     #[getter]
     fn __func__(&self, p: Python<'_>) -> Py<PyAny> {
         self.f.clone_ref(p)
+    }
+
+    /// Pickled by reference, as a function is (`pickle` `save_global`): `__module__` then `__qualname__`, which finds the
+    /// class's attribute, this object (`__get__` with no instance gives itself). OWED [128].
+    fn __reduce__(&self, p: Python<'_>) -> Py<PyAny> {
+        self.qualname.clone_ref(p)
     }
 }
 

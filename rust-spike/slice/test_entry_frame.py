@@ -52,6 +52,7 @@ def _child():
                   ask(Q.positive(x + 1), Q.positive(x), engine=e2)]
     out['name'] = [Engine.ask.__name__, e2.ask.__name__, e2.ask.__self__ is e2]
     # the planner's ruling (3): every bound entry method is named as the Python method it replaced
+    import sa_solver
     import session_live
     attrs = ('__name__', '__qualname__', '__doc__', '__module__')
     out['looks'] = {n: [[a, getattr(getattr(e2, n), a), getattr(py, a)] for a in attrs
@@ -59,10 +60,17 @@ def _child():
                     for n, py in session_live.PY_ENTRY.items() if n in session_live._ENTRY_METHODS}
     out['n_methods'] = len(out['looks'])
     # ... and so is the class's attribute (`Engine.ask`, the EntMethod itself)
-    out['class_looks'] = [n for n, py in session_live.PY_ENTRY.items() if n in session_live._ENTRY_METHODS
-                          and [getattr(Engine.__dict__[n], a) for a in attrs[:3]] != [getattr(py, a) for a in attrs[:3]]]
+    # (OWED [128]: `__module__` too, and inspect and pickle find it as they find the Python method)
+    from test_guard_method import _lookups
+    out['class_looks'] = [[n, _lookups(Engine.__dict__[n], getattr(e2, n), py)] for n, py in session_live.PY_ENTRY.items()
+                          if n in session_live._ENTRY_METHODS
+                          and ([getattr(Engine.__dict__[n], a) for a in attrs] != [getattr(py, a) for a in attrs]
+                               or _lookups(Engine.__dict__[n], getattr(e2, n), py))]
+    # the control: an EntMethod made without the class and module is `sa_solver`'s, and inspect finds that module
+    import inspect
+    out['bare_module'] = [sa_solver.EntMethod(sa_solver.ent_ask, 'ask', 'Engine.ask').__module__,
+                          inspect.getmodule(sa_solver.EntMethod(sa_solver.ent_ask, 'ask', 'Engine.ask')).__name__]
     # the control: an EntMethod made without the class and module binds the pyfunction, which names the bound method
-    import sa_solver
     bare = sa_solver.EntMethod(sa_solver.ent_ask, 'ask', 'Engine.ask', Engine.ask.__doc__)
     out['bare_name'] = bare.__get__(e2, Engine).__name__
     print(json.dumps(out))
@@ -94,12 +102,13 @@ def test_an_entry_method_is_one_rust_call():
 
 def test_a_bound_entry_method_looks_like_the_python_method():
     """The planner's ruling (3) on 293's deviations: `__name__`, `__qualname__`, `__doc__` (and `__module__`) of each bound
-    entry method are the Python method's. The control: bound to the bare pyfunction, the name is the Rust entry's."""
+    entry method are the Python method's, on the class's attribute too, where inspect and pickle find it (OWED [128]). The control: bound to the bare pyfunction, the name is the Rust entry's."""
     got = _run()
     assert got['n_methods'] > 10, got
     assert {n: d for n, d in got['looks'].items() if d} == {}, got['looks']
     assert got['class_looks'] == [], got['class_looks']
     assert got['bare_name'] == 'ent_ask', got
+    assert got['bare_module'] == ['sa_solver', 'sa_solver'], got
 
 
 def test_the_python_def_is_a_frame_per_call():

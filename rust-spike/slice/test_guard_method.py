@@ -40,6 +40,24 @@ def _asks(ref=False):
     return out
 
 
+def _lookups(v, bound, py):
+    """OWED [128]: what reads `__module__` and `__qualname__` finds the method as it finds the Python method. inspect finds
+    the module; pickle stores a function by reference (module, then qualname) and loads the class's attribute, so a
+    method pickles to itself, where the Python method does: not a local function (`<locals>` in its qualname)."""
+    import inspect
+    import pickle
+    bad = [[w, 'getmodule', getattr(inspect.getmodule(o), '__name__', None), py.__module__]
+           for w, o in (('bound', bound), ('class', v)) if py is not None and inspect.getmodule(o) is not sys.modules[py.__module__]]
+    if py is not None and '<locals>' not in py.__qualname__:
+        try:
+            back = pickle.loads(pickle.dumps(v))
+        except Exception as e:      # noqa: BLE001  (the row says what failed)
+            back = type(e).__name__
+        if back is not v:
+            bad.append(['class', 'pickle', repr(back)[:80], py.__qualname__])
+    return bad
+
+
 def _child():
     from test_relations_core import _rust
     _rust()
@@ -72,7 +90,9 @@ def _child():
             py = next((D[k] for D in saved if k in D), None)
             bound = v.__get__(object(), cls)
             bad = [[w, a, getattr(o, a), getattr(py, a, '?')] for w, o in (('bound', bound), ('class', v))
-                   for a in ('__name__', '__qualname__', '__doc__') if py is None or getattr(o, a) != getattr(py, a)]
+                   for a in ('__name__', '__qualname__', '__doc__', '__module__')
+                   if py is None or getattr(o, a) != getattr(py, a)]
+            bad += _lookups(v, bound, py)
             if bad:
                 looks[cls.__name__ + '.' + k] = bad
     print(json.dumps(dict(kinds=kinds, rust=rust, nocore=nocore, frames=sorted(set(seen)), nframes=len(seen), looks=looks,
