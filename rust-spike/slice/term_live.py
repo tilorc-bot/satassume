@@ -73,7 +73,8 @@ class TermFault(BaseException):
 
 class _Query:
     """One `_ask`'s table. `kept` is a reason, or None when the table is there."""
-    __slots__ = ('table', 'ids', 'objects', 'kept', 'counts', 'raised', 'derived', 'rev', 'memo', 'ints', 'int_ids', 'classes')
+    __slots__ = ('table', 'ids', 'objects', 'kept', 'counts', 'raised', 'derived', 'rev', 'memo', 'ints', 'int_ids', 'classes',
+                 '__weakref__')     # relkeys.rs `innermost` holds the innermost query weakly (the rk_key step)
 
     def __init__(self, c):
         # Derived terms this query has met: {SymPy term: id} and {id: SymPy term}. Apart from `ids`, which other consumers

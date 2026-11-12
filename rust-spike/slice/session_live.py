@@ -1100,7 +1100,8 @@ _SB_PLANTS = ('sb-truncated-stale', 'sb-link-pending-stale', 'sb-neg-shared-stal
               'sb-verdict-none', 'sb-fwd-skip-link', 'sb-solver-fresh', 'sc-frontier-drop', 'sc-pending-drop',
               'sc-pending_c-drop', 'sc-demand-drop', 'sc-deferred-drop', 'sc-literals-drop', 'sc-groups-drop', 'sc-key-shared',
               'sb-core-unset', 'sb-core-stale', 'sb-join-address', 'sc-key-id-stale',
-              'sc-key-id-weak', 'sc-key-id-shared', 'ent-method-first-self', 'gm-guard-skip', 'cl-view-nodes-drop')
+              'sc-key-id-weak', 'sc-key-id-shared', 'ent-method-first-self', 'gm-guard-skip', 'cl-view-nodes-drop',
+              'rk-top-once', 'rk-type-once')     # the rk_key step (relkeys.rs, 621 and 668)
 
 
 def entry_native():

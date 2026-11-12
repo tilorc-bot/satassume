@@ -750,10 +750,7 @@ pub(crate) struct Linked<'py> {
 /// The current query's term id for the object `x`, or None. See the file's header.
 pub(crate) fn term_of<'py>(c: &SessionCore, h: &Hooks, x: &Bound<'py, PyAny>) -> PyResult<Option<Linked<'py>>> {
     let p = x.py();
-    tick(session::LINK_CALLS);
-    if PLANT.load(Relaxed) == LINK_NONE {
-        tick(session::LINK_NONE);
-        tick(session::REL_PLANT);
+    if link_none_planted() {
         return Ok(None);
     }
     let tl = h.term_live.bind(p);
@@ -764,6 +761,33 @@ pub(crate) fn term_of<'py>(c: &SessionCore, h: &Hooks, x: &Bound<'py, PyAny>) ->
         return Ok(None);
     }
     let table = faulted(p, h, "link", q.getattr(intern!(p, "table")).and_then(|t| t.cast_into::<PyTermTable>().map_err(Into::into)))?;
+    term_in(c, h, x, &q, table)
+}
+
+/// `term_of`'s count and plant, before the query is read.
+fn link_none_planted() -> bool {
+    tick(session::LINK_CALLS);
+    if PLANT.load(Relaxed) == LINK_NONE {
+        tick(session::LINK_NONE);
+        tick(session::REL_PLANT);
+        return true;
+    }
+    false
+}
+
+/// `term_of` in a query already read (`q` with its `table`): relkeys.rs `rk_key` reads the innermost query once per query
+/// (the rk_key step), not on each call.
+pub(crate) fn term_of_in<'py>(c: &SessionCore, h: &Hooks, x: &Bound<'py, PyAny>, q: &Bound<'py, PyAny>, table: Bound<'py, PyTermTable>) -> PyResult<Option<Linked<'py>>> {
+    if link_none_planted() {
+        return Ok(None);
+    }
+    tick(session::LINK_IN_QUERY);
+    term_in(c, h, x, q, table)
+}
+
+fn term_in<'py>(c: &SessionCore, h: &Hooks, x: &Bound<'py, PyAny>, q: &Bound<'py, PyAny>, table: Bound<'py, PyTermTable>) -> PyResult<Option<Linked<'py>>> {
+    let p = x.py();
+    let tl = h.term_live.bind(p);
     tick(session::LINK_CROSS_HASH);
     let nid = faulted(p, h, "link", c.node_quiet(x))?;
     match nid {
@@ -782,7 +806,7 @@ pub(crate) fn term_of<'py>(c: &SessionCore, h: &Hooks, x: &Bound<'py, PyAny>) ->
     }
     // Python's one rule, including that a row counts only for its own class. It may add a row, so no borrow is held.
     tick(session::LINK_CROSS_TERM_ID);
-    let got = faulted(p, h, "link", tl.call_method1(intern!(p, "term_id"), (&q, x, intern!(p, "link"))))?;
+    let got = faulted(p, h, "link", tl.call_method1(intern!(p, "term_id"), (q, x, intern!(p, "link"))))?;
     if got.is_none() {
         tick(session::LINK_NONE);
         return Ok(None);
