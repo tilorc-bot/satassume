@@ -15,7 +15,7 @@ use crate::compile::{self, block_lits, Cx, Def, Kind, Need, F, R};
 use crate::formula::{self, FNode, Refused, N};
 use crate::formula_py::PyP;
 
-const NAMES: [&str; 575] = [
+const NAMES: [&str; 572] = [
     "py:var", "py:dvar", "py:node", "py:compile", "py:literal", "py:table", "rs:visit", "rs:add_clause", "rs:ensure_vars",
     "rs:def_implications", "rs:neg_shared", "join", "rs:emit_callback", "refuse:depth", "refuse:convert", "refuse:object", "second:visit", "custom:own",
     "link:hit", "link:resolved", "link:none", "link:no_table", "link:second", "link:no_node",
@@ -106,12 +106,6 @@ const NAMES: [&str; 575] = [
     "sb:core_prop",
     // the part 3 follow-up (counter 700, its range): a session dict's key found by identity, no `hash()` (ses_cont.rs `seen`)
     "sc:key_id",
-    // the rk_key step (counters 703-704, index 572-573): relkeys.rs reads the innermost query from Python (term_live's stack
-    // top, its `kept` and table) only when the top is another object; and an isinstance result only for a type not seen in
-    // this query (or modified since)
-    "rk:top_read", "rk:type_read",
-    // ... and `term_of` in the query rk_key read (relations_core.rs `term_of_in`, no `current()` crossing), counter 705, 574
-    "link:in_query",
 ];
 const VAR: usize = 0;
 const DVAR: usize = 1;
@@ -543,11 +537,6 @@ pub(crate) const SC_KEY_EQ: usize = 569;
 /// counter 700 (`sc:key_id`) by label; its index here is 571
 pub(crate) const SC_KEY_ID: usize = 571;
 pub(crate) const SB_CORE_PROP: usize = 570;
-/// counters 703-704 (`rk:top_read`, `rk:type_read`) by label; their indexes here are 572-573
-pub(crate) const RK_TOP_READ: usize = 572;
-pub(crate) const RK_TYPE_READ: usize = 573;
-/// counter 705 (`link:in_query`) by label; its index here is 574
-pub(crate) const LINK_IN_QUERY: usize = 574;
 
 thread_local! {
     static COUNTS: [Cell<u64>; NAMES.len()] = const { [const { Cell::new(0) }; NAMES.len()] };
@@ -748,18 +737,13 @@ struct SesScalars {
 /// reference to its objects), 617 `sc-key-id-shared` (one memo, process-wide), 618 `ent-method-first-self`
 /// (session_glue.rs `EntMethod`: an entry method binds the first engine it saw), 619 `gm-guard-skip` (`GuardMethod`: a
 /// session with no core is given the Rust entry), 620 `cl-view-nodes-drop` (compile_loop.rs `view_core`: `_flush` reads the
-/// core's new nodes as none, so no child is queued). The rk_key step's (`RK_PLANTS`): 621 `rk-top-once` (relkeys.rs: the
-/// innermost query is read once per process, never again after the stack's push or pop), 668 `rk-type-once` (relkeys.rs:
-/// the first key's isinstance result in a query is every key's), 669 `rk-getattr-cached` (relkeys.rs `plain`: a type with its
-/// own `__getattribute__` is cached by type).
+/// core's new nodes as none, so no child is queued).
 static SB_PLANT: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(0);
 const SB_PLANTS: [&str; 18] = ["sb-truncated-stale", "sb-link-pending-stale", "sb-neg-shared-stale", "sb-sel-zero", "sb-hold-zero",
     "sb-verdict-none", "sb-fwd-skip-link", "sb-solver-fresh", "sc-frontier-drop", "sc-pending-drop", "sc-pending_c-drop",
     "sc-demand-drop", "sc-deferred-drop", "sc-literals-drop", "sc-groups-drop", "sc-key-shared", "sb-core-unset", "sb-core-stale"];
 const A_PLANTS: [&str; 7] = ["sb-join-address", "sc-key-id-stale", "sc-key-id-weak", "sc-key-id-shared",
     "ent-method-first-self", "gm-guard-skip", "cl-view-nodes-drop"];
-const RK_PLANTS: [(&str, u16); 3] = [("rk-top-once", crate::relkeys::RK_TOP_ONCE_PLANT), ("rk-type-once", crate::relkeys::RK_TYPE_ONCE_PLANT),
-    ("rk-getattr-cached", crate::relkeys::RK_GETATTR_PLANT)];
 const SB_JOIN_ADDRESS: u16 = 614;
 const SB_CORE_UNSET: u16 = 447;
 const SB_CORE_STALE: u16 = 448;
@@ -783,10 +767,7 @@ fn sb_plant(name: Option<&str>) -> PyResult<()> {
             Some(i) => 431 + i as u16,
             None => match A_PLANTS.iter().position(|x| *x == n) {
                 Some(i) => 614 + i as u16,
-                None => match RK_PLANTS.iter().find(|x| x.0 == n) {
-                    Some(x) => x.1,
-                    None => return Err(PyValueError::new_err(format!("no such plant: {n}"))),
-                },
+                None => return Err(PyValueError::new_err(format!("no such plant: {n}"))),
             },
         },
     };

@@ -992,9 +992,7 @@ def test_sharing_case_fails_without_sharing():
 def test_link_crossings_add_up(rust):
     """Each kind of crossing the report quotes, against the calls that make it."""
     c = rust['counts']
-    # the rk_key step: relkeys.rs `rk_key` resolves in the query it read once (`term_of_in`), with no `current()` crossing
-    assert c['link:calls'] == c['link:cross_current'] + c['link:in_query'] and c['link:cross_current'] > 0
-    assert c['link:in_query'] > 0
+    assert c['link:calls'] == c['link:cross_current'] > 0
     assert c['link:cross_hash'] == c['link:calls'] - c['link:no_table']
     assert c['link:cross_term_id'] == c['link:cross_hash'] - c['link:hit']
 

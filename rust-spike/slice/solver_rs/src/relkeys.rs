@@ -18,8 +18,7 @@ use pyo3::sync::PyOnceLock;
 use pyo3::BoundObject;
 use pyo3::types::{PyDict, PyList, PySet, PyType};
 
-use crate::relations_core::{hooks, installed, planted, term_of_in, Hooks};
-use crate::term::py::PyTermTable;
+use crate::relations_core::{hooks, installed, planted, term_of};
 use crate::session::{self, tick, RelKeys, RelS, SessionCore, RD_NAMES, RL_NAMES, RS_NAMES};
 
 static BASIC: PyOnceLock<Py<PyType>> = PyOnceLock::new();
@@ -80,220 +79,15 @@ fn go_dict_only(p: Python<'_>, k: &mut RelKeys) -> PyResult<()> {
     Ok(())
 }
 
-// --------------------------------------------------------------------------------------------------------------------
-// The rk_key step (issue 323, item (b)): the innermost query and the isinstance result are read once per query, not on every
-// get, set and contains (group-d-gap.md difference 2: rk_key 0.127 s Group D on fuzz).
-//
-// Who writes them (63d5632). The innermost query is term_live's stack top (`current()`). The stack is one list per thread,
-// made by `term_live.stack()` (term_live.py:150) on its first call and never replaced. `_ask` pushes and pops it
-// (term_live.py:1094/1099, a converted query or one nested in a refused run; :1117/:1124, the `_Refused` second run), and
-// so do tests and tools that open a query by hand (test_rs_core.py, relations_direct.py:117/141). Queries nest (an ask from
-// a callback inside a query), so the top changes while an outer query's session is live: that push and pop are the writes
-// within a query. A `_Query`'s `kept` and `table` are written only in its `__init__` (term_live.py:89/91/93, and :107 for
-// `_Refused`). So the read is keyed by the top's identity: the top is held by a weak reference (`_Query.__weakref__`), and
-// read again when the stack's top is another object, or none; a live reference means the address can't be a dead query's
-// reused. Its table is the one read with it, used only while that query is alive (it holds the table).
-// The isinstance input is the key's type: with the targets' metaclass `type` and no `__class__` override,
-// `isinstance(x, T)` is a function of `type(x)`'s MRO, which only a write to the type or a base changes, and each such write
-// gives the type a new `tp_version_tag` (PyType_Modified). A result is kept per type (held) and tag, and dropped when the
-// top changes.
-
-/// Plant 621 `rk-top-once`: once the innermost query has been read as having no table, it is never read again (a stale value
-/// after the stack's push: the session keys by hash in the converted query that follows). Caught by test_rk_key.py, which
-/// opens queries in turn and nested and asserts where each key went (term id or hash) and that a session going on into a
-/// kept query goes dict-only (`rk:outlive`).
-pub(crate) const RK_TOP_ONCE_PLANT: u16 = 621;
-/// Plant 668 `rk-type-once`: the first key's isinstance result in a query is every key's (read once per query, not per type),
-/// a wrong value: `Integer(2)` keyed by term id and `2` by hash, two keys where Python's set has one member. Caught by
-/// test_rk_key.py's join rows (after `x`, adding `Integer(2)` then `2` gives 3 members where Python's set has 2).
-pub(crate) const RK_TYPE_ONCE_PLANT: u16 = 668;
-/// Plant 669 `rk-getattr-cached`: `plain` ignores a type's own `__getattribute__`, so a type that answers `__class__` per
-/// instance is cached by type (a stale isinstance result for its next instance). Caught by test_rk_key_targets.py, whose
-/// per-instance row asserts one isinstance read per access to such a key.
-pub(crate) const RK_GETATTR_PLANT: u16 = 669;
-
-extern "C" {
-    /// The MRO lookup of an attribute on a type, a borrowed reference (Objects/typeobject.c; CPython's own API since 2.2).
-    fn _PyType_Lookup(t: *mut pyo3::ffi::PyTypeObject, name: *mut pyo3::ffi::PyObject) -> *mut pyo3::ffi::PyObject;
-    /// Gives the type a version tag if it has none; 0 when it can't (Include/cpython/object.h, 3.12).
-    fn PyUnstable_Type_AssignVersionTag(t: *mut pyo3::ffi::PyTypeObject) -> std::ffi::c_int;
-}
-
-/// The innermost query as last read, per thread (term_live's stack is per thread).
-struct Top {
-    module: Py<PyAny>,
-    stack: Py<PyList>,
-    /// The read below stands for the stack's top now (false until the first read, or when the top has no weak reference).
-    valid: bool,
-    /// The top, weakly; None for an empty stack.
-    q: Option<Py<pyo3::types::PyWeakrefReference>>,
-    /// The top's table when it has one (`kept` None): borrowed from `q`, which holds it, and used only while `q` is alive.
-    table: Option<std::ptr::NonNull<pyo3::ffi::PyObject>>,
-    /// The isinstance results in this query: (type, its tag then, `is_basic && !is_joinable`).
-    types: Vec<(Py<PyType>, u32, bool)>,
-    /// Plant 668's one result per query.
-    first: Option<bool>,
-}
-
-thread_local! {
-    static TOP: std::cell::RefCell<Option<Top>> = const { std::cell::RefCell::new(None) };
-}
-
-/// The innermost query with its table, or None when it has no table (none, or `kept`): term_live `current()`, `.kept` and
-/// `.table`, read from Python only when the stack's top is another object than last read.
-fn innermost<'py>(p: Python<'py>, h: &Hooks) -> PyResult<Option<(Bound<'py, PyAny>, Bound<'py, PyTermTable>)>> {
-    let tl = h.term_live().bind(p);
-    if TOP.with(|t| t.borrow().as_ref().is_none_or(|c| !c.module.is(tl))) {
-        let s = tl.call_method0(intern!(p, "stack"))?.cast_into::<PyList>()?;
-        TOP.with(|t| {
-            *t.borrow_mut() =
-                Some(Top { module: tl.clone().unbind(), stack: s.unbind(), valid: false, q: None, table: None, types: Vec::new(), first: None })
-        });
-    }
-    // the stack's top now, and whether the last read stands for it; neither runs Python code
-    let (top, hit) = TOP.with(|t| -> PyResult<_> {
-        let t = t.borrow();
-        let c = t.as_ref().expect("set above");
-        let s = c.stack.bind(p);
-        let n = s.len();
-        let top = if n == 0 { None } else { Some(s.get_item(n - 1)?) };
-        if !c.valid {
-            return Ok((top, None));
-        }
-        if c.table.is_none() && session::sb_planted(RK_TOP_ONCE_PLANT) {
-            return Ok((top, Some(None)));
-        }
-        let same = match (&c.q, &top) {
-            (None, None) => true,
-            (Some(w), Some(q)) => pyo3::types::PyWeakrefMethods::upgrade(w.bind(p)).is_some_and(|o| o.is(q)),
-            _ => false,
-        };
-        if !same {
-            return Ok((top, None));
-        }
-        // the query is alive (it is on the stack), so the table it holds is
-        let table = c.table.map(|t| unsafe { Bound::from_borrowed_ptr(p, t.as_ptr()).cast_into_unchecked::<PyTermTable>() });
-        Ok((top.clone(), Some(top.zip(table))))
-    })?;
-    if let Some(hit) = hit {
-        return Ok(hit);
-    }
-    tick(session::RK_TOP_READ);
-    let (weak, table) = match &top {
-        None => (None, None),
-        Some(q) => {
-            let table = if q.getattr(intern!(p, "kept"))?.is_none() {
-                Some(q.getattr(intern!(p, "table"))?.cast_into::<PyTermTable>()?)
-            } else {
-                None
-            };
-            (pyo3::types::PyWeakrefReference::new(q).ok().map(Bound::unbind), table)
-        }
-    };
-    TOP.with(|t| {
-        if let Some(c) = t.borrow_mut().as_mut() {
-            c.valid = top.is_none() || weak.is_some();
-            c.q = weak;
-            c.table = table.as_ref().and_then(|t| std::ptr::NonNull::new(t.as_ptr()));
-            c.types.clear();
-            c.first = None;
-        }
-    });
-    Ok(top.zip(table))
-}
-
-static PLAIN_TARGETS: PyOnceLock<bool> = PyOnceLock::new();
-
-/// `is_basic(x) && !is_joinable(x)`, kept per type for the query (see the block above); `cached` false (relations on Python,
-/// no query read) reads it each time.
-fn basic_key(p: Python<'_>, x: &Bound<'_, PyAny>, cached: bool) -> PyResult<bool> {
-    let tp = x.get_type();
-    let tag = unsafe { (*tp.as_type_ptr()).tp_version_tag };
-    if cached {
-        let hit = TOP.with(|t| {
-            let t = t.borrow();
-            let c = t.as_ref()?;
-            if c.first.is_some() && session::sb_planted(RK_TYPE_ONCE_PLANT) {
-                return c.first;
-            }
-            c.types.iter().find(|e| tag != 0 && e.1 == tag && e.0.as_ptr() == tp.as_ptr()).map(|e| e.2)
-        });
-        if let Some(b) = hit {
-            return Ok(b);
-        }
-    }
-    tick(session::RK_TYPE_READ);
-    let b = is_basic(x)? && !is_joinable(x)?;
-    if cached {
-        let t = tp.as_type_ptr();
-        let tag = unsafe {
-            if (*t).tp_version_tag == 0 {
-                PyUnstable_Type_AssignVersionTag(t);
-            }
-            (*t).tp_version_tag
-        };
-        if tag != 0 && plain(p, &tp)? {
-            TOP.with(|c| {
-                if let Some(c) = c.borrow_mut().as_mut() {
-                    if c.first.is_none() {
-                        c.first = Some(b);
-                    }
-                    if c.types.len() < 256 {
-                        c.types.push((tp.clone().unbind(), tag, b));
-                    }
-                }
-            });
-        }
-    }
-    Ok(b)
-}
-
-/// Whether `isinstance(x, T)` is a function of `type(x)` = `tp` for the targets: their metaclass is `type`, and `tp` has
-/// object's own `__class__` and the generic `tp_getattro` (no override that could name another class per object: when `tp` isn't a
-/// subclass, Objects/abstract.c `object_isinstance` reads `x.__class__` through `tp_getattro`).
-/// The targets, `is_basic`'s and `is_joinable`'s: Basic, Number, BooleanAtom and Tuple. Their metaclass is `type` (checked
-/// here once per process; `type` is immutable, so a class's metaclass can't be reassigned), so none is an ABC and none has an
-/// `__instancecheck__` of its own (`register()` or a patched check can't change an answer); test_rk_key_targets.py keeps it so.
-fn plain(p: Python<'_>, tp: &Bound<'_, PyType>) -> PyResult<bool> {
-    let targets = *PLAIN_TARGETS.get_or_try_init(p, || -> PyResult<bool> {
-        let ty = p.get_type::<PyType>();
-        let s = p.import(intern!(p, "sympy"))?;
-        let b = p.import(intern!(p, "sympy.logic.boolalg"))?;
-        let mut all = true;
-        for t in [s.getattr("Basic")?, s.getattr("Number")?, b.getattr("BooleanAtom")?, s.getattr("Tuple")?] {
-            all &= t.get_type().is(&ty);
-        }
-        Ok(all)
-    })?;
-    if !targets {
-        return Ok(false);
-    }
-    let objects_own = |name: &Bound<'_, pyo3::types::PyString>| unsafe {
-        let mine = _PyType_Lookup(tp.as_type_ptr(), name.as_ptr());
-        let objects = _PyType_Lookup(std::ptr::addr_of_mut!(pyo3::ffi::PyBaseObject_Type), name.as_ptr());
-        !mine.is_null() && mine == objects
-    };
-    // the attribute read itself: `tp_getattro` is the generic one (a Python class with its own `__getattribute__` or
-    // `__getattr__` gets slot_tp_getattr_hook). Not an MRO lookup of `__getattribute__`: tuple's own dict holds a wrapper of
-    // the generic slot, and tuples are most keys.
-    let generic = unsafe { (*tp.as_type_ptr()).tp_getattro }.map(|f| f as usize) == Some(pyo3::ffi::PyObject_GenericGetAttr as usize);
-    Ok(objects_own(intern!(p, "__class__")) && (generic || session::sb_planted(RK_GETATTR_PLANT)))
-}
-
 /// The key of `x`, or None when it has none; with `origin`, interns it (or takes its term id) when it has none.
 pub(crate) fn rk_key(c: &SessionCore, x: &Bound<'_, PyAny>, origin: Option<usize>) -> PyResult<Option<u32>> {
     let p = x.py();
-    let h = if installed() { Some(hooks()?) } else { None };
-    // the innermost query first: the types' results belong to it
-    let top = match &h {
-        Some(h) => innermost(p, h)?,
-        None => None,
-    };
-    let basic = basic_key(p, x, h.is_some())?;
+    let basic = is_basic(x)? && !is_joinable(x)?;
     // relations on Python (SLICE_REL=py, rel_install hasn't run): no query-table link, keys by hash (Python's `==` membership)
-    let dict_only = c.relkeys.borrow().dict_only;
-    if let (true, Some(h), false) = (basic, &h, dict_only) {
-        let tableless = top.is_none();
+    if basic && installed() && !c.relkeys.borrow().dict_only {
+        let h = hooks()?;
+        let q = h.term_live().bind(p).call_method0(intern!(p, "current"))?;
+        let tableless = q.is_none() || !q.getattr(intern!(p, "kept"))?.is_none();
         if tableless {
             let mut k = c.relkeys.borrow_mut();
             if !k.by_term.is_empty() {
@@ -301,10 +95,7 @@ pub(crate) fn rk_key(c: &SessionCore, x: &Bound<'_, PyAny>, origin: Option<usize
             } else if origin.is_some() {
                 k.tableless = true;
             }
-        } else if let Some(l) = {
-            let (q, t) = top.expect("not tableless");
-            term_of_in(c, h, x, &q, t)?
-        } {
+        } else if let Some(l) = term_of(c, &h, x)? {
             // the table's serial, not its address: a session that outlives its query can meet a new table at the dead one's
             // address, and would then read its old term ids as the new table's
             let t = l.table.try_borrow()?.serial();
