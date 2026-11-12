@@ -316,6 +316,7 @@ impl<'py> W<'py> {
     }
 
     fn walk(&self, root: &Bound<'py, PyAny>) -> PyResult<()> {
+        if self.mask & WALK != 0 { return self.walk_native(root); } //@call walk
         self.cx.get().py_walk.bind(self.py).call1((&self.o, root)).map(drop)
     }
 
@@ -396,6 +397,73 @@ impl<'py> W<'py> {
         Ok(())
     }
     //@end enc
+
+    //@begin walk
+    /// `_Walk.walk`: preorder over `.args`, ids by first sight.
+    fn walk_native(&self, root: &Bound<'py, PyAny>) -> PyResult<()> {
+        let py = self.py;
+        let cx = self.cx.get();
+        let basic = cx.basic.bind(py);
+        let setdefault = intern!(py, "setdefault");
+        let mut stack = vec![root.clone()];
+        while let Some(t) = stack.pop() {
+            if !t.is_instance(basic)? {
+                return self.keep("non-basic", type_name(&t)?);
+            }
+            // `if t in ids: continue; ids[t] = len(objects)`, as one lookup: an id already there is a smaller one.
+            let n = self.objects.len().into_pyobject(py)?;
+            if !self.ids.call_method1(setdefault, (&t, &n))?.is(&n) {
+                continue;
+            }
+            self.objects.append(&t)?;
+            if t.is_instance(cx.kept_classes.bind(py))? {
+                return self.keep("sum-product-integral", type_name(&t)?);
+            }
+            self.klass(t.get_type().as_any())?;
+            let args = t.getattr(intern!(py, "args"))?;
+            let exact = args.cast_exact::<PyTuple>().ok();
+            let len = match exact {
+                Some(a) => a.len(),
+                None => args.len()?,
+            };
+            if len > 1 {
+                let seen = PyDict::new(py);
+                let check = |a: &Bound<'py, PyAny>| -> PyResult<()> {
+                    if !a.is_instance(basic)? {
+                        return self.keep("non-basic", type_name(a)?);
+                    }
+                    if !seen.call_method1(setdefault, (a, a))?.is(a) {
+                        return self.keep("args-eq-not-is", type_name(&t)?);
+                    }
+                    Ok(())
+                };
+                match exact {
+                    Some(a) => {
+                        for x in a.iter() {
+                            check(&x)?;
+                        }
+                    }
+                    None => {
+                        for x in args.try_iter()? {
+                            check(&x?)?;
+                        }
+                    }
+                }
+            }
+            // `stack.extend(reversed(args))`
+            match exact {
+                Some(a) if planted(PLANT_WALK) => stack.extend(a.iter()),
+                Some(a) => stack.extend(a.iter().rev()),
+                None => {
+                    for x in cx.reversed.bind(py).call1((&args,))?.try_iter()? {
+                        stack.push(x?);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+    //@end walk
 
     //@begin klass
     /// `_Walk.klass`: the class's row, once per class under `==`.
@@ -653,6 +721,7 @@ impl Walk {
 
     // Each takes the owner first: the `_Walk` whose Python methods answer the items that are off.
     fn enc<'py>(slf: &Bound<'py, Self>, o: &Bound<'py, PyAny>, v: &Bound<'py, PyAny>, out: &Bound<'py, PyList>, key: bool) -> PyResult<()> { W::new(slf, o)?.enc_native(v, out, key) } //@call enc
+    fn walk<'py>(slf: &Bound<'py, Self>, o: &Bound<'py, PyAny>, root: &Bound<'py, PyAny>) -> PyResult<()> { W::new(slf, o)?.walk_native(root) } //@call walk
     fn klass<'py>(slf: &Bound<'py, Self>, o: &Bound<'py, PyAny>, cls: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> { W::new(slf, o)?.klass_native(cls) } //@call klass
     fn term_row<'py>(slf: &Bound<'py, Self>, o: &Bound<'py, PyAny>, t: &Bound<'py, PyAny>, out: &Bound<'py, PyList>) -> PyResult<()> { W::new(slf, o)?.term_row_native(t, out) } //@call term_row
 }
