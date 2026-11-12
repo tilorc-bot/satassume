@@ -1,10 +1,11 @@
 """The Rust walker against `_Walk` (issue 323, the convert step): `convert.convert` on the same input objects under
 Python's walker and under Rust's gives the same thing, item by item.
 
-"The same" (`diff`): the same `Kept` reason and detail, or the same exception type and message, or tables equal token
-for token and type for type (strings, class rows, term rows, powers, settings, formula, the counts), `ids` holding the
-same objects under the same ids in the same order (the first occurrence kept: ruling R1), `objects` and `classes` the
-same objects, and every lazy read of every term answering alike afterwards (tokens, strings, counts, `raised`).
+"The same" (`convert_diff.diff`, the differential test's own comparison): the same `Kept` reason and detail, or the
+same exception type and message, or tables equal token for token and type for type (strings, class rows, term rows,
+powers, settings, formula, the counts), `ids` holding the same objects under the same ids in the same order (the first
+occurrence kept: ruling R1), `objects` and `classes` the same objects, and every lazy read of every term answering
+alike afterwards (tokens, strings, counts, `raised`).
 Each item of `convert.RUST_ITEMS` is checked alone (the rest on Python) and all together.
 
 Plants 670-674 (`SLICE_CONVERT_PLANT`, one per item, each a wrong value at one site of walk.rs): the comparison, which
@@ -22,6 +23,7 @@ from sympy import (Add, Basic, Dummy, Float, Function, I, Integer, Integral, Mat
 from sympy.core.expr import Expr
 
 import convert
+from convert_diff import diff
 from satassume import engine as E
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -115,43 +117,6 @@ def outcome(walk, proposition, assumptions):
         return e
     finally:
         convert.WALK[0] = None
-
-
-def typed(v):
-    return [(type(a), a) for a in v] if isinstance(v, list) else v
-
-
-def diff(a, b):
-    """What differs between two outcomes, as a list of names. Empty: the same."""
-    if type(a) is not type(b):
-        return [f'outcome {type(a).__name__} {type(b).__name__}']
-    if isinstance(a, Exception):
-        return [] if str(a) == str(b) else [f'message {a} | {b}']
-    if isinstance(a, convert.Kept):
-        return [] if (a.reason, a.detail) == (b.reason, b.detail) else [f'kept {a.reason} {a.detail} | {b.reason} {b.detail}']
-    out = []
-    ta, tb = a.tables, b.tables
-    if list(ta) != list(tb):
-        out.append('table names')
-    for k in ta:
-        if k != 'reads' and typed(ta[k]) != typed(tb.get(k)):
-            out.append('table ' + k)
-    ia, ib = list(a.ids.items()), list(b.ids.items())
-    if len(ia) != len(ib) or any(s is not t or i != j or type(i) is not type(j) for (s, i), (t, j) in zip(ia, ib)):
-        out.append('ids')
-    if len(a.objects) != len(b.objects) or any(s is not t for s, t in zip(a.objects, b.objects)):
-        out.append('objects')
-    if [(id(c), i) for c, i in a.classes.items()] != [(id(c), i) for c, i in b.classes.items()]:
-        out.append('classes')
-    if out:
-        return out
-    for kind in range(len(convert.READS)):
-        for i in range(len(a.objects)):
-            if ta['reads'](kind, i) != tb['reads'](kind, i):
-                out.append(f'read {convert.READS[kind]} {i}')
-    if a.counts != b.counts or a.raised != b.raised:
-        out.append('counts')
-    return out
 
 
 def differences(items):

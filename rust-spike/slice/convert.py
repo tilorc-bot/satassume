@@ -449,7 +449,8 @@ WALK_PLANTS = {'enc-true-as-false': 1, 'klass-no-is-expr': 2, 'term-row-no-numbe
 
 def from_env():
     """SLICE_CONVERT: `py` (the default: `_Walk`), `rust` (every ported item), or items by name with commas.
-    SLICE_CONVERT_PLANT names one of WALK_PLANTS."""
+    SLICE_CONVERT_PLANT names one of WALK_PLANTS. SLICE_CONVERT_DIFF=DIR: the differential test, convert_diff.py, on
+    every input of this run (SLICE_CONVERT_DIFF_READS=N: lazy reads of the first N terms only)."""
     import os
     mode = os.environ.get('SLICE_CONVERT', 'py')
     plant = os.environ.get('SLICE_CONVERT_PLANT')
@@ -465,6 +466,11 @@ def from_env():
     if plant:
         import sa_solver
         sa_solver.walk_plant(WALK_PLANTS[plant])
+    out = os.environ.get('SLICE_CONVERT_DIFF')
+    if out:
+        import convert_diff
+        reads = os.environ.get('SLICE_CONVERT_DIFF_READS')
+        convert_diff.install(out, int(reads) if reads else None)
 
 
 def _structural_class(cls):
