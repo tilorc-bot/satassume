@@ -1,10 +1,12 @@
 # rk_key step (issue 323): (a) lands, (b) read-once caches tried and dropped (sa-port-296/297/298)
 
-Status: NOT LANDED (sa-port-299, 12 Nov). Landing tree port/rk-key 0bd82e4 (= rust-slice 63d5632 + ded9d0b + test_rk_key_targets.py).
-Its bar (below) equals the base on every item except one test file: test_lazy_reads.py, 1 failed. That failure follows SymPy's
-random order of assumption checks and fails the same way on the base tree, so it isn't from this step; but it isn't on the known
-list, so whether the bar counts as clean is with the planner as a question. Nothing was fixed. Probe on the candidate: 21 of 32,
-every cell equal to base.
+Status: LANDED on rust-slice by sa-port-299 (12 Nov): the commit carrying this line, on 63d5632; source 0bd82e4 (= rust-slice
+63d5632 + ded9d0b + test_rk_key_targets.py). Its bar (below) equals the base on every item except one test file.
+KNOWN ROW (planner forward-chain-3b, 12 Nov, on report 61ce097: "yes, land 0bd82e4 as is"):
+test_lazy_reads.py::test_stock_term_plant_is_caught[finite-stock_finite] fails 3 of 40 runs on the landing tree and 3 of 40 on
+base 1d22f9a, on the same 10 of 60 SymPy assumptions-shuffle seeds (11 15 18 21 25 34 37 50 55 58) on both. It follows SymPy's
+random order of assumption checks, not this step. Not fixed here; the test-only fix is owed (new OWED item for the architect).
+Probe on the landed source: 21 of 32, every cell equal to base.
 
 ## Outcome
 - (a) fidelity, LANDS (bar permitting): ded9d0b, GuardMethod/EntMethod `__module__` = the Python method's module, `__reduce__`
@@ -92,7 +94,7 @@ caught (4 and 3 differ). Since (b) is dropped, the landing code differs, so the 
   33, as 297's bar; 294's had 65).
 - knowledge_live: the bar's 442 live/extra *.knowledge.json files are byte-equal to 294's bar.
 
-## The test_lazy_reads.py failure: SymPy's assumption-check order, same on base (not fixed, not landed on)
+## The test_lazy_reads.py failure: SymPy's assumption-check order, same on base (known row by the planner's ruling; not fixed)
 test_lazy_reads.py::test_stock_term_plant_is_caught[finite-stock_finite], test_lazy_reads.py:237: with the eager `t.is_finite`
 read planted back, the test asserts that some evaluation counter fires; all three read 0 (`assert 0 > 0`). The file passed in
 the bars of 288, 291, 294 and 297.
@@ -117,7 +119,7 @@ the bars of 288, 291, 294 and 297.
   cls 42 (12).
 - Count: **21 of 32, unchanged.** session_live.py still makes 623,262 converted-query calls on the 20 workloads; over the 20,
   engine.py 132,056 and formula.py 142,816 converted calls, as base.
-- The probe ran on the candidate source before any landing; the landed SHA would add results/HANDOFF files only.
+- The probe ran on the candidate source (bfe7a87) before the landing; the landed SHA adds results/HANDOFF files only.
 
 ## Thread check (d), report only (r2 numbers; r3 above agrees)
 ThreadCheckerImpl::ensure inclusive, fuzz s/run: 146 0.046-0.049, 63d5632 0.109-0.110, head 0.100-0.108; thread::current self
