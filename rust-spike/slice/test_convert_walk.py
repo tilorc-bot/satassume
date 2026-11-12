@@ -5,7 +5,7 @@ Python's walker and under Rust's gives the same thing, item by item.
 same exception type and message, or tables equal token for token and type for type (strings, class rows, term rows,
 powers, settings, formula, the counts), `ids` holding the same objects under the same ids in the same order (the first
 occurrence kept: ruling R1), `objects` and `classes` the same objects, and every lazy read of every term answering
-alike afterwards (tokens, strings, counts, `raised`).
+alike afterwards (tokens, strings, counts, `raised`), each walker's reads asked in fresh state: a forked child each.
 Each item of `convert.RUST_ITEMS` is checked alone (the rest on Python) and all together.
 
 Plants 670-674 (`SLICE_CONVERT_PLANT`, one per item, each a wrong value at one site of walk.rs): the comparison, which
@@ -147,6 +147,27 @@ def test_the_inputs_reach_every_branch():
     assert len(done) >= 35
     assert any(c.counts['opaque'] for c in done)
     assert any(convert.T_BIG in c.tables['terms'] for c in done)
+
+
+def test_reads_are_compared_in_fresh_state():
+    """`finite` of `p*ComplexRootOf._new(...)` raises or answers True by SymPy's assumptions shuffle and by who asked
+    before (finite_history_repro.py). Each outcome's reads run in their own forked child of one state, so both walkers
+    ask first and agree under every seed, Python's against itself too; the second ask in Python's child does answer
+    differently under some seed (`reread`); and a walker whose read differs is still seen."""
+    from sympy import Poly
+    from sympy.core import random as sympy_random
+    from sympy.polys.rootoftools import ComplexRootOf
+    pr, asm = Q.positive(p * ComplexRootOf._new(Poly(z**5 + z + 1, z), 1)), Q.positive(p)
+    rust = convert.rust_walk(convert.RUST_ITEMS)
+    wrong = type('WrongFinite', (convert._Walk,), {'_read_finite': lambda self, t: True})
+    again = []
+    for seed in range(6):
+        sympy_random._assumptions_rng.seed(seed)
+        assert diff(outcome(None, pr, asm), outcome(None, pr, asm), None, again) == []
+        assert diff(outcome(None, pr, asm), outcome(rust, pr, asm)) == []
+    assert any(name.startswith('finite ') for name in again)
+    found = diff(outcome(None, pr, asm), outcome(wrong, pr, asm))
+    assert found and all(name.startswith('read finite ') or name == 'counts' for name in found)
 
 
 def run(plant=None, items=None):
