@@ -320,6 +320,7 @@ impl<'py> W<'py> {
     }
 
     fn klass(&self, cls: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+        if self.mask & KLASS != 0 { return self.klass_native(cls); } //@call klass
         self.cx.get().py_klass.bind(self.py).call1((&self.o, cls))
     }
 
@@ -396,6 +397,136 @@ impl<'py> W<'py> {
     }
     //@end enc
 
+    //@begin klass
+    /// `_Walk.klass`: the class's row, once per class under `==`.
+    fn klass_native(&self, cls: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+        let py = self.py;
+        let cx = self.cx.get();
+        if let Some(c) = self.classes.get_item(cls)? {
+            if !c.is_none() {
+                return Ok(c);
+            }
+        }
+        let c = self.classes.len().into_pyobject(py)?.into_any();
+        self.classes.set_item(cls, &c)?;
+        let name = cls.getattr(intern!(py, "__name__"))?;
+        let rank = match cx.ordering.bind(py).call_method1(intern!(py, "index"), (&name,)) {
+            Ok(r) => r,
+            Err(e) if e.is_instance_of::<PyValueError>(py) => (-1i64).into_pyobject(py)?.into_any(),
+            Err(e) => return Err(e),
+        };
+        let kind = if is_subclass(cls, &cx.applied_undef)? {
+            cx.k_undef.into_pyobject(py)?.into_any()
+        } else {
+            match cx.kind_of.bind(py).get_item(cls)? {
+                Some(k) => k,
+                None if is_subclass(cls, &cx.function)? => cx.k_function.into_pyobject(py)?.into_any(),
+                None => cx.k_other.into_pyobject(py)?.into_any(),
+            }
+        };
+        let no = PyBool::new(py, false).to_owned();
+        let yes = PyBool::new(py, true).to_owned();
+        let mut flags = 0i64;
+        for (bit, f) in cx.flags.iter().enumerate() {
+            if self.getattr3(cls, f.bind(py), no.as_any())?.is(&yes) {
+                flags |= 1 << bit;
+            }
+        }
+        let expr = cx.expr.bind(py);
+        let is_expr = is_subclass(cls, &cx.expr)?;
+        if is_expr && !self.getattr3(cls, intern!(py, "is_Order"), no.as_any())?.is_truthy()? {
+            let op = intern!(py, "_op_priority");
+            if cls.getattr(op)?.eq(expr.getattr(op)?)? {
+                let mut plain = true;
+                for f in &cx.ops {
+                    if !cls.getattr(f.bind(py))?.is(&expr.getattr(f.bind(py))?) {
+                        plain = false;
+                        break;
+                    }
+                }
+                if plain {
+                    flags |= PLAIN_OPS;
+                }
+            }
+        }
+        let abe = intern!(py, "as_base_exp");
+        if is_subclass(cls, &cx.expr)? && cls.getattr(abe)?.is(&expr.getattr(abe)?) {
+            flags |= PLAIN_BASE;
+        }
+        if is_subclass(cls, &cx.expr)? && !planted(PLANT_KLASS) {
+            flags |= IS_EXPR;
+        }
+        if self.getattr3(cls, intern!(py, "is_Matrix"), no.as_any())?.is_truthy()?
+            || self.getattr3(cls, intern!(py, "is_MatrixExpr"), no.as_any())?.is_truthy()?
+        {
+            flags |= IS_MATRIX;
+        }
+        if is_subclass(cls, &cx.exp)? {
+            flags |= IS_EXP;
+        }
+        let basic = cx.basic.bind(py);
+        let atoms = intern!(py, "atoms");
+        if is_subclass(cls, &cx.basic)? && cls.getattr(atoms)?.is(&basic.getattr(atoms)?) {
+            flags |= PLAIN_ATOMS;
+        }
+        // try: ckey = cls.class_key(); found = (TEMPLATES_FOR[0] or registry.templates_for)(cls); except Exception
+        let row = (|| -> PyResult<(Bound<'py, PyAny>, Bound<'py, PyAny>)> {
+            let ckey = cls.call_method0(intern!(py, "class_key"))?;
+            let mut tf = cx.templates_for.bind(py).get_item(0)?;
+            if !tf.is_truthy()? {
+                tf = cx.registry.bind(py).getattr(intern!(py, "templates_for"))?;
+            }
+            Ok((ckey, tf.call1((cls,))?))
+        })();
+        let (ckey, found) = match row {
+            Ok(x) => x,
+            Err(e) if e.is_instance_of::<PyException>(py) => {
+                let detail = format!("{}: {}", name.str()?.to_cow()?, e.get_type(py).getattr(intern!(py, "__name__"))?.str()?.to_cow()?);
+                return self.keep("class-no-row", detail.into_pyobject(py)?.into_any());
+            }
+            Err(e) => return Err(e),
+        };
+        // names = tuple(sorted(_template_name(f) for f in found))
+        let names = PyList::empty(py);
+        for f in found.try_iter()? {
+            names.append(cx.template_name.bind(py).call1((f?,))?)?;
+        }
+        names.sort()?;
+        let names = names.to_tuple();
+        // any(not getattr(f, '__module__', '').startswith('satassume.') for f in found)
+        let empty = intern!(py, "");
+        for f in found.try_iter()? {
+            let m = self.getattr3(&f?, intern!(py, "__module__"), empty.as_any())?;
+            let ours = match m.cast_exact::<PyString>() {
+                Ok(s) => s.to_cow()?.starts_with("satassume."),
+                Err(_) => m.call_method1(intern!(py, "startswith"), ("satassume.",))?.is_truthy()?,
+            };
+            if !ours {
+                return self.keep("non-default-registry", name);
+            }
+        }
+        let out = &self.class_rows;
+        out.append(T_TUPLE)?;
+        out.append(8)?;
+        let si = self.s(&name)?;
+        out.append(T_STR)?;
+        out.append(si)?;
+        out.append(T_INT)?;
+        out.append(kind)?;
+        out.append(T_INT)?;
+        out.append(rank)?;
+        out.append(T_INT)?;
+        out.append(flags)?;
+        self.enc(&ckey, out, false)?;
+        self.enc(names.as_any(), out, false)?;
+        self.enc(&cx.structural_class.bind(py).call1((cls,))?, out, false)?;
+        let hc = intern!(py, "_hashable_content");
+        let own = !cls.getattr(hc)?.is(&basic.getattr(hc)?);
+        self.enc(PyBool::new(py, own).as_any(), out, false)?;
+        Ok(c)
+    }
+    //@end klass
+
 }
 
 #[pymethods]
@@ -431,6 +562,7 @@ impl Walk {
 
     // Each takes the owner first: the `_Walk` whose Python methods answer the items that are off.
     fn enc<'py>(slf: &Bound<'py, Self>, o: &Bound<'py, PyAny>, v: &Bound<'py, PyAny>, out: &Bound<'py, PyList>, key: bool) -> PyResult<()> { W::new(slf, o)?.enc_native(v, out, key) } //@call enc
+    fn klass<'py>(slf: &Bound<'py, Self>, o: &Bound<'py, PyAny>, cls: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> { W::new(slf, o)?.klass_native(cls) } //@call klass
 }
 
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
