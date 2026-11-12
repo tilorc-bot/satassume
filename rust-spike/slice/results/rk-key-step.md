@@ -1,7 +1,10 @@
 # rk_key step (issue 323): (a) lands, (b) read-once caches tried and dropped (sa-port-296/297/298)
 
-Status: landing tree port/rk-key 0bd82e4 (= rust-slice 63d5632 + ded9d0b + test_rk_key_targets.py); its bar is running on
-pareto0 (sa-port-298/bar). Landing, probe and knowledge_live rows are added when it ends.
+Status: NOT LANDED (sa-port-299, 12 Nov). Landing tree port/rk-key 0bd82e4 (= rust-slice 63d5632 + ded9d0b + test_rk_key_targets.py).
+Its bar (below) equals the base on every item except one test file: test_lazy_reads.py, 1 failed. That failure follows SymPy's
+random order of assumption checks and fails the same way on the base tree, so it isn't from this step; but it isn't on the known
+list, so whether the bar counts as clean is with the planner as a question. Nothing was fixed. Probe on the candidate: 21 of 32,
+every cell equal to base.
 
 ## Outcome
 - (a) fidelity, LANDS (bar permitting): ded9d0b, GuardMethod/EntMethod `__module__` = the Python method's module, `__reduce__`
@@ -67,6 +70,54 @@ planted-history test failed -> passed (known id()-reuse failure, a28c548, flips 
 multiset equal to base; live/extra handler files 0 rows. Live dev/fuzz and 15 extra workloads: all MATCH (answers_sha dev
 31cd0945c07f02a6, fuzz 173502b6ef285ad6). Kept reasons equal to base on every workload. fm rows 20 workloads, 0 differ; fm plants
 caught (4 and 3 differ). Since (b) is dropped, the landing code differs, so the bar is rerun on 0bd82e4 (architect note on (1)).
+
+## Bar on bfe7a87 (source 0bd82e4, .so f7e18b93 built on pareto1; pareto0 --shared, 05:10-08:27Z 12 Nov, END 0; base sa-port-294/bar)
+1. Tests: 70 files, 69 exit 0. NOT exit 0: test_lazy_reads.py (1 failed, 73 passed, 5 skipped), the next section.
+   relations_direct.py exit 0. This step's kept tests: test_rk_key_targets.py 3 passed, test_guard_method.py 3, test_entry_frame.py 4.
+2. Suite: 127 failed / 5991 passed (ids 6159); against base new 0, gone 0, changed outcome 0 (the planted-history test fails in
+   both runs). TermFault 0.
+3. Live: dev and fuzz, Python vs Python, Python vs Rust, traced vs untraced: all 8 MATCH (dev answers_sha 31cd0945c07f02a6, fuzz
+   173502b6ef285ad6; Rust makes 0 Python solvers). Extra workloads (15): 30 of 30 comparisons MATCH (the same 30 as 294's bar).
+4. Quiet failures: suite 39 rows in 2 tests, multiset equal to base (34 + 4 + 1, ids differing 0); live and extra handler files
+   0 rows each; probe 0 rows.
+5. Kept reasons: every live/extra share equal to base (dev kept:out-of-scope 24/1985; cls kept:args-eq-not-is 6/72; refused
+   f6 13, opaque 7, value 15, wiring 1).
+- fm rows: 20 workloads, 0 differ; fm-args-drop-last caught (4 differ), fm-atoms-merge-pred caught (3 differ).
+- Plant table: 425 rows (25 plants x 17 workloads); plant, workload, fired count and verdict equal 294's bar on every row
+  (102 DIFFER, 323 MATCH). No rk plants: they went with (b).
+- Suite plants: each run new 0, gone 0. Changed outcomes as 294's bar (fm-implies-swap 70, nc-memo-true-false 12, fm-ite-swap 1
+  test_xor_and_ite, term:mark-wrong-pattern 1) apart from two things that vary between bars: the planted-history test flipping
+  (failed -> passed under dispatch-keeps-memo, sb-join-address and term:mark-skips-native here), and class-is (changed outcome 6,
+  fired 1242; bars 288/291/294/297 had 6/7/10/8: caught every time). Fired counts move a little between bars (sb-join-address
+  33, as 297's bar; 294's had 65).
+- knowledge_live: the bar's 442 live/extra *.knowledge.json files are byte-equal to 294's bar.
+
+## The test_lazy_reads.py failure: SymPy's assumption-check order, same on base (not fixed, not landed on)
+test_lazy_reads.py::test_stock_term_plant_is_caught[finite-stock_finite], test_lazy_reads.py:237: with the eager `t.is_finite`
+read planted back, the test asserts that some evaluation counter fires; all three read 0 (`assert 0 > 0`). The file passed in
+the bars of 288, 291, 294 and 297.
+- Repeat, as the bar runs it (one_test.sh, PYTHONHASHSEED=0, 40 processes per tree, pareto0; lz299.sh): landing tree bfe7a87
+  3 of 40 fail; base 1d22f9a (rust-slice 63d5632's source, .so 2cc2e09f) 3 of 40; 6b8a5c2 (86845aa, .so 82440e6e) 8 of 40.
+  Always this test id and this assertion; no other test in the file fails.
+- Cause: SymPy's `_ask` shuffles the facts it checks with a generator that isn't seeded (sympy/core/assumptions.py:596,
+  sympy/core/random.py:45 `_assumptions_rng`). Seeding it before the test (seeds 0-59, each run twice, landing and base trees;
+  lzseed299.sh): seeds 11 15 18 21 25 34 37 50 55 58 fail both times on both trees, the other 50 pass both times. So the
+  outcome is a function of SymPy's order alone and doesn't depend on this step's code.
+- At about 7% a run, four passing bars in a row are unsurprising (about 3 in 4).
+- Not edited (the 299 ruling: fix nothing). A fix would be the test's: pin the order (seed `_assumptions_rng`) or assert over
+  several seeds. The eager-finite plant then has a kept test only on the orders that evaluate. Owner: the planner's call.
+- Rows: pareto0 ~/sp19/sa-rust-ids-work/sa-port-299/lz/sum.txt and lzseed/sum.txt.
+
+## Module-wide probe on the candidate (pc299.sh = pc294.sh on clone sa-port-298 bfe7a87, .so f7e18b93; pareto0, 08:34Z)
+- 40 jobs exit 0. 180 cells (20 workloads x 9 files, all and converted calls) against sa-port-294/pc: 0 differ; per function
+  and state, 0 keys differ (pccmp299.py). session_live.py's `__module__` argument adds no per-query call.
+- knowledge_live.py per workload, all (converted), unchanged: lra 4326 (34), f6 328 (22), wiring 125 (80), scope 42 (12),
+  dev 160 (50), fuzz 46 (16), ground 40 (10), port 48 (18), loop 70 (22), zero 63 (18), cert 38 (8), budget 930 (900),
+  core 88 (16), opaque 140 (6), rootof 32 (2), value 952 (794), twin 38 (8), transfer760 65 (20), transfer2340 73 (28),
+  cls 42 (12).
+- Count: **21 of 32, unchanged.** session_live.py still makes 623,262 converted-query calls on the 20 workloads; over the 20,
+  engine.py 132,056 and formula.py 142,816 converted calls, as base.
+- The probe ran on the candidate source before any landing; the landed SHA would add results/HANDOFF files only.
 
 ## Thread check (d), report only (r2 numbers; r3 above agrees)
 ThreadCheckerImpl::ensure inclusive, fuzz s/run: 146 0.046-0.049, 63d5632 0.109-0.110, head 0.100-0.108; thread::current self
