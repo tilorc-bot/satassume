@@ -470,7 +470,7 @@ def from_env():
     if out:
         import convert_diff
         reads = os.environ.get('SLICE_CONVERT_DIFF_READS')
-        convert_diff.install(out, int(reads) if reads else None)
+        convert_diff.install(out, int(reads) if reads else None, bool(os.environ.get('SLICE_CONVERT_DIFF_CONTROL')))
 
 
 def _structural_class(cls):

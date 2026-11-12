@@ -76,13 +76,13 @@ def outcome(walk, proposition, assumptions, eng, real=None):
         convert.WALK[0] = was
 
 
-def install(out, read_terms=None):
+def install(out, read_terms=None, control=False):
     """Wrap `convert.convert` (once per process) so that every input is also compared under both walkers."""
     import atexit
     if getattr(convert.convert, 'differential', False):
         return
     real = convert.convert
-    rust = convert.rust_walk()
+    rust = convert.rust_walk(() if control else convert.RUST_ITEMS)   # control: Python's walker against itself
 
     def both(proposition, assumptions, eng):
         a = outcome(None, proposition, assumptions, eng, real)
