@@ -107,6 +107,10 @@ pub(crate) const RK_TOP_ONCE_PLANT: u16 = 621;
 /// a wrong value: `Integer(2)` keyed by term id and `2` by hash, two keys where Python's set has one member. Caught by
 /// test_rk_key.py's join rows (after `x`, adding `Integer(2)` then `2` gives 3 members where Python's set has 2).
 pub(crate) const RK_TYPE_ONCE_PLANT: u16 = 668;
+/// Plant 669 `rk-getattr-cached`: `plain` ignores a type's own `__getattribute__`, so a type that answers `__class__` per
+/// instance is cached by type (a stale isinstance result for its next instance). Caught by test_rk_key_targets.py, whose
+/// per-instance row asserts one isinstance read per access to such a key.
+pub(crate) const RK_GETATTR_PLANT: u16 = 669;
 
 extern "C" {
     /// The MRO lookup of an attribute on a type, a borrowed reference (Objects/typeobject.c; CPython's own API since 2.2).
@@ -245,7 +249,11 @@ fn basic_key(p: Python<'_>, x: &Bound<'_, PyAny>, cached: bool) -> PyResult<bool
 }
 
 /// Whether `isinstance(x, T)` is a function of `type(x)` = `tp` for the targets: their metaclass is `type`, and `tp` has
-/// object's own `__class__` (no override that could name another class per object, Objects/abstract.c `object_isinstance`).
+/// object's own `__class__` and `__getattribute__` (no override that could name another class per object: when `tp` isn't a
+/// subclass, Objects/abstract.c `object_isinstance` reads `x.__class__` through `tp_getattro`).
+/// The targets, `is_basic`'s and `is_joinable`'s: Basic, Number, BooleanAtom and Tuple. Their metaclass is `type` (checked
+/// here once per process; `type` is immutable, so a class's metaclass can't be reassigned), so none is an ABC and none has an
+/// `__instancecheck__` of its own (`register()` or a patched check can't change an answer); test_rk_key_targets.py keeps it so.
 fn plain(p: Python<'_>, tp: &Bound<'_, PyType>) -> PyResult<bool> {
     let targets = *PLAIN_TARGETS.get_or_try_init(p, || -> PyResult<bool> {
         let ty = p.get_type::<PyType>();
@@ -260,12 +268,13 @@ fn plain(p: Python<'_>, tp: &Bound<'_, PyType>) -> PyResult<bool> {
     if !targets {
         return Ok(false);
     }
-    let name = intern!(p, "__class__");
-    Ok(unsafe {
+    let objects_own = |name: &Bound<'_, pyo3::types::PyString>| unsafe {
         let mine = _PyType_Lookup(tp.as_type_ptr(), name.as_ptr());
         let objects = _PyType_Lookup(std::ptr::addr_of_mut!(pyo3::ffi::PyBaseObject_Type), name.as_ptr());
         !mine.is_null() && mine == objects
-    })
+    };
+    Ok(objects_own(intern!(p, "__class__"))
+        && (objects_own(intern!(p, "__getattribute__")) || session::sb_planted(RK_GETATTR_PLANT)))
 }
 
 /// The key of `x`, or None when it has none; with `origin`, interns it (or takes its term id) when it has none.
