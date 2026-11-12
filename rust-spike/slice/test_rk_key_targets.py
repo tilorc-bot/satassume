@@ -7,7 +7,7 @@ class's metaclass can't be reassigned later. These tests keep it so: they assert
 isinstance calls name exactly these four.
 
 The one per-instance answer left is `x.__class__` read through a type's own `__getattribute__` (object_isinstance's fallback
-when type(x) isn't a subclass). Such a type is never cached: one isinstance read per key (plant 669 `rk-getattr-cached`
+when type(x) isn't a subclass), which relkeys.rs guards by the type's tp_getattro slot. Such a type is never cached: one isinstance read per key (plant 669 `rk-getattr-cached`
 caches it by type, caught by the per-instance row: 4 keys added and looked up give 8 reads).
 """
 import abc
@@ -76,7 +76,8 @@ def _child():
     q1 = term_live._convert(Q.positive(x + y + pi), True, eng)
     term_live.stack().append(q1)
     try:
-        for name, objs in (('fake', [Fake(i % 2 == 0, i) for i in range(4)]), ('plain', [Plain(i) for i in range(4)])):
+        for name, objs in (('fake', [Fake(i % 2 == 0, i) for i in range(4)]), ('plain', [Plain(i) for i in range(4)]),
+                           ('tuple', [(i, x) for i in range(4)])):
             s = Session(eng)
             r = Relations(s, eng._relation_specs)
             b = dict(sa_solver.session_counts())
@@ -105,8 +106,9 @@ def _run(plant=None):
 def test_a_type_with_its_own_getattribute_is_read_per_key_and_a_plain_type_once():
     got = _run()
     assert got['fake']['basic'] == [True, False, True, False], got     # the fixture: the answer differs per instance
-    assert got['fake']['d']['rk:type_read'] == 8 and got['plain']['d']['rk:type_read'] == 1, got
-    assert got['fake']['r'] == [4, [True] * 4] and got['plain']['r'] == [4, [True] * 4], got
+    # tuples, most keys, are cached too (tuple's own dict holds a `__getattribute__` wrapper of the generic slot)
+    assert [got[n]['d']['rk:type_read'] for n in ('fake', 'plain', 'tuple')] == [8, 1, 1], got
+    assert all(got[n]['r'] == [4, [True] * 4] for n in ('fake', 'plain', 'tuple')), got
     assert got['fake']['d']['rel:plant_fired'] == 0 and got['plain']['d']['rel:plant_fired'] == 0, got
 
 

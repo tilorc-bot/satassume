@@ -249,7 +249,7 @@ fn basic_key(p: Python<'_>, x: &Bound<'_, PyAny>, cached: bool) -> PyResult<bool
 }
 
 /// Whether `isinstance(x, T)` is a function of `type(x)` = `tp` for the targets: their metaclass is `type`, and `tp` has
-/// object's own `__class__` and `__getattribute__` (no override that could name another class per object: when `tp` isn't a
+/// object's own `__class__` and the generic `tp_getattro` (no override that could name another class per object: when `tp` isn't a
 /// subclass, Objects/abstract.c `object_isinstance` reads `x.__class__` through `tp_getattro`).
 /// The targets, `is_basic`'s and `is_joinable`'s: Basic, Number, BooleanAtom and Tuple. Their metaclass is `type` (checked
 /// here once per process; `type` is immutable, so a class's metaclass can't be reassigned), so none is an ABC and none has an
@@ -273,8 +273,11 @@ fn plain(p: Python<'_>, tp: &Bound<'_, PyType>) -> PyResult<bool> {
         let objects = _PyType_Lookup(std::ptr::addr_of_mut!(pyo3::ffi::PyBaseObject_Type), name.as_ptr());
         !mine.is_null() && mine == objects
     };
-    Ok(objects_own(intern!(p, "__class__"))
-        && (objects_own(intern!(p, "__getattribute__")) || session::sb_planted(RK_GETATTR_PLANT)))
+    // the attribute read itself: `tp_getattro` is the generic one (a Python class with its own `__getattribute__` or
+    // `__getattr__` gets slot_tp_getattr_hook). Not an MRO lookup of `__getattribute__`: tuple's own dict holds a wrapper of
+    // the generic slot, and tuples are most keys.
+    let generic = unsafe { (*tp.as_type_ptr()).tp_getattro }.map(|f| f as usize) == Some(pyo3::ffi::PyObject_GenericGetAttr as usize);
+    Ok(objects_own(intern!(p, "__class__")) && (generic || session::sb_planted(RK_GETATTR_PLANT)))
 }
 
 /// The key of `x`, or None when it has none; with `origin`, interns it (or takes its term id) when it has none.
