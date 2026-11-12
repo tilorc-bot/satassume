@@ -388,6 +388,85 @@ class _Walk:
         return tuple(const_value(t, p) for p in _CONST_BASIS)
 
 
+#: `_Walk`'s items that sa_solver.Walk (solver_rs/src/term/walk.rs) answers, in port order: the bits of its mask.
+RUST_ITEMS = ('enc', 'klass', 'term_row', 'walk', 'enc_int')
+#: The walker `convert` uses. None: `_Walk`, the Python reference and the default. `use_rust()` sets Rust's.
+WALK = [None]
+_RUST = {}
+
+
+def rust_walk(items=RUST_ITEMS):
+    """`_Walk` with `items` answered by Rust (issue 323, the convert step). The state is `_Walk.__init__`'s own: Rust
+    fills the same dicts and lists, so `read`, `power_rows` and `convert` run on it unchanged, and an item that is off is
+    `_Walk`'s method. `strings`, `string_ids` and `reading` are held by Rust, since `read` replaces them."""
+    items = tuple(i for i in RUST_ITEMS if i in items)
+    cls = _RUST.get(items)
+    if cls is not None:
+        return cls
+    import sys
+    import sa_solver
+    ctx = _RUST.get('ctx')
+    if ctx is None:
+        ctx = _RUST['ctx'] = sa_solver.WalkCtx(sys.modules[__name__])
+    mask = sum(1 << RUST_ITEMS.index(i) for i in items)
+    new = sa_solver.Walk
+
+    class _RustWalk(_Walk):
+        ITEMS = items
+
+        def __init__(self):
+            self._rs = new(ctx, mask)
+            _Walk.__init__(self)
+            self._rs.bind(self.ids, self.objects, self.classes, self.class_rows, self.opaque, self.counts)
+
+        strings = property(lambda self: self._rs.strings, lambda self, v: setattr(self._rs, 'strings', v))
+        string_ids = property(lambda self: self._rs.string_ids, lambda self, v: setattr(self._rs, 'string_ids', v))
+        reading = property(lambda self: self._rs.reading, lambda self, v: setattr(self._rs, 'reading', v))
+
+    if 'enc' in items:
+        _RustWalk.enc = lambda self, v, out, key=False: self._rs.enc(self, v, out, key)
+    if 'klass' in items:
+        _RustWalk.klass = lambda self, cls: self._rs.klass(self, cls)
+    if 'term_row' in items:
+        _RustWalk.term_row = lambda self, t, out: self._rs.term_row(self, t, out)
+    if 'walk' in items:
+        _RustWalk.walk = lambda self, root: self._rs.walk(self, root)
+    if 'enc_int' in items:
+        _RustWalk.enc_int = lambda self, n, out: self._rs.enc_int(self, n, out)
+    _RUST[items] = _RustWalk
+    return _RustWalk
+
+
+def use_rust(items=RUST_ITEMS):
+    """Make `convert` walk with Rust's `items`; none of them: Python's `_Walk` again."""
+    WALK[0] = rust_walk(items) if items else None
+
+
+#: Test plants of the Rust walker, one per item: `SLICE_CONVERT_PLANT`, sa_solver.walk_plant's numbers.
+WALK_PLANTS = {'enc-true-as-false': 1, 'klass-no-is-expr': 2, 'term-row-no-number': 3, 'walk-args-unreversed': 4,
+               'enc-int-no-sign': 5}
+
+
+def from_env():
+    """SLICE_CONVERT: `py` (the default: `_Walk`), `rust` (every ported item), or items by name with commas.
+    SLICE_CONVERT_PLANT names one of WALK_PLANTS."""
+    import os
+    mode = os.environ.get('SLICE_CONVERT', 'py')
+    plant = os.environ.get('SLICE_CONVERT_PLANT')
+    if mode == 'py':
+        items = ()
+    elif mode == 'rust':
+        items = RUST_ITEMS
+    else:
+        items = tuple(mode.split(','))
+        if any(i not in RUST_ITEMS for i in items):
+            raise SystemExit(f'SLICE_CONVERT={mode}: not items of {RUST_ITEMS}')
+    use_rust(items)
+    if plant:
+        import sa_solver
+        sa_solver.walk_plant(WALK_PLANTS[plant])
+
+
 def _structural_class(cls):
     """euf_adapter.structural's per-class part: a term is structural when this holds and it has args."""
     return (issubclass(cls, _STRUCTURAL) and not issubclass(cls, IntegralTransform)
@@ -461,7 +540,7 @@ def convert(proposition, assumptions, eng):
             fa = None if assumptions is True else formula(assumptions, rel, True)
         except A.Unsupported:
             return Kept('out-of-scope')
-        w = _Walk()
+        w = (WALK[0] or _Walk)()
         for cls in _PREFIX:
             w.klass(cls)
         for x in (proposition, assumptions):
