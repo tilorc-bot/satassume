@@ -389,7 +389,7 @@ class _Walk:
 
 
 #: `_Walk`'s items that sa_solver.Walk (solver_rs/src/term/walk.rs) answers, in port order: the bits of its mask.
-RUST_ITEMS = ('enc', 'klass', 'term_row', 'walk')
+RUST_ITEMS = ('enc', 'klass', 'term_row', 'walk', 'enc_int')
 #: The walker `convert` uses. None: `_Walk`, the Python reference and the default. `use_rust()` sets Rust's.
 WALK = [None]
 _RUST = {}

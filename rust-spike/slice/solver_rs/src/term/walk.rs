@@ -312,6 +312,7 @@ impl<'py> W<'py> {
     }
 
     fn enc_int(&self, n: &Bound<'py, PyAny>, out: &Bound<'py, PyList>) -> PyResult<()> {
+        if self.mask & ENC_INT != 0 { return self.enc_int_native(n, out); } //@call enc_int
         self.cx.get().py_enc_int.bind(self.py).call1((&self.o, n, out)).map(drop)
     }
 
@@ -397,6 +398,34 @@ impl<'py> W<'py> {
         Ok(())
     }
     //@end enc
+
+    //@begin enc_int
+    /// `_Walk.enc_int`.
+    fn enc_int_native(&self, n: &Bound<'py, PyAny>, out: &Bound<'py, PyList>) -> PyResult<()> {
+        let py = self.py;
+        let cx = self.cx.get();
+        // `-_I64 < n < _I64`: by value for an int that fits, by Python's own comparison for anything else.
+        let small = match n.extract::<i64>() {
+            Ok(x) if n.is_exact_instance_of::<PyInt>() => {
+                if x != i64::MIN && x < 0 && planted(PLANT_ENC_INT) {
+                    out.append(T_INT)?;
+                    return out.append(-x);
+                }
+                x != i64::MIN
+            }
+            Err(e) if n.is_exact_instance_of::<PyInt>() && e.is_instance_of::<PyOverflowError>(py) => false,
+            _ => cx.i64_lo.bind(py).lt(n)? && n.lt(cx.i64_hi.bind(py))?,
+        };
+        if small {
+            out.append(T_INT)?;
+            out.append(n)
+        } else {
+            let i = self.s(n.str()?.as_any())?;
+            out.append(T_BIG)?;
+            out.append(i)
+        }
+    }
+    //@end enc_int
 
     //@begin walk
     /// `_Walk.walk`: preorder over `.args`, ids by first sight.
@@ -721,6 +750,7 @@ impl Walk {
 
     // Each takes the owner first: the `_Walk` whose Python methods answer the items that are off.
     fn enc<'py>(slf: &Bound<'py, Self>, o: &Bound<'py, PyAny>, v: &Bound<'py, PyAny>, out: &Bound<'py, PyList>, key: bool) -> PyResult<()> { W::new(slf, o)?.enc_native(v, out, key) } //@call enc
+    fn enc_int<'py>(slf: &Bound<'py, Self>, o: &Bound<'py, PyAny>, n: &Bound<'py, PyAny>, out: &Bound<'py, PyList>) -> PyResult<()> { W::new(slf, o)?.enc_int_native(n, out) } //@call enc_int
     fn walk<'py>(slf: &Bound<'py, Self>, o: &Bound<'py, PyAny>, root: &Bound<'py, PyAny>) -> PyResult<()> { W::new(slf, o)?.walk_native(root) } //@call walk
     fn klass<'py>(slf: &Bound<'py, Self>, o: &Bound<'py, PyAny>, cls: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> { W::new(slf, o)?.klass_native(cls) } //@call klass
     fn term_row<'py>(slf: &Bound<'py, Self>, o: &Bound<'py, PyAny>, t: &Bound<'py, PyAny>, out: &Bound<'py, PyList>) -> PyResult<()> { W::new(slf, o)?.term_row_native(t, out) } //@call term_row
