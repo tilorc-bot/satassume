@@ -1,4 +1,4 @@
-# HANDOFF sa-port-302: the convert step, item 6's comparison redone, its full run and the bar under way, nothing landed (issue 323)
+# HANDOFF sa-port-302: the convert step, item 6's comparison redone, its full run under way, the bar not started (60% stop), nothing landed (issue 323)
 
 Handed off at the context budget, between the comparison's commits and the reading of their full run.
 port/convert head: this commit, on bfac1a4 (source), from rust-slice 899d354. Numbers: rust-spike/slice/results/convert-step.md.
@@ -25,13 +25,15 @@ port/convert head: this commit, on bfac1a4 (source), from rust-slice 899d354. Nu
    Expected: 0 differences, 1 slow (`Q.lt(x, sin(exp(exp(exp(5)))))`), reread about 84 in rootof. Launched 11:33Z;
    the 5c7db78 run took 42 minutes for the workloads and 13 for the suite. Put the counts into results/convert-step.md.
    A new difference: read its DIFF line, don't relax the comparison; a ruling on inputs is the planner's.
-2. The bar starts by itself: orion ~/sa-rust-ids-work/sa-port-302/barq302.sh (running, detached) waits for that
-   end.txt, checks `exit 0`, 60 MATCH and 5 caught plants, then starts pareto0 ~/sp19/bar302.sh. Launcher's files:
-   orion ~/sa-rust-ids-work/sa-port-302/bar/ (diff-read.txt, bar-launched.txt with the tested SHA, bar-launch-end.txt:
-   `NOT LAUNCHED: why` or `END code time`). Bar end marker: pareto0 ~/sp19/sa-rust-ids-work/sa-port-302/bar/bar-end.txt;
-   sa-port-298's bar took 3 h 15 min, and this one adds the convdiff phase (about an hour more).
-   The tested SHA is origin/port/convert's head when barq302.sh checks it out (this handoff commit: source = bfac1a4).
-3. Read the bar (sum.txt, the item-5 verdict list, convdiff/total.txt and convdiff-plants.txt), then `bar.sh land`,
+2. The bar has NOT started and nothing starts it: the week reached 60% (architect, 11:35Z 12 Nov), so landing
+   waits for Tilo. barq302.sh was stopped; bar/bar-launch-end.txt says so. When the bar is allowed: start orion
+   ~/sa-rust-ids-work/sa-port-302/barq302.sh detached (it waits for the differential's end.txt, checks `exit 0`,
+   60 MATCH and 5 caught plants, then starts pareto0 ~/sp19/bar302.sh under a shared lease). Its files: orion
+   ~/sa-rust-ids-work/sa-port-302/bar/ (diff-read.txt, bar-launched.txt with the tested SHA, bar-launch-end.txt).
+   Bar end marker: pareto0 ~/sp19/sa-rust-ids-work/sa-port-302/bar/bar-end.txt; sa-port-298's bar took 3 h 15 min,
+   and this one adds the convdiff phase (about an hour more). The tested SHA is origin/port/convert's head when
+   barq302.sh checks it out.
+3. After the bar: read it (sum.txt, the item-5 verdict list, convdiff/total.txt and convdiff-plants.txt), then `bar.sh land`,
    land on rust-slice, the probe against 21 of 32 (pareto0 ~/sp19/sa-rust-ids-work/pc299.sh), the report.
 4. For the planner (in my report): the `slow` rule is my decision, not a ruling; gate (d)'s owed item.
 

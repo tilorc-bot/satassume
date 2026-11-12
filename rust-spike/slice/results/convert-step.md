@@ -115,4 +115,5 @@ a sa_solver frame below the innermost convert.py frame (SymPy calls made from Ru
 
 The full differential on bfac1a4 was running (pareto1, ~/sp19/sa-rust-ids-work/sa-port-302/diff-bfac1a4: all/total.txt,
 all/answers.txt, plants.txt, end.txt): its counts, the 60 answer rows and the five plant rows are not read. The bar
-(bar302.sh on pareto0) starts by itself from barq302.sh only if that run is clean; landing and the probe follow it.
+(bar302.sh on pareto0, started by barq302.sh) has not started: the week reached 60%, so it and the landing wait for
+Tilo; the probe follows the landing.
