@@ -48,6 +48,51 @@ Dev alone on orion before that: 1221 inputs, 0 differences, answers MATCH under 
 
 The bar needs 0. barq301.sh starts the bar only on `exit 0` and 60 MATCH rows, so the bar has not started.
 
+## Item 6, continued (sa-port-302: 5c7db78 fresh-state reads, bfac1a4 the read limit)
+
+**Gate (a), the cause, pure SymPy (finite_history_repro.py, no satassume code).** The term is the rootof workload's
+`m = x*r`, `x` positive, `r = ComplexRootOf._new(reducible poly, i)`. `m.is_finite` (what `_Walk._read_finite` reads)
+raises KeyError (`_reals_cache[self.poly]` in `ComplexRootOf._eval_is_real` / `_eval_is_imaginary`: `_new` keeps a poly
+`rootof` would factor, which is never a key of that cache) or answers True, by the order `_ask` shuffles the
+prerequisite facts into; each raise leaves facts settled in `_assumptions`, so a later ask of the same object can answer
+where an earlier one raised. 40 shuffle seeds, three asks each: the first ask raised in 31, the second differed from
+the first in 6, the third from the second in 7. With `rootof(...)`'s own object (`--rootof`): 0, 0, 0. So the read's
+VALUE differs (a raise, which Rust refuses on, against True), not only its count or position, and it comes from
+SymPy's state (the shuffle's RNG and each object's `_assumptions`), not from `_Walk`'s memo and not from the walk order.
+
+**Gate (b).** Fresh state makes the differences vanish: rootof in a whole run, 4784 inputs, 39 differences under the
+old comparison (4784f4e), 0 under the fresh-state one (5c7db78), Rust against Python. On orion, the 399
+`Q.positive(x*r)` inputs each converted alone (~/sa-rust-ids-work/sa-port-302/b): 0 differences fresh-state, Python
+against Python and Rust against Python; the old comparison also gave 0 there, so the 39 need the state a whole run
+leaves; Python's own second ask of `finite` differed on 63 of the 399. "PROCESS.clear() plus SymPy's cache cleared"
+would not be enough: the input object itself keeps its `_assumptions`, and the shuffle's RNG isn't reset by either.
+Answers: the answer rows (livecmp, 60) are part of the run that was going at the handoff; not read yet.
+
+**Gate (c), the comparison (convert_diff.py).** Tables, ids, objects and classes as before. Then each walker's lazy
+reads in its own forked child of the state the two conversions left: both ask first, of the same objects in the same
+state; values, counts and `raised` are all compared. `reread`: inputs where Python's second ask, in its child,
+answers differently (pure-Python history dependence, listed, not a walker difference). `slow`: a read gets 30 s of its
+child's CPU; both children stopping at the same read lists the input and compares the reads before it; stopping at
+different reads is a difference. `reads`: the number of reads compared.
+
+**First fresh-state run, 5c7db78, pareto1 (~/sp19/sa-rust-ids-work/sa-port-302/diff-5c7db78; stopped before its answer
+rows and plants, superseded by bfac1a4): 69245 inputs (20 workloads 29361, suite 39884), 1780845 terms; workloads 0
+differences (rootof 0, was 39); suite 1: `Q.lt(x, sin(exp(exp(exp(5))))) | Q.positive(x)`, both children killed at the
+ten-minute cap in `complex(sin(exp(exp(exp(5)))))`, which doesn't end (the 4784f4e run sat in the same read for 90
+minutes and never finished its suite). bfac1a4's read limit turns that into a `slow` row. `reread`: 84 inputs, all in
+rootof, all `finite`.** The suite under that differential: 130 failed, base's 127 plus
+test_lra_constants.py::test_constants_evalf_cannot_bound_rigorously_are_not_read (the input above, ten minutes in it)
+and test_wide_derived.py::test_wide_derived_or_against_or_is_fast[or-nor] and [or-or] (wall-clock asserts, run while
+the differential forks twice per input). The plain suite is the bar's.
+
+**Gate (d), owed as its own spec item, not convert's:** a lazy read whose value depends on who asked first and on the
+assumptions shuffle, in pure Python, on the rootof workload's `ComplexRootOf._new` inputs (84 inputs of the 20
+workloads, none in the suite). Same family as the stock_finite flake (OWED [131]).
+
+The per-commit suites' three unread rows (8363e8a rust, eb10c7d py and rust): 127 failed each, the same set as base
+(10 of 10 runs read). Plants 670-674 under the new comparison: caught by test_convert_walk.py (14 passed, orion and
+pareto1); under the whole-run differential on dev and fuzz: part of the bfac1a4 run.
+
 ## S1 (pareto0, one quiet lease e8402a95, 7 interleaved rounds, pinned CPU 2; ~/sa-rust-ids-work/sa-port-301/gd)
 
 Arms: 146 (1401d1f), base 899d354, 4784f4e with SLICE_CONVERT=py (the default) and with SLICE_CONVERT=rust. 56 rows,
@@ -66,7 +111,8 @@ The default arm equals base within spread. Under the Rust walker 78.2% (dev) and
 a sa_solver frame below the innermost convert.py frame (SymPy calls made from Rust included); lazy reads fall from
 4.1% to 1.8% of N on fuzz. Split by tools300/split300.py on the lease's samples: gd/split-ARM/tab.txt.
 
-## Not done
+## Not done (at sa-port-302's handoff)
 
-The differential's 39 rootof differences (item 6 is open until they are explained or fixed and the full run gives 0);
-answers on the 20 workloads (livecmp, part of that run); the bar (bar300.sh, staged, not started); landing; the probe.
+The full differential on bfac1a4 was running (pareto1, ~/sp19/sa-rust-ids-work/sa-port-302/diff-bfac1a4: all/total.txt,
+all/answers.txt, plants.txt, end.txt): its counts, the 60 answer rows and the five plant rows are not read. The bar
+(bar302.sh on pareto0) starts by itself from barq302.sh only if that run is clean; landing and the probe follow it.
