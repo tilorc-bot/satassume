@@ -45,3 +45,4 @@ pub mod rat;
 pub mod relations;
 pub mod rows_tpl;
 pub mod table;
+pub mod walk;

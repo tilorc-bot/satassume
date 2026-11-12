@@ -627,6 +627,7 @@ fn sa_solver(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(rule_block_tables, m)?)?;
     term::py::register(m)?;
     term::dispatch::register(m)?;
+    term::walk::register(m)?;
     term::common::register(m)?;
     m.add_class::<PySolver>()?;
     m.add_class::<relkeys::RelSetView>()?;

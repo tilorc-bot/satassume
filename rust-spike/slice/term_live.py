@@ -1217,6 +1217,7 @@ def from_env(default='terms'):
     if PLANT[0]:
         PLANT[0] = _Plant(PLANT[0])
     CHECK[0] = bool(os.environ.get('SLICE_TERM_CHECK'))
+    convert.from_env()      # SLICE_CONVERT: which walker reads the input (Python's `_Walk` unless it says so)
     out = os.environ.get('SLICE_TERM_COUNTS')
     if out:
         import atexit
