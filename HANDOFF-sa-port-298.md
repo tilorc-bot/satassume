@@ -16,7 +16,7 @@ Results so far: rust-spike/slice/results/rk-key-step.md (S1 r3 table, (b) as tri
 ## RUNNING (detached on orion: ~/sa-rust-ids-work/sa-port-298/gd/go298.sh; end marker gd/go-end.txt "END bar <rc> <time>")
 pareto1 --shared bar.sh build (OUT=~/sp19/sa-rust-ids-work/sa-port-298/build, clone ~/sp19/dev/sa-port-298) -> .so copied to
 pareto0 ~/sp19/dev/sa-port-298 -> `machine run pareto0 --shared -- bash ~/sp19/bar298.sh` (bar297.sh minus rk plants) ->
-pareto0 ~/sp19/sa-rust-ids-work/sa-port-298/bar (sum.txt, bar.log, bar-end.txt). 297's bar took 3.5 h, so expect ~09:00Z.
+pareto0 ~/sp19/sa-rust-ids-work/sa-port-298/bar (sum.txt, bar.log, bar-end.txt). Started ~05:20Z on bfe7a87 (= 0bd82e4 source; .so f7e18b93 from 0bd82e4); 297s took 3.5 h, so expect ~09:00Z.
 Logs: gd/build.log, gd/p0-bar.txt (.so sha256), gd/bar-p0.log.
 
 ## NEXT
