@@ -1,6 +1,7 @@
 # The convert step: `_Walk`'s enc, klass, term_row, walk and enc_int in Rust (issue 323)
 
-State at sa-port-301's handoff (12 Nov, ~10:00Z). Not landed. The Python `_Walk` is the default and the reference;
+LANDED on rust-slice 899d354 -> fceb323 (sa-port-304, 18:36Z 17 Nov; tested 82518dc, source bfac1a4; the bar and the probe are
+at the end of this file). The rest of this paragraph is sa-port-301's, of 12 Nov. The Python `_Walk` is the default and the reference;
 `SLICE_CONVERT=rust` turns the Rust walker on.
 
 ## Item 0 (8c72dd0, results/convert-item0.md)
@@ -201,3 +202,34 @@ bar's, has to pass them as on base.
   pairs each), 45 MATCH. Its suite: 132 failed, base's 127 plus exactly the five named above.
   convdiff-plants.txt: 5 rows, each `exit 1` (the table's last column).
 
+## Landing and the module-wide probe on the landed SHA (sa-port-304, 17 Nov)
+
+Landed: rust-slice 899d354 -> fceb323 at 18:36Z 17 Nov (`bar.sh land 82518dc`; rust-slice hadn't moved, so nothing
+came in; tested 82518dc against the landing differs in HANDOFF-sa-port-303.md and this file only). **What landed is
+the Rust walker behind `SLICE_CONVERT=rust`. The default is still Python's `_Walk`.** The bar's Rust-backend runs all
+had SLICE_CONVERT=rust (bar302.sh); the default walker is covered by the differential's runs and the per-commit suites.
+
+Probe: pc304.sh = pc299.sh on its own clone (pareto0 ~/sp19/dev/sa-port-304 at fceb323, .so b6177184), 20 workloads
+under each walker, pc299's nine files plus the input layer's four (convert.py, templates/__init__.py, lra_adapter.py,
+sympy_api.py); no fm_again_split pass. 40 jobs exit 0, handler rows 0. pccmp304.py, rows pareto0
+~/sp19/sa-rust-ids-work/sa-port-304/pc, summary orion ~/sa-rust-ids-work/sa-port-304/pccmp.txt.
+
+- Default walker against sa-port-299/pc: 180 cells (20 workloads x 9 files, all and converted calls), 0 differ; per
+  function and state, 0 keys differ.
+- knowledge_live.py per workload, all (converted), unchanged and the same under both walkers: lra 4326 (34), f6 328
+  (22), wiring 125 (80), scope 42 (12), dev 160 (50), fuzz 46 (16), ground 40 (10), port 48 (18), loop 70 (22), zero
+  63 (18), cert 38 (8), budget 930 (900), core 88 (16), opaque 140 (6), rootof 32 (2), value 952 (794), twin 38 (8),
+  transfer760 65 (20), transfer2340 73 (28), cls 42 (12).
+- Count: **21 of 32, unchanged.** convert.py is the input layer and isn't one of the 32.
+- The count's "conversion" exception: **unchanged on the default; narrower only under SLICE_CONVERT=rust, and only
+  inside convert.py.** Python calls over the 20 workloads, all (in a converted query), default -> Rust walker:
+
+  | file | default walker | Rust walker |
+  |---|---|---|
+  | convert.py | 14,559,922 (2,125,342) | 2,316,125 (299,109), -84.1% (-85.9%) |
+  | of it `_Walk` | 13,550,366 | 144,192, plus 1,162,377 in `rust_walk`'s class |
+  | of it `_structural_class`, `_template_name` | 425,137, 326,137 | the same: Rust calls them |
+  | templates/__init__.py (`_may_be_nan`) | 2,187,213 (0) | the same: Rust calls it per term |
+  | lra_adapter.py | 289,052 (156,971) | the same |
+  | sympy_api.py | 650,746 (309,435) | the same |
+  | the nine files of pc299 | as 299 | the same in all 180 cells |
