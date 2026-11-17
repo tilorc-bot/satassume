@@ -111,9 +111,47 @@ The default arm equals base within spread. Under the Rust walker 78.2% (dev) and
 a sa_solver frame below the innermost convert.py frame (SymPy calls made from Rust included); lazy reads fall from
 4.1% to 1.8% of N on fuzz. Split by tools300/split300.py on the lease's samples: gd/split-ARM/tab.txt.
 
-## Not done (at sa-port-302's handoff)
+## The bfac1a4 differential, read (sa-port-303; pareto1 ~/sp19/sa-rust-ids-work/sa-port-302/diff-bfac1a4, ended 13:51Z 12 Nov)
 
-The full differential on bfac1a4 was running (pareto1, ~/sp19/sa-rust-ids-work/sa-port-302/diff-bfac1a4: all/total.txt,
-all/answers.txt, plants.txt, end.txt): its counts, the 60 answer rows and the five plant rows are not read. The bar
-(bar302.sh on pareto0, started by barq302.sh) has not started: the week reached 60%, so it and the landing wait for
-Tilo; the probe follows the landing.
+| | inputs | differences | terms | reads compared | slow | reread |
+|---|---|---|---|---|---|---|
+| 20 workloads | 29361 | 0 | 436059 | 3488472 | 0 | 59 |
+| suite | 39895 | 0 | 1345674 | 10765335 | 1 | 0 |
+| all | 69256 | **0** | 1781733 | 14253807 | 1 | 59 |
+
+`exit 0`. Outcomes: Converted 66521, out-of-scope 2492, non-default-registry 184, sum-product-integral 42,
+args-eq-not-is 17. test_convert_walk.py on that tree: 14 passed. The .so is b6177184 (4784f4e's Rust; 0 lines of Rust
+changed since).
+
+- **slow, 1 row, by input:** suite, `Q.lt(x, sin(exp(exp(exp(5))))) | Q.positive(x)`, read `complex` of term 3; both
+  children stopped at that same read, the reads before it equal.
+- **reread 59**, all rootof, all `finite` (the first run had 84: the count follows SymPy's assumptions shuffle, gate
+  (a)). None in the suite.
+- **Answers (livecmp), 20 workloads, 3 pairs each (py against rust with Rust's walker, py against rust with Python's
+  walker, the two rust runs): 60 rows, 60 MATCH.** rootof's three rows MATCH, so no final answer differs on the [131]
+  inputs between the three runs. (Each run is one process with its own shuffle; this doesn't compare two Python runs
+  of different shuffles with each other beyond that.)
+- **Plants under the whole-run differential (dev and fuzz, 4219 inputs, 4195 converted), each caught (`exit 1`):**
+  670 enc-true-as-false 4195 differences, 671 klass-no-is-expr 4195, 672 term-row-no-number 3610,
+  673 walk-args-unreversed 4195, 674 enc-int-no-sign 2992.
+
+**The suite under the differential: 132 failed, base's 127 plus five, each caused by the harness and named here
+(the first run had three of them).** Each alone on pareto1, bfac1a4 (~/sp19/sa-rust-ids-work/sa-port-303/extra5):
+
+| test | plain, either walker | under the differential | in the differential's suite (-n 6) | its assert |
+|---|---|---|---|---|
+| test_lra_constants.py::test_constants_evalf_cannot_bound_rigorously_are_not_read | 0.03 s, passes | 30.14 s, fails; 2.10 s and passes with a 2 s read limit | 30.1 s | wall < 5 s |
+| test_wide_derived.py::test_wide_derived_or_against_or_is_fast[or-or], [or-nor], [nor-or], [nor-nor] | 0.03 to 0.04 s, pass | 1.25 to 1.42 s, pass | 2.5 to 3.0 s, fail | wall < 2.0 s |
+
+The first is the slow row's input: the harness asks every lazy read of every term, so it asks `complex` of
+`sin(exp(exp(exp(5))))`, and the test's time is the read limit (30 s of CPU, the two children side by side). The plain
+`ask` of that query never asks that read: it answers None in 0.03 s with either walker. The other four time two asks
+over 400 symbols; the harness converts each input twice and forks two children that make every read (about 1.4 s
+alone, over 2 s beside five other workers). They stay in the differential's run, since their inputs are part of it and
+the slow row comes from the first; they are left out of the differential's failed set only. The plain suite, the
+bar's, has to pass them as on base.
+
+## Not done (at this commit)
+
+The bar (bar302.sh on pareto0, started by barq302.sh; allowed by the planner's go of 04:35Z 17 Nov), the landing and
+the probe.
