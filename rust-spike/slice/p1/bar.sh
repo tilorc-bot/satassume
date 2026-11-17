@@ -97,9 +97,12 @@ cd $S
 suite() { # suite DIR [PLANT]
   # hypothesis runs under the profile `bar` (hyp_profile.py: derandomize=True, database=None), so these rows reproduce
   # between bars; only this invocation selects it (planner [137e](b))
-  local O=$1
+  local O=$1 CV=
+  # a convert:* plant sits in the Rust walker, so its row runs with SLICE_CONVERT=rust set here, not by a launcher's
+  # export; every other row keeps the default walker (Python's), and the differential compares the two (planner, 17 Nov)
+  case ${2:-} in convert:*) CV='SLICE_CONVERT=rust ';; esac
   run "rm -rf $O; mkdir -p $O"
-  run "( ${2:+export $(penv $2); }export SLICE_SUITE_OUT=$O SLICE_SUITE_BACKEND=rust PYTHONPATH=\$PYTHONPATH:$S HYPOTHESIS_STORAGE_DIRECTORY=$O/hyp; cd $T; \$PY -c 'import satassume; print(satassume.__file__)' > $O/tree.txt; \$PY -m pytest -p rust_plugin -p handler_count -p plant_count -p hyp_profile --hypothesis-profile=bar -n $N -q --tb=short -p no:cacheprovider tests > $O/pytest.log 2>&1; echo \"\$? \$(tail -1 $O/pytest.log)\" > $O/exit.txt )"
+  run "( ${2:+export $(penv $2); }export ${CV}SLICE_SUITE_OUT=$O SLICE_SUITE_BACKEND=rust PYTHONPATH=\$PYTHONPATH:$S HYPOTHESIS_STORAGE_DIRECTORY=$O/hyp; cd $T; \$PY -c 'import satassume; print(satassume.__file__)' > $O/tree.txt; \$PY -m pytest -p rust_plugin -p handler_count -p plant_count -p hyp_profile --hypothesis-profile=bar -n $N -q --tb=short -p no:cacheprovider tests > $O/pytest.log 2>&1; echo \"\$? \$(tail -1 $O/pytest.log)\" > $O/exit.txt )"
 }
 fired() { # fired WL PLANT: the largest of the Python-side and Rust-side counts in the plant run's session report, and a term
   # plant's own count in term_live (SLICE_TERM_COUNTS's file; B's item (3))
