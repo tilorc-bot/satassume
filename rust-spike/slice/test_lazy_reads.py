@@ -222,19 +222,41 @@ def stock_finite():
     return Pow(y*root(), Rational(3, 2), evaluate=False)
 
 
+def finite_reads(monkeypatch, cls):
+    """Reads of `is_finite` on a `cls`, counted at the property: before SymPy looks in the term's cache or asks any
+    handler, so the count is the same whatever SymPy goes on to do."""
+    reads = [0]
+    real = cls.is_finite.fget
+
+    def counted(self):
+        reads[0] += 1
+        return real(self)
+    monkeypatch.setattr(cls, 'is_finite', property(counted))
+    return reads
+
+
 @pytest.mark.parametrize('kind,build', [('power', stock_power), ('finite', stock_finite)])
 def test_stock_term_plant_is_caught(monkeypatch, kind, build):
     """The survey's stock terms that evaluate through these two reads: zero as things are, and not zero with the eager
-    read back. So the counters are live in this window, and this zero isn't a false one."""
+    read back. So the counters are live in this window, and this zero isn't a false one.
+
+    The eager `finite` read is caught at the read itself, not by what it evaluates. Whether `is_finite` of this Pow
+    goes on to call evalf depends on the order SymPy's `_ask` shuffles the other facts into and on what ran before in
+    the process: after the `power` case, 10 of the shuffle seeds 0-59 evaluated nothing (11 15 18 21 25 34 37 50 55 58
+    with PYTHONHASHSEED=0), and so the old assert on the evaluation counters failed about one run in six. A pinned seed
+    wouldn't hold: with PYTHONHASHSEED=1 it's 6 other seeds, and alone in a process it's none of the 60."""
     t = build()
     prop = Q.positive(t)
     counts = evaluations(monkeypatch)
+    reads = finite_reads(monkeypatch, type(t))
     fresh()
     tab(prop)
     assert sum(counts.values()) == 0, f'conversion evaluated: {counts}'
+    assert reads[0] == 0, 'conversion read is_finite of a Pow'
     planted(monkeypatch, kind)
     tab(prop)
-    assert sum(counts.values()) > 0, f'the eager {kind} read is back and no counter saw it'
+    seen = reads[0] if kind == 'finite' else sum(counts.values())
+    assert seen > 0, f'the eager {kind} read is back and no counter saw it'
 
 
 def test_python_own_ask_fires_the_counter_in_the_ask_window(complex_calls):
