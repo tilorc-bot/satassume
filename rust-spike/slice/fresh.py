@@ -116,6 +116,7 @@ if a.handlers:
 TD = None
 if a.term != "py":
     import term_live
+    term_live.use_rust(os.environ.get("SLICE_TERM_FRAMES", "py") == "rust")     # the per-query frames (term/live.rs), as from_env
     term_live.install(keys=a.term == "keys", terms=a.term == "terms")
     term_live.PLANT[0] = a.term_plant
     term_live.CHECK[0] = a.term_check
