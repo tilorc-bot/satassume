@@ -610,7 +610,10 @@ def _relation_atom(py):
             want = py(name, lhs, rhs)
             _check('relation_atom', want == got and _same_sides(want, got), name, lhs, rhs, want, got)
         return (got,)
-    run = _guarded('relation_atom', run)
+    if FRAMES[0] is not None:       # SLICE_TERM_FRAMES=rust: term/live.rs `RelationRun`, guarded there
+        run = FRAMES[0].relation_run(py, eq, order, _run_check)
+    else:
+        run = _guarded('relation_atom', run)
 
     def relation_atom(name, lhs, rhs):
         got = run(name, lhs, rhs)
@@ -620,6 +623,12 @@ def _relation_atom(py):
 
 
 _RELATIONS = frozenset(('eq', 'ne', 'lt', 'gt', 'le', 'ge'))
+
+
+def _run_check(py, name, lhs, rhs, got):
+    """`run`'s SLICE_TERM_CHECK branch, for the Rust frames (term/live.rs `RelationRun`)."""
+    want = py(name, lhs, rhs)
+    _check('relation_atom', want == got and _same_sides(want, got), name, lhs, rhs, want, got)
 
 
 def _same_sides(want, got):
@@ -1081,11 +1090,11 @@ def _install(keys, terms):
         s = stack()
         top = not s
         if top:
-            mark = _local.journal = _Mark(eng)
+            mark = _local.journal = _new_mark(eng)
             if BEFORE_RUN[0] is not None:
                 BEFORE_RUN[0](eng)
         elif _journal() is not None:     # None in a second run: nothing there is rolled back
-            _local.journal.add(eng)
+            _mark_add(_local.journal, eng)
         if not top and isinstance(s[-1], _Refused):
             q = s[-1]
             COUNTS['nested-in-refused'] += 1
@@ -1187,6 +1196,52 @@ def _install(keys, terms):
     return undo
 
 
+# ---- The per-query frames on Rust (the term_live step, issue 323): `current`, `term_id` (with `_int_id` and `same_class`),
+# `_ids`, `_relation_atom`'s `run`, `_guarded`'s wrapper and `_Mark`'s `__init__`/`_note`/`add`, in term/live.rs. Opt-in:
+# SLICE_TERM_FRAMES=rust (`use_rust`). The functions above stay whole, as the reference and the default. Rust reads and
+# writes the same Python maps under the same keys (the `_Query`'s, `_local.stack`, the `_Mark`'s, `COUNTS`), and keeps no
+# table of its own: nothing new lives across queries. Plants 740-745 (`tl-*`, SLICE_TERM_PLANT) sit in the Rust frames.
+
+#: `sa_solver.TermFrames` while the Rust frames are on, else None.
+FRAMES = [None]
+_PY_FRAMES = dict(current=current, term_id=term_id, _ids=_ids, _guarded=_guarded)
+#: What `_ask` calls for the top run's mark and for a nested engine: `_Mark` and `_Mark.add`, or Rust's.
+_new_mark, _mark_add = _Mark, _Mark.add
+
+
+class _Stale:
+    """term/live.rs `stale`, plant 740's store (`tl-term-stale`: the first query's `derived` map, kept for the process).
+    Read by the discard's check and not rolled back: its only writer is the plant, so without it this is empty before
+    and after, and any row is a leak."""
+    native, name = True, 'term.live.STALE'
+
+    def items(self):
+        f = FRAMES[0]
+        return [((k,), True) for k in f.stale_rows()] if f is not None else []
+
+
+_STALE = _Stale()
+
+
+def use_rust(on=True):
+    """Put the per-query frames on Rust (`on`), or back on Python. Before `install`: its wrappers are built with `_guarded`."""
+    global _new_mark, _mark_add
+    if installed():
+        raise RuntimeError('term_live.use_rust: after install()')
+    g = globals()
+    if _STALE in NATIVE_EXTRA:
+        NATIVE_EXTRA.remove(_STALE)
+    if not on:
+        FRAMES[0] = None
+        g.update(_PY_FRAMES)
+        _new_mark, _mark_add = _Mark, _Mark.add
+        return
+    f = FRAMES[0] = sa_solver.TermFrames(sys.modules[__name__])
+    g.update(current=f.current, term_id=f.term_id, _ids=f.ids, _guarded=f.guarded)
+    _new_mark, _mark_add = f.mark, f.mark_add
+    NATIVE_EXTRA.append(_STALE)
+
+
 def counts():
     return dict(COUNTS)
 
@@ -1218,6 +1273,11 @@ def from_env(default='terms'):
         PLANT[0] = _Plant(PLANT[0])
     CHECK[0] = bool(os.environ.get('SLICE_TERM_CHECK'))
     convert.from_env()      # SLICE_CONVERT: which walker reads the input (Python's `_Walk` unless it says so)
+    frames = os.environ.get('SLICE_TERM_FRAMES', 'py')     # the per-query frames: Python's (the default) or term/live.rs
+    if frames not in ('py', 'rust'):
+        raise SystemExit(f'SLICE_TERM_FRAMES={frames}: py or rust')
+    if not installed():
+        use_rust(frames == 'rust')
     out = os.environ.get('SLICE_TERM_COUNTS')
     if out:
         import atexit

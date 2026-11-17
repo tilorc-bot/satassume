@@ -84,7 +84,9 @@ run() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$1" | tee -a $CMDS; eval "$1"; }
 phase() { echo "$1 $(date -u +%FT%TZ) exit ${2:-0}" >> $B/phases.txt; }
 # penv PLANT: the variable that carries a plant: term_live's (`term:NAME`), the Rust walker's (`convert:NAME`, plants
 # 670-674: they act only where SLICE_CONVERT turns the Rust walker on) or session_live's (everything else)
-penv() { case $1 in term:*) echo "SLICE_TERM_PLANT=${1#term:}";; convert:*) echo "SLICE_CONVERT_PLANT=${1#convert:}";; *) echo "SLICE_SESSION_PLANT=$1";; esac; }
+# `term:tl-*` (plants 740-745) sit in term_live's Rust frames (term/live.rs), so their rows turn that switch on themselves;
+# `frames:rust` is no plant: the same switch alone, for a suite row and workload rows with the Rust frames on
+penv() { case $1 in frames:rust) echo "SLICE_TERM_FRAMES=rust";; term:tl-*) echo "SLICE_TERM_PLANT=${1#term:} SLICE_TERM_FRAMES=rust";; term:*) echo "SLICE_TERM_PLANT=${1#term:}";; convert:*) echo "SLICE_CONVERT_PLANT=${1#convert:}";; *) echo "SLICE_SESSION_PLANT=$1";; esac; }
 export -f penv
 
 echo "== bar.sh $NAME $BR phases: $PHASES; script sha256 $(sha256sum "$0" | cut -c1-12)" | tee -a $CMDS

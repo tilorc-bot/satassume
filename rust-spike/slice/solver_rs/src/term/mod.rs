@@ -37,6 +37,7 @@ pub mod fn_tpl;
 pub mod tcore;
 pub mod tf6;
 pub mod knowledge;
+pub mod live;
 pub mod lra_read;
 pub mod offline;
 pub mod outer_tpl;

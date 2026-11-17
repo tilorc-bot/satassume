@@ -277,6 +277,11 @@ fn class_is_plant() -> bool {
     planted(CLASS_IS)
 }
 
+/// The same for term/live.rs's `same_class` (term_live.py's, on the Rust frames).
+pub(crate) fn class_is_on() -> bool {
+    planted(CLASS_IS)
+}
+
 enum Stop {
     Refuse(usize),
     Py(PyErr),

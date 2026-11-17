@@ -628,6 +628,7 @@ fn sa_solver(m: &Bound<'_, PyModule>) -> PyResult<()> {
     term::py::register(m)?;
     term::dispatch::register(m)?;
     term::walk::register(m)?;
+    term::live::register(m)?;
     term::common::register(m)?;
     m.add_class::<PySolver>()?;
     m.add_class::<relkeys::RelSetView>()?;
