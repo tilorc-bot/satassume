@@ -151,7 +151,53 @@ alone, over 2 s beside five other workers). They stay in the differential's run,
 the slow row comes from the first; they are left out of the differential's failed set only. The plain suite, the
 bar's, has to pass them as on base.
 
-## Not done (at this commit)
+## Bar on 82518dc (source bfac1a4, .so b6177184; pareto0 --shared lease 3ef07bff, 04:34-09:55Z 17 Nov, END 0; base sa-port-298/bar; read by sa-port-304)
 
-The bar (bar302.sh on pareto0, started by barq302.sh; allowed by the planner's go of 04:35Z 17 Nov), the landing and
-the probe.
+1. Tests: 71 files, 70 exit 0. Not exit 0: test_lazy_reads.py (1 failed, 73 passed, 5 skipped), the known row
+   test_stock_term_plant_is_caught[finite-stock_finite] by its signature (test_lazy_reads.py:237, `assert 0 > 0`, the
+   three counters 0; OWED [131]). relations_direct.py exit 0. test_convert_walk.py 14 passed.
+2. Suite (plain): 126 failed / 5992 passed (ids 6159); against base new 0, gone 0, changed outcome 1: the
+   planted-history test (tests/test_public_incremental.py::test_public_comparison_catches_a_planted_history_dependence,
+   the known id()-reuse row) failed on base and passes here. So the failed set is base's 127 less that one test. The
+   five differential-only tests pass here, as on base. TermFault 0.
+   The planted-history test in this bar's 18 other suite runs (17 plant runs and the differential's): passed in 5,
+   failed in 13, always at test_public_incremental.py:204, `assert 0 == 2` in 6 and `assert 1 == 2` in 7. Both shapes
+   are on earlier bars' plain suites too (298 and 288 `0 == 2`, 294 `1 == 2`; 297 and 291 passed).
+3. Live: dev and fuzz, Python vs Python, Python vs Rust, traced vs untraced: 8 of 8 MATCH (dev answers_sha
+   31cd0945c07f02a6, fuzz 173502b6ef285ad6, as 298's bar; Rust makes 0 Python solvers). Extra workloads (15): 30 of 30
+   comparisons MATCH.
+4. Quiet failures: suite 39 rows in 2 tests, multiset equal to base (34 + 4 + 1, ids differing 0); the plain live and
+   extra handler files 0 rows each; the differential's handler files 0 rows.
+5. Kept reasons: every live/extra share equal to base (dev kept:out-of-scope 24/1985; cls kept:args-eq-not-is 6/72;
+   refused f6 13, opaque 7, value 15, wiring 1).
+- fm rows: 20 workloads, 0 differ; fm-args-drop-last caught (4 differ), fm-atoms-merge-pred caught (3 differ).
+- Plant table: 510 rows (30 plants x 17 workloads). The 425 rows of the 25 earlier plants equal 298's bar on plant,
+  workload, fired count and verdict (102 DIFFER, 323 MATCH). The 85 convert rows (their own flag isn't read, so
+  fired shows 0):
+
+  | plant | live comparison, 17 workloads | suite, changed outcomes | whole-run differential (dev and fuzz, 4219 inputs) |
+  |---|---|---|---|
+  | 670 convert:enc-true-as-false | 17 DIFFER | 424 | 4195 differences, exit 1 |
+  | 671 convert:klass-no-is-expr | 12 DIFFER, 5 MATCH | 189 | 4195, exit 1 |
+  | 672 convert:term-row-no-number | 10 DIFFER, 7 MATCH | 7 | 3610, exit 1 |
+  | 673 convert:walk-args-unreversed | **17 MATCH** | **0** | 4195, exit 1 |
+  | 674 convert:enc-int-no-sign | 13 DIFFER, 4 MATCH | 120 | 2992, exit 1 |
+
+  Each is caught by a check that doesn't read its flag. **673 is caught by the differential and by
+  test_convert_walk.py only:** no live comparison and no suite test sees the order in which the walk numbers a term's
+  arguments.
+- Suite plants (17 runs), against this bar's plain suite: each new 0, gone 0. Failed sets against 298's bar, per
+  plant: equal apart from the planted-history test flipping and two tests that fail here and not there, both
+  hypothesis tests whose examples aren't seeded and whose failing example is the plant's own connective:
+  fm-implies-swap tests/test_verify_soundness.py::test_fuzz_plain_symbols (an Implies input; in none of the bars 280
+  to 298), fm-ite-swap tests/test_verify_soundness.py::test_fuzz_symbols_may_be_nan (an ITE input; also in 280's
+  bar). class-is fired 1242, 133 failed, as 298's.
+- knowledge_live: the 442 live/extra *.knowledge.json files of the plain and earlier-plant runs are byte-equal to
+  298's bar.
+- **The bar's differential (phase convdiff: the 15 extra workloads and the suite; dev, fuzz, ground, port and lra are
+  in the pareto1 run above, not here):** 63500 inputs, **0 differences**, 1681644 terms, 13453095 reads compared,
+  slow 1 (suite, `Q.lt(x, sin(exp(exp(exp(5))))) | Q.positive(x)`, read `complex` of term 3: the same row), reread
+  110 (all rootof, all `finite`; the earlier runs had 84 and 59), `exit 0`. Answers: 45 rows (15 workloads, three
+  pairs each), 45 MATCH. Its suite: 132 failed, base's 127 plus exactly the five named above.
+  convdiff-plants.txt: 5 rows, each `exit 1` (the table's last column).
+
