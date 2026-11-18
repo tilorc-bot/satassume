@@ -1,0 +1,176 @@
+
+## dev: 1985 queries, digest 31cd0945c07f02a6, .so 7962cec7164e8a6a, BRANCH_BUDGET 16
+both switches off: digest 31cd0945c07f02a6 rows whose events differ from both-on: 0
+existing counters ctx:caught / ctx:fallback in the header: absent (0)
+None answers 892; with a Q or I frame 420; deciding frame's result not N: 0
+None queries with the token anywhere in their events: {'xb': 2, 'V>u': 2, 'T01': 2}
+all queries with xb anywhere: 15 by answer {'False': 9, 'None': 2, 'True': 4} | with T?1 at any frame end: 15 | T?1 without xb: 0
+arm 5b1d96f: 12 rounds, digests equal the count pass: True, None rows equal: True, S1 s median 0.7589 min 0.7497 max 0.7905, sum of per-query medians 0.7552
+arm 5b1d96f+rust+frames: 12 rounds, digests equal the count pass: True, None rows equal: True, S1 s median 0.6680 min 0.6619 max 0.6992, sum of per-query medians 0.6660
+
+(a) dev: time by answer (sum of each query's median over the rounds; % of the arm's summed medians)
+| answer | n | 5b1d96f ms | 5b1d96f % | 5b1d96f us/query | 5b1d96f+rust+frames ms | 5b1d96f+rust+frames % | 5b1d96f+rust+frames us/query |
+|---|---|---|---|---|---|---|---|
+| None | 892 | 377.9 | 50.0 | 424 | 339.4 | 51.0 | 381 |
+| False | 557 | 231.3 | 30.6 | 415 | 201.4 | 30.2 | 362 |
+| True | 536 | 146.1 | 19.3 | 273 | 125.2 | 18.8 | 234 |
+
+(a) dev: time by work and answer
+| work | answer | n | 5b1d96f ms | 5b1d96f % | 5b1d96f us/query | 5b1d96f+rust+frames ms | 5b1d96f+rust+frames % | 5b1d96f+rust+frames us/query |
+|---|---|---|---|---|---|---|---|---|
+| context-free, entailment with solves | None | 40 | 14.7 | 1.9 | 368 | 12.4 | 1.9 | 311 |
+| context-free, no entailment solve | False | 119 | 37.2 | 4.9 | 313 | 28.8 | 4.3 | 242 |
+| context-free, no entailment solve | True | 115 | 36.2 | 4.8 | 315 | 28.2 | 4.2 | 245 |
+| contextual, entailment with solves | False | 41 | 47.7 | 6.3 | 1164 | 43.8 | 6.6 | 1069 |
+| contextual, entailment with solves | None | 380 | 334.5 | 44.3 | 880 | 303.5 | 45.6 | 799 |
+| contextual, entailment with solves | True | 12 | 16.2 | 2.1 | 1347 | 14.8 | 2.2 | 1232 |
+| contextual, no entailment solve | False | 200 | 133.7 | 17.7 | 669 | 118.8 | 17.8 | 594 |
+| contextual, no entailment solve | True | 144 | 87.9 | 11.6 | 610 | 77.6 | 11.6 | 539 |
+| no event | False | 192 | 10.2 | 1.4 | 53 | 8.0 | 1.2 | 42 |
+| no event | None | 463 | 24.4 | 3.2 | 53 | 19.5 | 2.9 | 42 |
+| no event | True | 265 | 5.8 | 0.8 | 22 | 4.6 | 0.7 | 17 |
+| the set's check, then no Q or I frame | False | 5 | 2.4 | 0.3 | 476 | 2.1 | 0.3 | 412 |
+| the set's check, then no Q or I frame | None | 9 | 4.2 | 0.6 | 466 | 4.0 | 0.6 | 447 |
+
+(b) dev: None answers by class (own row; `with repeats` adds the memo:pA rows of that class)
+| class | with repeats | n | 5b1d96f ms | 5b1d96f % | 5b1d96f us/query | 5b1d96f+rust+frames ms | 5b1d96f+rust+frames % | 5b1d96f+rust+frames us/query |
+|---|---|---|---|---|---|---|---|---|
+| i | 679 | 418 | 345.8 | 45.8 | 827 | 312.7 | 47.0 | 748 |
+| ii:branch:flag | 2 | 2 | 3.5 | 0.5 | 1740 | 3.2 | 0.5 | 1592 |
+| iii:route:matrix | 32 | 17 | 1.4 | 0.2 | 85 | 1.7 | 0.3 | 102 |
+| iii:route:relation | 8 | 2 | 0.2 | 0.0 | 79 | 0.2 | 0.0 | 98 |
+| memo:pA | 0 | 355 | 0.7 | 0.1 | 2 | 0.7 | 0.1 | 2 |
+| memo:part | 156 | 89 | 22.2 | 2.9 | 249 | 16.9 | 2.5 | 190 |
+| memo:part+check | 15 | 9 | 4.2 | 0.6 | 466 | 4.0 | 0.6 | 447 |
+
+(b) dev: None answers grouped
+| group | n | 5b1d96f ms | 5b1d96f % | 5b1d96f us/query | 5b1d96f+rust+frames ms | 5b1d96f+rust+frames % | 5b1d96f+rust+frames us/query |
+|---|---|---|---|---|---|---|---|
+| (i) engine | 418 | 345.8 | 45.8 | 827 | 312.7 | 47.0 | 748 |
+| (ii) engine | 2 | 3.5 | 0.5 | 1740 | 3.2 | 0.5 | 1592 |
+| no engine work (memo:pA, memo:part, iii:route) | 463 | 24.4 | 3.2 | 53 | 19.5 | 2.9 | 42 |
+| the set's check only (memo:part+check) | 9 | 4.2 | 0.6 | 466 | 4.0 | 0.6 | 447 |
+
+(c) dev: class (i) queries 418; with an unsatisfiable solve inside the deciding entailment: 10
+
+(c) dev: class (i), solves inside the deciding entailment (S a search, R a ring hit, in order)
+| session | frame | pattern | queries |
+|---|---|---|---|
+| context-free | e | SS | 21 |
+| context-free | a | SS | 19 |
+| contextual | e | SS | 164 |
+| contextual | a | SS | 91 |
+| contextual | a | SR | 45 |
+| contextual | e | SR | 25 |
+| contextual | a | RS | 25 |
+| contextual | e | RS | 18 |
+| contextual | a | SSS | 6 |
+| contextual | a | SSSS | 2 |
+| contextual | a | RSS | 2 |
+
+(c) dev: class (i), solve_int calls in the whole query
+| session | solves | queries |
+|---|---|---|
+| context-free | 2 | 40 |
+| contextual | 3 | 364 |
+| contextual | 4 | 8 |
+| contextual | 5 | 6 |
+totals: {'context-free queries': 40, 'context-free ring hits': 0, 'context-free searches': 80, 'contextual queries': 378, 'contextual ring hits': 115, 'contextual searches': 1039} | witness_satisfies: {} | {'ring holds a model before the entailment (k>=1): True': 377, 'ring holds a model before the entailment (k>=1): False': 1}
+whole workload: {'searches': 1795, 'unsat': 66, 'w1': 210, 'w0': 134, 'ring hits': 135, 'H': 349}
+
+(c) dev: the pass at another BRANCH_BUDGET against the pass at 16 (class (ii) queries: 2)
+| budget | digest | answers moved | moves | event rows differing | class (ii) answers moved | class (ii) event rows differing | queries with xb |
+|---|---|---|---|---|---|---|---|
+| 32 | 31cd0945c07f02a6 | 0 | - | 0 | 0 | 0 | 15 |
+| 64 | 31cd0945c07f02a6 | 0 | - | 0 | 0 | 0 | 15 |
+| 4 | 31cd0945c07f02a6 | 0 | - | 1 | 0 | 0 | 16 |
+| 8 | 31cd0945c07f02a6 | 0 | - | 0 | 0 | 0 | 15 |
+| 256 | 31cd0945c07f02a6 | 0 | - | 0 | 0 | 0 | 15 |
+| 4096 | 31cd0945c07f02a6 | 0 | - | 0 | 0 | 0 | 15 |
+
+## fuzz: 3000 queries, digest 173502b6ef285ad6, .so 7962cec7164e8a6a, BRANCH_BUDGET 16
+both switches off: digest 173502b6ef285ad6 rows whose events differ from both-on: 0
+existing counters ctx:caught / ctx:fallback in the header: absent (0)
+None answers 2387; with a Q or I frame 2368; deciding frame's result not N: 0
+None queries with the token anywhere in their events: {'xb': 168, 'T01': 168, 'V>u': 13}
+all queries with xb anywhere: 196 by answer {'None': 168, 'True': 11, 'False': 17} | with T?1 at any frame end: 196 | T?1 without xb: 0
+arm 5b1d96f: 12 rounds, digests equal the count pass: True, None rows equal: True, S1 s median 6.3727 min 6.3228 max 6.4319, sum of per-query medians 6.3593
+arm 5b1d96f+rust+frames: 12 rounds, digests equal the count pass: True, None rows equal: True, S1 s median 5.9115 min 5.8363 max 5.9575, sum of per-query medians 5.8918
+
+(a) fuzz: time by answer (sum of each query's median over the rounds; % of the arm's summed medians)
+| answer | n | 5b1d96f ms | 5b1d96f % | 5b1d96f us/query | 5b1d96f+rust+frames ms | 5b1d96f+rust+frames % | 5b1d96f+rust+frames us/query |
+|---|---|---|---|---|---|---|---|
+| None | 2387 | 5133.4 | 80.7 | 2151 | 4764.9 | 80.9 | 1996 |
+| ValueError | 207 | 359.0 | 5.6 | 1734 | 324.0 | 5.5 | 1565 |
+| False | 204 | 448.0 | 7.0 | 2196 | 415.2 | 7.0 | 2035 |
+| True | 202 | 418.9 | 6.6 | 2074 | 387.8 | 6.6 | 1920 |
+
+(a) fuzz: time by work and answer
+| work | answer | n | 5b1d96f ms | 5b1d96f % | 5b1d96f us/query | 5b1d96f+rust+frames ms | 5b1d96f+rust+frames % | 5b1d96f+rust+frames us/query |
+|---|---|---|---|---|---|---|---|---|
+| context-free, entailment with solves | False | 3 | 3.5 | 0.1 | 1154 | 3.2 | 0.1 | 1056 |
+| context-free, entailment with solves | None | 111 | 103.3 | 1.6 | 931 | 93.0 | 1.6 | 838 |
+| context-free, no entailment solve | False | 20 | 8.6 | 0.1 | 429 | 6.9 | 0.1 | 347 |
+| context-free, no entailment solve | True | 40 | 17.0 | 0.3 | 424 | 13.8 | 0.2 | 346 |
+| context-free, no entailment solve | ValueError | 13 | 9.5 | 0.1 | 730 | 7.8 | 0.1 | 596 |
+| contextual, entailment with solves | False | 130 | 316.0 | 5.0 | 2431 | 294.1 | 5.0 | 2262 |
+| contextual, entailment with solves | None | 2257 | 5021.5 | 79.0 | 2225 | 4664.7 | 79.2 | 2067 |
+| contextual, entailment with solves | True | 98 | 256.2 | 4.0 | 2614 | 239.1 | 4.1 | 2439 |
+| contextual, no entailment solve | False | 51 | 120.0 | 1.9 | 2352 | 111.0 | 1.9 | 2177 |
+| contextual, no entailment solve | True | 64 | 145.8 | 2.3 | 2278 | 134.9 | 2.3 | 2108 |
+| contextual, no entailment solve | ValueError | 194 | 349.5 | 5.5 | 1802 | 316.2 | 5.4 | 1630 |
+| no event | None | 15 | 4.7 | 0.1 | 316 | 3.8 | 0.1 | 255 |
+| the set's check, then no Q or I frame | None | 4 | 3.8 | 0.1 | 943 | 3.4 | 0.1 | 843 |
+
+(b) fuzz: None answers by class (own row; `with repeats` adds the memo:pA rows of that class)
+| class | with repeats | n | 5b1d96f ms | 5b1d96f % | 5b1d96f us/query | 5b1d96f+rust+frames ms | 5b1d96f+rust+frames % | 5b1d96f+rust+frames us/query |
+|---|---|---|---|---|---|---|---|---|
+| i | 2202 | 2200 | 4726.6 | 74.3 | 2148 | 4386.6 | 74.5 | 1994 |
+| ii:branch:flag | 3 | 3 | 7.4 | 0.1 | 2465 | 6.9 | 0.1 | 2285 |
+| ii:branch:in | 165 | 165 | 390.8 | 6.1 | 2369 | 364.2 | 6.2 | 2207 |
+| iii:route:relation | 13 | 13 | 4.7 | 0.1 | 363 | 3.8 | 0.1 | 294 |
+| memo:pA | 0 | 2 | 0.0 | 0.0 | 7 | 0.0 | 0.0 | 6 |
+| memo:part+check | 4 | 4 | 3.8 | 0.1 | 943 | 3.4 | 0.1 | 843 |
+
+(b) fuzz: None answers grouped
+| group | n | 5b1d96f ms | 5b1d96f % | 5b1d96f us/query | 5b1d96f+rust+frames ms | 5b1d96f+rust+frames % | 5b1d96f+rust+frames us/query |
+|---|---|---|---|---|---|---|---|
+| (i) engine | 2200 | 4726.6 | 74.3 | 2148 | 4386.6 | 74.5 | 1994 |
+| (ii) engine | 168 | 398.2 | 6.3 | 2370 | 371.1 | 6.3 | 2209 |
+| no engine work (memo:pA, memo:part, iii:route) | 15 | 4.7 | 0.1 | 316 | 3.8 | 0.1 | 255 |
+| the set's check only (memo:part+check) | 4 | 3.8 | 0.1 | 943 | 3.4 | 0.1 | 843 |
+
+(c) fuzz: class (i) queries 2200; with an unsatisfiable solve inside the deciding entailment: 61
+
+(c) fuzz: class (i), solves inside the deciding entailment (S a search, R a ring hit, in order)
+| session | frame | pattern | queries |
+|---|---|---|---|
+| context-free | e | SS | 84 |
+| context-free | a | SS | 27 |
+| contextual | e | SS | 1789 |
+| contextual | a | SS | 216 |
+| contextual | a | SSS | 61 |
+| contextual | a | SR | 7 |
+| contextual | e | SR | 7 |
+| contextual | e | RS | 6 |
+| contextual | a | RS | 3 |
+
+(c) fuzz: class (i), solve_int calls in the whole query
+| session | solves | queries |
+|---|---|---|
+| context-free | 2 | 111 |
+| contextual | 3 | 1933 |
+| contextual | 4 | 139 |
+| contextual | 5 | 17 |
+totals: {'context-free queries': 111, 'context-free ring hits': 0, 'context-free searches': 222, 'contextual queries': 2089, 'contextual ring hits': 23, 'contextual searches': 6417} | witness_satisfies: {} | {'ring holds a model before the entailment (k>=1): True': 2054, 'ring holds a model before the entailment (k>=1): False': 35}
+whole workload: {'searches': 8223, 'unsat': 401, 'w0': 111, 'H': 648, 'ring hits': 26, 'w1': 4}
+
+(c) fuzz: the pass at another BRANCH_BUDGET against the pass at 16 (class (ii) queries: 168)
+| budget | digest | answers moved | moves | event rows differing | class (ii) answers moved | class (ii) event rows differing | queries with xb |
+|---|---|---|---|---|---|---|---|
+| 32 | 173502b6ef285ad6 | 0 | - | 0 | 0 | 0 | 196 |
+| 64 | 173502b6ef285ad6 | 0 | - | 0 | 0 | 0 | 196 |
+| 4 | 173502b6ef285ad6 | 0 | - | 11 | 0 | 1 | 206 |
+| 8 | 173502b6ef285ad6 | 0 | - | 1 | 0 | 0 | 197 |
+| 256 | 173502b6ef285ad6 | 0 | - | 0 | 0 | 0 | 196 |
+| 4096 | 173502b6ef285ad6 | 0 | - | 0 | 0 | 0 | 196 |

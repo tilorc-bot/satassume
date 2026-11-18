@@ -4,11 +4,14 @@
 # untouched (the S1 arm), p1/bench-count with 317's bench-46750d4 target dir (incremental build) and the scratch count
 # patch applied. Nothing is written into 317's tree. count: one nc322.py pass of dev and fuzz, both switches on, and one
 # with both off. bb: the same pass with BRANCH_BUDGET 32 and 64 (answers recorded, not adopted). End marker: p1/job-end.txt.
-G=~/sa-rust-ids-work/sa-port-322/p1; S=~/sa-rust-ids-work/sa-port-317/s1; B=$G/bench-count; O=$G/run-count
+# sa-port-323: OUT, TOOLS and ENDF move the outputs, the mounted tools and the end marker to the caller's own directory;
+# SLICE_SESSION_PLANT is passed through to the run (the catch and fallback plant needs it at process start).
+G=~/sa-rust-ids-work/sa-port-322/p1; S=~/sa-rust-ids-work/sa-port-317/s1; B=$G/bench-count; O=${OUT:-$G/run-count}
+M=${TOOLS:-$G/tools}; E=${ENDF:-$G/job-end.txt}
 STEPS=${1:-"stage build plant count bb"}
-fin() { echo "END $1 $2 $(date -u +%FT%TZ)" > $G/job-end.txt; exit $2; }
+fin() { echo "END $1 $2 $(date -u +%FT%TZ)" > $E; exit $2; }
 has() { case " $STEPS " in *" $1 "*) return 0;; esac; return 1; }
-rm -f $G/job-end.txt; mkdir -p $O
+rm -f $E; mkdir -p $O
 { date -u; hostname; echo "lease ${MACHINE_LEASE_ID-} holder ${MACHINE_LEASE_HOLDER-} steps $STEPS"; uptime; } >> $O/host.txt 2>&1
 U="--user $(id -u):$(id -g)"
 if has stage; then
@@ -30,15 +33,15 @@ if has build; then
 fi
 RUN() { # RUN NAME CONVERT FRAMES CMD...
   n=$1; cv=$2; fr=$3; shift 3
-  docker run --rm $U --network=none --read-only --tmpfs /tmp:rw,size=1g -e PYTHONDONTWRITEBYTECODE=1 -e SLICE_CONVERT=$cv -e SLICE_TERM_FRAMES=$fr \
-    -v $B:/work:ro -v $O:/results -v $G/tools:/m:ro sa-eval-bench:1 sh -c '
+  docker run --rm $U --network=none --read-only --tmpfs /tmp:rw,size=1g -e PYTHONDONTWRITEBYTECODE=1 -e SLICE_CONVERT=$cv -e SLICE_TERM_FRAMES=$fr -e SLICE_SESSION_PLANT=${SLICE_SESSION_PLANT-} \
+    -v $B:/work:ro -v $O:/results -v $M:/m:ro sa-eval-bench:1 sh -c '
     mkdir -p /tmp/shim && ln -sf /work/evalbench /tmp/shim/evalbench; T=/work/tree
     export SLICE_DIR=$T/rust-spike/slice SA_EVAL_DATA=/work/data PYTHONHASHSEED=0 PYTHONPATH=$T:/work/sympy:/tmp/shim
     { python -VV; sha256sum $SLICE_DIR/sa_solver.so /m/nc322.py; cat /work/SHA; echo "SLICE_CONVERT=$SLICE_CONVERT SLICE_TERM_FRAMES=$SLICE_TERM_FRAMES"; } > /results/env-'$n'.txt 2>&1
     "$@"' sh "$@"
 }
 if has plant; then
-  RUN plant rust rust python -B /m/plant322.py > $O/plant.txt 2>&1; echo "plant rc=$? $(date -u +%T)" >> $O/progress
+  RUN plant rust rust python -B /m/plant322.py > $O/plant${SLICE_SESSION_PLANT:+-$SLICE_SESSION_PLANT}.txt 2>&1; echo "plant rc=$? $(date -u +%T)" >> $O/progress
 fi
 if has count; then
   for wl in dev fuzz; do
