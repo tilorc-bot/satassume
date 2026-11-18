@@ -1,0 +1,159 @@
+==============================================================================================================
+dev: 1985 queries; pure-Python digest 31cd0945c07f02a6 against the count build's 31cd0945c07f02a6: EQUAL; search cap 2000; rows with an error: 0; queries with a declared symbol: 24
+class (i) own rows (322's klass): 418; time both on 312.7 ms (47.0% of 666.0), default 345.8 ms (45.8%)
+  with a deciding entailment in the pure-Python pass: 418; (kind, result, solves, satisfiable): {('entails', 'None', 2, 2): 228, ('entails_all', 'None', 2, 2): 180, ('entails_all', 'None', 3, 2): 8, ('entails_all', 'None', 4, 2): 2}
+  None queries of other classes with a deciding entailment here: 2 {'ii:branch:flag': 2}
+
+(a) dev: class (i), each polarity's model point substituted exactly into the original p and A
+  both           204  48.8%  time    115.5 ms  17.3%; the point reproduces every block of the model: 173, not: 31; field arithmetic only: 158
+  one way        111  26.6%  time    122.0 ms  18.3%
+  neither          8   1.9%  time     12.9 ms   1.9%
+  uncheckable     95  22.7%  time     62.3 ms   9.4%
+  (True-side, False-side) verdict pairs: {('ok', 'ok'): 204, ('ok', 'fail'): 65, ('unk', 'unk'): 48, ('fail', 'ok'): 46, ('ok', 'unk'): 41, ('fail', 'fail'): 8, ('unk', 'ok'): 6}
+  reasons, per polarity not certified (row, verdict, reason): count
+    neither      fail     16  assumptions false at the model's point
+    one way      fail     96  no model of the entailment gives this value
+    one way      fail     15  assumptions false at the model's point
+    uncheckable  unk      54  proposition: constant expression (transcendental)
+    uncheckable  unk      54  assumptions: nan
+    uncheckable  unk      22  proposition: nan
+    uncheckable  unk       4  proposition: not a number: AccumulationBounds
+    uncheckable  unk       4  proposition: order relation at a value that is not an extended real
+    uncheckable  unk       2  proposition: function value: csch
+    uncheckable  unk       2  assumptions: constant expression (transcendental)
+    uncheckable  unk       1  proposition: function value: cos
+  how the symbols of the chosen points got their values (symbol count): {'lra': 76, 'rep': 868, 'relaxed': 1, 'norep': 28, 'missing': 264, 'lra_nonq': 25, 'filled': 292}
+
+  dev: the same queries, any exact witness (a model's point or a searched simple point), per polarity
+    model row both        : exact pair exists   204, one side only    0, no side    0
+    model row one way     : exact pair exists    89, one side only   22, no side    0
+    model row neither     : exact pair exists     4, one side only    3, no side    1
+    model row uncheckable : exact pair exists    73, one side only   22, no side    0
+    class (i) with no exact witness pair from either source: 48 of 418 (11.5%), time 49.7 ms 7.5%
+    of these, UNCHECKABLE (the missing side is undecided at some point tried): 40, time 36.4 ms 5.5%
+        14  model point: assumptions: nan
+         6  searched point, proposition: constant expression (transcendental)
+         5  searched point, proposition: function value: exp
+         3  model point: proposition: constant expression (transcendental)
+         2  searched point, proposition: function value: sin
+         2  searched point, proposition: function value: tan
+         2  model point: proposition: function value: csch
+         2  searched point, proposition: function value: sign
+         2  model point: proposition: nan
+         1  model point: proposition: not a number: AccumulationBounds
+         1  searched point, proposition: function value: cos
+      ids: 211 247 498 537 550 555 567 568 755 760 779 787 791 810 823 933 1099 1122 1123 1124 1125 1126 1130 1132 1439 1458 1475 1476 1493 1495 1496 1497 1498 1499 1506 1510 1517 1519 1525 1527
+    CANDIDATES (every point tried that satisfies A gives p the same decided value): 8, time 13.3 ms 2.0%
+      dev 11: p always False at 3 of 3 points (A undecided at 0) | Q.even(k/2 + 1/2) | Q.odd(k) & Q.even(k/2 - 1/2)
+      dev 12: p always True at 3 of 3 points (A undecided at 0) | Q.odd(k/2 + 1/2) | Q.odd(k) & Q.even(k/2 - 1/2)
+      dev 788: p always True at 7 of 22 points (A undecided at 15) | Q.integer(2*re(x)*im(x)/pi) | Q.ge(x**2, 0) & Q.le(x**2, pi/2)
+      dev 795: p always True at 7 of 22 points (A undecided at 15) | Q.even(floor(x**2/pi + 1/2)) | Q.ge(x**2, 0) & Q.le(x**2, pi/2)
+      dev 796: p always False at 7 of 22 points (A undecided at 15) | Q.odd(floor(x**2/pi + 1/2)) | Q.ge(x**2, 0) & Q.le(x**2, pi/2)
+      dev 797: p always False at 7 of 22 points (A undecided at 15) | Q.even(floor(x**2/pi + 1/2) - 1) | Q.ge(x**2, 0) & Q.le(x**2, pi/2)
+      dev 798: p always True at 7 of 22 points (A undecided at 15) | Q.odd(floor(x**2/pi + 1/2) - 1) | Q.ge(x**2, 0) & Q.le(x**2, pi/2)
+      dev 1204: p always False at 32 of 32 points (A undecided at 0) | Q.infinite(arg(x)/(2*pi) + 1/2) | Q.nonzero(x)
+
+(b) dev: session-free search (simple points from p and A alone, cap 2000 substitutions)
+  class (i) with both witnesses found: 368 of 418 (88.0%); their session time: both on 262.0 ms = 83.8% of class (i), 39.3% of the workload; default 289.9 ms = 38.4% of the workload
+  substitutions until both were found: median 3, 90% 25, 99% 136, max 226; within 8: 294, within 32: 337, within 128: 359
+    at a cap of    8 substitutions: 294 queries (70.3%), 195.4 ms = 29.3% of the workload
+    at a cap of   32 substitutions: 337 queries (80.6%), 231.1 ms = 34.7% of the workload
+    at a cap of  128 substitutions: 359 queries (85.9%), 250.3 ms = 37.6% of the workload
+  not found: 50: {'-F': 25, 'T-': 24, '--': 1} (T-: only the True side found, and so on); with no point satisfying A at all: 0
+  the set check's own point: held for 377 of 418; satisfies A and decides p exactly: 305 ({'False': 137, 'True': 168}); the other side then found by search: 288
+    check point not usable: {'A: nan': 38, 'A false at the point': 10, 'p: constant expression (transcendental)': 8, 'p: nan': 6, 'p: function value: exp': 5, 'p: function value: tan': 2}
+
+  dev: the search over EVERY query against the answer
+    answer False        557  consistent
+    answer None         779  both found
+    answer None          47  no side
+    answer None          66  one side
+    answer True         536  consistent
+  dev: None answers by 322's class, search finds both sides / all
+    i                              368 /   418
+    ii:branch:flag                   2 /     2
+    iii:route:matrix                 0 /    17
+    iii:route:relation               0 /     2
+    memo:pA                        315 /   355
+    memo:part                       89 /    89
+    memo:part+check                  5 /     9
+  substitutions made in all: 106632; this script's own Python time for them 4.1 s (orion, shared, not a wall time)
+==============================================================================================================
+fuzz: 3000 queries; pure-Python digest 173502b6ef285ad6 against the count build's 173502b6ef285ad6: EQUAL; search cap 2000; rows with an error: 0; queries with a declared symbol: 0
+class (i) own rows (322's klass): 2200; time both on 4386.6 ms (74.5% of 5891.8), default 4726.6 ms (74.3%)
+  with a deciding entailment in the pure-Python pass: 2200; (kind, result, solves, satisfiable): {('entails', 'None', 2, 2): 1886, ('entails_all', 'None', 2, 2): 253, ('entails_all', 'None', 3, 2): 61}
+  None queries of other classes with a deciding entailment here: 168 {'ii:branch:in': 165, 'ii:branch:flag': 3}
+
+(a) fuzz: class (i), each polarity's model point substituted exactly into the original p and A
+  both           416  18.9%  time    778.3 ms  13.2%; the point reproduces every block of the model: 288, not: 128; field arithmetic only: 345
+  one way        391  17.8%  time    859.9 ms  14.6%
+  neither        238  10.8%  time    519.6 ms   8.8%
+  uncheckable   1155  52.5%  time   2228.8 ms  37.8%
+  (True-side, False-side) verdict pairs: {('ok', 'unk'): 526, ('unk', 'unk'): 498, ('ok', 'ok'): 416, ('fail', 'fail'): 238, ('fail', 'ok'): 207, ('ok', 'fail'): 184, ('unk', 'ok'): 122, ('fail', 'unk'): 7, ('unk', 'fail'): 2}
+  reasons, per polarity not certified (row, verdict, reason): count
+    neither      fail    476  assumptions false at the model's point
+    one way      fail    269  no model of the entailment gives this value
+    one way      fail    122  assumptions false at the model's point
+    uncheckable  unk    1226  proposition: nan
+    uncheckable  unk     156  proposition: order relation at a value that is not an extended real
+    uncheckable  unk     149  assumptions: nan
+    uncheckable  unk     109  proposition: constant expression (transcendental)
+    uncheckable  unk       6  assumptions: other number: Add
+    uncheckable  fail      5  no model of the entailment gives this value
+    uncheckable  unk       4  assumptions: constant expression (transcendental)
+    uncheckable  fail      4  assumptions false at the model's point
+    uncheckable  unk       2  assumptions: order relation at a value that is not an extended real
+    uncheckable  unk       1  proposition: other number: Add
+  how the symbols of the chosen points got their values (symbol count): {'lra': 589, 'rep': 6863, 'relaxed': 0, 'norep': 69, 'missing': 506, 'lra_nonq': 332, 'filled': 575}
+
+  fuzz: the same queries, any exact witness (a model's point or a searched simple point), per polarity
+    model row both        : exact pair exists   416, one side only    0, no side    0
+    model row one way     : exact pair exists   385, one side only    6, no side    0
+    model row neither     : exact pair exists   229, one side only    9, no side    0
+    model row uncheckable : exact pair exists  1128, one side only   27, no side    0
+    class (i) with no exact witness pair from either source: 42 of 2200 (1.9%), time 90.8 ms 1.5%
+    of these, UNCHECKABLE (the missing side is undecided at some point tried): 34, time 69.3 ms 1.2%
+        17  model point: proposition: nan
+         5  searched point, proposition: order relation at a value that is not an extended real
+         5  model point: assumptions: nan
+         5  model point: proposition: order relation at a value that is not an extended real
+         1  searched point, proposition: constant expression (transcendental)
+         1  searched point, proposition: other number: Add
+      ids: 304 339 362 384 452 491 519 559 727 843 887 929 1072 1109 1285 1307 1375 1500 1509 1661 1795 1881 1920 2119 2173 2228 2291 2300 2563 2615 2834 2897 2907 2928
+    CANDIDATES (every point tried that satisfies A gives p the same decided value): 8, time 21.4 ms 0.4%
+      fuzz 732: p always True at 57 of 108 points (A undecided at 51) | Q.eq(x + 2*y + 1, 2*x) | Q.finite(y) & Q.gt(y, -1) & Q.eq(2*x + 2, 2*x - 1)
+      fuzz 1056: p always True at 11 of 867 points (A undecided at 531) | Q.gt(-2*x + y + 1/2, 3*x - y) | Q.ge(x, 0) & Q.gt(x, 2) & Q.lt(3*x + 2, x + y)
+      fuzz 1217: p always False at 295 of 1150 points (A undecided at 248) | Q.eq(-x - y, x - 3/2) | Q.extended_real(y) & Q.lt(y, 1/2) & Q.lt(2*x - y - 1, 1 - 2*x)
+      fuzz 1840: p always True at 1 of 2 points (A undecided at 1) | Q.integer(1/2 - x) | Q.gt(x, 1) & Q.lt(x, 2) & Q.positive(2*x + 1)
+      fuzz 2275: p always False at 68 of 561 points (A undecided at 54) | Q.eq(y + 2, 2*x - y - 3/2) | Q.real(y) & Q.ge(y, 0) & Q.gt(x, 0) & Q.integer(3*x + y + 1/2)
+      fuzz 2283: p always True at 63 of 80 points (A undecided at 17) | Q.le(x + y - 3/2, 3*x - y + 1) | Q.real(y) & Q.lt(y, -1) & Q.integer(3*x - 3/2)
+      fuzz 2612: p always False at 425 of 945 points (A undecided at 154) | Q.extended_positive(3*x + y - 1) | Q.lt(x, 0) & Q.lt(y, pi/2) & Q.real(x + 2*y - 1)
+      fuzz 2687: p always True at 2 of 1116 points (A undecided at 67) | Q.gt(-2*x - 3/2, 2*x + y) | Q.ge(y, -1) & Q.lt(x, 0) & Q.eq(x + 1/2, 2*y + 2)
+
+(b) fuzz: session-free search (simple points from p and A alone, cap 2000 substitutions)
+  class (i) with both witnesses found: 2157 of 2200 (98.0%); their session time: both on 4294.7 ms = 97.9% of class (i), 72.9% of the workload; default 4627.5 ms = 72.8% of the workload
+  substitutions until both were found: median 8, 90% 70, 99% 373, max 945; within 8: 1096, within 32: 1748, within 128: 2044
+    at a cap of    8 substitutions: 1096 queries (49.8%), 2098.5 ms = 35.6% of the workload
+    at a cap of   32 substitutions: 1748 queries (79.5%), 3413.9 ms = 57.9% of the workload
+    at a cap of  128 substitutions: 2044 queries (92.9%), 4056.1 ms = 68.8% of the workload
+  not found: 43: {'T-': 36, '-F': 7} (T-: only the True side found, and so on); with no point satisfying A at all: 0
+  the set check's own point: held for 2054 of 2200; satisfies A and decides p exactly: 1667 ({'False': 901, 'True': 766}); the other side then found by search: 1645
+    check point not usable: {'A false at the point': 179, 'A: nan': 119, 'p: nan': 57, 'p: other number: Add': 17, 'p: order relation at a value that is not an extended ': 15}
+
+  fuzz: the search over EVERY query against the answer
+    answer False        204  consistent
+    answer None        2338  both found
+    answer None           1  no side
+    answer None          48  one side
+    answer True         202  consistent
+    answer ValueError   207  consistent
+  fuzz: None answers by 322's class, search finds both sides / all
+    i                             2157 /  2200
+    ii:branch:flag                   3 /     3
+    ii:branch:in                   159 /   165
+    iii:route:relation              13 /    13
+    memo:pA                          2 /     2
+    memo:part+check                  4 /     4
+  substitutions made in all: 366961; this script's own Python time for them 23.8 s (orion, shared, not a wall time)
+
+lists: /home/tilo/sa-rust-ids-work/sa-port-325/run3/lists.txt 1998 rows
