@@ -1,0 +1,723 @@
+--- a/rust-spike/slice/solver_rs/src/context.rs
++++ b/rust-spike/slice/solver_rs/src/context.rs
+@@ -255,6 +255,7 @@
+ 
+ fn build_context<'py>(eng: &Bound<'py, PyAny>, assumptions: &Bound<'py, PyAny>, proposition: Option<&Bound<'py, PyAny>>, hand: &Hand) -> PyResult<Built<'py>> {
+     tick(CTX_BUILD_CONTEXT);
++    let _cx1 = crate::solver::CxPhase::enter(1);
+     let p = eng.py();
+     tick(CTX_PY_STATS);
+     crate::entry::bump(eng, crate::entry::SET_CHECKS, 1)?;
+@@ -264,6 +265,7 @@
+                                                      &eng.getattr(intern!(p, "_extensions"))?, hand)?;
+     let (mut s, mut lits) = fresh(eng, &scope, assumptions, hand)?;
+     let checked = (|| -> PyResult<Bound<'py, PyAny>> {
++        let _cx2 = crate::solver::CxPhase::enter(2);
+         let al = s.call_method0(intern!(p, "assumption_lits"))?;
+         match patched(eng, "_complete_check")? {
+             Some(f) => f.call1((&s, &al)),
+--- a/rust-spike/slice/solver_rs/src/relations_core.rs
++++ b/rust-spike/slice/solver_rs/src/relations_core.rs
+@@ -2390,6 +2390,7 @@
+     }
+     for a in &user {
+         if a.getattr(pred)?.eq(intern!(p, "eq"))? {
++            let _row = crate::solver::CxRow::enter(0);
+             if c.borrow().xfer_get(rel, session::XTH).is_none()
+                 && !rel.getattr(intern!(p, "_want_transfer"))?.is_truthy()?
+                 && s.getattr(intern!(p, "engine")).and_then(|e| crate::memos::setting(&e, intern!(p, "_transfer"), intern!(p, "transfer")))?.is_truthy()?
+@@ -2418,6 +2419,7 @@
+     loop {
+         s.call_method0(intern!(p, "discover"))?;
+         if let Some(atom) = RList::of(rel, session::RL_QUEUE)?.pop()? {
++            let _row = crate::solver::CxRow::enter(1);
+             let ok = match session::named(rel, intern!(p, "_interpret"), &FW_INTERPRET, "_rel_interpret")? {
+                 None => pyo3::types::PyBool::new(p, rel_interpret(rel, &atom)?).to_owned().into_any(),
+                 Some(m) => m.call1((&atom,))?,
+@@ -2437,6 +2439,7 @@
+             let keys: Vec<_> = top.items()?.into_iter().map(|e| e.0).collect();
+             top.clear();
+             for e in keys {
++                let _row = crate::solver::CxRow::enter(2);
+                 if number(rel, &h, &e)? {
+                     rel.call_method1(intern!(p, "_mention_number"), (&e,))?;
+                 } else {
+@@ -2445,6 +2448,7 @@
+             }
+         }
+         if let Some(e) = RList::of(rel, session::RL_PENDING_LINKS)?.pop()? {
++            let _row = crate::solver::CxRow::enter(3);
+             match session::named(rel, intern!(p, "_link"), &FW_LINK, "_rel_link")? {
+                 None => {
+                     if !session::sb_planted(session::SB_FWD_SKIP_LINK) {
+--- a/rust-spike/slice/solver_rs/src/solver.rs
++++ b/rust-spike/slice/solver_rs/src/solver.rs
+@@ -83,6 +83,7 @@
+ }
+ 
+ pub struct Solver<Th: Theory> {
++    pub cx: Cx,
+     val: Vec<u8>,
+     watches: Vec<Vec<u32>>,
+     level: Vec<u32>,
+@@ -186,6 +187,7 @@
+ impl<Th: Theory> Solver<Th> {
+     pub fn new() -> Solver<Th> {
+         Solver {
++            cx: Cx { serial: CX_SERIAL.fetch_add(1, CxO::Relaxed) + 1, born: cx_ph(), ..Default::default() },
+             val: vec![U, U],
+             watches: vec![Vec::new(), Vec::new()],
+             level: vec![0],
+@@ -273,6 +275,7 @@
+             self.heap.push((n + 1 + i) as u32);
+         }
+         self.nvars = v;
++        self.cx.grow(v, k);
+     }
+ 
+     fn internal_lits(&mut self, lits: &[u32]) -> R<Vec<u32>> {
+@@ -382,6 +385,7 @@
+ 
+     fn new_clause(&mut self, lits: Vec<u32>, learnt: bool) -> u32 {
+         self.db.push(Clause { lits, act: 0.0, learnt });
++        self.cx.new_clause(learnt);
+         (self.db.len() - 1) as u32
+     }
+ 
+@@ -392,6 +396,17 @@
+         self.val[(l ^ 1) as usize] = F;
+         self.level[v] = lvl;
+         self.reason[v] = r;
++        match r {
++            Reason::None => {}
++            Reason::Clause(c) => {
++                self.cx.c(c, 1);
++                self.cx.v(v, 1);
++            }
++            Reason::Block(_, b) => {
++                self.cx.b(b, 1);
++                self.cx.v(v, 1);
++            }
++        }
+         self.trail.push(l);
+     }
+ 
+@@ -449,6 +464,7 @@
+             return false;
+         }
+         if out.len() == 1 {
++            self.cx.unit((out[0] >> 1) as usize);
+             self.set_true(out[0], 0, Reason::None);
+             if self.prop().is_some() {
+                 self.ok = false;
+@@ -459,6 +475,7 @@
+         let (a, b) = (out[0], out[1]);
+         let c = self.new_clause(out, false);
+         self.clauses.push(c);
++ self.cx.orig(c);
+         if !self.trail_lim.is_empty() {
+             self.attach_held(c);
+             return true;
+@@ -631,6 +648,7 @@
+                     self.ok = false;
+                     return false;
+                 }
++                self.cx.unit((l >> 1) as usize);
+                 self.set_true(l, 0, Reason::None);
+                 continue;
+             }
+@@ -660,6 +678,7 @@
+             let (a, b) = (out[0], out[1]);
+             let c = self.new_clause(out, false);
+             self.clauses.push(c);
++ self.cx.orig(c);
+             self.watches[a as usize].push(c);
+             self.watches[b as usize].push(c);
+         }
+@@ -693,6 +712,7 @@
+                 let (a, b) = (out[0], out[1]);
+                 let cr = self.new_clause(out, false);
+                 self.clauses.push(cr);
++ self.cx.orig(cr);
+                 self.watches[a as usize].push(cr);
+                 self.watches[b as usize].push(cr);
+             }
+@@ -739,10 +759,12 @@
+                     return Ok(false);
+                 }
+             } else if lits.len() == 1 {
++                self.cx.unit((lits[0] >> 1) as usize);
+                 self.set_true(lits[0], 0, Reason::None);
+             } else {
+                 let c = self.new_clause(lits.to_vec(), false);
+                 self.clauses.push(c);
++ self.cx.orig(c);
+                 self.watches[lits[0] as usize].push(c);
+                 self.watches[lits[1] as usize].push(c);
+             }
+@@ -772,7 +794,7 @@
+         }
+     }
+ 
+-    pub fn register_block(&mut self, base: i32, mentions: u128) -> R<bool> {
++    pub fn register_block_i(&mut self, base: i32, mentions: u128) -> R<bool> {
+         let rbc = match &self.rbc {
+             Some(r) => r.clone(),
+             None => return verr("register_block before set_rule_block"),
+@@ -1055,6 +1077,7 @@
+     }
+ 
+     pub fn propagate(&mut self) -> bool {
++        self.cx.ec[2] += 1;
+         if !self.ok {
+             return false;
+         }
+@@ -1108,7 +1131,7 @@
+         }
+     }
+ 
+-    fn assume(&mut self, assumptions: &[u32], hold: i32) -> R<Tr> {
++    fn assume_i(&mut self, assumptions: &[u32], hold: i32) -> R<Tr> {
+         let lits = self.internal_lits(assumptions)?;
+         self.mention_int(&lits);
+         let keep = if hold < 0 { lits.len() } else { (hold as usize).min(lits.len()) };
+@@ -1217,7 +1240,7 @@
+     }
+ 
+     /// `_propagate` and `_propagate_clauses` in one loop: the rule-block part is skipped when no block is set.
+-    fn prop(&mut self) -> Option<u32> {
++    fn prop_i(&mut self) -> Option<u32> {
+         let has_rb = self.rb_n != 0;
+         let uid = self.uid;
+         let mut qhead = self.qhead;
+@@ -1229,8 +1252,12 @@
+             qhead += 1;
+             nprops += 1;
+             let pv = (p >> 1) as usize;
++            self.cx.v(pv, 0);
+             if has_rb {
+                 let base = self.rb_base[pv] as usize;
++                if base != 0 {
++                    self.cx.b(base as u32, 0);
++                }
+                 if base != 0 && !matches!(self.reason[pv], Reason::Block(..)) {
+                     let bit = 1u128 << (p as usize - (base << 1));
+                     let cl = self.rb_cl[base];
+@@ -1278,6 +1305,7 @@
+             while i < n {
+                 let cr = ws[i];
+                 i += 1;
++                self.cx.c(cr, 0);
+                 let c = &mut self.db[cr as usize].lits;
+                 if c[0] == fl {
+                     c[0] = c[1];
+@@ -1306,6 +1334,7 @@
+                     j += 1;
+                     if vf == F {
+                         confl = Some(cr);
++                        self.cx.c(cr, 1);
+                         while i < n {
+                             ws[j] = ws[i];
+                             j += 1;
+@@ -1384,6 +1413,7 @@
+ 
+     /// `ti`: the theory's place in `theories`; the wrapper has raised "theory not attached" if it has none.
+     pub fn register_atom(&mut self, ti: usize, var: i32, payload: Th::Payload, mention: bool) -> R<bool> {
++        self.cx.atom(var.unsigned_abs() as usize);
+         if var <= 0 {
+             return verr("register_atom takes a positive variable");
+         }
+@@ -1424,7 +1454,7 @@
+         Ok(true)
+     }
+ 
+-    fn tprop(&mut self) -> Option<u32> {
++    fn tprop_i(&mut self) -> Option<u32> {
+         loop {
+             if let Some(c) = self.prop() {
+                 return Some(c);
+@@ -1655,6 +1685,7 @@
+         let mut cur = Some(confl);
+         loop {
+             if let Some(c) = cur {
++                self.cx.c(c, 2);
+                 if self.db[c as usize].learnt {
+                     self.bump_clause(c);
+                 }
+@@ -1663,6 +1694,7 @@
+             }
+             for &q in &buf[if first { 0 } else { 1 }..] {
+                 let v = (q >> 1) as usize;
++                self.cx_use(v);
+                 if self.seen[v] == 0 {
+                     let lv = self.level[v];
+                     if lv > 0 {
+@@ -1692,6 +1724,7 @@
+             match self.reason[pv] {
+                 Reason::Clause(c) => cur = Some(c),
+                 Reason::Block(m, b) => {
++                    self.cx.b(b, 2);
+                     self.rb_reason(pv, m, b, &mut buf);
+                     cur = None;
+                 }
+@@ -1721,6 +1754,8 @@
+                 if keep {
+                     learnt[j] = q;
+                     j += 1;
++                } else {
++                    self.cx_min((q >> 1) as usize);
+                 }
+             }
+             learnt.truncate(j);
+@@ -1748,7 +1783,9 @@
+ 
+     fn analyze_final(&mut self, p: u32) {
+         let mut out = vec![p];
++        let mut cx_roots: Vec<usize> = vec![(p >> 1) as usize];
+         if self.trail_lim.is_empty() {
++            self.cx_cone((p >> 1) as usize);
+             self.conflict = out;
+             return;
+         }
+@@ -1758,6 +1795,7 @@
+             let l = self.trail[i];
+             let v = (l >> 1) as usize;
+             if self.seen[v] != 0 {
++                self.cx.v(v, 2);
+                 match self.reason[v] {
+                     Reason::None => {
+                         if l != p {
+@@ -1765,19 +1803,25 @@
+                         }
+                     }
+                     Reason::Clause(c) => {
++                        self.cx.c(c, 2);
+                         for &q in &self.db[c as usize].lits[1..] {
+                             let u = (q >> 1) as usize;
+                             if self.level[u] > 0 {
+                                 self.seen[u] = 1;
++                            } else {
++                                cx_roots.push(u);
+                             }
+                         }
+                     }
+                     Reason::Block(m, b) => {
++                        self.cx.b(b, 2);
+                         self.rb_reason(v, m, b, &mut buf);
+                         for &q in &buf[1..] {
+                             let u = (q >> 1) as usize;
+                             if self.level[u] > 0 {
+                                 self.seen[u] = 1;
++                            } else {
++                                cx_roots.push(u);
+                             }
+                         }
+                     }
+@@ -1788,6 +1832,11 @@
+         self.seen[(p >> 1) as usize] = 0;
+         self.buf = buf;
+         self.conflict = out;
++        for u in cx_roots {
++            if self.level[u] == 0 {
++                self.cx_cone(u);
++            }
++        }
+     }
+ 
+     fn pick_branch(&mut self) -> i64 {
+@@ -1923,7 +1972,7 @@
+         Ok(self.solve_int(&lits, keep))
+     }
+ 
+-    fn solve_int(&mut self, lits: &[u32], keep: usize) -> bool {
++    fn solve_int_i(&mut self, lits: &[u32], keep: usize) -> bool {
+         self.mvals = None;
+         self.mdict = None;
+         self.tmodels = None;
+@@ -2196,6 +2245,12 @@
+             self.grow(v);
+         }
+         let l = int_of(lit);
++        if self.val[l as usize] != U && (self.in_trail(&tr, l) || self.in_trail(&tr, l ^ 1)) {
++            self.cx.ec[3] += 1;
++            self.cx_cone(v);
++        } else if self.in_trail(&tr, l) || self.in_trail(&tr, l ^ 1) {
++            self.cx.ec[4] += 1;
++        }
+         let vl = if self.in_trail(&tr, l) {
+             Some(true)
+         } else if self.in_trail(&tr, l ^ 1) {
+@@ -2242,6 +2297,14 @@
+         let mut vals = std::mem::take(&mut self.vals_buf);
+         vals.clear();
+         for &l in &ins {
++            if self.in_trail(&tr, l) || self.in_trail(&tr, l ^ 1) {
++                if self.val[l as usize] != U {
++                    self.cx.ec[3] += 1;
++                    self.cx_cone((l >> 1) as usize);
++                } else {
++                    self.cx.ec[4] += 1;
++                }
++            }
+             vals.push(if self.in_trail(&tr, l) {
+                 T
+             } else if self.in_trail(&tr, l ^ 1) {
+@@ -2410,3 +2473,358 @@
+         self.ring.iter().map(|r| r.tm.as_ref())
+     }
+ }
++
++// ---- sa-port-320 count build: a scratch patch, never part of the package (issue 323) ----
++// Marks: bit = kind * 3 + phase, and bit 9 + kind for the kind in any phase. kind 0 visited by propagation, 1 a reason or the conflict, 2 read by conflict
++// analysis or in a reason cone (the proof). phase 0 outside build_context (the query), 1 build_context, 2 its
++// complete check.
++use std::sync::atomic::{AtomicU32, AtomicU64, Ordering as CxO};
++pub static CX_PHASE: AtomicU32 = AtomicU32::new(0);
++pub static CX_ROW: AtomicU32 = AtomicU32::new(0);
++pub static CX_ROWSEQ: AtomicU32 = AtomicU32::new(0);
++pub static CX_ROWK: [AtomicU32; 4] = [AtomicU32::new(0), AtomicU32::new(0), AtomicU32::new(0), AtomicU32::new(0)];
++static CX_SERIAL: AtomicU64 = AtomicU64::new(0);
++static CX_OUT: std::sync::OnceLock<Option<std::sync::Mutex<std::fs::File>>> = std::sync::OnceLock::new();
++
++pub struct CxPhase(u32);
++impl CxPhase {
++    pub fn enter(p: u32) -> CxPhase {
++        CxPhase(CX_PHASE.swap(p, CxO::Relaxed))
++    }
++}
++impl Drop for CxPhase {
++    fn drop(&mut self) {
++        CX_PHASE.store(self.0, CxO::Relaxed);
++    }
++}
++pub struct CxRow(u32);
++impl CxRow {
++    /// kind 0 a user eq atom, 1 a queued atom interpreted, 2 a top entry, 3 a pending link
++    pub fn enter(kind: u32) -> CxRow {
++        let id = (CX_ROWSEQ.fetch_add(1, CxO::Relaxed) + 1) * 4 + kind;
++        CX_ROWK[kind as usize].fetch_add(1, CxO::Relaxed);
++        CxRow(CX_ROW.swap(id, CxO::Relaxed))
++    }
++}
++impl Drop for CxRow {
++    fn drop(&mut self) {
++        CX_ROW.store(self.0, CxO::Relaxed);
++    }
++}
++fn cx_ph() -> usize {
++    CX_PHASE.load(CxO::Relaxed) as usize
++}
++
++#[derive(Default)]
++pub struct Cx {
++    serial: u64,
++    born: usize,
++    c_org: Vec<u8>, // 0..2 the phase a problem clause was added in, 3 learnt, 4 other (theory, explanation)
++    c_mk: Vec<u16>,
++    c_row: Vec<u32>,
++    v_mk: Vec<u16>,
++    v_org: Vec<u8>,
++    v_row: Vec<u32>,
++    u_org: Vec<u8>, // 0 no unit, else 1 + the phase the unit clause was added in
++    u_mk: Vec<u16>,
++    u_row: Vec<u32>,
++    b_mk: std::collections::HashMap<u32, u16>,
++    rows: std::collections::HashMap<u32, u16>,
++    nb: [u64; 5],
++    cm: [[u64; 12]; 5],
++    vb: [u64; 3],
++    vm: [[u64; 12]; 3],
++    ub: [u64; 3],
++    um: [[u64; 12]; 3],
++    bb: [u64; 3],
++    rb_seen: u64,
++    bm: [u64; 12],
++    re: [u64; 4],
++    rm: [[u64; 12]; 4],
++    ec: [u64; 8], // 0 solve_int, 1 assume, 2 propagate, 3 entails by a live trail, 4 by a trail that is not live, 5 root conflicts
++    walk: Vec<u32>,
++    walk_id: u32,
++    rootdone: Vec<u8>,
++    dirty: bool,
++}
++
++impl Cx {
++    fn row_emit(&mut self, row: u32) {
++        if row != 0 && !self.rows.contains_key(&row) {
++            self.rows.insert(row, 0);
++            self.re[(row & 3) as usize] += 1;
++        }
++    }
++    fn row(&mut self, row: u32, bi: usize) {
++        if row == 0 {
++            return;
++        }
++        let e = self.rows.entry(row).or_insert(0);
++        if *e & (1 << bi) == 0 {
++            *e |= 1 << bi;
++            self.rm[(row & 3) as usize][bi] += 1;
++        }
++    }
++    fn new_clause(&mut self, learnt: bool) {
++        let o = if learnt { 3 } else { 4 };
++        self.c_org.push(o);
++        self.c_mk.push(0);
++        self.c_row.push(0);
++        self.nb[o as usize] += 1;
++        self.dirty = true;
++    }
++    /// a problem clause: the caller has just pushed it on `clauses`
++    fn orig(&mut self, c: u32) {
++        let i = c as usize;
++        let ph = cx_ph();
++        self.nb[self.c_org[i] as usize] -= 1;
++        self.c_org[i] = ph as u8;
++        self.nb[ph] += 1;
++        let row = CX_ROW.load(CxO::Relaxed);
++        self.c_row[i] = row;
++        self.row_emit(row);
++    }
++    fn grow(&mut self, v: usize, k: usize) {
++        let ph = cx_ph();
++        let row = CX_ROW.load(CxO::Relaxed);
++        self.v_mk.resize(v + 1, 0);
++        self.v_org.resize(v + 1, ph as u8);
++        self.v_row.resize(v + 1, row);
++        self.u_org.resize(v + 1, 0);
++        self.u_mk.resize(v + 1, 0);
++        self.u_row.resize(v + 1, 0);
++        self.walk.resize(v + 1, 0);
++        self.rootdone.resize(v + 1, 0);
++        self.vb[ph] += k as u64;
++        self.row_emit(row);
++        self.dirty = true;
++    }
++    fn atom(&mut self, v: usize) {
++        let row = CX_ROW.load(CxO::Relaxed);
++        if row != 0 && v < self.v_row.len() && self.v_row[v] == 0 {
++            self.v_row[v] = row;
++            self.row_emit(row);
++        }
++    }
++    fn unit(&mut self, v: usize) {
++        if v < self.u_org.len() && self.u_org[v] == 0 {
++            let ph = cx_ph();
++            let row = CX_ROW.load(CxO::Relaxed);
++            self.u_org[v] = 1 + ph as u8;
++            self.u_row[v] = row;
++            self.ub[ph] += 1;
++            self.row_emit(row);
++            self.dirty = true;
++        }
++    }
++    #[inline]
++    fn c(&mut self, c: u32, k: usize) {
++        let i = c as usize;
++        for bi in [k * 3 + cx_ph(), 9 + k] {
++            if self.c_mk[i] & (1 << bi) == 0 {
++                self.c_mk[i] |= 1 << bi;
++                self.cm[self.c_org[i] as usize][bi] += 1;
++                self.dirty = true;
++                let row = self.c_row[i];
++                self.row(row, bi);
++            }
++        }
++    }
++    #[inline]
++    fn v(&mut self, v: usize, k: usize) {
++        if v >= self.v_mk.len() {
++            return;
++        }
++        for bi in [k * 3 + cx_ph(), 9 + k] {
++            if self.v_mk[v] & (1 << bi) == 0 {
++                self.v_mk[v] |= 1 << bi;
++                self.vm[self.v_org[v] as usize][bi] += 1;
++                self.dirty = true;
++                let row = self.v_row[v];
++                self.row(row, bi);
++            }
++            if self.u_org[v] != 0 && self.u_mk[v] & (1 << bi) == 0 {
++                self.u_mk[v] |= 1 << bi;
++                self.um[(self.u_org[v] - 1) as usize][bi] += 1;
++                self.dirty = true;
++                let row = self.u_row[v];
++                self.row(row, bi);
++            }
++        }
++    }
++    fn b(&mut self, base: u32, k: usize) {
++        for bi in [k * 3 + cx_ph(), 9 + k] {
++            let e = self.b_mk.entry(base).or_insert(0);
++            if *e & (1 << bi) == 0 {
++                *e |= 1 << bi;
++                self.bm[bi] += 1;
++                self.dirty = true;
++            }
++        }
++    }
++}
++
++fn cx_join(xs: &[u64]) -> String {
++    xs.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(",")
++}
++
++impl<Th: Theory> Solver<Th> {
++    fn cx_blocks(&mut self) {
++        let n = self.rb_blocks as u64;
++        if n > self.cx.rb_seen {
++            self.cx.bb[cx_ph()] += n - self.cx.rb_seen;
++            self.cx.rb_seen = n;
++            self.cx.dirty = true;
++        }
++    }
++
++    /// The reason cone of an assigned variable: every clause, block and variable its value rests on.
++    /// Root-level variables are walked once per phase (the root trail never changes); others once per walk.
++    fn cx_cone(&mut self, v0: usize) {
++        let ph = cx_ph();
++        self.cx.walk_id += 1;
++        let id = self.cx.walk_id;
++        let mut st = vec![v0];
++        let mut buf: Vec<u32> = Vec::new();
++        while let Some(v) = st.pop() {
++            if v == 0 || v > self.nvars || v >= self.cx.walk.len() || self.val[v << 1] == U {
++                continue;
++            }
++            if self.level[v] == 0 {
++                if self.cx.rootdone[v] & (1 << ph) != 0 {
++                    continue;
++                }
++                self.cx.rootdone[v] |= 1 << ph;
++            } else {
++                if self.cx.walk[v] == id {
++                    continue;
++                }
++                self.cx.walk[v] = id;
++            }
++            self.cx.v(v, 2);
++            match self.reason[v] {
++                Reason::None => {}
++                Reason::Clause(c) => {
++                    self.cx.c(c, 2);
++                    for &l in &self.db[c as usize].lits {
++                        let u = (l >> 1) as usize;
++                        if u != v {
++                            st.push(u);
++                        }
++                    }
++                }
++                Reason::Block(m, b) => {
++                    self.cx.b(b, 2);
++                    self.rb_reason(v, m, b, &mut buf);
++                    for &l in &buf {
++                        let u = (l >> 1) as usize;
++                        if u != v {
++                            st.push(u);
++                        }
++                    }
++                }
++            }
++        }
++    }
++
++    /// A variable met by conflict analysis: at the root its cone is the proof's, above it the analysis walks on.
++    fn cx_use(&mut self, v: usize) {
++        if self.level[v] == 0 {
++            self.cx_cone(v);
++        } else {
++            self.cx.v(v, 2);
++        }
++    }
++
++    /// Minimisation dropped this literal: its reason is part of the learnt clause's derivation.
++    fn cx_min(&mut self, v: usize) {
++        match self.reason[v] {
++            Reason::None => {}
++            Reason::Clause(c) => {
++                self.cx.c(c, 2);
++                let ls = self.db[c as usize].lits.clone();
++                for &l in &ls[1..] {
++                    self.cx_use((l >> 1) as usize);
++                }
++            }
++            Reason::Block(_, b) => self.cx.b(b, 2),
++        }
++    }
++
++    fn cx_snap(&mut self, tag: &str) {
++        self.cx_blocks();
++        if !self.cx.dirty {
++            return;
++        }
++        self.cx.dirty = false;
++        let out = CX_OUT.get_or_init(|| {
++            std::env::var("SA320_COUNT").ok().and_then(|p| std::fs::OpenOptions::new().create(true).append(true).open(p).ok()).map(std::sync::Mutex::new)
++        });
++        let Some(out) = out else { return };
++        let cx = &self.cx;
++        let flat = |m: &[[u64; 12]]| m.iter().map(|r| cx_join(r)).collect::<Vec<_>>().join(";");
++        let rk: Vec<u64> = CX_ROWK.iter().map(|a| a.load(CxO::Relaxed) as u64).collect();
++        let line = format!(
++            "S pid={} ser={} born={} tag={} nvars={} ncl={} nlearnt={} db={} blocks={} nb={} vb={} ub={} bb={} re={} rk={} ec={} cm={} vm={} um={} bm={} rm={}\n",
++            std::process::id(), cx.serial, cx.born, tag, self.nvars, self.clauses.len(), self.learnts.len(), self.db.len(), self.rb_blocks,
++            cx_join(&cx.nb), cx_join(&cx.vb), cx_join(&cx.ub), cx_join(&cx.bb), cx_join(&cx.re), cx_join(&rk), cx_join(&cx.ec),
++            flat(&cx.cm), flat(&cx.vm), flat(&cx.um), cx_join(&cx.bm), flat(&cx.rm)
++        );
++        if let Ok(mut f) = out.lock() {
++            let _ = std::io::Write::write_all(&mut *f, line.as_bytes());
++        }
++    }
++
++    /// A conflict at the root runs no analysis: the refutation is the conflict clause and its literals' cones.
++    fn cx_root_confl(&mut self, r: Option<u32>) -> Option<u32> {
++        if let Some(c) = r {
++            if self.trail_lim.is_empty() {
++                self.cx.ec[5] += 1;
++                self.cx.c(c, 2);
++                let ls = self.db[c as usize].lits.clone();
++                for &l in &ls {
++                    self.cx_cone((l >> 1) as usize);
++                }
++            }
++        }
++        r
++    }
++
++    fn prop(&mut self) -> Option<u32> {
++        let r = self.prop_i();
++        self.cx_root_confl(r)
++    }
++
++    fn tprop(&mut self) -> Option<u32> {
++        let r = self.tprop_i();
++        self.cx_root_confl(r)
++    }
++
++    fn solve_int(&mut self, lits: &[u32], keep: usize) -> bool {
++        self.cx.ec[0] += 1;
++        let r = self.solve_int_i(lits, keep);
++        self.cx.dirty = true;
++        self.cx_snap("E");
++        r
++    }
++
++    fn assume(&mut self, assumptions: &[u32], hold: i32) -> R<Tr> {
++        self.cx.ec[1] += 1;
++        let r = self.assume_i(assumptions, hold);
++        self.cx_snap("A");
++        r
++    }
++
++    pub fn register_block(&mut self, base: i32, mentions: u128) -> R<bool> {
++        let r = self.register_block_i(base, mentions);
++        self.cx_blocks();
++        r
++    }
++}
++
++impl<Th: Theory> Drop for Solver<Th> {
++    fn drop(&mut self) {
++        self.cx.dirty = true;
++        self.cx_snap("D");
++    }
++}
