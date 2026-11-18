@@ -1,0 +1,353 @@
+diff -ru a/rust-spike/slice/solver_rs/src/budget.rs b/rust-spike/slice/solver_rs/src/budget.rs
+--- a/rust-spike/slice/solver_rs/src/budget.rs	2026-11-18 04:42:46.000000000 +0000
++++ b/rust-spike/slice/solver_rs/src/budget.rs	2026-11-18 14:11:03.146822275 +0000
+@@ -581,6 +581,7 @@
+ /// flag and counter (entry.rs).
+ pub(crate) fn over_budget<'py>(eng: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+     tick(BUD_OVER_BUDGET);
++    crate::solver::nc("B");
+     let p = eng.py();
+     if !planted(OVER_BUDGET_NO_FLAG) {
+         crate::entry::set_flag(eng, true)?;
+diff -ru a/rust-spike/slice/solver_rs/src/context.rs b/rust-spike/slice/solver_rs/src/context.rs
+--- a/rust-spike/slice/solver_rs/src/context.rs	2026-11-18 04:42:46.000000000 +0000
++++ b/rust-spike/slice/solver_rs/src/context.rs	2026-11-18 14:11:03.147401836 +0000
+@@ -277,6 +277,7 @@
+         Err(e) if e.is_instance_of::<PyException>(p) => {
+             // engine.py:1906: the check could not conclude; not evidence either way
+             tick(CTX_CAUGHT);
++            crate::solver::nc("C");
+             handler_row(p, "Engine._build_context", &e)?;
+             None
+         }
+@@ -293,6 +294,7 @@
+         Some(v) if !theory_flag(&s, Flag::GaveUp)? || planted(CTX_BUILD_NO_FALLBACK) => v,
+         _ => {
+             tick(CTX_FALLBACK);
++            crate::solver::nc("F");
+             (s, lits) = fresh(eng, &scope, assumptions, hand)?;
+             konst(p, "UNKNOWN")?
+         }
+@@ -353,6 +355,17 @@
+ }
+ 
+ fn complete_check<'py>(s: &Bound<'py, PyAny>, lits: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
++    crate::solver::nc("V<");
++    let r = complete_check_nc(s, lits);
++    let v = match &r {
++        Ok(v) => v.str().ok().and_then(|x| x.to_string().chars().next()).unwrap_or('?'),
++        Err(_) => 'X',
++    };
++    crate::solver::nc(&format!("V>{v}"));
++    r
++}
++
++fn complete_check_nc<'py>(s: &Bound<'py, PyAny>, lits: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+     tick(CTX_COMPLETE_CHECK);
+     let p = s.py();
+     if planted(CTX_CHECK_RAISE) {
+diff -ru a/rust-spike/slice/solver_rs/src/entry.rs b/rust-spike/slice/solver_rs/src/entry.rs
+--- a/rust-spike/slice/solver_rs/src/entry.rs	2026-11-18 04:42:46.000000000 +0000
++++ b/rust-spike/slice/solver_rs/src/entry.rs	2026-11-18 14:11:03.146572890 +0000
+@@ -478,6 +478,18 @@
+ }
+ 
+ fn decide<'py>(eng: &Bound<'py, PyAny>, s: &Bound<'py, PyAny>, lit: &Bound<'py, PyAny>, lits: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
++    crate::solver::nc("D<");
++    let r = decide_nc(eng, s, lit, lits);
++    {
++        let g = crate::theory_flags::theory_flag(s, crate::theory_flags::Flag::GaveUp).unwrap_or(false);
++        let e = crate::theory_flags::theory_flag(s, crate::theory_flags::Flag::Exhausted).unwrap_or(false);
++        crate::solver::nc(&format!("T{}{}", g as u8, e as u8));
++    }
++    nc_res("D>", &r);
++    r
++}
++
++fn decide_nc<'py>(eng: &Bound<'py, PyAny>, s: &Bound<'py, PyAny>, lit: &Bound<'py, PyAny>, lits: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+     tick(ENT_DECIDE);
+     let p = eng.py();
+     let mut r = query_literal(s, lit, lits, false)?;
+@@ -599,6 +611,13 @@
+ }
+ 
+ fn is_<'py>(eng: &Bound<'py, PyAny>, node: &Bound<'py, PyAny>, pred: &Bound<'py, PyAny>, hand: &Hand) -> PyResult<Bound<'py, PyAny>> {
++    crate::solver::nc("I<");
++    let r = is_nc(eng, node, pred, hand);
++    nc_res("I>", &r);
++    r
++}
++
++fn is_nc<'py>(eng: &Bound<'py, PyAny>, node: &Bound<'py, PyAny>, pred: &Bound<'py, PyAny>, hand: &Hand) -> PyResult<Bound<'py, PyAny>> {
+     tick(ENT_IS);
+     let p = eng.py();
+     if stale(eng, Some(intern!(p, "cache")))? {
+@@ -609,9 +628,11 @@
+         return is_custom(eng, node, pred, hand);
+     }
+     if noncommutative(p, node)? {
++        crate::solver::nc("N");
+         return noncomm_answer(p, construction_level(p, node)?, pred);
+     }
+     if engmemo::contains(&eng.getattr(intern!(p, "_constructing"))?, node)? {
++        crate::solver::nc("K");
+         return Ok(p.None().into_bound(p));
+     }
+     if cone_head(eng, node, true, hand)?.is_none() {
+@@ -624,6 +645,7 @@
+             bump(eng, CACHE_HITS, 1)?;
+         }
+         set_flag(eng, false)?;
++        crate::solver::nc("H");
+         return facts.get_item(pred);
+     }
+     if let Some(r) = by_definition(p, pred)? {
+@@ -651,6 +673,13 @@
+ 
+ #[pyfunction]
+ fn ent_is_many<'py>(eng: &Bound<'py, PyAny>, node: &Bound<'py, PyAny>, preds: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyList>> {
++    crate::solver::nc("M<");
++    let r = ent_is_many_nc(eng, node, preds);
++    crate::solver::nc("M>");
++    r
++}
++
++fn ent_is_many_nc<'py>(eng: &Bound<'py, PyAny>, node: &Bound<'py, PyAny>, preds: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyList>> {
+     let hand = &Hand::enter();
+     tick(ENT_IS_MANY);
+     let p = eng.py();
+@@ -758,6 +787,7 @@
+     if !facts.is_none() && facts.contains(pred)? && !planted(ENT_IS_CUSTOM_NO_HIT) {
+         bump(eng, CACHE_HITS, 1)?;
+         set_flag(eng, false)?;
++        crate::solver::nc("H");
+         return facts.get_item(pred);
+     }
+     bump(eng, QUERIES, 1)?;
+@@ -779,6 +809,13 @@
+ #[pyfunction]
+ #[pyo3(signature = (eng, proposition, assumptions=None))]
+ fn ent_ask<'py>(eng: &Bound<'py, PyAny>, proposition: &Bound<'py, PyAny>, assumptions: Option<Bound<'py, PyAny>>) -> PyResult<Bound<'py, PyAny>> {
++    crate::solver::nc("Q<");
++    let r = ent_ask_nc(eng, proposition, assumptions);
++    nc_res("Q>", &r);
++    r
++}
++
++fn ent_ask_nc<'py>(eng: &Bound<'py, PyAny>, proposition: &Bound<'py, PyAny>, assumptions: Option<Bound<'py, PyAny>>) -> PyResult<Bound<'py, PyAny>> {
+     tick(ENT_ASK);
+     let p = eng.py();
+     if stale(eng, None)? {
+@@ -795,6 +832,7 @@
+     let ctx_or_none = if contextual { assumptions.clone() } else { none.clone() };
+     let hand = Hand::enter();
+     if noncommutative_atoms(p, &[proposition, &ctx_or_none], &hand)? {
++        crate::solver::nc("N");
+         return Ok(none);
+     }
+     let within = |f: &Bound<'py, PyAny>, a: &Bound<'py, PyAny>| -> PyResult<bool> {
+@@ -861,6 +899,11 @@
+             bump(eng, THEORY_GAVE_UP, 1)?;
+         }
+     }
++    {
++        let g = crate::theory_flags::theory_flag(s, crate::theory_flags::Flag::GaveUp).unwrap_or(false);
++        let e = crate::theory_flags::theory_flag(s, crate::theory_flags::Flag::Exhausted).unwrap_or(false);
++        crate::solver::nc(&format!("T{}{}", g as u8, e as u8));
++    }
+     crate::budget::note_budget(eng, s)?;
+     Ok(r)
+ }
+@@ -906,3 +949,20 @@
+     m.add_function(wrap_pyfunction!(ent_ask_inner, m)?)?;
+     m.add_function(wrap_pyfunction!(st_snapshot, m)?)
+ }
++
++// ---- sa-port-322 count build (scratch) ----
++fn nc_res(tag: &str, r: &PyResult<Bound<'_, PyAny>>) {
++    let v = match r {
++        Ok(v) if v.is_none() => "N",
++        Ok(v) if v.is_instance_of::<PyBool>() => {
++            if v.is_truthy().unwrap_or(false) {
++                "T"
++            } else {
++                "F"
++            }
++        }
++        Ok(_) => "O",
++        Err(_) => "X",
++    };
++    crate::solver::nc(&format!("{tag}{v}"));
++}
+diff -ru a/rust-spike/slice/solver_rs/src/lib.rs b/rust-spike/slice/solver_rs/src/lib.rs
+--- a/rust-spike/slice/solver_rs/src/lib.rs	2026-11-18 04:42:46.000000000 +0000
++++ b/rust-spike/slice/solver_rs/src/lib.rs	2026-11-18 14:11:03.148013158 +0000
+@@ -625,6 +625,8 @@
+ #[pymodule]
+ fn sa_solver(m: &Bound<'_, PyModule>) -> PyResult<()> {
+     m.add_function(wrap_pyfunction!(rule_block_tables, m)?)?;
++    m.add_function(wrap_pyfunction!(nc322_take, m)?)?;
++    m.add_function(wrap_pyfunction!(nc322_note, m)?)?;
+     term::py::register(m)?;
+     term::dispatch::register(m)?;
+     term::walk::register(m)?;
+@@ -664,3 +666,13 @@
+     theory_flags::register(m)?;
+     transfer_py::register(m)
+ }
++
++// ---- sa-port-322 count build (scratch) ----
++#[pyfunction]
++fn nc322_take() -> String {
++    crate::solver::nc_take()
++}
++#[pyfunction]
++fn nc322_note(s: &str) {
++    crate::solver::nc(s)
++}
+diff -ru a/rust-spike/slice/solver_rs/src/lra.rs b/rust-spike/slice/solver_rs/src/lra.rs
+--- a/rust-spike/slice/solver_rs/src/lra.rs	2026-11-18 04:42:46.000000000 +0000
++++ b/rust-spike/slice/solver_rs/src/lra.rs	2026-11-18 14:11:03.145311746 +0000
+@@ -396,6 +396,7 @@
+ 
+     /// `_give_up`.
+     pub fn give_up(&mut self) {
++        crate::solver::nc("g");
+         self.gave_up = true;
+         self.stats.gave_up += 1;
+     }
+@@ -870,6 +871,7 @@
+         }
+         if split.is_none() {
+             if skipped {
++                crate::solver::nc("xs");
+                 self.exhausted = true;
+                 self.stats.exhausted += 1;
+                 return Ok(None);
+@@ -889,6 +891,7 @@
+         };
+         let limit = if mutant(2) { 1 } else { 0 };
+         if *budget <= limit {
++            crate::solver::nc("xb");
+             self.exhausted = true;
+             self.stats.exhausted += 1;
+             return Ok(None);
+diff -ru a/rust-spike/slice/solver_rs/src/solver.rs b/rust-spike/slice/solver_rs/src/solver.rs
+--- a/rust-spike/slice/solver_rs/src/solver.rs	2026-11-18 04:42:46.000000000 +0000
++++ b/rust-spike/slice/solver_rs/src/solver.rs	2026-11-18 14:11:03.144485640 +0000
+@@ -1914,6 +1914,13 @@
+     }
+ 
+     pub fn solve(&mut self, assumptions: &[u32]) -> R<bool> {
++        nc("S<");
++        let r = self.solve_nc(assumptions);
++        nc(&format!("S>{}", nc_b(&r)));
++        r
++    }
++
++    fn solve_nc(&mut self, assumptions: &[u32]) -> R<bool> {
+         let lits = self.internal_lits(assumptions)?;
+         self.mention_int(&lits);
+         let keep = match &self.held {
+@@ -1924,6 +1931,14 @@
+     }
+ 
+     fn solve_int(&mut self, lits: &[u32], keep: usize) -> bool {
++        let h0 = self.n.ring_hits;
++        let k0 = self.ring.len();
++        let r = self.solve_int_nc(lits, keep);
++        nc(&format!("s:{}:{}:{}:{}", lits.len(), (self.n.ring_hits != h0) as u8, r as u8, k0));
++        r
++    }
++
++    fn solve_int_nc(&mut self, lits: &[u32], keep: usize) -> bool {
+         self.mvals = None;
+         self.mdict = None;
+         self.tmodels = None;
+@@ -2137,6 +2152,12 @@
+     }
+ 
+     fn witness_satisfies(&self, assumptions: &[u32]) -> bool {
++        let r = self.witness_satisfies_nc(assumptions);
++        nc(if r { "w1" } else { "w0" });
++        r
++    }
++
++    fn witness_satisfies_nc(&self, assumptions: &[u32]) -> bool {
+         let w = match &self.witness {
+             None => return false,
+             Some(w) => w,
+@@ -2168,6 +2189,13 @@
+     }
+ 
+     pub fn consistent(&mut self, assumptions: &[u32], hold: i32) -> R<bool> {
++        nc("c<");
++        let r = self.consistent_nc(assumptions, hold);
++        nc(&format!("c>{}", nc_b(&r)));
++        r
++    }
++
++    fn consistent_nc(&mut self, assumptions: &[u32], hold: i32) -> R<bool> {
+         let lits = self.internal_lits(assumptions)?;
+         self.mention_int(&lits);
+         let k = Self::keep_of(hold, lits.len());
+@@ -2183,6 +2211,13 @@
+     }
+ 
+     pub fn entails(&mut self, lit: i32, assumptions: &[u32], hold: i32) -> R<Option<bool>> {
++        nc("e<");
++        let r = self.entails_nc(lit, assumptions, hold);
++        nc(&format!("e>{}", nc_ob(&r)));
++        r
++    }
++
++    fn entails_nc(&mut self, lit: i32, assumptions: &[u32], hold: i32) -> R<Option<bool>> {
+         if lit == 0 {
+             return verr("literal must be a nonzero integer");
+         }
+@@ -2228,6 +2263,13 @@
+     }
+ 
+     pub fn entails_all(&mut self, lits: &[u32], assumptions: &[u32], hold: i32) -> R<Option<bool>> {
++        nc("a<");
++        let r = self.entails_all_nc(lits, assumptions, hold);
++        nc(&format!("a>{}", nc_ob(&r)));
++        r
++    }
++
++    fn entails_all_nc(&mut self, lits: &[u32], assumptions: &[u32], hold: i32) -> R<Option<bool>> {
+         if lits.len() == 1 {
+             return self.entails(lits[0] as i32, assumptions, hold);
+         }
+@@ -2410,3 +2452,31 @@
+         self.ring.iter().map(|r| r.tm.as_ref())
+     }
+ }
++
++// ---- sa-port-322 count build: a scratch patch, never part of the package (issue 323) ----
++thread_local! { static NC322: RefCell<String> = RefCell::new(String::new()); }
++pub fn nc(s: &str) {
++    NC322.with(|b| {
++        let mut b = b.borrow_mut();
++        b.push_str(s);
++        b.push(';');
++    })
++}
++pub fn nc_take() -> String {
++    NC322.with(|b| std::mem::take(&mut *b.borrow_mut()))
++}
++fn nc_ob(r: &R<Option<bool>>) -> &'static str {
++    match r {
++        Ok(Some(true)) => "T",
++        Ok(Some(false)) => "F",
++        Ok(None) => "N",
++        Err(_) => "X",
++    }
++}
++fn nc_b(r: &R<bool>) -> &'static str {
++    match r {
++        Ok(true) => "1",
++        Ok(false) => "0",
++        Err(_) => "X",
++    }
++}
