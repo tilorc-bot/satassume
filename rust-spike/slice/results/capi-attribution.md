@@ -1,7 +1,7 @@
 # C API time by Rust caller (issue 323; sa-port-319, read-only)
 
-Status of this document: **(a) is done. (b) and (c) are not done**; the last section says what is left and how.
-No package code changed; this branch adds this file and `results/tools319/` only.
+Status of this document: **(a), (b) and (c) are done** (sa-port-319 for (a); sa-port-320 and sa-port-321 for the rest).
+No package code changed; this branch adds this file, `capi-attribution-counts.md` and `results/tools319/` only.
 
 ## Samples and method
 
@@ -113,19 +113,153 @@ What the table says:
   0.55% fuzz. `__tls_get_addr` as a leaf is 2.05% and 2.25%, but most of it is inside libpython calls (its own
   thread-state reads). So by the planner's rule it stays queued and does not fold into this proposal.
 
-## (b) Facts built against facts read, and (c) proposals: not done
+## (b) Facts built against facts read
 
-Not measured. What is known for the next session:
+**Top lines.** Counts of facts, from one count run per workload; no time is measured here.
 
-- `context::fresh` (`context.rs:247`) is `_fresh_session(scope)` plus `assume_formula(assumptions)`;
-  `build_context` (`context.rs:256`) calls it once, and a second time on the fallback path (`:296`).
-- "Built" can be counted with no package change: `PySolver.stats()` (`lib.rs:554`) gives `vars` and `clauses`.
-- "Read by the solve" has no counter. It needs a count build: a per-clause and per-variable mark set where
-  `Solver::propagate` (`solver.rs:1057`) and conflict analysis (`solver.rs:1666`) read them, cleared when the query's
-  solve starts. That is a scratch patch, built on pareto1 and never committed to the package; whether that is inside
-  "don't change the package" is the planner's call.
+- Of the clauses `build_context` adds, the query phase (everything after `build_context` returns) visits 56.2% on
+  dev and 71.0% on fuzz, uses 30.0% and 33.2% as a reason or conflict, and has 4.9% and 2.6% in a proof. The complete check visits 82.6% and 88.0%.
+  In any phase 91.7% and 91.9% are visited; 1,060 (8.3%) and 18,619 (8.1%) never are.
+- So 43.8% (dev) and 29.0% (fuzz) of `build_context`'s clauses are never visited by a query. Most of those are
+  visited by the complete check, whose verdict is part of the answer (207 of the 3,000 fuzz queries raise ValueError, which is how its
+  INCONSISTENT verdict surfaces).
+- At the size a lazy builder could defer, a relation row, nothing is unread: every row that emitted something is
+  visited on dev (2,004 of 2,004) and 99.4% on fuzz (259 of 47,013 are not). 93.8% and 93.1% are a reason somewhere.
+- The query phase adds more than `build_context` does: 35,620 clauses against 12,838 on dev, 409,391 against
+  229,988 on fuzz.
+- **Built-but-unread is an upper bound in hindsight, not a saving** (planner ruling (3)).
 
-Candidates for (c) that (a) already supports, without numbers for what each removes beyond the shares above:
-module and constant handles read once per process (import by name, 2.0% / 1.7%); the class row (6.8% / 2.1%), which
-needs an exactness argument because class attributes can change between queries; direct Rust calls where Rust
-reaches `PySolver` through a Python method call.
+### How it was counted
+
+- `tools319/count320.patch` is a scratch patch against 46750d4's `solver_rs/src` (solver.rs, context.rs,
+  relations_core.rs). It was applied to a copy of sa-port-317's `bench-46750d4` in sa-port-321's own directory on
+  pareto1 (`tools319/job321.sh`, under a shared lease), built there, and **never committed to the package** and
+  never copied into 317's tree. The count build's `.so` has a sha256 starting `0bdac11ab5199038`; 317's starts `45f63fdfb8e8523c`.
+- One run of dev and one of fuzz with 317's `qt195.py`, SLICE_CONVERT=rust and SLICE_TERM_FRAMES=rust (the
+  +rust+frames arm the samples used). Answers are unchanged by the marks: the digests equal 317's on that arm
+  (dev `31cd0945c07f02a6`, fuzz `173502b6ef285ad6`). `ctx:caught` and `ctx:fallback` are 0 on both workloads.
+- dev is 1,985 queries (892 None, 557 False, 536 True) over 833 `build_context` calls; fuzz is 3,000 queries
+  (2,387 None, 207 raise ValueError, 204 False, 202 True) over 2,952.
+- Three kinds of read, each kept per phase: **visited** (propagation's watch scan reached the clause, or the
+  variable's literal was dequeued), **reason** (the clause or block implied a literal, or was the conflict),
+  **proof** (read by conflict analysis, minimisation or the final analysis, or in the reason cone of an entailed
+  literal or of a root conflict). Phases: 1 inside `build_context`, 2 inside its complete check, 0 otherwise, which
+  is the query. A clause's row is the phase that added it.
+- A relation row is one unit of work in `rel_process`: a user eq atom, a queued atom interpreted, a top entry or a
+  pending link. It is read when any clause, variable, unit or theory atom it emitted is marked.
+- `tools319/plant320.py` shows each counter firing on a planted case first: 39 rows pass and none fails, on orion and
+  on the pareto1 build. `tools319/sum320.py` makes the tables; `capi-attribution-counts.md` has its full output
+  (clauses, variables, units, blocks and rows by phase and kind).
+
+### The tables
+
+"query" columns are phase 0, "check" columns phase 2, "any" every phase. Percentages are of the built column.
+
+| built, per workload | dev | fuzz |
+|---|---:|---:|
+| solvers (born in build_context / in the query) | 840 / 78 | 2955 / 178 |
+| variables: build_context / its check / the query | 22489 / 0 / 18725 | 183402 / 0 / 181955 |
+| clauses: build_context / its check / the query | 12838 / 3311 / 35620 | 229988 / 34905 / 409391 |
+| clauses: learnt / other (theory, explanations) | 657 / 15 | 37724 / 640 |
+| unit clauses: build_context / its check / the query | 169 / 1397 / 1435 | 389 / 8276 / 2444 |
+| rule blocks: build_context / its check / the query | 1238 / 0 / 1180 | 7446 / 0 / 9047 |
+| relation rows made: user eq / queued atom / top entry / pending link | 38 / 1501 / 396 / 375 | 888 / 36397 / 5236 / 9405 |
+| relation rows that emitted something, same kinds | 35 / 1507 / 87 / 375 | 888 / 36398 / 322 / 9405 |
+
+**dev**, read by the query (phase 0), by the complete check (phase 2) and in any phase:
+
+| dev | built | query: visited | query: reason | query: proof | check: visited | check: reason | check: proof [p] | any: visited | any: reason | any: proof | never visited |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| build_context's clauses | 12838 | 7219 (56.2%) | 3852 (30.0%) | 633 (4.9%) | 10607 (82.6%) | 5819 (45.3%) | 205 (1.6%) | 11778 (91.7%) | 7135 (55.6%) | 815 (6.3%) | 1060 |
+| build_context's variables | 22489 | 10162 (45.2%) | 8735 (38.8%) | 1015 (4.5%) | 12039 (53.5%) | 8744 (38.9%) | 596 (2.7%) | 16352 (72.7%) | 12633 (56.2%) | 1467 (6.5%) | 6137 |
+| the check's own clauses | 3311 | 1336 (40.4%) | 349 (10.5%) | 4 (0.1%) | 1823 (55.1%) | 297 (9.0%) | 0 (0.0%) | 2219 (67.0%) | 447 (13.5%) | 4 (0.1%) | 1092 |
+| the query's own clauses | 35620 | 26378 (74.1%) | 8773 (24.6%) | 330 (0.9%) | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) | 26378 (74.1%) | 8773 (24.6%) | 330 (0.9%) | 9242 |
+| rule blocks, all phases | 2418 | 2068 (85.5%) | 1868 (77.3%) | 131 (5.4%) | 1234 (51.0%) | 556 (23.0%) | 49 (2.0%) | 2417 (100.0%) | 2069 (85.6%) | 168 (6.9%) | 1 |
+| relation rows that emitted, all kinds | 2004 | 1671 (83.4%) | 1605 (80.1%) | 296 (14.8%) | 1281 (63.9%) | 1158 (57.8%) | 268 (13.4%) | 2004 (100.0%) | 1880 (93.8%) | 510 (25.4%) | 0 |
+| of them, pending links | 375 | 330 (88.0%) | 328 (87.5%) | 65 (17.3%) | 227 (60.5%) | 227 (60.5%) | 56 (14.9%) | 375 (100.0%) | 375 (100.0%) | 119 (31.7%) | 0 |
+
+**fuzz**, read by the query (phase 0), by the complete check (phase 2) and in any phase:
+
+| fuzz | built | query: visited | query: reason | query: proof | check: visited | check: reason | check: proof [p] | any: visited | any: reason | any: proof | never visited |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| build_context's clauses | 229988 | 163315 (71.0%) | 76400 (33.2%) | 5946 (2.6%) | 202490 (88.0%) | 87226 (37.9%) | 6819 (3.0%) | 211369 (91.9%) | 110520 (48.1%) | 12323 (5.4%) | 18619 |
+| build_context's variables | 183402 | 132079 (72.0%) | 118787 (64.8%) | 14665 (8.0%) | 146633 (80.0%) | 122983 (67.1%) | 16970 (9.3%) | 163824 (89.3%) | 143637 (78.3%) | 28116 (15.3%) | 19578 |
+| the check's own clauses | 34905 | 23171 (66.4%) | 7886 (22.6%) | 261 (0.7%) | 24539 (70.3%) | 6560 (18.8%) | 149 (0.4%) | 27826 (79.7%) | 9793 (28.1%) | 400 (1.1%) | 7079 |
+| the query's own clauses | 409391 | 345735 (84.5%) | 130776 (31.9%) | 4379 (1.1%) | 0 (0.0%) | 0 (0.0%) | 0 (0.0%) | 345735 (84.5%) | 130776 (31.9%) | 4379 (1.1%) | 63656 |
+| rule blocks, all phases | 16493 | 15184 (92.1%) | 14866 (90.1%) | 1429 (8.7%) | 7324 (44.4%) | 6991 (42.4%) | 1238 (7.5%) | 16376 (99.3%) | 15971 (96.8%) | 2449 (14.8%) | 117 |
+| relation rows that emitted, all kinds | 47013 | 42656 (90.7%) | 40174 (85.5%) | 10529 (22.4%) | 26250 (55.8%) | 23596 (50.2%) | 6569 (14.0%) | 46754 (99.4%) | 43756 (93.1%) | 15676 (33.3%) | 259 |
+| of them, pending links | 9405 | 8633 (91.8%) | 8632 (91.8%) | 2036 (21.6%) | 5192 (55.2%) | 5038 (53.6%) | 1505 (16.0%) | 9405 (100.0%) | 9251 (98.4%) | 3398 (36.1%) | 0 |
+
+**[p] The check's proof column is a lower bound, not a zero where it is small.** The complete check
+(`context.rs:357`) can reach INCONSISTENT in three places: `propagate()` returns false (a root conflict, marked;
+0 on both workloads), `implied()` returns None, or `solve()` returns false (marked through the final analysis).
+`implied()` is `assume`: a conflict there is found at an assumption level, no analysis runs, and the patch walks no
+cone, so that refutation has **no proof mark**; the reason column bounds it. Planted: `x > 1 & x < 0 & y > x` is
+refuted there (entries: 0 solve_int, 1 assume, 1 propagate; 15 clauses as reasons, proof unmarked), while four
+clauses over `positive(x)`, `positive(y)` reach `solve()` and all 4 are in the proof. On the workloads 6 (dev) and 94
+(fuzz) solvers born in `build_context` never ran `solve_int`, which bounds how many checks ended there. A consistent check ends in a model, which has no
+proof either: its proof marks come only from conflicts its search met on the way.
+
+### What the tables say
+
+- **Query against check.** The check reads more of the context than the queries do, at every level except proof on
+  dev. Of `build_context`'s clauses, 4,559 on dev (35.5%) and 48,054 on fuzz (20.9%) are visited in some phase but
+  never by a query. The check also adds its own: 3,311 clauses and 1,397 units on dev, 34,905 and 8,276 on fuzz,
+  of which queries later visit 40.4% and 66.4%.
+- **Proof level is small everywhere**: 6.3% (dev) and 5.4% (fuzz) of `build_context`'s clauses in any phase. But a
+  proof exists only where something is refuted. 44.9% of dev answers and 79.6% of fuzz answers are None, where
+  both of the query's solves end in a model; a model is a statement about every clause.
+- **Pending links.** The 375 (dev) and 9,405 (fuzz) pending-link rows are the same counts as the deferred links in
+  the main-package lazy-links reports. Here all of them are built. In some phase 375 of 375 and 9,251 of 9,405
+  (98.4%) are a reason, which is what option A found from the other side (it built 374 of 375 and 96%). The
+  query's proofs touch 17.3% and 21.6% of them; sign repair got builds down to 94 of 375 (25%) and 2,004 of 9,405
+  (21%). These are different builds (Python main package there, the Rust slice here), so this is an agreement in
+  shape, not a derivation.
+- **Variables** are read less than clauses: 27.3% of `build_context`'s on dev (6,137) and 10.7% on fuzz (19,578)
+  are never dequeued.
+
+### What is not marked
+
+- `implied()` returns the whole trail to Python, so no cone is walked for it; and a refutation inside it has no
+  proof mark ([p] above).
+- `clause_ok`, `witness_satisfies` and `ring_hit` read clauses against stored models without a mark.
+- Unit clauses have no reason mark ("n/m" in the full tables). Theory and explanation clauses are not in watch
+  lists, so "visited" is 0 for them by construction.
+- Rule blocks are not tagged with rows, and their marks are not split by the phase that built them. `discover`,
+  `_share` and the transfer calls run untagged, so what they emit belongs to no row.
+- "Rows made" is a process-wide counter, not split by phase; "emitted" is counted per solver, so it can pass
+  "made" (dev queued atoms: 1,507 against 1,501).
+- A solver still alive when the process ends reports its state at its last `solve_int` or `assume`.
+- Reads by Python or by theory code outside the solver's own propagation and analysis.
+- Cost. A fact's count says nothing about what it took to build.
+
+## (c) Proposals
+
+**1. From (a): module and constant handles read once per process.** About 50 Rust functions import a module by
+name on each call. That is 2.0% of dev samples and 1.7% of fuzz samples, which is the most this step can remove.
+Nothing is skipped: the handle kept is the module object, and every attribute is still read from it at each use, so
+a patched method or a changed constant is seen as today (ruling P1). The acceptance check is the bar's (digests on
+dev and fuzz identical, the suite, the plant table including the patched-method kept tests), plus a gain beyond the
+spread on S1. That last part is in doubt: 317's twelve pinned rounds on this arm span 1.8% on dev (0.647 to 0.659 s)
+and 1.4% on fuzz, so the ceiling is about one spread wide, and rk_key's read-once caches were dropped for exactly
+that reason. Shares are of samples, not wall time.
+
+**2. From (b): none.** No skip-building step can be argued from this count, so (b) stands as a measurement.
+
+- A step that skips building needs an exact decider that runs while the query runs. The two shapes available are
+  "build a fact when propagation would touch it" and "check each model against the unbuilt facts".
+- The first builds what the "visited" column shows: 91.7% and 91.9% of `build_context`'s clauses, and every
+  relation row on dev and 99.4% on fuzz. The second is option A, and the "reason" column agrees with its result:
+  100% and 98.4% of the pending links are a reason in some phase.
+- The small column, proof, cannot decide anything in advance. It is known only after a refutation, and most answers
+  (None, and every consistent check) end in a model instead.
+- The clauses a query never visits are mostly there for the complete check, which cannot be dropped: its verdict
+  is the difference between an answer and a raised error.
+- The one exact mechanism that did cut builds, sign repair, chooses the model; it does not predict reads. Its
+  acceptance check (answers identical on dev and fuzz, the suite) is the one any port of it would carry. Porting it
+  is the main-package lazy-links line's step, not a new proposal from this count.
+
+Not proposed, for the planner to weigh: Rust adds clauses to its own solver through a Python method call by name
+(`PySolver.add_internal` 1.09% dev and 1.00% fuzz, `add_clause` 0.68% fuzz); the solvers took 51,769 problem
+clauses on dev and 674,284 on fuzz by every path together. A direct call when the object is exactly the Rust type would be speed-only, with the same thin
+ceiling as proposal 1. Borrow-once stays queued (thread-local reads from Rust are 0.35% dev, 0.55% fuzz).

@@ -142,8 +142,14 @@ check("solvers born inside build_context", any(n["born"] == 1 for n in new), [n[
 check("clauses built in phase 1 > 0", tot("nb", 1) > 0, [tot("nb", i) for i in range(5)])
 check("vars built in phase 1 > 0", tot("vb", 1) > 0, [tot("vb", i) for i in range(3)])
 for k in range(3):
-    check("phase-1 clauses %s in the complete check (phase 2) > 0" % KIND[k], tot("cm", 1, k * 3 + 2) > 0, tot("cm", 1, k * 3 + 2))
+    if k < 2:
+        check("phase-1 clauses %s in the complete check (phase 2) > 0" % KIND[k], tot("cm", 1, k * 3 + 2) > 0, tot("cm", 1, k * 3 + 2))
     check("phase-1 clauses %s by the query (phase 0) > 0" % KIND[k], tot("cm", 1, k * 3) > 0, tot("cm", 1, k * 3))
+# sa-port-321: the fourth ask is refuted inside implied() (assume, at an assumption level): no analysis runs there and
+# the patch walks no cone, so the check's proof column stays 0 on it. That 0 is an unmarked site, not "nothing read".
+check("check refuted in assume (no solve_int in that solver, no root conflict): proof column 0 there is UNMARKED",
+      any(n["ec"][0] == 0 and n["ec"][1] >= 1 and n["ec"][5] == 0 and n["cm"][1][5] > 0 and n["cm"][1][8] == 0 for n in new),
+      [(n["ec"][:6], n["cm"][1][5], n["cm"][1][8]) for n in new if n["ec"][0] == 0])
 rk = max(new, key=lambda n: sum(n["rk"]))["rk"]
 check("relation rows made, by kind (user eq, queued atom, top entry, pending link)", sum(rk) > 0, rk)
 check("relation rows that emitted a clause, variable or unit", sum(tot("re", i) for i in range(4)) > 0, [tot("re", i) for i in range(4)])
@@ -153,5 +159,21 @@ check("rule blocks visited, reason (any phase)", tot("bm", 9) > 0 and tot("bm", 
 check("units of phase 1 visited (any phase)", tot("um", 1, 9) > 0, [tot("um", 1, j) for j in (9, 10, 11)])
 print("blocks marks any-phase:", [tot("bm", j) for j in (9, 10, 11)], "units built:", [tot("ub", i) for i in range(3)],
       "units marks:", [[tot("um", i, j) for j in (9, 10, 11)] for i in range(3)])
+
+# 3. (sa-port-321) The check's proof column: assumptions that unit propagation cannot refute, so the complete check
+# reaches solve(), decides, and analyses a conflict. All four assumption clauses are in that refutation.
+P = Q.positive
+before = set(last())
+try:
+    a5 = sympy_api.ask(P(x), (P(x) | P(y)) & (P(x) | ~P(y)) & (~P(x) | P(y)) & (~P(x) | ~P(y)))
+except ValueError as e:
+    a5 = "ValueError: " + str(e)[:24]
+gc.collect()
+rows = last()
+new = [rows[k] for k in rows if k not in before]
+check("propositional refutation raises", str(a5).startswith("ValueError"), a5)
+check("the check reached solve_int", tot("ec", 0) >= 1, [tot("ec", i) for i in range(6)])
+check("phase-1 clauses proof in the complete check (phase 2) == 4 of 4", (tot("cm", 1, 8), tot("nb", 1)) == (4, 4), (tot("cm", 1, 8), tot("nb", 1)))
+check("learnt clause proof in the complete check (phase 2) > 0", tot("cm", 3, 8) > 0, tot("cm", 3, 8))
 print("FAILS", fails)
 sys.exit(1 if fails else 0)
