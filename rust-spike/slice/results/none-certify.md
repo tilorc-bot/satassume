@@ -68,14 +68,15 @@ Why a side is not certified (sides, not queries):
 | fail: the model's point gives the proposition the other value | 96 | 274 |
 | fail: the assumptions are false at the model's point | 31 | 602 |
 | uncheckable: nan at the point (an infinity minus an infinity, zoo) | 76 | 1375 |
-| uncheckable: a transcendental constant or a function value | 61 | 114 |
+| uncheckable: a transcendental constant or a function value | 59 | 113 |
 | uncheckable: an order relation at a value that is not an extended real | 4 | 158 |
-| uncheckable: other | 4 | 7 |
+| uncheckable: other (an AccumulationBounds value, an unsimplified sum) | 4 | 7 |
 
 A failed side says the point I read from the model is not a witness. It does not say the None is wrong: the model
 fixes types, and where no relation mentions a symbol any number of that type is "the model's point". Why a point
 fails the assumptions was not resolved further (no LRA value of a closed term such as pi is involved: 0 cases; the
-point does not reproduce a block in 13 of 32 dev and 226 of 625 fuzz failed sides).
+point does not reproduce a block in 13 of 32 dev and 226 of 625 such sides, counted over every None with a deciding
+entailment, so including the 2 dev and 168 fuzz class (ii) queries).
 
 **The same queries with any exact witness** (a model's point or a searched point, per side):
 
