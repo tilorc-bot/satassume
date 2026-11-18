@@ -143,13 +143,16 @@ impl TermFrames {
         let derived = q.getattr(intern!(p, "derived"))?;
         if self.planted(p, "tl-term-stale")? {
             // plant 740: a term table that survives its query. The first query's `derived` map is kept, and a later
-            // query's term found in it gets that query's id.
+            // query's term found in it gets that query's id, brought inside this query's table: the stale id that
+            // matters names another term's row quietly, it doesn't fall off the end.
             let old = self.stale.lock().unwrap().as_ref().map(|d| d.clone_ref(p));
             match old {
                 None => *self.stale.lock().unwrap() = Some(derived.clone().unbind()),
                 Some(old) if !old.bind(p).is(&derived) => {
                     if let Some(i) = some(old.bind(p).call_method1(intern!(p, "get"), (e,))?) {
-                        return Ok(Some(i));
+                        let n = q.getattr(intern!(p, "table"))?.len()?.max(1) as u64;
+                        let i: u64 = i.extract()?;
+                        return Ok(Some((i % n).into_pyobject(p)?.into_any()));
                     }
                 }
                 _ => {}
