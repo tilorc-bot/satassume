@@ -156,4 +156,122 @@ What the tables say about a next target:
 
 ## 2x2, the bar and the probe count
 
-(Filled in when the bar is read: see HANDOFF-sa-port-317.md.)
+Read by sa-port-318 (18 Nov). Tested source 46750d4, .so 9acc8c3b (x86-64, built on pareto1). **Not landed when this
+was written:** one planted suite row, `term:tl-term-stale`, differs from 314's row by id, and that went to the planner
+as a question (see "The tl-term-stale suite row").
+
+### 2x2 (pareto1, 46750d4, .so 9acc8c3b; read by 317)
+
+20 of 20 references exit 0; 80 of 80 cells run 0 cmp 0: answers equal Python's on the 20 workloads in all four cells.
+The Python-call table is byte-identical to 315's (term_live.py 8,497,075 -> 1,258,512, 0 rises, knowledge_live equal).
+
+### The bar (pareto0, 46750d4, .so 9acc8c3b): END 0 at 16:16:24Z 18 Nov
+
+Config: 314's full bar (N=6, no SLICE_ variable from the launcher). Base: 314's plain suite row (127 failed, 5991
+passed), and 314's bar for the plant columns and suite rows.
+
+| check | result |
+|---|---|
+| tests (72 files, one process each) | all exit 0; test_term_frames.py 18 passed |
+| suite, plain | 126 failed / 5992 passed, 6159 ids; against base new 0, gone 0, changed 1: the planted-history test, failed -> passed |
+| live dev, fuzz | 8 of 8 MATCH (answers_sha 31cd0945c07f02a6, 173502b6ef285ad6, as 314) |
+| 15 extra workloads | 30 of 30 MATCH |
+| `frames:rust`, 17 workloads | 17 of 17 MATCH |
+| `frames:rust`, suite | 127 failed / 5991 passed; 0 ids differ from 314's row |
+| workload plant columns (32 columns, 17 workloads) | verdict and fired count equal 314's in all 544 rows (413 MATCH, 131 DIFFER) |
+| fm rows | plain: 20 workloads, 0 differ; the two fm plants exit 1 (4 and 3 differ) |
+| kept reasons | 42 entries, all equal 314's |
+| TermFault in suite logs | 0 in 24 rows; 86 in convert:enc-int-no-sign, as in 314's bar |
+
+Environment (env-summary.txt): `SLICE_TERM_FRAMES=rust` in suite-frames:rust and the six suite-term:tl-* rows, in no
+other row; `SLICE_CONVERT=rust` in the five convert:* rows only.
+
+Suite rows by id against 314's rows (tools318/barcmp318.py), 25 rows:
+
+- 0 ids differ in 13: convert:enc-int-no-sign, convert:term-row-no-number, convert:walk-args-unreversed,
+  dispatch-keeps-memo, fm-hand-instrument-by-name, fm-hand-patched-direct, fm-implies-swap, frames:rust,
+  nc-memo-true-false, sb-join-address, term:mark-wrong-pattern, term:tl-current-outer, term:tl-run-flip.
+- Only the planted-history test differs in 9: plain, term:tl-guard-quiet, term:tl-ids-reversed and term:tl-mark-skip
+  (failed in 314's bar, passed here); convert:klass-no-is-expr, fm-ite-swap, same-is, term:mark-leaves-entry and
+  term:mark-skips-native (passed there, failed here).
+- class-is: 133 failed against 137; 4 ids differ, all `test_zero_glue.py` G1 (failed -> passed). This is the
+  order-dependent family sa-port-311 and 312 described; the row is informational. Twin workload DIFFER, fired 100.
+- convert:enc-true-as-false: 569 failed against 585; 68 ids differ. Known not to reproduce by id (310, 314). Caught
+  (443 ids changed against this bar's plain row).
+- **term:tl-term-stale: 216 failed against 239; 68 ids differ. Not on any known list.** See below.
+
+Plants 740-745: workload DIFFER counts and fired counts equal 314's table in every row. Suite ids changed against
+this bar's plain row, the planted-history test left out: 740 90 (314: 112), 741 15, 742 0, 743 234, 744 0, 745 0;
+the last five equal 314's.
+
+Exceptions caught at engine.py:1906: workload rows 0 (616 handler files in live/ and extra/, 0 rows). Suite: 39 rows
+in 2 tests, the base's multiset, in the plain row and 19 others; the other five rows (convert:enc-int-no-sign 1,
+convert:klass-no-is-expr 38, convert:term-row-no-number 42, term:tl-run-flip 42 with 5 ids,
+convert:enc-true-as-false 747) equal 314's except convert:enc-true-as-false (734 there). bar_sum's "plant fired in the suite" counter differs from 314's in three rows
+(class-is 1242 against 4303, sb-join-address 91 against 57, fm-implies-swap 6864 against 6863); sb-join-address and
+fm-implies-swap have 0 ids differing.
+
+### The planted-history test (known id()-reuse row)
+
+`tests/test_public_incremental.py::test_public_comparison_catches_a_planted_history_dependence` passed in the plain
+suite here and failed on base, so a28c548's repeat check was run (orion, clone at source 46750d4, .so a188b7fa; 20
+fresh processes a cell; tools318/run1.sh, sweep.sh, tally.sh):
+
+| cell | passed |
+|---|---|
+| Rust, the test | 0 of 20 |
+| Rust, keep-alive variant | 20 of 20 |
+| Rust, `SLICE_TERM_FRAMES=rust`, the test | 0 of 20 |
+| Rust, `SLICE_TERM_FRAMES=rust`, keep-alive | 20 of 20 |
+| Python, the test | 39 of 40 (one `assert 1 == 2`) |
+| Python, keep-alive | 40 of 40 |
+
+Every failure is at test_public_incremental.py:204, `assert N == 2` with N < 2. That is a28c548's signature (the
+test fails, keep-alive is clean, Python near its base rate of 2 to 6 in 50). In the bar's 25 suite rows it passed in
+4 (plain, tl-guard-quiet, tl-ids-reversed, tl-mark-skip) and failed in 21; in 314's bar it passed in 5 and failed in 20.
+
+### The tl-term-stale suite row
+
+Plant 740 keeps the first query's `derived` map for the life of the process, so what it does in a test depends on
+which tests the same xdist worker ran before. To see whether the row reproduces on one source, it was rerun with the
+bar's own command line three times on 314's tree (5b1d96f, .so c1ede79e) and three times on 46750d4 (.so 9acc8c3b),
+interleaved (pareto0, shared lease; tools318/rr318.sh, rrcmp318.py). With the two bars' rows that makes four runs a
+source. The planted-history test is left out of these counts.
+
+| source | failed, 4 runs | ids changed against 314's plain row | ids differing between two runs of this source (6 pairs) |
+|---|---|---|---|
+| 5b1d96f (base) | 239, 232, 238, 223 | 112, 105, 111, 96 | 36 to 57 |
+| 46750d4 | 216, 231, 239, 235 | 90, 105, 112, 108 | 11 to 55 |
+
+Between a base run and a 46750d4 run (16 pairs): 13 to 68 ids differ; the two bars' rows are the 68. 108 ids are not
+the same in all eight runs: 89 vary among the base's four runs, 66 among 46750d4's four.
+
+- The row does not reproduce by id on the base itself, by as many as 57 ids.
+- The two bars' rows are the furthest pair of the 28, and 216 failed is the lowest of the eight; the base's range is
+  223 to 239.
+- The plant is caught in all eight runs (90 to 112 ids changed), and its workload columns equal 314's.
+- Four runs a source do not show whether the fix shifts this row's distribution. 25 ids failed only in base runs and
+  6 only in 46750d4 runs, out of 108 that vary.
+
+### Wall time of this bar (OWED [139b])
+
+4 h 21 m 28 s (11:54:56Z to 16:16:24Z). 314's bar: 4 h 22 m 47 s.
+
+| phase | 314 | this bar |
+|---|---|---|
+| tests | 2 m 21 s | 2 m 20 s |
+| suite | 1 m 50 s | 1 m 54 s |
+| live | 14 m 30 s | 14 m 24 s |
+| plants (dev, fuzz) | 62 m 46 s | 62 m 32 s |
+| extra (15 workloads) | 133 m 46 s | 133 m 23 s |
+| suiteplants | 46 m 34 s | 45 m 57 s |
+| fmrows | 57 s | 57 s |
+
+- Suite rows are 1 m 41 s to 2 m 04 s each; fm-ite-swap 4 m 36 s. The seven rows frames:rust and term:tl-* took
+  12 m 54 s, the five convert:* rows 8 m 51 s.
+- Three workloads make 107 m of extra's 133 m: budget 43 m 15 s, rootof 32 m 55 s, wiring 31 m 18 s.
+
+### Probe count
+
+Not run: it is taken on the landed SHA (21 of 32 expected, unchanged; the 2x2's Python-call table on 46750d4 is
+already byte-identical to 315's).
