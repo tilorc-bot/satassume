@@ -9,6 +9,7 @@
 //! The memo and the class cache are keyed on Python objects, as Python's `_clauses_cache` and `_mro_cache` are, and
 //! are emptied whenever `state.epoch.EPOCH[0]` moves (registering bumps it), so no entry outlives the templates in
 //! force when it was made.
+use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PyTuple, PyType};
 use std::collections::{HashMap, HashSet};
@@ -95,36 +96,63 @@ impl Dispatch {
         }
     }
 
-    /// `_may_be_nan(a)`.
-    fn may_be_nan(&self, a: &Bound<'_, PyAny>) -> PyResult<bool> {
-        let py = a.py();
-        if a.is(self.nan.bind(py)) {
-            return Ok(true);
-        }
-        if !a.is_instance(self.basic_t.bind(py))? || a.getattr("is_Atom")?.is_truthy()? {
-            return Ok(false);
-        }
-        for b in a.getattr("args")?.try_iter()? {
-            let b = b?;
-            if self.specials.iter().any(|c| b.is(c.bind(py))) || self.may_be_nan(&b)? {
-                return Ok(true);
-            }
-        }
-        Ok(false)
-    }
-
     /// `_applied_to_nan(expr)`, the registry's `opaque`.
     fn opaque(&self, e: &Bound<'_, PyAny>) -> PyResult<bool> {
         if !e.is_instance(self.application_t.bind(e.py()))? {
             return Ok(false);
         }
+        let py = e.py();
         for a in e.getattr("args")?.try_iter()? {
-            if self.may_be_nan(&a?)? {
+            if may_be_nan(&a?, self.basic_t.bind(py).as_any(), self.nan.bind(py), &self.specials, NanPlant::None)? {
                 return Ok(true);
             }
         }
         Ok(false)
     }
+}
+
+/// The walk's test plants in `may_be_nan` (746-748, `SLICE_CONVERT_PLANT`); the dispatch always passes `None`.
+#[derive(Clone, Copy, PartialEq)]
+pub(super) enum NanPlant {
+    None,
+    /// 746: the `_SPECIAL` identity test dropped, so an infinity among the arguments isn't seen.
+    NoSpecials,
+    /// 747: an atom's arguments followed (the range of an `Idx`).
+    AtomArgs,
+    /// 748: no recursion below the first level of arguments.
+    OneLevel,
+}
+
+/// `_may_be_nan(a)` (templates/__init__.py), the one native copy: `Dispatch::opaque` (`_applied_to_nan`) and the walk's
+/// F_MAYBE_NAN bit (walk.rs `term_row`) both call it. Python's cases in Python's order: `a is S.NaN`; not a `Basic`, or
+/// an atom (its arguments are labels and aren't followed): False; otherwise any argument that is one of `_SPECIAL`
+/// by identity, or that may be nan itself. The recursion is counted against Python's limit as the walk's `enc` is
+/// (`Depth`), so a nesting too deep for it ends with RecursionError, not with the native stack.
+pub(super) fn may_be_nan(
+    a: &Bound<'_, PyAny>,
+    basic: &Bound<'_, PyAny>,
+    nan: &Bound<'_, PyAny>,
+    specials: &[Py<PyAny>],
+    plant: NanPlant,
+) -> PyResult<bool> {
+    let py = a.py();
+    if a.is(nan) {
+        return Ok(true);
+    }
+    if !a.is_instance(basic)? || (a.getattr(intern!(py, "is_Atom"))?.is_truthy()? && plant != NanPlant::AtomArgs) {
+        return Ok(false);
+    }
+    let _depth = super::walk::Depth::enter()?;
+    for b in a.getattr(intern!(py, "args"))?.try_iter()? {
+        let b = b?;
+        if plant != NanPlant::NoSpecials && specials.iter().any(|c| b.is(c.bind(py))) {
+            return Ok(true);
+        }
+        if plant != NanPlant::OneLevel && may_be_nan(&b, basic, nan, specials, plant)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// `_split(result, compiled, formulas)`; `wide_formulas` is `_common`'s (6d), called back and counted.

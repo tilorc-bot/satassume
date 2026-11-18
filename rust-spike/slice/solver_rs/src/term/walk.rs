@@ -10,13 +10,18 @@
 //! What is read of SymPy is what the method reads: `isinstance`, `hash`/`==` through the dicts, `.args`, class
 //! attributes, `_hashable_content()`, `free_symbols`, `has`, `atoms`. Nothing is built: no SymPy expression is made
 //! here. Nothing is kept across queries: a `Walk` dies with its `_Walk`. `WalkCtx` holds only names of `convert.py`'s
-//! module (classes, constants, functions), read once.
+//! module (classes, constants, functions), read once, and `templates._SPECIAL`.
+//!
+//! `term_row`'s F_MAYBE_NAN bit is `templates._may_be_nan`, which doesn't stay a Python call: the bit comes from
+//! `dispatch::may_be_nan`, the native copy the template dispatch already had (`is_Atom` and `.args` are what it reads).
 use pyo3::exceptions::{PyException, PyKeyError, PyOverflowError, PyValueError};
 use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyInt, PyList, PyString, PyTuple, PyType};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU8, Ordering};
+
+use super::dispatch::{may_be_nan, NanPlant};
 
 // The items, as bits of `Walk.mask`: `convert.RUST_ITEMS`, same order.
 pub const ENC: u8 = 1;
@@ -53,16 +58,29 @@ const IS_MATRIX: i64 = 1 << 17;
 const IS_EXP: i64 = 1 << 18;
 const PLAIN_ATOMS: i64 = 1 << 19;
 
-/// Test plants, one per item (plants 670-674; `SLICE_CONVERT_PLANT`): each writes a wrong value at one site.
+/// Test plants (`SLICE_CONVERT_PLANT`): one per item (plants 670-674), each a wrong value at one site, and one per case
+/// of `may_be_nan` in `term_row`'s flags (plants 746-748).
 static PLANT: AtomicU8 = AtomicU8::new(0);
 const PLANT_ENC: u8 = 1; // 670: True encodes as False
 const PLANT_KLASS: u8 = 2; // 671: a class row without the IS_EXPR flag
 const PLANT_TERM_ROW: u8 = 3; // 672: a term row without the is_number bit
 const PLANT_WALK: u8 = 4; // 673: args pushed unreversed, so ids aren't by first sight
 const PLANT_ENC_INT: u8 = 5; // 674: a negative int loses its sign
+const PLANT_NAN_SPECIALS: u8 = 6; // 746: may_be_nan without the `_SPECIAL` identity test
+const PLANT_NAN_ATOM: u8 = 7; // 747: may_be_nan follows an atom's arguments
+const PLANT_NAN_LEVEL: u8 = 8; // 748: may_be_nan doesn't recurse below the first level
 
 fn planted(p: u8) -> bool {
     PLANT.load(Ordering::Relaxed) == p
+}
+
+fn nan_plant() -> NanPlant {
+    match PLANT.load(Ordering::Relaxed) {
+        PLANT_NAN_SPECIALS => NanPlant::NoSpecials,
+        PLANT_NAN_ATOM => NanPlant::AtomArgs,
+        PLANT_NAN_LEVEL => NanPlant::OneLevel,
+        _ => NanPlant::None,
+    }
 }
 
 #[pyfunction]
@@ -99,7 +117,8 @@ pub struct WalkCtx {
     registry: Py<PyAny>,
     template_name: Py<PyAny>,
     structural_class: Py<PyAny>,
-    may_be_nan: Py<PyAny>,
+    /// `templates._SPECIAL`, for `may_be_nan`.
+    specials: Vec<Py<PyAny>>,
     constructed_nc: Py<PyAny>,
     py_enc: Py<PyAny>,
     py_enc_int: Py<PyAny>,
@@ -131,6 +150,8 @@ impl WalkCtx {
         let walk = m.getattr("_Walk")?;
         let builtins = py.import("builtins")?;
         let i64v = m.getattr("_I64")?;
+        let specials = py.import("satassume.knowledge.templates")?.getattr("_SPECIAL")?.try_iter()?
+            .map(|c| Ok(c?.unbind())).collect::<PyResult<Vec<_>>>()?;
         Ok(WalkCtx {
             basic: g("Basic")?,
             rational: g("Rational")?,
@@ -158,7 +179,7 @@ impl WalkCtx {
             registry: g("registry")?,
             template_name: g("_template_name")?,
             structural_class: g("_structural_class")?,
-            may_be_nan: g("_may_be_nan")?,
+            specials,
             constructed_nc: g("constructed_noncommutative")?,
             py_enc: walk.getattr("enc")?.unbind(),
             py_enc_int: walk.getattr("enc_int")?.unbind(),
@@ -228,11 +249,12 @@ fn is_subclass(cls: &Bound<'_, PyAny>, of: &Py<PyAny>) -> PyResult<bool> {
     cls.cast::<PyType>()?.is_subclass(of.bind(cls.py()))
 }
 
-/// `Py_EnterRecursiveCall` around `enc`'s own recursion: a nesting Python's walker ends with RecursionError ends so here.
-struct Depth;
+/// `Py_EnterRecursiveCall` around `enc`'s own recursion (and `may_be_nan`'s): a nesting Python's walker ends with
+/// RecursionError ends so here.
+pub(super) struct Depth;
 
 impl Depth {
-    fn enter() -> PyResult<Depth> {
+    pub(super) fn enter() -> PyResult<Depth> {
         if unsafe { pyo3::ffi::Py_EnterRecursiveCall(c" in convert's walk".as_ptr()) } != 0 {
             return Err(Python::attach(|py| PyErr::fetch(py)));
         }
@@ -705,7 +727,7 @@ impl<'py> W<'py> {
         if t.call_method1(intern!(py, "atoms"), (cx.applied_undef.bind(py),))?.is_truthy()? {
             bits |= F_UNDEF;
         }
-        if cx.may_be_nan.bind(py).call1((t,))?.is_truthy()? {
+        if may_be_nan(t, cx.basic.bind(py), cx.nan.bind(py), &cx.specials, nan_plant())? {
             bits |= F_MAYBE_NAN;
         }
         let nc = cx.constructed_nc.bind(py).call1((t,))?;

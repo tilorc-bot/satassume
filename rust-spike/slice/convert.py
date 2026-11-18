@@ -442,9 +442,10 @@ def use_rust(items=RUST_ITEMS):
     WALK[0] = rust_walk(items) if items else None
 
 
-#: Test plants of the Rust walker, one per item: `SLICE_CONVERT_PLANT`, sa_solver.walk_plant's numbers.
+#: Test plants of the Rust walker, one per item, and three in `term_row`'s native `_may_be_nan` (plants 746-748):
+#: `SLICE_CONVERT_PLANT`, sa_solver.walk_plant's numbers.
 WALK_PLANTS = {'enc-true-as-false': 1, 'klass-no-is-expr': 2, 'term-row-no-number': 3, 'walk-args-unreversed': 4,
-               'enc-int-no-sign': 5}
+               'enc-int-no-sign': 5, 'nan-no-specials': 6, 'nan-atom-args': 7, 'nan-one-level': 8}
 
 
 def from_env():
