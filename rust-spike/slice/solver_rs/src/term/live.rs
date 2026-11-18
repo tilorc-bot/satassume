@@ -40,6 +40,10 @@ pub struct TermFrames {
     memos: Py<PyAny>,
     common: Py<PyAny>,
     constfield: Py<PyAny>,
+    /// The builtins `getattr` and `reversed` and `collections.defaultdict`, read once, for `note`.
+    getattr: Py<PyAny>,
+    reversed: Py<PyAny>,
+    defaultdict: Py<PyAny>,
     /// Plant 740's store, and nothing else's: the first query's `derived` map.
     stale: Mutex<Option<Py<PyAny>>>,
 }
@@ -271,10 +275,10 @@ impl TermFrames {
     fn note(&self, m: &Bound<'_, PyAny>, t: &Bound<'_, PyAny>) -> PyResult<()> {
         let p = m.py();
         let id = t.as_ptr() as usize;
-        if match attr_or(t, intern!(p, "native"))? {
-            Some(v) => v.is_truthy()?,
-            None => false,
-        } {
+        // Python's `getattr(t, name, default)` itself: the builtin builds no AttributeError on a miss, and a plain dict
+        // misses both names (`attr_or` built and dropped one each time).
+        let probe = self.getattr.bind(p);
+        if probe.call1((t, intern!(p, "native"), false))?.is_truthy()? {
             if t.hasattr(intern!(p, "_nt_mark"))? {
                 let mark = t.call_method0(intern!(p, "_nt_mark"))?;
                 m.getattr(intern!(p, "natives"))?.set_item(id, (t, mark))?;
@@ -285,13 +289,9 @@ impl TermFrames {
             return Ok(());      // plant 745: the table has no mark, so the rollback leaves what the run wrote in it
         }
         let n = t.len()?;
-        let module = self.module.bind(p);
-        let stamp = match attr_or(t, intern!(p, "stamp"))? {
-            Some(s) => s,
-            None => module.getattr(intern!(p, "_NO_STAMP"))?,
-        };
+        let stamp = probe.call1((t, intern!(p, "stamp"), self.module.bind(p).getattr(intern!(p, "_NO_STAMP"))?))?;
         let last = if n > 0 {
-            match p.import(intern!(p, "builtins"))?.getattr(intern!(p, "reversed"))?.call1((t,))?.try_iter()?.next() {
+            match self.reversed.bind(p).call1((t,))?.try_iter()?.next() {
                 Some(v) => v?,
                 None => p.None().into_bound(p),
             }
@@ -299,8 +299,7 @@ impl TermFrames {
             p.None().into_bound(p)
         };
         m.getattr(intern!(p, "tables"))?.set_item(id, (t, n, stamp, last))?;
-        let dd = p.import(intern!(p, "collections"))?.getattr(intern!(p, "defaultdict"))?;
-        if t.is_instance(&dd)? && t.getattr(intern!(p, "default_factory"))?.is(&p.get_type::<PyDict>()) {
+        if t.is_instance(self.defaultdict.bind(p))? && t.getattr(intern!(p, "default_factory"))?.is(&p.get_type::<PyDict>()) {
             for inner in t.call_method0(intern!(p, "values"))?.try_iter()? {
                 self.note(m, &inner?)?;
             }
@@ -346,6 +345,7 @@ impl TermFrames {
     #[new]
     fn new(module: &Bound<'_, PyAny>) -> PyResult<TermFrames> {
         let g = |n: &str| -> PyResult<Py<PyAny>> { Ok(module.getattr(n)?.unbind()) };
+        let builtins = module.py().import("builtins")?;
         Ok(TermFrames {
             module: module.clone().unbind(),
             local: g("_local")?,
@@ -361,6 +361,9 @@ impl TermFrames {
             memos: g("memos")?,
             common: g("_common")?,
             constfield: g("constfield")?,
+            getattr: builtins.getattr("getattr")?.unbind(),
+            reversed: builtins.getattr("reversed")?.unbind(),
+            defaultdict: module.py().import("collections")?.getattr("defaultdict")?.unbind(),
             stale: Mutex::new(None),
         })
     }
