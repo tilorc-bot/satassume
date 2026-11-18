@@ -156,9 +156,9 @@ What the tables say about a next target:
 
 ## 2x2, the bar and the probe count
 
-Read by sa-port-318 (18 Nov). Tested source 46750d4, .so 9acc8c3b (x86-64, built on pareto1). **Not landed when this
-was written:** one planted suite row, `term:tl-term-stale`, differs from 314's row by id, and that went to the planner
-as a question (see "The tl-term-stale suite row").
+Read by sa-port-318 (18 Nov). Tested source 46750d4, .so 9acc8c3b (x86-64, built on pareto1). One planted suite row,
+`term:tl-term-stale`, differs from 314's row by id; it went to the planner as a question (report 0b1deed), and the
+planner ruled it informational (see "The tl-term-stale suite row"). Landed on that ruling.
 
 ### 2x2 (pareto1, 46750d4, .so 9acc8c3b; read by 317)
 
@@ -232,6 +232,10 @@ test fails, keep-alive is clean, Python near its base rate of 2 to 6 in 50). In 
 
 ### The tl-term-stale suite row
 
+tl-term-stale suite row: order-dependent (the plant keeps process-wide state), informational per [138b]; 8 reruns
+quoted. (Planner's ruling on report 0b1deed, 18 Nov: the bar fails on 740 only if its workload columns or the kept
+test stop catching it.)
+
 Plant 740 keeps the first query's `derived` map for the life of the process, so what it does in a test depends on
 which tests the same xdist worker ran before. To see whether the row reproduces on one source, it was rerun with the
 bar's own command line three times on 314's tree (5b1d96f, .so c1ede79e) and three times on 46750d4 (.so 9acc8c3b),
@@ -273,5 +277,5 @@ the same in all eight runs: 89 vary among the base's four runs, 66 among 46750d4
 
 ### Probe count
 
-Not run: it is taken on the landed SHA (21 of 32 expected, unchanged; the 2x2's Python-call table on 46750d4 is
-already byte-identical to 315's).
+Taken on the landed SHA, after this file's last commit: the number is in sa-port-318's done report (21 of 32
+expected, unchanged; the 2x2's Python-call table on 46750d4 is already byte-identical to 315's).
