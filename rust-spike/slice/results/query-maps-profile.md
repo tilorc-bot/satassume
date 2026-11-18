@@ -63,7 +63,7 @@ so with the C it calls directly; 19,843 dev and 35,962 fuzz samples):
 fuzz 6.014 to 6.038 s, +0.4%; digests equal). On dev, of `_Mark`'s 1,385 samples: 398 are `attr_or`'s attribute
 reads (`native` and `stamp` asked of plain dicts, each miss making and dropping an AttributeError, where Python's
 `getattr(t, name, default)` makes none) and 179 are `import builtins` / `import collections`, done per noted table
-(live.rs:295 and :303). Neither involves the seven maps.
+(live.rs:294 and :302). Neither involves the seven maps.
 
 ## Two facts for the port's design
 
