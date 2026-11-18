@@ -113,6 +113,7 @@ from .state.memos import PROCESS as _PROCESS
 from .knowledge.extensions import Args, extensions, register, unregister  # noqa: F401
 from .sat.formula import And, Equivalent, Formula, ITE, Implies, Not, Or, P, TRUE, FALSE  # noqa: F401
 from .relations import Uninterpreted, relation_atom, relational_name
+from . import witness as _witness
 from .knowledge.domain import NONCOMM_SIZE, _NONCOMM, _fixed_noncommutative, _noncommutative  # noqa: F401
 
 from sympy.assumptions.assume import AppliedPredicate as _Applied
@@ -1126,6 +1127,10 @@ def _engine_ask(proposition, assumptions, eng: Engine) -> Optional[bool]:
         assum = None
     if assum is FALSE:
         raise ValueError("inconsistent assumptions")
+    if _witness.ENABLED[0] and assum is not None and _witness.independent(prop, assum, eng):
+        # SLICE_WITNESS=1 (off by default): two exact rational points satisfy the assumptions and give the
+        # proposition both values, so no definite answer is entailed (satassume.witness); no session is built
+        return None
     try:
         if assum is None and isinstance(prop, P):
             return eng.is_(prop.expr, prop.pred)
