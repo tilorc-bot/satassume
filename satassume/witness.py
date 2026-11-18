@@ -25,15 +25,19 @@ an answer. The argument assumes:
    relation as ``eq``/``lt`` atoms). It assumes that translation keeps the truth value at a rational point.
 4. *Evaluation is exact*: a term has a value only by integer and ``Fraction`` arithmetic on ``Add``, ``Mul``, ``Pow``
    with an integer exponent, rational constants and the point (:func:`_term`); a predicate has a value only by the
-   table below (:data:`TABLE`: the 14 basis predicates of ``rules.BASIS`` from sa-port-325's table, at a rational
-   value; ``rules.DEFINITIONS`` for the derived ones; ``eq`` and ``lt`` by comparing two rationals). Every line of
-   the table carries its argument. SymPy's evaluation is never asked (satassume issue 247).
+   tables below: :data:`TABLE`, 16 entries (the 14 basis predicates of ``rules.BASIS`` from sa-port-325's table,
+   at a rational value, and ``eq`` and ``lt`` of two rational values), and for a derived predicate
+   ``rules.DEFINITIONS`` where the definition is two-way in SymPy's own rule base (:data:`TWO_WAY`, 16 entries) or
+   the value a one-way SymPy rule gives every rational (:data:`ONE_WAY`: ``hermitian`` and ``commutative``;
+   ``antihermitian`` is undecided). Every line carries its argument. SymPy's evaluation is never asked (satassume
+   issue 247).
 5. *No registered knowledge*: with any function registered in the engine's ``extensions`` the check falls through,
    since a registration can state facts no table here knows. Templates registered by a user are not detected.
 
 Undecided is strict: if any atom of the proposition or the assumptions has no exact value at a point, the point is
 not used, and if an atom can have none at any point (``polar``, a function, a Float, an infinity, a relation of
-non-terms, a predicate outside the vocabulary) the check falls through at once without trying a point.
+non-terms, ``antihermitian``, a predicate outside the vocabulary) the check falls through at once without trying a
+point.
 
 No SymPy object is constructed and no SymPy method that evaluates is called: the check reads ``type``, ``args``,
 ``Rational.p``/``.q`` and ``assumptions0``. It keeps nothing across queries: no cache, no table, no counter.
@@ -95,7 +99,8 @@ def _integer(v):
     return v.denominator == 1
 
 
-# The 14 basis predicates (rules.BASIS) at a rational value v = p/q in lowest terms. One exactness argument each.
+# 16 entries, one exactness argument each: the 14 basis predicates (rules.BASIS) at a rational value v = p/q in lowest
+# terms, then the two relations of two rational values.
 TABLE = {
     # v is the root of the integer polynomial q*t - p
     'algebraic': lambda v: True,
@@ -124,22 +129,69 @@ TABLE = {
     'rational': lambda v: True,
     # p == 0
     'zero': lambda v: v == 0,
+    # eq: p1/q1 and p2/q2 with positive denominators are the same number exactly when p1*q2 == p2*q1 (Fraction.__eq__)
+    'eq': lambda a, b: a == b,
+    # lt: with positive denominators p1/q1 < p2/q2 exactly when p1*q2 < p2*q1 (Fraction.__lt__); the order is total
+    'lt': lambda a, b: a < b,
 }
-assert tuple(TABLE) == BASIS
+RELATIONS = ('eq', 'lt')
+BASIS_SET = frozenset(BASIS)
+assert tuple(TABLE) == BASIS + RELATIONS
+
+# The derived predicates (rules.DEFINITIONS: the engine reads each as its definition in both directions). A
+# definition is used here only where SymPy's own rule base (sympy/core/assumptions.py, sympy/assumptions/facts.py)
+# also states or entails it in both directions; the rules it rests on are given per entry, and
+# tests/test_witness.py::test_two_way_definitions_follow_from_sympys_rules checks the entailment mechanically.
+TWO_WAY = {
+    'real': "real == extended_real & finite",
+    'infinite': "infinite == !finite",
+    'positive': "positive == extended_positive & finite",
+    'negative': "negative == extended_negative & finite",
+    'nonnegative': "nonnegative == real & !negative, with real and negative as above",
+    'nonpositive': "nonpositive == real & !positive, with real and positive as above",
+    'nonzero': "nonzero == extended_nonzero & finite, with extended_nonzero as below",
+    'extended_nonnegative': "extended_nonnegative == extended_real & !extended_negative",
+    'extended_nonpositive': "extended_nonpositive == extended_real & !extended_positive",
+    'extended_nonzero': "extended_nonzero == extended_real & !zero",
+    'positive_infinite': "facts.py: extended_positive == positive | positive_infinite, the two exclusive, "
+                         "positive_infinite -> infinite; with positive as above",
+    'negative_infinite': "facts.py: extended_negative == negative | negative_infinite, the two exclusive, "
+                         "negative_infinite -> infinite; with negative as above",
+    'odd': "odd == integer & !even",
+    'irrational': "irrational == real & !rational",
+    'noninteger': "noninteger == extended_real & !integer",
+    'transcendental': "transcendental == complex & !algebraic",
+}
+# SymPy's rule base has only a one-way rule for these three; the engine's two-way reading is its own (scalars only,
+# rules.py). The definition is not used: the value is what the one-way rule gives every rational, or undecided.
+ONE_WAY = {
+    # rational -> real -> hermitian: True at every rational by the rule's own direction
+    'hermitian': lambda v: True,
+    # rational -> extended_real -> commutative: True at every rational by the rule's own direction
+    'commutative': lambda v: True,
+    # imaginary -> antihermitian and zero -> hermitian | antihermitian decide it at no rational: undecided
+    'antihermitian': None,
+}
+assert set(TWO_WAY) | set(ONE_WAY) == set(DEFINITIONS) and not set(TWO_WAY) & set(ONE_WAY)
 
 
 def _pred(name):
-    """``name`` at a rational value as a function, by TABLE or by the definition of a derived predicate
-    (rules.DEFINITIONS: a conjunction or disjunction of basis literals, the engine's own reading)."""
-    f = TABLE.get(name)
-    if f is not None:
+    """``name`` at a rational value as a function: by TABLE for a basis predicate, by its definition
+    (rules.DEFINITIONS, a conjunction or disjunction of basis literals) for a TWO_WAY derived predicate, by ONE_WAY
+    for the other three."""
+    if name in BASIS_SET:
+        f = TABLE[name]
+        if f is None:       # polar
+            raise _Undecided
         return f
-    d = DEFINITIONS.get(name)
-    if d is None:           # polar, or a predicate outside the vocabulary
+    if name in ONE_WAY:
+        f = ONE_WAY[name]
+        if f is None:       # antihermitian
+            raise _Undecided
+        return f
+    if name not in TWO_WAY:     # a predicate outside the vocabulary (eq and lt are not unary: _formula reads them)
         raise _Undecided
-    d = d.strip()
-    if not d:
-        return lambda v: True       # commutative: the empty conjunction
+    d = DEFINITIONS[name].strip()
     disj = "|" in d
     lits = []
     for t in d.split("|" if disj else "&"):
@@ -224,9 +276,8 @@ def _formula(f, q):
                 raise _Undecided
             fa, fb = _term(e[0], q, used), _term(e[1], q, used)
             q.probes.append((lambda pt: fa(pt) - fb(pt), used))
-            if name == "eq":
-                return lambda pt: fa(pt) == fb(pt)      # two rationals are equal when p1*q2 == p2*q1
-            return lambda pt: fa(pt) < fb(pt)           # and ordered as p1*q2 < p2*q1 (positive q)
+            rel = TABLE[name]
+            return lambda pt: rel(fa(pt), fb(pt))
         if type(e) is Args:
             raise _Undecided
         pr, ft = _pred(name), _term(e, q, used)

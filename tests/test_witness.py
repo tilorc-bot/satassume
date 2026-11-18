@@ -69,7 +69,10 @@ def test_table_at_a_rational(v):
 
 
 def test_table_is_the_basis_and_polar_is_undecided():
-    assert tuple(W.TABLE) == BASIS and W.TABLE['polar'] is None
+    assert tuple(W.TABLE) == BASIS + ('eq', 'lt') and len(W.TABLE) == 16 and W.TABLE['polar'] is None
+    for name in ('eq', 'lt'):       # the relations are not unary predicates
+        with pytest.raises(W._Undecided):
+            W._pred(name)
     with pytest.raises(W._Undecided):
         W._pred('polar')
     with pytest.raises(W._Undecided):
@@ -81,13 +84,103 @@ def test_table_is_the_basis_and_polar_is_undecided():
 def test_derived_predicates_follow_the_definitions():
     want = {'real': (1, 1, 1), 'positive': (0, 1, 0), 'negative': (0, 0, 1), 'nonzero': (0, 1, 1), 'odd': (0, 0, 0),
             'irrational': (0, 0, 0), 'noninteger': (0, 1, 1), 'infinite': (0, 0, 0), 'transcendental': (0, 0, 0),
-            'antihermitian': (1, 0, 0), 'hermitian': (1, 1, 1), 'commutative': (1, 1, 1), 'nonnegative': (1, 1, 0),
-            'nonpositive': (1, 0, 1), 'extended_nonzero': (0, 1, 1), 'positive_infinite': (0, 0, 0)}
+            'hermitian': (1, 1, 1), 'commutative': (1, 1, 1), 'nonnegative': (1, 1, 0),
+            'nonpositive': (1, 0, 1), 'extended_nonzero': (0, 1, 1), 'positive_infinite': (0, 0, 0),
+            'negative_infinite': (0, 0, 0), 'extended_nonnegative': (1, 1, 0), 'extended_nonpositive': (1, 0, 1)}
+    assert set(want) == (set(W.TWO_WAY) | set(W.ONE_WAY)) - {'antihermitian'} == set(DEFINITIONS) - {'antihermitian'}
     for name, row in want.items():
-        assert name in DEFINITIONS
         f = W._pred(name)
         assert tuple(int(f(v)) for v in (F(0), F(1, 2), F(-3, 2))) == row, name
     assert W._pred('odd')(F(3)) is True
+
+
+def test_the_relations_compare_two_rationals():
+    eq, lt = W.TABLE['eq'], W.TABLE['lt']
+    assert eq(F(1, 2), F(2, 4)) is True and eq(F(1, 2), F(1, 3)) is False and eq(2, F(4, 2)) is True
+    assert lt(F(1, 3), F(1, 2)) is True and lt(F(1, 2), F(1, 2)) is False and lt(F(-1, 2), F(-1, 3)) is True
+    assert lt(F(1, 2), 0) is False and lt(-1, F(-1, 2)) is True
+
+
+# sympy/assumptions/facts.py, its unary facts on the predicates the old rule base does not have (the two infinite
+# ones, hermitian, antihermitian), as rule strings; _FACTS_TEXT is where each stands in that file's source
+_FACTS = (
+    'extended_positive == positive | positive_infinite', 'extended_negative == negative | negative_infinite',
+    'positive -> !positive_infinite', 'negative -> !negative_infinite',
+    'positive_infinite -> infinite', 'negative_infinite -> infinite',
+    'real -> hermitian', 'imaginary -> antihermitian', 'zero -> hermitian | antihermitian',
+)
+_FACTS_TEXT = (
+    'Equivalent(Q.extended_positive(x), Q.positive(x) | Q.positive_infinite(x))',
+    'Equivalent(Q.extended_negative(x), Q.negative(x) | Q.negative_infinite(x))',
+    'Exclusive(Q.negative_infinite(x), Q.negative(x), Q.zero(x),',
+    'Implies(Q.negative_infinite(x) | Q.positive_infinite(x), Q.infinite(x))',
+    'Implies(Q.real(x), Q.hermitian(x))', 'Implies(Q.imaginary(x), Q.antihermitian(x))',
+    'Implies(Q.zero(x), Q.hermitian(x) | Q.antihermitian(x))',
+)
+
+
+def _sympys_rules():
+    """SymPy's own unary rules as clauses over the vocabulary: every string rule of sympy/core/assumptions.py, read
+    from its source, plus _FACTS. None of the engine's own two-way readings (rules.py) is in it."""
+    import inspect, re, sys
+    from satassume.knowledge.rules import PRED_INDEX, compile_rules
+    __import__('sympy.core.assumptions')
+    src = inspect.getsource(sys.modules['sympy.core.assumptions'])
+    block = src.split('_assume_rules = FactRules([')[1].split('])')[0]
+    old = [re.sub(r'\s+', ' ', r).strip() for r in re.findall(r"'([^']+)'", block)]
+    assert len(old) > 30 and 'extended_real -> commutative' in old and not [r for r in old if 'hermitian ==' in r]
+    __import__('sympy.assumptions.facts')
+    facts = inspect.getsource(sys.modules['sympy.assumptions.facts'])
+    assert [t for t in _FACTS_TEXT if t not in facts] == []
+    assert 'Equivalent(Q.hermitian' not in facts and 'Equivalent(Q.antihermitian' not in facts
+    return list(compile_rules(old + list(_FACTS), PRED_INDEX)), PRED_INDEX
+
+
+def _satisfiable(clauses, nv):
+    from test_rules import _count_models
+    return _count_models(clauses, nv) > 0
+
+
+def test_two_way_definitions_follow_from_sympys_rules():
+    """Each TWO_WAY definition is entailed in both directions by SymPy's own rules; each ONE_WAY one is not, and
+    for those the rules give every rational hermitian and commutative and leave antihermitian open at zero and at a
+    nonzero rational."""
+    from satassume.knowledge.rules import PREDICATES, basis_lits
+    rules, ix = _sympys_rules()
+    nv = len(PREDICATES)
+    lit = lambda l: (ix[BASIS[abs(l) - 1]] + 1) * (1 if l > 0 else -1)      # a basis literal in the vocabulary's numbering
+
+    def two_way(name):
+        d = ix[name] + 1
+        op, ls = basis_lits(name)
+        ls = [lit(l) for l in ls]
+        if op == '&':       # d and not all, or all and not d
+            fwd = rules + [(d,), tuple(-l for l in ls)]
+            back = rules + [(-d,)] + [(l,) for l in ls]
+        else:
+            fwd = rules + [(d,)] + [(-l,) for l in ls]
+            back = rules + [(-d,), tuple(ls)]
+        return not _satisfiable(fwd, nv) and not _satisfiable(back, nv)
+
+    assert [n for n in DEFINITIONS if two_way(n)] == [n for n in DEFINITIONS if n in W.TWO_WAY]
+    assert sorted(n for n in DEFINITIONS if not two_way(n)) == sorted(W.ONE_WAY)
+    rat = (ix['rational'] + 1,)
+    for name in ('hermitian', 'commutative'):
+        assert not _satisfiable(rules + [rat, (-(ix[name] + 1),)], nv), name
+    ah, zero = ix['antihermitian'] + 1, ix['zero'] + 1
+    for z in (zero, -zero):
+        for a in (ah, -ah):
+            assert _satisfiable(rules + [rat, (z,), (a,)], nv)
+
+
+def test_antihermitian_is_undecided(on):
+    with pytest.raises(W._Undecided):
+        W._pred('antihermitian')
+    assert pair(Q.antihermitian(x), Q.rational(x)) is None
+    assert pair(Q.positive(x), Q.rational(x) & ~Q.antihermitian(x)) is None
+    assert pair(Q.positive(x), Q.rational(x)) is not None
+    assert both(Q.antihermitian(x), Q.rational(x)) == [None, None]
+    assert both(Q.hermitian(x), Q.rational(x)) == [True, True]
 
 
 def test_a_pair_is_two_points_with_both_values():
