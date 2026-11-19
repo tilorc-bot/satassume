@@ -1,0 +1,29 @@
+{
+ "wl": "budget",
+ "calls": 19,
+ "witness": true,
+ "cap": 32,
+ "kinds": {
+  "cap: no point satisfies the assumptions": {
+   "calls": 5,
+   "points": 160,
+   "none": 160,
+   "true": 0,
+   "false": 0
+  },
+  "cap: proposition False at every satisfying point": {
+   "calls": 5,
+   "points": 160,
+   "none": 1,
+   "true": 0,
+   "false": 159
+  },
+  "cap: proposition True at every satisfying point": {
+   "calls": 9,
+   "points": 288,
+   "none": 0,
+   "true": 288,
+   "false": 0
+  }
+ }
+}

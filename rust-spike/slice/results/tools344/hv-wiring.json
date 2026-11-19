@@ -1,0 +1,43 @@
+{
+ "wl": "wiring",
+ "calls": 4814,
+ "witness": true,
+ "cap": 32,
+ "kinds": {
+  "other": {
+   "calls": 4081,
+   "points": 21435,
+   "none": 14601,
+   "true": 4531,
+   "false": 2303
+  },
+  "certified": {
+   "calls": 231,
+   "points": 1739,
+   "none": 584,
+   "true": 588,
+   "false": 567
+  },
+  "cap: proposition True at every satisfying point": {
+   "calls": 151,
+   "points": 4832,
+   "none": 2784,
+   "true": 2048,
+   "false": 0
+  },
+  "cap: proposition False at every satisfying point": {
+   "calls": 92,
+   "points": 2944,
+   "none": 1687,
+   "true": 0,
+   "false": 1257
+  },
+  "cap: no point satisfies the assumptions": {
+   "calls": 259,
+   "points": 8288,
+   "none": 8288,
+   "true": 0,
+   "false": 0
+  }
+ }
+}

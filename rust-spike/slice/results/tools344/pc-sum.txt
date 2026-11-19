@@ -1,0 +1,100 @@
+budget py 01e8ca74: passes 3 queries 28 calls 19 compiled 19 certified 0 digest 35bc2c4a937bebc0 so -; check_s by pass ['1.1884', '1.1876', '1.1906']; pass s (wrapped, not S1) ['1.653', '1.653', '1.656']
+  certified n 0 sum 0.0000 s median 0.0 us 90% 0.0 us max 0.0 us
+  fall-through n 19 sum 1.1883 s median 72403.1 us 90% 158394.1 us max 158511.4 us
+  exit over-budget n 7 sum 0.8444 s median 120953.1 us 90% 158511.4 us max 158511.4 us; Engine.ask after it sum 0.0647 s median 405.7 us
+  exit session n 12 sum 0.3439 s median 14583.2 us 90% 72553.7 us max 75491.6 us; Engine.ask after it sum 0.2716 s median 22211.9 us
+  compile (before _pools): calls that reach _pools 19, sum 0.0051 s of the check's 1.1883 s in them; calls that stop in the compile 0, sum 0.0000 s
+  points decided (_holds), certified: sum 0 median 0 90% 0.0 max 0; calls at 32 or more: 0
+  points decided (_holds), fall-through: sum 608 median 32 90% 32 max 32; calls at 32 or more: 19
+  top 10 [query index, check us, tried, exit, engine us]: [5, 158511.4, 32, over-budget, 88.3]; [6, 158394.1, 32, over-budget, 94.2]; [4, 145700.1, 32, over-budget, 405.7]; [27, 120953.1, 32, over-budget, 35540.0]; [11, 87179.8, 32, over-budget, 145.4]; [13, 86938.0, 32, over-budget, 13477.6]; [12, 86676.1, 32, over-budget, 14933.4]; [26, 75491.6, 32, session, 32737.4]; [24, 72553.7, 32, session, 22469.7]; [25, 72403.1, 32, session, 12217.9]
+  top 10 sum 1.0648 s of 1.1883 s
+    q5 Q.positive(b0) | Q.positive(b0 + b1 + b10 + b100 + b101 + b102 + b103 
+    q6 Q.positive(b0) | Q.negative(b0) & Q.positive(b0 + b1 + b10 + b100 + b1
+    q4 Q.positive(b0 + b1 + b10 + b100 + b101 + b102 + b103 + b104 + b105 + b
+  over-budget by query index [q, check us, tried, engine us]: [4, 145700.1, 32 points, compile 422.0 us, 405.7]; [5, 158511.4, 32 points, compile 370.4 us, 88.3]; [6, 158394.1, 32 points, compile 351.4 us, 94.2]; [11, 87179.8, 32 points, compile 425.7 us, 145.4]; [12, 86676.1, 32 points, compile 353.6 us, 14933.4]; [13, 86938.0, 32 points, compile 341.0 us, 13477.6]; [27, 120953.1, 32 points, compile 370.6 us, 35540.0]
+budget py 29c5a0db: passes 3 queries 28 calls 19 compiled 19 certified 0 digest 35bc2c4a937bebc0 so -; check_s by pass ['1.1874', '1.1855', '1.2120']; pass s (wrapped, not S1) ['1.654', '1.651', '1.679']
+  certified n 0 sum 0.0000 s median 0.0 us 90% 0.0 us max 0.0 us
+  fall-through n 19 sum 1.1868 s median 72150.2 us 90% 157814.7 us max 158023.9 us
+  exit over-budget n 7 sum 0.8434 s median 121406.5 us 90% 158023.9 us max 158023.9 us; Engine.ask after it sum 0.0645 s median 400.9 us
+  exit session n 12 sum 0.3434 s median 14520.2 us 90% 72523.8 us max 75723.6 us; Engine.ask after it sum 0.2725 s median 22197.3 us
+  compile (before _pools): calls that reach _pools 19, sum 0.0051 s of the check's 1.1868 s in them; calls that stop in the compile 0, sum 0.0000 s
+  points decided (_holds), certified: sum 0 median 0 90% 0.0 max 0; calls at 32 or more: 0
+  points decided (_holds), fall-through: sum 608 median 32 90% 32 max 32; calls at 32 or more: 19
+  top 10 [query index, check us, tried, exit, engine us]: [6, 158023.9, 32, over-budget, 94.3]; [5, 157814.7, 32, over-budget, 88.7]; [4, 146168.0, 32, over-budget, 400.9]; [27, 121406.5, 32, over-budget, 35366.7]; [11, 86930.7, 32, over-budget, 144.3]; [13, 86593.9, 32, over-budget, 13423.8]; [12, 86512.0, 32, over-budget, 14944.5]; [26, 75723.6, 32, session, 32732.6]; [24, 72523.8, 32, session, 22527.3]; [25, 72150.2, 32, session, 12297.1]
+  top 10 sum 1.0638 s of 1.1868 s
+    q6 Q.positive(b0) | Q.negative(b0) & Q.positive(b0 + b1 + b10 + b100 + b1
+    q5 Q.positive(b0) | Q.positive(b0 + b1 + b10 + b100 + b101 + b102 + b103 
+    q4 Q.positive(b0 + b1 + b10 + b100 + b101 + b102 + b103 + b104 + b105 + b
+  over-budget by query index [q, check us, tried, engine us]: [4, 146168.0, 32 points, compile 420.1 us, 400.9]; [5, 157814.7, 32 points, compile 370.6 us, 88.7]; [6, 158023.9, 32 points, compile 341.3 us, 94.3]; [11, 86930.7, 32 points, compile 416.0 us, 144.3]; [12, 86512.0, 32 points, compile 355.8 us, 14944.5]; [13, 86593.9, 32 points, compile 337.3 us, 13423.8]; [27, 121406.5, 32 points, compile 369.0 us, 35366.7]
+budget rust 01e8ca74: passes 3 queries 28 calls 19 compiled 19 certified 0 digest 35bc2c4a937bebc0 so 0982a28074215658; check_s by pass ['1.2258', '1.2140', '1.2219']; pass s (wrapped, not S1) ['1.537', '1.525', '1.533']
+  certified n 0 sum 0.0000 s median 0.0 us 90% 0.0 us max 0.0 us
+  fall-through n 19 sum 1.2201 s median 73880.0 us 90% 161495.3 us max 161621.7 us
+  compile (before _pools): calls that reach _pools 19, sum 0.0071 s of the check's 1.2201 s in them; calls that stop in the compile 0, sum 0.0000 s
+  points decided (_holds), certified: sum 0 median 0 90% 0.0 max 0; calls at 32 or more: 0
+  points decided (_holds), fall-through: sum 608 median 32 90% 32 max 32; calls at 32 or more: 19
+  top 10 [query index, check us, tried, exit, engine us]: [6, 161621.7, 32, None, -]; [5, 161495.3, 32, None, -]; [4, 148725.2, 32, None, -]; [27, 125123.8, 32, None, -]; [12, 89805.2, 32, None, -]; [11, 89622.2, 32, None, -]; [13, 89222.3, 32, None, -]; [26, 77416.1, 32, None, -]; [25, 74141.4, 32, None, -]; [24, 73880.0, 32, None, -]
+  top 10 sum 1.0911 s of 1.2201 s
+    q6 Q.positive(b0) | Q.negative(b0) & Q.positive(b0 + b1 + b10 + b100 + b1
+    q5 Q.positive(b0) | Q.positive(b0 + b1 + b10 + b100 + b101 + b102 + b103 
+    q4 Q.positive(b0 + b1 + b10 + b100 + b101 + b102 + b103 + b104 + b105 + b
+budget rust 29c5a0db: passes 3 queries 28 calls 19 compiled 19 certified 0 digest 35bc2c4a937bebc0 so 0982a28074215658; check_s by pass ['1.2168', '1.2224', '1.2209']; pass s (wrapped, not S1) ['1.527', '1.532', '1.531']
+  certified n 0 sum 0.0000 s median 0.0 us 90% 0.0 us max 0.0 us
+  fall-through n 19 sum 1.2199 s median 74228.7 us 90% 162190.6 us max 162506.5 us
+  compile (before _pools): calls that reach _pools 19, sum 0.0071 s of the check's 1.2199 s in them; calls that stop in the compile 0, sum 0.0000 s
+  points decided (_holds), certified: sum 0 median 0 90% 0.0 max 0; calls at 32 or more: 0
+  points decided (_holds), fall-through: sum 608 median 32 90% 32 max 32; calls at 32 or more: 19
+  top 10 [query index, check us, tried, exit, engine us]: [6, 162506.5, 32, None, -]; [5, 162190.6, 32, None, -]; [4, 148547.1, 32, None, -]; [27, 124176.8, 32, None, -]; [11, 89577.3, 32, None, -]; [12, 89154.8, 32, None, -]; [13, 88986.4, 32, None, -]; [26, 77473.9, 32, None, -]; [25, 74422.5, 32, None, -]; [24, 74228.7, 32, None, -]
+  top 10 sum 1.0913 s of 1.2199 s
+    q6 Q.positive(b0) | Q.negative(b0) & Q.positive(b0 + b1 + b10 + b100 + b1
+    q5 Q.positive(b0) | Q.positive(b0 + b1 + b10 + b100 + b101 + b102 + b103 
+    q4 Q.positive(b0 + b1 + b10 + b100 + b101 + b102 + b103 + b104 + b105 + b
+wiring py 01e8ca74: passes 3 queries 6512 calls 4814 compiled 1503 certified 231 digest a0df9fd43e5180c1 so -; check_s by pass ['0.7949', '0.7934', '0.7975']; pass s (wrapped, not S1) ['3.442', '3.420', '3.452']
+  certified n 231 sum 0.0459 s median 58.5 us 90% 127.4 us max 2032.0 us
+  fall-through n 4583 sum 0.7486 s median 9.4 us 90% 118.7 us max 2677.2 us
+  exit certified n 231 sum 0.0459 s median 58.5 us 90% 127.4 us max 2032.0 us; Engine.ask after it sum 0.0000 s median 0.0 us
+  exit session n 4583 sum 0.7486 s median 9.4 us 90% 118.7 us max 2677.2 us; Engine.ask after it sum 2.1298 s median 240.8 us
+  compile (before _pools): calls that reach _pools 1503, sum 0.0322 s of the check's 0.7486 s in them; calls that stop in the compile 3311, sum 0.0460 s
+  points decided (_holds), certified: sum 1739 median 5 90% 11 max 33; calls at 32 or more: 1
+  points decided (_holds), fall-through: sum 37499 median 0 90% 32 max 32; calls at 32 or more: 502
+  top 10 [query index, check us, tried, exit, engine us]: [6251, 2677.2, 32, session, 2485.0]; [6250, 2675.4, 32, session, 2407.9]; [6252, 2674.3, 32, session, 2111.5]; [6249, 2668.1, 32, session, 2184.0]; [6247, 2664.1, 32, session, 1236.4]; [6248, 2663.9, 32, session, 2137.1]; [6246, 2662.9, 32, session, 1376.4]; [6269, 2658.9, 32, session, 2674.0]; [6275, 2658.0, 32, session, 2520.0]; [6302, 2655.4, 32, session, 2476.6]
+  top 10 sum 0.0267 s of 0.7945 s
+    q6251 Q.nonzero(a0 + a1 + a10 + a11 + a12 + a13 + a14 + a15 + a16 + a17 + a1
+    q6250 Q.zero(a0 + a1 + a10 + a11 + a12 + a13 + a14 + a15 + a16 + a17 + a18 +
+    q6252 Q.real(a0 + a1 + a10 + a11 + a12 + a13 + a14 + a15 + a16 + a17 + a18 +
+wiring py 29c5a0db: passes 3 queries 6512 calls 4814 compiled 1503 certified 231 digest a0df9fd43e5180c1 so -; check_s by pass ['0.7933', '0.8083', '0.8118']; pass s (wrapped, not S1) ['3.446', '3.460', '3.477']
+  certified n 231 sum 0.0458 s median 58.4 us 90% 124.8 us max 2024.4 us
+  fall-through n 4583 sum 0.7460 s median 9.2 us 90% 118.5 us max 2703.4 us
+  exit certified n 231 sum 0.0458 s median 58.4 us 90% 124.8 us max 2024.4 us; Engine.ask after it sum 0.0000 s median 0.0 us
+  exit session n 4583 sum 0.7460 s median 9.2 us 90% 118.5 us max 2703.4 us; Engine.ask after it sum 2.1311 s median 240.6 us
+  compile (before _pools): calls that reach _pools 1503, sum 0.0322 s of the check's 0.7465 s in them; calls that stop in the compile 3311, sum 0.0454 s
+  points decided (_holds), certified: sum 1739 median 5 90% 11 max 33; calls at 32 or more: 1
+  points decided (_holds), fall-through: sum 37499 median 0 90% 32 max 32; calls at 32 or more: 502
+  top 10 [query index, check us, tried, exit, engine us]: [6251, 2703.4, 32, session, 2504.0]; [6249, 2669.6, 32, session, 2178.7]; [6246, 2664.4, 32, session, 1371.8]; [6248, 2662.9, 32, session, 2142.9]; [6250, 2662.7, 32, session, 2404.2]; [6252, 2662.4, 32, session, 2134.1]; [6247, 2657.8, 32, session, 1242.6]; [6302, 2654.4, 32, session, 2456.3]; [6259, 2649.1, 32, session, 2144.1]; [6276, 2645.3, 32, session, 2496.2]
+  top 10 sum 0.0266 s of 0.7918 s
+    q6251 Q.nonzero(a0 + a1 + a10 + a11 + a12 + a13 + a14 + a15 + a16 + a17 + a1
+    q6249 Q.nonpositive(a0 + a1 + a10 + a11 + a12 + a13 + a14 + a15 + a16 + a17 
+    q6246 Q.positive(a0 + a1 + a10 + a11 + a12 + a13 + a14 + a15 + a16 + a17 + a
+wiring rust 01e8ca74: passes 3 queries 6512 calls 4814 compiled 1503 certified 231 digest a0df9fd43e5180c1 so 0982a28074215658; check_s by pass ['0.8312', '0.8296', '0.8513']; pass s (wrapped, not S1) ['4.027', '4.029', '4.019']
+  certified n 231 sum 0.0493 s median 70.4 us 90% 141.9 us max 2083.5 us
+  fall-through n 4583 sum 0.7834 s median 11.9 us 90% 130.7 us max 5825.3 us
+  exit certified n 231 sum 0.0493 s median 70.4 us 90% 141.9 us max 2083.5 us; Engine.ask after it sum 0.0000 s median 0.0 us
+  compile (before _pools): calls that reach _pools 1503, sum 0.0359 s of the check's 0.7776 s in them; calls that stop in the compile 3311, sum 0.0552 s
+  points decided (_holds), certified: sum 1739 median 5 90% 11 max 33; calls at 32 or more: 1
+  points decided (_holds), fall-through: sum 37499 median 0 90% 32 max 32; calls at 32 or more: 502
+  top 10 [query index, check us, tried, exit, engine us]: [6198, 5825.3, 32, None, -]; [6185, 2791.0, 32, None, -]; [6305, 2745.7, 32, None, -]; [6251, 2733.3, 32, None, -]; [6252, 2727.1, 32, None, -]; [6249, 2726.1, 32, None, -]; [6247, 2718.7, 32, None, -]; [6250, 2716.5, 32, None, -]; [6246, 2711.2, 32, None, -]; [6302, 2710.5, 32, None, -]
+  top 10 sum 0.0304 s of 0.8327 s
+    q6198 Q.negative(a0 + a1 + a10 + a11 + a12 + a13 + a14 + a15 + a16 + a17 + a
+    q6185 Q.nonnegative(a0 + a1 + a10 + a11 + a12 + a13 + a14 + a15 + a16 + a17 
+    q6305 Q.nonpositive(a0 + a1 + a10 + a11 + a12 + a13 + a14 + a15 + a16 + a17 
+wiring rust 29c5a0db: passes 3 queries 6512 calls 4814 compiled 1503 certified 231 digest a0df9fd43e5180c1 so 0982a28074215658; check_s by pass ['0.8278', '0.8285', '0.8272']; pass s (wrapped, not S1) ['4.080', '4.025', '4.062']
+  certified n 231 sum 0.0491 s median 69.6 us 90% 141.9 us max 2069.0 us
+  fall-through n 4583 sum 0.7776 s median 11.5 us 90% 128.2 us max 5718.1 us
+  exit certified n 231 sum 0.0491 s median 69.6 us 90% 141.9 us max 2069.0 us; Engine.ask after it sum 0.0000 s median 0.0 us
+  compile (before _pools): calls that reach _pools 1503, sum 0.0352 s of the check's 0.7733 s in them; calls that stop in the compile 3311, sum 0.0534 s
+  points decided (_holds), certified: sum 1739 median 5 90% 11 max 33; calls at 32 or more: 1
+  points decided (_holds), fall-through: sum 37499 median 0 90% 32 max 32; calls at 32 or more: 502
+  top 10 [query index, check us, tried, exit, engine us]: [6198, 5718.1, 32, None, -]; [6185, 2782.3, 32, None, -]; [6305, 2710.5, 32, None, -]; [6302, 2704.7, 32, None, -]; [6248, 2704.0, 32, None, -]; [6252, 2696.6, 32, None, -]; [6251, 2693.9, 32, None, -]; [6246, 2692.5, 32, None, -]; [6249, 2692.1, 32, None, -]; [6314, 2685.1, 32, None, -]
+  top 10 sum 0.0301 s of 0.8267 s
+    q6198 Q.negative(a0 + a1 + a10 + a11 + a12 + a13 + a14 + a15 + a16 + a17 + a
+    q6185 Q.nonnegative(a0 + a1 + a10 + a11 + a12 + a13 + a14 + a15 + a16 + a17 
+    q6305 Q.nonpositive(a0 + a1 + a10 + a11 + a12 + a13 + a14 + a15 + a16 + a17 

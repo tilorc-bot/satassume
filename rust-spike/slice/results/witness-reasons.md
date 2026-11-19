@@ -276,6 +276,126 @@ pi-sign moves the certified count on dev (173 -> 171) without moving dev's answe
 fuzz only (on dfb544e6 it was DIFFER on both). pi-rational and pi-enclosure are caught by tests only, as on dfb544e6.
 Nothing else differs on the head.
 
+## sa-port-344: (6) S1 on 01e8ca74 against 29c5a0db, and the planner's (a), (b), (c)
+
+pareto1, quiet leases only: ea798437 (sa-port-343: tools343/onlease343.sh, bench-container on CPU 2, sa-eval-bench:1,
+bench .so 0982a28074215658, 8 arms SHA:MODE-WITNESS, 12 rounds; `s1/med-s1.txt`, `s1/med-bw.txt` under
+~/sa-rust-ids-work/sa-port-343) and b5a7cd65 (sa-port-344: the per-call rows again, below). Pinned wall time, median
+of 12, seconds; digests equal in every arm (dev 31cd0945c07f02a6, fuzz 173502b6ef285ad6, budget 35bc2c4a937bebc0,
+wiring a0df9fd43e5180c1).
+
+| | py off | py on | rust off | rust on |
+|---|---|---|---|---|
+| dev, 29c5a0db | 0.5342 | 0.5203 | 0.6493 | 0.6560 |
+| dev, 01e8ca74 | 0.5326 | 0.5238 | 0.6498 | 0.6597 |
+| fuzz, 29c5a0db | 8.0929 | 5.8295 | 5.8561 | 4.7605 |
+| fuzz, 01e8ca74 | 8.1074 | 5.4198 | 5.8437 | 4.6357 |
+| budget, 29c5a0db | 0.4753 | 1.6919 | 0.3178 | 1.5449 |
+| budget, 01e8ca74 | 0.4753 | 1.6923 | 0.3183 | 1.5432 |
+| wiring, 29c5a0db | 2.7453 | 3.4694 | 3.2552 | 4.0475 |
+| wiring, 01e8ca74 | 2.7469 | 3.4752 | 3.2577 | 4.0511 |
+
+**Head against base, the landing rule.** On: dev +0.7% py and +0.6% rust, within the spread (larger iqr 1.2% and
+1.8%); fuzz **-7.0% py and -2.6% rust, beyond the spread, faster** (0 of 12 rounds slower); budget +0.0% and -0.1%,
+wiring +0.2% and +0.1%, within the spread. Off: all eight within the spread (-0.3% to +0.2%). So dev and fuzz show no
+loss against on-at-29c5a0db and pi does not make budget or wiring worse: **the landing rule holds.** The check's own
+seconds rise with what it now compiles (dev 0.044 -> 0.062 s py, fuzz 0.507 -> 0.788 s; fuzz compiles 2772 of 2772
+calls, before 2228) and fuzz still gains, by the 224 sessions not built.
+
+**On against off: a finding about the landed check, the same at both SHAs, not a block.** budget +256% py (0.475 ->
+1.692 s) and +385% rust; wiring +26.5% py and +24.4% rust; dev -1.7% py (beyond the spread, faster), +1.5% rust
+(within); fuzz -33.2% py, -20.7% rust.
+
+**The per-call rows were taken again (tools344/pc344.py), because tools343/pc343.py's py rows are void for certified
+calls.** pc343.py wraps `Engine.ask` and `Engine._within_budget` in py mode and did not register the wrappers with
+`witness.accept`, so the check's last guard (`_patched`, witness.py:841, the P1 guard) took them for a user's methods:
+every py row read certified 0 (cx343's 20 workloads, timing-pc's py rows, and the orion sizing in
+HANDOFF-sa-port-343.md), while rust mode, which sets no wrapper on the engine, read wiring 231. pc344.py registers
+them; its py rows give dev 173, fuzz 1284 and wiring 231, the gate's and rust mode's counts. It also records, per
+call, the calls of `_holds` (points decided) and the time before `_pools` (the per-call compile). The guard is asked
+last, so pc343's times of the check stand; its exits and certified counts do not. Rows:
+~/sa-rust-ids-work/sa-port-344/s1/timing-pc (3 cold passes, both trees, py and rust; summary tools344/pc-sum.txt by
+pcsum344.py) and ~/sa-rust-ids-work/sa-port-344/cx (counts; pareto0).
+
+**(a) Where the check runs.** `_engine_ask` calls it (sympy_api.py:1136) when the switch is on and the query has
+assumptions: after the relevance layer's answer memo (`_ask_general`, sympy_api.py:586-599: a hit never reaches the
+check) and before `Engine.ask`, so before every cheap exit of the engine: non-commutative atoms (engine.py:2222), the
+budget test (`_within_budget` :2225, then `_over_budget` :1860), a memoized INCONSISTENT or Uninterpreted of the set
+(`_context_session` :1876, `_build_context_memoized` :1893). Calls per workload on 01e8ca74 (py, cap 32), by what
+followed; "no-build" is `Engine.ask` ending without `_build_context`:
+
+| workload | queries | calls of the check | do not reach `_pools` | certified | session | no-build | over-budget | noncommutative |
+|---|---|---|---|---|---|---|---|---|
+| dev | 1985 | 776 | 241 | 173 | 603 | 0 | 0 | 0 |
+| fuzz | 3000 | 2772 | 0 | 1284 | 1448 | 40 | 0 | 0 |
+| budget | 28 | 19 | 0 | 0 | 12 | 0 | 7 | 0 |
+| wiring | 6512 | 4814 | 3311 | 231 | 4583 | 0 | 0 | 0 |
+| core | 1636 | 299 | 113 | 95 | 204 | 0 | 0 | 0 |
+| zero | 854 | 699 | 594 | 52 | 594 | 53 | 0 | 0 |
+| lra | 1500 | 796 | 774 | 1 | 745 | 50 | 0 | 0 |
+| cert | 61 | 61 | 0 | 1 | 60 | 0 | 0 | 0 |
+| ground | 18 | 14 | 0 | 4 | 10 | 0 | 0 | 0 |
+| port | 19 | 19 | 0 | 0 | 19 | 0 | 0 | 0 |
+| transfer:7:60 | 60 | 60 | 46 | 2 | 58 | 0 | 0 | 0 |
+| transfer2:3:40 | 40 | 40 | 34 | 1 | 39 | 0 | 0 | 0 |
+| value | 3742 | 636 | 636 | 0 | 319 | 317 | 0 | 0 |
+| rootof | 5187 | 368 | 368 | 0 | 368 | 0 | 0 | 0 |
+| loop | 420 | 244 | 244 | 0 | 244 | 0 | 0 | 0 |
+| scope | 169 | 166 | 166 | 0 | 166 | 0 | 0 | 0 |
+| opaque | 2546 | 30 | 30 | 0 | 30 | 0 | 0 | 0 |
+| cls | 72 | 21 | 21 | 0 | 21 | 0 | 0 | 0 |
+| f6 | 2902 | 4 | 4 | 0 | 2 | 2 | 0 | 0 |
+| twin | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| all 20 | 30753 | 11838 | 6582 | 1844 | 9525 | 462 | 7 | 0 |
+
+Of the 9994 calls that fall through, 9525 go on to a session, 462 end in the engine without one and 7, all on
+budget, are refused as over budget. No workload has a non-commutative query that reaches the check.
+
+**(b) The per-call cost on budget and wiring** (01e8ca74, py, median of 3 passes a call; 29c5a0db is within 0.3% on
+every line, and rust mode reads 3% to 5% more in the check).
+
+| | calls | seconds in the check | median | 90% | max | points decided: median, 90% |
+|---|---|---|---|---|---|---|
+| budget, certified | 0 | | | | | |
+| budget, fall-through | 19 | 1.188 of the pass's 1.653 | 72.4 ms | 158.4 ms | 158.5 ms | 32, 32 |
+| ... over-budget | 7 | 0.844 (the engine after it: 0.065) | 121.0 ms | 158.5 ms | 158.5 ms | 32 |
+| ... session | 12 | 0.344 (the engine after it: 0.272) | 14.6 ms | 72.6 ms | 75.5 ms | 32 |
+| wiring, certified | 231 | 0.046 | 58.5 us | 127.4 us | 2.03 ms | 5, 11 |
+| wiring, fall-through | 4583 | 0.749 of the pass's 3.44 (the engine after it: 2.130) | 9.4 us | 118.7 us | 2.68 ms | 0, 32 |
+| ... do not reach `_pools` | 3311 | 0.046 | | | | 0 |
+| ... end under the cap | 770 | 0.062 | | | | 21435 in all |
+| ... run to the cap of 32 | 502 | 0.640 | | | | 32 |
+
+Top 10 on budget, query index in `budget_wl.queries()` and milliseconds in the check: 5 (158.5), 6 (158.4), 4
+(145.7), 27 (121.0), 11 (87.2), 13 (86.9), 12 (86.7), 26 (75.5), 24 (72.6), 25 (72.4): 1.065 s of 1.188 s; the first
+seven are the over-budget ones. Top 10 on wiring: indices 6251, 6250, 6252, 6249, 6247, 6248, 6246, 6269, 6275, 6302,
+2.66 to 2.68 ms each, 0.027 s of 0.795 s: sign questions on one long sum, all at the cap, no tail. The compile is
+0.4% of the check's time on budget (5 ms) and 0.032 s on wiring's 1503 compiled calls; the time is the points. All 19
+calls on budget decide the 32 points of the cap at 1.9 ms a point (sums of about 200 symbols in exact rationals) and
+certify nothing. What the 32 points return (tools344/hv344.py, orion, counts): budget 5 calls with no point
+satisfying the assumptions, 9 with the proposition True at every satisfying point, 5 False at every one; wiring's
+502: 259, 151 and 92.
+
+**(c) What would make the fall-through cheap without a query-time cache.** Two bounds, both functions of the query
+alone. First, the engine's budget test before the check. The seven over-budget queries on budget (indices 4, 5, 6,
+11, 12, 13 and 27 of `budget_wl.queries()`) take 0.844 s of the check's 1.188 s, 87 to 158 ms each, and
+`Engine.ask` then refuses each: four in 0.09 to 0.41 ms, and 12, 13 and 27 in 13 to 36 ms (on that path the only
+work is the second budget test and the set's memoized verdict, engine.py:2233). `_within_budget` (engine.py:1814) is
+decided from the structure of the query, the registry and the settings, before any session, so it can run before the
+check, and for an over-budget query the check cannot change the answer: the engine returns None (or raises for a set
+that fits the budget and is INCONSISTENT) and a certified answer is None as well. What would change is the flag: an
+over-budget query the check certifies today would be counted `budget_limited` and not `witness_certified`; on the
+gate's 20 workloads there is none (7 over-budget calls, 0 certified). It stays inside P1, since `_within_budget` is
+one of the guarded methods. Not measured: the cost of the test alone on the calls that pass it; a fall-through pays
+it in `Engine.ask` already, so unless the result is handed on it runs twice there, and the 1844 certified calls pay
+it newly. Second, a bound on the search's work in place of the point count. After the reorder what is left is calls
+that decide all 32 points and find no pair: 12 on budget (0.344 s) and 502 on wiring (0.640 s of 0.795 s), 81% and
+more of the check's time on both, and their cost is points times formula size (1.9 ms a point on budget, 38 us on
+wiring). The compiled size is known after a compile that costs under 5% of the check, so the cap can be on points
+times size: small formulas keep 32 points (fuzz's certified calls need them: median 7, 90% 26), and a 200-term sum
+gets a few. What that costs in certified answers per workload has to be read from the reasons counter before it is
+chosen; it is not measured here.
+
 ## Owed, named here
 
 - A fired counter for the Rust walker's plants (above).
