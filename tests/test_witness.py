@@ -269,12 +269,49 @@ def test_an_inconsistent_set_still_raises(on):
 
 
 def test_registered_knowledge_falls_through():
-    class Eng:
-        extensions = Extensions()
+    eng = A.Engine()
+    eng.extensions = Extensions()
     fp, fa = A._formula(Q.positive(x), True), A._formula(Q.real(x), True, True)
-    assert W.witnesses(fp, fa, Eng) is not None
-    Eng.extensions._vocab['positive'] = [((Symbol,), lambda e: True)]
-    assert W.witnesses(fp, fa, Eng) is None
+    assert W.witnesses(fp, fa, eng) is not None
+    eng.extensions._vocab['positive'] = [((Symbol,), lambda e: True)]
+    assert W.witnesses(fp, fa, eng) is None
+
+
+@pytest.mark.parametrize('name', W.GUARDED)
+@pytest.mark.parametrize('where', ['class', 'instance', 'subclass'])
+def test_a_users_method_on_the_engine_is_called_and_its_answer_is_used(on, monkeypatch, name, where):
+    """Formula ruling P1 as the check applies it: with ``ask``, ``verdict``, ``_context_session`` or
+    ``_within_budget`` replaced by a user, on the class, on one engine or in a subclass, the check falls through:
+    the user's method gets the calls it gets with the switch off, and the answer is the one it leads to."""
+    p, a = Q.positive(x), Q.real(x) & Q.positive(y)     # relevance splits the set, so ``verdict`` is reached too
+    assert pair(p, a) is not None and A.ask(p, a, A.Engine()) is None    # certified while nothing is replaced
+    real = getattr(A.Engine, name)
+    calls = []
+
+    def users(self, *args, **kw):
+        calls.append(name)
+        if name == 'ask':
+            return True                 # a user's answer, not the engine's None
+        return real(self, *args, **kw)
+
+    def run():
+        del calls[:]
+        if where == 'class':
+            with monkeypatch.context() as m:
+                m.setattr(A.Engine, name, users)
+                return A.ask(p, a, A.Engine()), len(calls)
+        if where == 'subclass':
+            return A.ask(p, a, type('Mine', (A.Engine,), {name: users})()), len(calls)
+        eng = A.Engine()
+        setattr(eng, name, users.__get__(eng))
+        return A.ask(p, a, eng), len(calls)
+
+    W.ENABLED[0] = False
+    off = run()
+    W.ENABLED[0] = True
+    assert run() == off and off[1] > 0
+    assert off[0] is (True if name == 'ask' else None)
+    assert A.ask(p, a, A.Engine()) is None and not W._patched(A.Engine())   # the engine's own again: certified
 
 
 def test_off_means_not_called(monkeypatch):

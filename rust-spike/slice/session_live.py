@@ -1521,6 +1521,10 @@ def install():
     undo_memos = _install_memos() if os.environ.get('SLICE_MEMOS', 'rust') == 'rust' else None
     undo_ctx = _install_context() if context_native() else None
     undo_entry = _install_entry() if entry_native() else None
+    # satassume.witness (SLICE_WITNESS=1, off by default) falls through on a user's `ask`, `verdict`, `_context_session` or
+    # `_within_budget` (ruling P1 as the check applies it): the ones installed above are the engine's own here.
+    import satassume.witness
+    satassume.witness.accept(engine.Engine)
 
     def undo():
         if undo_entry is not None:
