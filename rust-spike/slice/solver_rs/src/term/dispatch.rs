@@ -96,14 +96,19 @@ impl Dispatch {
         }
     }
 
-    /// `_applied_to_nan(expr)`, the registry's `opaque`.
-    fn opaque(&self, e: &Bound<'_, PyAny>) -> PyResult<bool> {
+    /// `_applied_to_nan(expr)`, the registry's `opaque`. Plant 753 (`dispatch-nan-arg-off`): a True of `may_be_nan`
+    /// for an argument is taken as False at this call, and counted in `fired`.
+    fn opaque(&self, e: &Bound<'_, PyAny>, fired: &mut u64) -> PyResult<bool> {
         if !e.is_instance(self.application_t.bind(e.py()))? {
             return Ok(false);
         }
         let py = e.py();
         for a in e.getattr("args")?.try_iter()? {
-            if may_be_nan(&a?, self.basic_t.bind(py).as_any(), self.nan.bind(py), &self.specials, NanPlant::None)? {
+            if may_be_nan(&a?, self.basic_t.bind(py).as_any(), self.nan.bind(py), &self.specials)? {
+                if self.plant == "dispatch-nan-arg-off" {
+                    *fired += 1;
+                    continue;
+                }
                 return Ok(true);
             }
         }
@@ -111,44 +116,31 @@ impl Dispatch {
     }
 }
 
-/// The walk's test plants in `may_be_nan` (746-748, `SLICE_CONVERT_PLANT`); the dispatch always passes `None`.
-#[derive(Clone, Copy, PartialEq)]
-pub(super) enum NanPlant {
-    None,
-    /// 746: the `_SPECIAL` identity test dropped, so an infinity among the arguments isn't seen.
-    NoSpecials,
-    /// 747: an atom's arguments followed (the range of an `Idx`).
-    AtomArgs,
-    /// 748: no recursion below the first level of arguments.
-    OneLevel,
-}
-
-/// `_may_be_nan(a)` (templates/__init__.py), the one native copy: `Dispatch::opaque` (`_applied_to_nan`) and the walk's
-/// F_MAYBE_NAN bit (walk.rs `term_row`) both call it. Python's cases in Python's order: `a is S.NaN`; not a `Basic`, or
-/// an atom (its arguments are labels and aren't followed): False; otherwise any argument that is one of `_SPECIAL`
-/// by identity, or that may be nan itself. The recursion is counted against Python's limit as the walk's `enc` is
-/// (`Depth`), so a nesting too deep for it ends with RecursionError, not with the native stack.
-pub(super) fn may_be_nan(
+/// `_may_be_nan(a)` (templates/__init__.py), the one native copy; `Dispatch::opaque` (`_applied_to_nan`) is its only
+/// caller. Python's cases in Python's order: `a is S.NaN`; not a `Basic`, or an atom (its arguments are labels and
+/// aren't followed): False; otherwise any argument that is one of `_SPECIAL` by identity, or that may be nan itself.
+/// The recursion is counted against Python's limit as the walk's `enc` is (`Depth`), so a nesting too deep for it ends
+/// with RecursionError, not with the native stack.
+fn may_be_nan(
     a: &Bound<'_, PyAny>,
     basic: &Bound<'_, PyAny>,
     nan: &Bound<'_, PyAny>,
     specials: &[Py<PyAny>],
-    plant: NanPlant,
 ) -> PyResult<bool> {
     let py = a.py();
     if a.is(nan) {
         return Ok(true);
     }
-    if !a.is_instance(basic)? || (a.getattr(intern!(py, "is_Atom"))?.is_truthy()? && plant != NanPlant::AtomArgs) {
+    if !a.is_instance(basic)? || a.getattr(intern!(py, "is_Atom"))?.is_truthy()? {
         return Ok(false);
     }
     let _depth = super::walk::Depth::enter()?;
     for b in a.getattr(intern!(py, "args"))?.try_iter()? {
         let b = b?;
-        if plant != NanPlant::NoSpecials && specials.iter().any(|c| b.is(c.bind(py))) {
+        if specials.iter().any(|c| b.is(c.bind(py))) {
             return Ok(true);
         }
-        if plant != NanPlant::OneLevel && may_be_nan(&b, basic, nan, specials, plant)? {
+        if may_be_nan(&b, basic, nan, specials)? {
             return Ok(true);
         }
     }
@@ -407,7 +399,7 @@ impl Dispatch {
 
     /// `registry.opaque(expr)`, for direct tests.
     fn is_opaque(&self, e: &Bound<'_, PyAny>) -> PyResult<bool> {
-        self.opaque(e)
+        self.opaque(e, &mut 0)
     }
 
     /// `(compiled, formulas)` for `expr`, as `TemplateRegistry.clauses_for`. The result must not be mutated.
@@ -439,7 +431,11 @@ impl Dispatch {
         }
         let compiled = PyList::empty(py);
         let formulas = PyList::empty(py);
-        let mut opaque = slf.borrow().opaque(expr)?;
+        let mut nan_off = 0;
+        let mut opaque = slf.borrow().opaque(expr, &mut nan_off)?;
+        for _ in 0..nan_off {
+            bump(&mut slf.borrow_mut().counts, "plant:fired");
+        }
         if opaque && slf.borrow().plant == "dispatch-opaque-off" {
             bump(&mut slf.borrow_mut().counts, "plant:fired");
             opaque = false;

@@ -25,7 +25,7 @@ from sympy.logic.boolalg import BooleanAtom, BooleanFunction
 
 from satassume import sympy_api as A
 from satassume.knowledge.domain import constructed_noncommutative
-from satassume.knowledge.templates import _may_be_nan, registry
+from satassume.knowledge.templates import registry
 
 #: Rust's `Dispatch.templates_for` once knowledge_live.install_dispatch() runs (6g(a)): the class walk the engine's dispatch
 #: uses, so conversion's class rows run no registry Python per query. None: the registry's own method.
@@ -67,8 +67,9 @@ _KIND_INDEX = {n: i for i, n in enumerate(KINDS)}
 # Class flags (R2), in bit order: Rust's `flag` constants.
 FLAGS = ('is_Add', 'is_Mul', 'is_Pow', 'is_Atom', 'is_Number', 'is_Rational', 'is_Integer', 'is_Float', 'is_Symbol',
          'is_Dummy', 'is_Order', 'is_Function', 'is_NumberSymbol', 'is_commutative_fixed')
-# Term fact bits, in order: Rust's `fact` constants.
-F_NUMBER, F_NAN, F_BAD, F_FLOAT, F_UNDEF, F_MAYBE_NAN, F_READ, F_COMMUTATIVE = 1, 2, 4, 8, 16, 32, 64, 128
+# Term fact bits, in order: Rust's `fact` constants. 32 is reserved and always 0: it was F_MAYBE_NAN (`_may_be_nan` of
+# the term), which no reader of a row used; the templates ask `_applied_to_nan` (term/dispatch.rs `opaque`) instead.
+F_NUMBER, F_NAN, F_BAD, F_FLOAT, F_UNDEF, F_RESERVED_32, F_READ, F_COMMUTATIVE = 1, 2, 4, 8, 16, 32, 64, 128
 # Class flags past FLAGS: `flag::PLAIN_OPS`, `flag::PLAIN_BASE`. The algebra refuses a class that overrides any of these.
 _PLAIN_OPS, _PLAIN_BASE, _PLAIN_ATOMS = 1 << 14, 1 << 15, 1 << 19
 # `flag::IS_EXPR`, `flag::IS_MATRIX`, `flag::IS_EXP`: what `lra_adapter.py` and `_from_sympy` read of a class.
@@ -301,8 +302,6 @@ class _Walk:
             bits |= F_FLOAT
         if t.atoms(AppliedUndef):
             bits |= F_UNDEF
-        if _may_be_nan(t):
-            bits |= F_MAYBE_NAN
         out += (T_INT, bits, T_INT, constructed_noncommutative(t))
 
     def power_rows(self, n):
@@ -442,10 +441,10 @@ def use_rust(items=RUST_ITEMS):
     WALK[0] = rust_walk(items) if items else None
 
 
-#: Test plants of the Rust walker, one per item, and three in `term_row`'s native `_may_be_nan` (plants 746-748):
-#: `SLICE_CONVERT_PLANT`, sa_solver.walk_plant's numbers.
+#: Test plants of the Rust walker, one per item: `SLICE_CONVERT_PLANT`, sa_solver.walk_plant's numbers. (6 to 8 were
+#: plants 746-748 in `term_row`'s F_MAYBE_NAN bit, retired with the bit.)
 WALK_PLANTS = {'enc-true-as-false': 1, 'klass-no-is-expr': 2, 'term-row-no-number': 3, 'walk-args-unreversed': 4,
-               'enc-int-no-sign': 5, 'nan-no-specials': 6, 'nan-atom-args': 7, 'nan-one-level': 8}
+               'enc-int-no-sign': 5}
 
 
 def from_env():

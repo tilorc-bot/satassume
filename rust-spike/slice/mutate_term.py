@@ -49,7 +49,6 @@ M = [
     ('boundary', 'conv-power-base', CONV, 'b = self.ids.get(base, -1)', 'b = -1'),
     ('boundary', 'read-memo-off', TAB, 'self.memo.lock().unwrap().insert((kind, t), v.clone());', 'if false { self.memo.lock().unwrap().insert((kind, t), v.clone()); }'),
     ('boundary', 'read-text-swapped', TAB, '(V::Text(x), V::Text(y)) => x.as_ref().cmp(y.as_ref())', '(V::Text(x), V::Text(y)) => y.as_ref().cmp(x.as_ref())'),
-    ('boundary', 'conv-maybe-nan', CONV, 'if _may_be_nan(t):', 'if not _may_be_nan(t):'),
 ]
 LOCK = threading.Lock()
 

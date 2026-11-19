@@ -12,10 +12,8 @@ Plants 670-674 (`SLICE_CONVERT_PLANT`, one per item, each a wrong value at one s
 reads nothing of the plant, finds differences under each. As a script: prints `{"inputs": n, "differences": d}` for
 the items in SLICE_CONVERT_ITEMS (default: all).
 
-`term_row`'s F_MAYBE_NAN bit is native under Rust (term/dispatch.rs `may_be_nan`, the copy the template dispatch uses;
-Python's `_may_be_nan` stays `_Walk`'s). `nan_cases` holds the cases of its docstring; `nan_differences` compares every
-term's row under the two walkers and each case's own bit with the value written beside it. Plants 746-748, one per case
-of the function (the `_SPECIAL` identity test, an atom's arguments, the recursion), each give differences there.
+Bit 32 of a term row's flags (the old F_MAYBE_NAN) is reserved: `test_reserved_bit_is_zero` holds both walkers to 0
+there, on inputs where `_may_be_nan` is True. Plants 746-748 and `nan_cases` went with the bit.
 """
 import json
 import os
@@ -23,9 +21,8 @@ import subprocess
 import sys
 
 import pytest
-from sympy import (Add, Basic, Dummy, Float, Function, Gt, I, Idx, Integer, Integral, Limit, MatrixSymbol, Mul, Piecewise,
-                   Pow, Q, Rational, S, Subs, Sum, Symbol, UnevaluatedExpr, Wild, cos, exp, log, nan, oo, pi, sin, sqrt,
-                   zoo)
+from sympy import (Add, Basic, Dummy, Float, Function, I, Integer, Integral, MatrixSymbol, Mul, Piecewise, Pow, Q, Rational,
+                   S, Subs, Sum, Symbol, Wild, cos, exp, log, nan, oo, pi, sin, sqrt, zoo)
 from sympy.core.expr import Expr
 
 import convert
@@ -38,8 +35,7 @@ p = Symbol('p', positive=True)
 n = Symbol('n', commutative=False)
 f, g = Function('f'), Function('g')
 ALL_PLANTS = {670: ('enc-true-as-false', 'enc'), 671: ('klass-no-is-expr', 'klass'), 672: ('term-row-no-number', 'term_row'),
-          673: ('walk-args-unreversed', 'walk'), 674: ('enc-int-no-sign', 'enc_int'),
-          746: ('nan-no-specials', 'term_row'), 747: ('nan-atom-args', 'term_row'), 748: ('nan-one-level', 'term_row')}
+          673: ('walk-args-unreversed', 'walk'), 674: ('enc-int-no-sign', 'enc_int')}
 PLANTS = {k: v for k, v in ALL_PLANTS.items() if v[1] in convert.RUST_ITEMS}      # an item's plant, once it's ported
 
 
@@ -113,59 +109,7 @@ def inputs():
     for _ in range(40):
         e = f(e + 1)
     out.append((Q.positive(e), Q.positive(x)))
-    out += [(Q.positive(t), Q.positive(x)) for t, _ in nan_cases()]
     return out
-
-
-def nan_cases():
-    """(term, `_may_be_nan` of it), the cases of the function's docstring: nan; an infinity in arithmetic; a function
-    applied to either; `Subs`, `Limit`, `UnevaluatedExpr`; a `Piecewise` branch value and a condition; and an atom's
-    arguments (the range of an `Idx`), which are labels and aren't followed. The second halves are written out, not
-    computed: `test_nan_cases_are_pythons` holds them to Python's function."""
-    i = Idx('i', (-oo, oo))
-    undefined = Add(oo, -oo, evaluate=False)
-    return [
-        (nan, True), (oo, False), (-oo, False), (zoo, False), (x + 1, False), (f(x), False),
-        (x + oo, True), (x - oo, True), (zoo * x, True), (Mul(0, oo, evaluate=False), True), (undefined, True),
-        (f(nan), True), (f(oo), True), (f(x + oo), True), (f(g(x - oo), y), True), (sin(f(f(zoo * x))) + 1, True),
-        (Subs(nan, x, 1), True), (Subs(x, x, nan), True), (Subs(f(x), x, oo), True), (Subs(f(x), x, 1), False),
-        (Limit(nan, x, 0), True), (Limit(f(x), x, oo), True), (Limit(f(x), x, 0), False),
-        (UnevaluatedExpr(nan), True), (UnevaluatedExpr(x), False),
-        (Piecewise((x, x > 0), (y, True)), False), (Piecewise((oo, x > 0), (y, True)), True),
-        (Piecewise((x, Gt(undefined, 0, evaluate=False)), (y, x < 0)), True),
-        (i, False), (x + i, False), (f(i), False), (f(i) + oo, True),
-    ]
-
-
-def nan_rows(walk, t):
-    """Every term row of `t` under `walk` as `convert` makes them, and the F_MAYBE_NAN bit of `t`'s own row."""
-    w = walk()
-    for cls in convert._PREFIX:
-        w.klass(cls)
-    w.walk(t)
-    rows, k = [], 0
-    while k < len(w.objects):
-        row = []
-        w.term_row(w.objects[k], row)
-        rows.append(row)
-        k += 1
-    own = rows[w.ids[t]]
-    assert own[-4] == convert.T_INT and own[-2] == convert.T_INT
-    return rows, bool(own[-3] & convert.F_MAYBE_NAN)
-
-
-def nan_differences(items):
-    """[(case index, what differs)]: Rust's rows against Python's, and each walker's bit against the case's value."""
-    rust = convert.rust_walk(items)
-    found = []
-    for k, (t, want) in enumerate(nan_cases()):
-        py_rows, py_bit = nan_rows(convert._Walk, t)
-        rs_rows, rs_bit = nan_rows(rust, t)
-        if py_rows != rs_rows:
-            found.append((k, ['rows']))
-        if py_bit is not want or rs_bit is not want:
-            found.append((k, [f'bit python {py_bit} rust {rs_bit} case {want}']))
-    return found
 
 
 def outcome(walk, proposition, assumptions):
@@ -197,31 +141,22 @@ def test_rust_walk_is_pythons(items):
     assert n >= 51 and found == []
 
 
-def test_nan_cases_are_pythons():
-    """The values written in `nan_cases` are `_may_be_nan`'s, and both values occur for each kind of node."""
-    from satassume.knowledge.templates import _may_be_nan
-    cases = nan_cases()
-    assert all(_may_be_nan(t) is want for t, want in cases)
-    for kind in (Add, Subs, Limit, Piecewise, UnevaluatedExpr, f):
-        assert {want for t, want in cases if type(t) is kind} == {True, False}, kind
-    assert [want for t, want in cases if isinstance(t, Idx)] == [False]
-
-
 @pytest.mark.parametrize('items', [('term_row',), convert.RUST_ITEMS], ids=','.join)
-def test_may_be_nan_rows_are_pythons(items):
-    """No `templates/__init__.py` call is behind Rust's rows: `_may_be_nan`, rebound where the walkers could reach it,
-    is called for Python's walker only."""
-    assert nan_differences(items) == []
-    calls = []
-    real = convert._may_be_nan
-    convert._may_be_nan = lambda t: calls.append(t) or real(t)
-    try:
-        nan_rows(convert.rust_walk(items), f(x + oo))
-        assert calls == []
-        nan_rows(convert._Walk, f(x + oo))
-        assert calls
-    finally:
-        convert._may_be_nan = real
+def test_reserved_bit_is_zero(items):
+    """Bit 32 of a term row's flags is 0 under both walkers, also where `_may_be_nan` is True (the bit's old value)."""
+    from satassume.knowledge.templates import _may_be_nan
+    for t in (nan, x + oo, f(x + oo), Subs(f(x), x, oo), f(x)):
+        assert _may_be_nan(t) is (t != f(x))
+        for walk in (convert._Walk, convert.rust_walk(items)):
+            w = walk()
+            for cls in convert._PREFIX:
+                w.klass(cls)
+            w.walk(t)
+            for o in list(w.objects):
+                row = []
+                w.term_row(o, row)
+                assert row[-4] == convert.T_INT and row[-2] == convert.T_INT
+                assert row[-3] & convert.F_READ and not row[-3] & convert.F_RESERVED_32
 
 
 def test_the_inputs_reach_every_branch():
@@ -299,8 +234,6 @@ if __name__ == '__main__':
         sa_solver.walk_plant(convert.WALK_PLANTS[plant])
     its = tuple(os.environ.get('SLICE_CONVERT_ITEMS', ','.join(convert.RUST_ITEMS)).split(','))
     n, found = differences(its)
-    if 'term_row' in its:
-        found += nan_differences(its)
     for k, d in found[:10]:
         print(k, d[:4], file=sys.stderr)
     print(json.dumps(dict(inputs=n, differences=len(found))))

@@ -54,7 +54,7 @@ pub mod fact {
     pub const BAD: u8 = 4;
     pub const FLOAT: u8 = 8;
     pub const UNDEF: u8 = 16;
-    pub const MAYBE_NAN: u8 = 32;
+    // 32 is reserved and always 0 (it was MAYBE_NAN, `_may_be_nan` of the term, which nothing read).
     /// Facts were read for this term: not a node of the formula's skeleton.
     pub const READ: u8 = 64;
     /// `is_commutative` is True.

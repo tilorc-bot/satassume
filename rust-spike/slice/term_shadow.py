@@ -25,7 +25,6 @@ from satassume import relations as R
 from satassume.sat import formula as F
 from satassume.knowledge.extensions import Args
 from satassume.knowledge.domain import constructed_noncommutative
-from satassume.knowledge.templates import _may_be_nan
 from satassume.theories.euf.euf_adapter import structural
 from satassume.theories.lra import lra_adapter as L
 from satassume import engine as E
@@ -158,7 +157,7 @@ def check_table(c, table):
         want = C.F_READ
         number = getattr(t, 'is_number', False) is True
         for bit, v in ((C.F_NUMBER, number), (C.F_NAN, t.has(S.NaN)), (C.F_BAD, t.has(*L._BAD)), (C.F_FLOAT, t.has(Float)),
-                       (C.F_UNDEF, t.atoms(AppliedUndef)), (C.F_MAYBE_NAN, _may_be_nan(t))):
+                       (C.F_UNDEF, t.atoms(AppliedUndef))):
             if v:
                 want |= bit
         if bits != want:
