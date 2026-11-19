@@ -40,6 +40,10 @@ ran = {l.split()[0] for l in (cat(os.path.join(B, 'phases.txt')) or [])}
 print('tested source:', (cat(os.path.join(B, 'source.txt')) or ['?'])[0])
 print('rows:', B, '| base rows:', BASE)
 print('build:', ' | '.join(cat(os.path.join(B, 'build.txt')) or ['not run']))
+# [148]: bar.sh checks before each phase that sa_solver imports from the clone; a bar where it does not is void and ends 3
+print('sa_solver loaded:', ' | '.join(cat(os.path.join(B, 'so-loaded.txt'), 1) or ['not recorded']))
+for l in cat(os.path.join(B, 'void.txt')) or []:
+    print('VOID BAR:', l[:300])
 print('phases run:', ' '.join(p for p in PHASES if p in ran) or 'none', '| not run:', ' '.join(p for p in PHASES if p not in ran) or 'none')
 print('config:', ' | '.join(cat(os.path.join(B, 'config.txt')) or []))
 
@@ -116,14 +120,14 @@ for p in sorted(glob.glob(os.path.join(X, '*-rust.handlers'))):
 for p in sorted(glob.glob(os.path.join(L, 'seedx-*.cmp'))):
     print('  ', os.path.basename(p), ' | '.join((cat(p, 2) or [])))
 
-print('\n== plants (bar 3), each against this run\'s Python (a witness:* row: against its Python under SLICE_WITNESS=1); fired = max(plant_fired, rel:plant_fired, a term plant\'s term:plant_fired)')
+print('\n== plants (bar 3), each against this run\'s Python (a witness:* row: against its Python under SLICE_WITNESS=1); fired = max(plant_fired, rel:plant_fired, a term plant\'s term:plant_fired, a witness plant\'s witness_plant_fired)')
 print('| plant | wl | fired | verdict | first |')
 for p in sorted(glob.glob(os.path.join(L, 'plant-*.cmp'))) + sorted(glob.glob(os.path.join(X, 'plant-*.cmp'))):
     m = re.match(r'plant-([^-]+)-(.*)\.cmp$', os.path.basename(p))
     wl, pl = m.groups()
     try:
         d = json.load(open(p[:-4] + '.session.json'))
-        f = max(d.get('plant_fired', 0), d.get('counts', {}).get('rel:plant_fired', 0))
+        f = max(d.get('plant_fired', 0), d.get('counts', {}).get('rel:plant_fired', 0), d.get('witness_plant_fired', 0))
     except (OSError, ValueError):
         f = '?'
     try:
@@ -155,14 +159,29 @@ print('\n== suite plants, against this run\'s plain suite')
 for d in sorted(glob.glob(os.path.join(B, 'suite-*/'))):
     print(os.path.basename(d.rstrip('/')))
     suite_numbers(d, plain, handlers(os.path.join(B, 'suite')), '  ' + os.path.basename(d.rstrip('/')))
-    fired, errs, nfiles = 0, [], 0
+    # [146]: every kind of plant counts in its own place (plant_count.py's `fired`), summed here over the workers. A
+    # `convert:*` row has no count: the Rust walker's plants have no counter. A row with no plant has nothing to fire.
+    fired, errs, nfiles, old = collections.Counter(), [], 0, 0
     for f in glob.glob(os.path.join(d, 'counts.*.json')):
         nfiles += 1
         c = json.load(open(f))
-        fired += c.get('rel:plant_fired', 0)
+        if 'fired' in c:
+            fired.update(c['fired'])
+        else:
+            old += 1
+            fired['rel:plant_fired'] += c.get('rel:plant_fired', 0)
         if 'error' in c:
             errs.append(c['error'])
-    print(f'  plant fired in the suite: {fired if nfiles else "not recorded (no counts files)"} ({nfiles} files){" errors: " + str(errs[:2]) if errs else ""}')
+    row = os.path.basename(d.rstrip('/'))[len('suite-'):]
+    if not nfiles:
+        line = 'not recorded (no counts files)'
+    elif row.startswith('convert:'):
+        line = 'no counter (the Rust walker\'s plants do not count)'
+    elif row in ('witness:on', 'frames:rust', 'walk:rust', 'both:rust'):
+        line = f'no plant in this row; counters {dict(fired)}'
+    else:
+        line = f'{max(fired.values(), default=0)} (largest of {dict(sorted(fired.items()))})'
+    print(f'  plant fired in the suite: {line} ({nfiles} files{", " + str(old) + " without per-kind counts" if old else ""}){" errors: " + str(errs[:2]) if errs else ""}')
 
 
 # Planner's kept-reasons ruling (8 Nov): the share of queries kept per reason on each workload, against base. A rise in a

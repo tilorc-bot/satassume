@@ -26,6 +26,8 @@
 #                ($B/fmrows/check.txt, exit 1 on any difference); then the same under each of FM_PLANTS
 #                ($B/fmrows-PLANT/check.txt: a plant is caught there when its check exits 1; its own counter is not read)
 #   sum          bar_sum.py: the numbers, against BASE's suite rows
+# Exit: 0 when every phase ran; 3 when sa_solver did not import from the clone before a phase (a void bar: void.txt,
+# done.txt starts with VOID, later phases not run). The exit code says nothing else about the bar's items.
 # Environment:
 #   BASE          base suite rows (default: the last landing's, sa-port-91's, which rust-slice de8bd3a carries)
 #   PLANTS        SLICE_SESSION_PLANT names for dev and fuzz; `term:NAME` is SLICE_TERM_PLANT=NAME instead (term_live's
@@ -133,11 +135,26 @@ import json,sys
 def get(p, f):
     try: return f(json.load(open(p)))
     except (OSError, ValueError): return 0
-print(max(get(sys.argv[1], lambda d: max(d.get('plant_fired',0), d.get('counts',{}).get('rel:plant_fired',0))),
+print(max(get(sys.argv[1], lambda d: max(d.get('plant_fired',0), d.get('counts',{}).get('rel:plant_fired',0), d.get('witness_plant_fired',0))),
           get(sys.argv[2], lambda d: d.get('counts',{}).get('plant_fired',0))))" $B/live/plant-$1-$2.session.json $B/live/plant-$1-$2.term.json 2>/dev/null || echo 0
 }
+# socheck PHASE ([148]): a phase other than build and sum runs only if sa_solver imports from this clone's
+# rust-spike/slice. Without that the Rust rows are not Rust rows, so the bar is void: the reason goes to $B/void.txt,
+# the remaining phases do not run, done.txt says VOID and the script ends 3. The file and its sha256 that loaded
+# go to $B/so-loaded.txt (one line per phase).
+VOID=
+socheck() {
+  local got
+  got=$(cd $S && PYTHONPATH=$PYTHONPATH:$S $PY -c 'import hashlib, sa_solver; print(sa_solver.__file__, hashlib.sha256(open(sa_solver.__file__, "rb").read()).hexdigest())' 2>&1 | tail -n 1)
+  if [ "${got%% *}" = "$S/sa_solver.so" ]; then echo "$1 $got" >> $B/so-loaded.txt; return 0; fi
+  echo "phase $1: sa_solver does not import from $S/sa_solver.so: $got" | tee -a $CMDS >> $B/void.txt
+  return 1
+}
+rm -f $B/void.txt $B/so-loaded.txt
 
-for ph in $PHASES; do case $ph in
+for ph in $PHASES; do
+case $ph in build|sum) ;; *) socheck $ph || { VOID=1; break; };; esac
+case $ph in
 build)
   run "cd $S/solver_rs && CARGO_TARGET_DIR=$B/target PYO3_PYTHON=\$PY cargo build --release 2>&1 | tail -1 > $B/build.txt; cd $S"
   run "cp $B/target/release/libsa_solver.so $S/sa_solver.so && sha256sum $S/sa_solver.so >> $B/build.txt"
@@ -218,4 +235,8 @@ convdiff)
 sum) run "\$PY $S/p1/bar_sum.py $B $BASE > $B/sum.txt 2>&1; cat $B/sum.txt"; phase sum;;
 *) echo "unknown phase $ph" | tee -a $CMDS;;
 esac; done
+if [ -n "$VOID" ]; then
+  echo "VOID $(date -u): $(tail -n 1 $B/void.txt)" | tee $B/done.txt
+  exit 3
+fi
 date -u > $B/done.txt

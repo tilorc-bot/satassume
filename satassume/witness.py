@@ -91,7 +91,31 @@ LIMIT = 2000
 #: 751 ``skip-own`` (the symbols' own assumptions are not checked), 752 ``skip-patched`` (a user's method on the
 #: engine is passed over), 754 ``skip-users`` (a user's templates, adapters and default-registry functions are
 #: passed over)
-PLANT = [os.environ.get("SLICE_WITNESS_PLANT", "")]
+#: how often a planted site read its own plant as set (the bar's fired column for a witness row, counter 740); it
+#: stays 0 unless the plant came from SLICE_WITNESS_PLANT
+FIRED = [0]
+
+
+class _Plant(str):
+    """A plant's name that counts each site that finds it set, by ``==`` or ``!=``. A count of 0 under a plant means
+    no query reached the planted site, so that row shows nothing about the plant."""
+
+    __hash__ = str.__hash__
+
+    def __eq__(self, o):
+        r = str.__eq__(self, o)
+        if r is True:
+            FIRED[0] += 1
+        return r
+
+    def __ne__(self, o):
+        r = str.__ne__(self, o)
+        if r is False:
+            FIRED[0] += 1
+        return r
+
+
+PLANT = [_Plant(os.environ["SLICE_WITNESS_PLANT"]) if os.environ.get("SLICE_WITNESS_PLANT") else ""]
 
 #: the Engine methods a certified query does not call: formula ruling P1's three and ``ask`` itself
 GUARDED = ("ask", "verdict", "_context_session", "_within_budget")
