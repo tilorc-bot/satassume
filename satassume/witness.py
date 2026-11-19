@@ -64,7 +64,9 @@ it the seven classes it compares types with (:func:`bind`); until then every ter
 The engine's exits that need no session come first (sa-port-346): once a query is compiled and before a point is
 tried, the check asks ``Engine._ends_without_session``, and falls through if the query is over the discovery budget
 or its set has a memoized INCONSISTENT. Such a query is the engine's as with the switch off, with
-``last_budget_limited`` and ``stats["budget_limited"]`` set by it.
+``last_budget_limited`` and ``stats["budget_limited"]`` set by it. The search is bounded by its work as well as by
+its points (:data:`WORK`, :data:`CAP`); both bounds are functions of the query alone, and past either the check
+falls through.
 
 What still differs with the switch on (state, not answers): a certified query builds no session, so of
 ``Engine.stats`` it moves only ``queries``, like any other query, and ``witness_certified``
@@ -99,6 +101,10 @@ ENABLED = [os.environ.get("SLICE_WITNESS") == "1"]
 #: points tried per query at most (SLICE_WITNESS_CAP; 0: no cap but LIMIT)
 CAP = [int(os.environ.get("SLICE_WITNESS_CAP", "32"))]
 LIMIT = 2000
+#: term evaluations per query at most (SLICE_WITNESS_WORK; 0: no bound): each point tried is charged the query's
+#: compiled terms (:attr:`_Query.size`), each evaluation of an atom for a root its own. A function of the query
+#: alone. Past it the check falls through like past the cap: speed only, the caller goes on unchanged.
+WORK = [int(os.environ.get("SLICE_WITNESS_WORK", "2500"))]
 #: planted bugs for the plant table (SLICE_WITNESS_PLANT), never set in normal use:
 #: 749 ``integer-half`` (the table says 1/2 is an integer), 750 ``single`` (one witness is enough),
 #: 751 ``skip-own`` (the symbols' own assumptions are not checked), 752 ``skip-patched`` (a user's method on the
@@ -539,18 +545,28 @@ class _NeedPi(_Undecided):
 
 class _Query:
     """One query's compiled form. Lives for one call of :func:`independent`."""
-    __slots__ = ("syms", "consts", "probes", "pi")
+    __slots__ = ("syms", "consts", "probes", "pi", "size", "work")
 
     def __init__(self, pi=False):
         self.pi = pi        # True: values are in Q[pi] (the second compile of a query that holds pi)
         self.syms = {}      # symbol -> index in a point
         self.consts = []    # the query's rational constants, in walk order
-        self.probes = []    # (difference of an atom's sides, or its term; the indices of its symbols)
+        self.probes = []    # (difference of an atom's sides, or its term; the indices of its symbols; its terms)
+        self.size = 0       # compiled terms: the calls of _term, so the term evaluations one point costs
+        self.work = 0       # term evaluations charged so far (spend)
+
+    def spend(self, n):
+        """Charges ``n`` term evaluations before they are made. True if that passes :data:`WORK`: the caller makes
+        none of them and :func:`witnesses` falls through."""
+        w = self.work = self.work + n
+        bound = WORK[0]
+        return bound != 0 and w > bound
 
 
 def _term(e, q, used):
     """``e`` as a function of a point, exact or raising _Undecided. ``used``: the symbol indices seen, added to."""
     t = type(e)
+    q.size += 1
     if t is Symbol or t is Dummy:
         i = q.syms.setdefault(e, len(q.syms))
         used.add(i)
@@ -638,18 +654,19 @@ def _formula(f, q):
     if t is P:
         name, e = f.pred, f.expr
         used = set()
+        n0 = q.size
         if name == "eq" or name == "lt":
             if type(e) is not Args or len(e) != 2:
                 raise _Undecided
             fa, fb = _term(e[0], q, used), _term(e[1], q, used)
-            q.probes.append((lambda pt: fa(pt) - fb(pt), used))
+            q.probes.append((lambda pt: fa(pt) - fb(pt), used, q.size - n0))
             rel = PI_TABLE[name] if q.pi else TABLE[name]
             return lambda pt: rel(fa(pt), fb(pt))
         if type(e) is Args:
             raise _Undecided
         pr, ft = _pi_pred(name) if q.pi else _pred(name), _term(e, q, used)
         if type(e) is not Symbol and type(e) is not Dummy:
-            q.probes.append((ft, used))
+            q.probes.append((ft, used, q.size - n0))
         return lambda pt: pr(ft(pt))
     if t is Not:
         g = _formula(f.args[0], q)
@@ -690,16 +707,22 @@ def _roots(q, n):
     """Per symbol, exact roots of the query's atoms: for a relation the difference of its sides, for a predicate of a
     compound term the term. With the other symbols at 0 and then at 1, the secant through t = 0 and t = 1 gives a
     candidate, kept only if the atom's function is exactly 0 there. Proposes values; decides nothing. Only a
-    rational root is proposed: in a query that holds pi the secant can give a value outside Q, which is left out."""
+    rational root is proposed: in a query that holds pi the secant can give a value outside Q, which is left out.
+    None once the evaluations pass :data:`WORK`."""
     out = [[] for _ in range(n)]
-    for d, used in q.probes:
+    spend = q.spend
+    for d, used, cost in q.probes:
         for i in used:
             for other in (0, 1):
                 pt = [other] * n
                 try:
                     pt[i] = 0
+                    if spend(cost):
+                        return None
                     d0 = d(pt)
                     pt[i] = 1
+                    if spend(cost):
+                        return None
                     d1 = d(pt)
                     if d1 == d0:
                         continue
@@ -708,6 +731,8 @@ def _roots(q, n):
                         continue
                     r = Fraction(-d0) / s
                     pt[i] = r
+                    if spend(cost):
+                        return None
                     if d(pt) == 0 and r not in out[i]:
                         out[i].append(r)
                 except _Undecided:
@@ -721,6 +746,8 @@ def _pools(q, owns):
     assumptions exclude. (sa-port-325's search without SymPy.)"""
     n = len(q.syms)
     roots = _roots(q, n)
+    if roots is None:
+        return None
     consts = []
     for c in sorted(set(q.consts), key=lambda c: (abs(c), c))[:8]:
         consts += [c, c + 1, c - 1, c + Fraction(1, 2), c - Fraction(1, 2)]
@@ -821,6 +848,8 @@ def witnesses(proposition, assumptions, eng=None):
         if eng._ends_without_session(proposition, assumptions):
             return None
     pools = _pools(q, owns)
+    if pools is None:
+        return None
     sizes = [len(p) for p in pools]
     if 0 in sizes:
         return None
@@ -828,7 +857,7 @@ def witnesses(proposition, assumptions, eng=None):
     found = {}
     tried = 0
     for idx in _by_index_sum(sizes):
-        if tried >= cap or tried >= LIMIT:
+        if tried >= cap or tried >= LIMIT or q.spend(q.size):
             return None
         tried += 1
         pt = [pool[i] for pool, i in zip(pools, idx)]

@@ -285,9 +285,10 @@ MODULE_CONFIG: frozenset = frozenset({
                                                   # their modules at import
     ("satassume.relations", "RELATION_ATOM_IMPL"),  # the backend's relation_atom, set by
                                                   # install(); one slot, read at call time
-    # the witness check (issue 323): its switch, cap and plant, read once from the environment, and the
+    # the witness check (issue 323): its switch, cap, work bound and plant, read once from the environment, and the
     # engine methods registered as the engine's own; no query writes any of them
-    ("satassume.witness", "ENABLED"), ("satassume.witness", "CAP"), ("satassume.witness", "PLANT"),
+    ("satassume.witness", "ENABLED"), ("satassume.witness", "CAP"), ("satassume.witness", "WORK"),
+    ("satassume.witness", "PLANT"),
     ("satassume.witness", "ACCEPTED"),
     # the plants' fired counter (counter 740): written only where SLICE_WITNESS_PLANT set a plant, read by the bar,
     # never by the check

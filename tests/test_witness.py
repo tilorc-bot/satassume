@@ -679,6 +679,83 @@ def test_a_set_the_engine_knows_inconsistent_tries_no_point(on, monkeypatch):
     assert len(points) > first
 
 
+@pytest.fixture
+def work():
+    """Sets the work bound for the test."""
+    old = W.WORK[0]
+
+    def set_(n):
+        W.WORK[0] = n
+    yield set_
+    W.WORK[0] = old
+
+
+def _spent(monkeypatch, p, a, eng=None):
+    """The check's result for the query, its compiled terms and the term evaluations it charged."""
+    made = []
+    base = W._Query
+
+    class Seen(base):
+        __slots__ = ()
+
+        def __init__(self, pi=False):
+            base.__init__(self, pi)
+            made.append(self)
+    with monkeypatch.context() as m:
+        m.setattr(W, '_Query', Seen)
+        r = W.witnesses(A._formula(p, True), A._formula(a, True, True), eng)
+    return r, made[-1].size, made[-1].work
+
+
+def test_the_work_is_the_terms_evaluated(monkeypatch, work):
+    """sa-port-346 (2): what a query is charged. ``x + y`` is three terms and each assumption one, so a point costs
+    5; the one compound atom is evaluated for its roots 3 times for each symbol with the other at 0 and at 1, 12
+    evaluations of 3 terms."""
+    work(0)
+    r, size, spent = _spent(monkeypatch, Q.positive(x + y), Q.real(x) & Q.real(y))
+    assert r is not None and size == 5 and spent == 36 + 5 * r[3]
+    r, size, spent = _spent(monkeypatch, Q.positive(x), Q.real(x))      # no compound atom: no root is looked for
+    assert r is not None and size == 2 and spent == 2 * r[3]
+
+
+def test_past_the_work_bound_the_check_falls_through_and_the_engine_answers(on, monkeypatch, work):
+    """sa-port-346 (2): the bound is on the term evaluations, not on the points. At the work a pair takes the query
+    is certified; one evaluation less and the check falls through, during the points or during the roots, and the
+    query is the engine's with the answer it has with the switch off."""
+    p, a = Q.positive(x + y), Q.real(x) & Q.real(y)
+    work(0)
+    r, size, need = _spent(monkeypatch, p, a)
+    assert r is not None and need > 36
+    for bound, found in ((need, True), (need - 1, False), (36, False), (35, False), (1, False)):
+        work(bound)
+        got, _size, spent = _spent(monkeypatch, p, a)
+        assert (got is not None) == found
+        assert found or spent > bound >= spent - size     # stopped by the charge that passed the bound
+        eng = A.Engine()
+        assert A.ask(p, a, eng) is None
+        assert (eng.stats['witness_certified'], eng.stats['sessions'] > 0) == ((1, False) if found else (0, True))
+    W.ENABLED[0] = False
+    assert A.ask(p, a, A.Engine()) is None
+
+
+def test_the_default_work_bound_leaves_a_long_sum_to_the_engine(on, monkeypatch, work):
+    """sa-port-346 (2): the default, 2500 term evaluations. The roots of a sum of 40 symbols alone cost more (40
+    symbols, 6 evaluations each, 41 terms), so the check stops there; a small query never comes near the bound."""
+    assert W.WORK[0] == int(os.environ.get('SLICE_WITNESS_WORK', '2500'))
+    work(2500)
+    xs = symbols('w0:40')
+    p, a = Q.positive(sum(xs)), Q.real(xs[0])
+    got, size, spent = _spent(monkeypatch, p, a)
+    assert got is None and size == 42 and 2500 < spent <= 2500 + 41
+    work(0)
+    got, size, spent = _spent(monkeypatch, p, a)
+    assert got is not None and spent == 40 * 6 * 41 + 42 * got[3]
+    work(2500)
+    assert _spent(monkeypatch, Q.positive(x + y), Q.real(x) & Q.real(y))[0] is not None
+    both_ = both(p, a)
+    assert both_[0] is both_[1] is None
+
+
 def test_off_means_not_called(monkeypatch):
     assert W.ENABLED[0] == (os.environ.get('SLICE_WITNESS') == '1')
     old = W.ENABLED[0]
