@@ -127,9 +127,13 @@ off and on alike.
 
 ## 3. What the check is, and the decisions in it
 
-`satassume/witness.py` (511 lines, new) and 11 lines in `satassume/sympy_api.py`: the call sits in `_engine_ask`
+`satassume/witness.py` (new) and a few lines in `satassume/sympy_api.py`: the call sits in `_engine_ask`
 just before `eng.ask`, which is Python on both paths, so it runs before Python's `Engine.ask` and before Rust's
-entry alike. There is no Rust change. `SLICE_WITNESS_CAP` (default 32; 0 = no cap, limit 2000) bounds the points
+entry alike. The check itself has no Rust part. The one Rust change is the counter of section 8 (sa-port-333,
+da6eb2ee): `entry.rs`'s `EngineStats` is a view of exactly Python's stats keys, so `KEYS` is 13 with
+`witness_certified` last, and `ent_record_certified` is Rust's `Engine._record_certified` (`queries` +1,
+`witness_certified` +1; no tick of its own and no plant: the second counter is the count of its calls).
+`SLICE_WITNESS_CAP` (default 32; 0 = no cap, limit 2000) bounds the points
 tried. The soundness argument and its six assumptions are the module docstring; the first is that the engine's
 definite answers are sound, and where they are not, the check can replace a wrong definite answer by None, which is
 what the gate compares.
@@ -142,7 +146,18 @@ sa-port-328's decisions:
 - (c) Derived predicates by `rules.DEFINITIONS`; narrowed by 329, below.
 - (d) Undecided is strict: any undecided atom leaves the point unused (325's evaluator was Kleene).
 - (e) Points are rational only, so no infinity and no complex point; certify rates are below 325's.
-- (f) It falls through when `eng.extensions` has any registration. Templates registered by a user are not detected.
+- (f) It falls through when `eng.extensions` has any registration. Up to c5239b9 that was the only entry point
+  looked at; sa-port-333 (d52129da) found the others and the check now falls through on each (assumption 5 of the
+  module docstring): `extensions.register` on the default registry while the engine uses another (it still decides
+  `sympy_api`'s scope), `TemplateRegistry.register` and `.lazy` (a user's module registers like a built-in one, with
+  no epoch bump), `Engine(templates=...)` and the `Engine.templates` setter, `Engine(relations=...)` and
+  `Engine.relation_specs`. The slice adds no entry point (`session_live.register_instrument` registers our
+  instruments only). Whose a template or an adapter is, is read off its `__module__` (the package's
+  `knowledge.templates.` and `theories.`; a backend's replacements keep the module of what they replace: on Rust after
+  the dev workload, 34 templates, none outside the package). `_users_knowledge` is asked last, next to the P1 guard,
+  so only a query about to be certified pays for it, and it writes nothing: it scans the loaded templates on each
+  such call, uncached (cost in section 5). Kept test
+  `test_a_users_knowledge_falls_through_and_the_engines_answer_is_used`, 5 cases, one per entry point.
 - (g) Contextual queries only. A query none of whose assumption conjuncts is relevant is asked without assumptions
   and never reaches the check.
 
