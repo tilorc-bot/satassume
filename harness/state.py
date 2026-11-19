@@ -257,6 +257,8 @@ MODULE_CONSTANTS: frozenset = frozenset({
     # classification is explicit, as the P6 review asked.
     ("satassume.knowledge.templates.core", "IPI_GUARDS"),
     ("satassume.knowledge.templates.core", "IPI_TABLE"),
+    # the witness check's tables (issue 323, SLICE_WITNESS=1, off by default): built at import, never written
+    ("satassume.witness", "TABLE"), ("satassume.witness", "TWO_WAY"), ("satassume.witness", "ONE_WAY"),
 })
 
 #: intern tables: they grow with use and are never emptied, because live
@@ -279,6 +281,10 @@ MODULE_CONFIG: frozenset = frozenset({
                                                   # their modules at import
     ("satassume.relations", "RELATION_ATOM_IMPL"),  # the backend's relation_atom, set by
                                                   # install(); one slot, read at call time
+    # the witness check (issue 323): its switch, cap and plant, read once from the environment, and the
+    # engine methods registered as the engine's own; no query writes any of them
+    ("satassume.witness", "ENABLED"), ("satassume.witness", "CAP"), ("satassume.witness", "PLANT"),
+    ("satassume.witness", "ACCEPTED"),
 })
 
 

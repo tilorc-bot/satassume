@@ -48,9 +48,9 @@ PKG = "satassume"
 #: top-level layer of each module name (prefix match on the first part
 #: after ``satassume``)
 LAYERS = {"state": 0, "sat": 1, "knowledge": 2, "theories": 3,
-          "relations": 4, "scope": 5, "engine": 6, "sympy_api": 7, "ref": 8,
-          "_compat": 9}
-TOP = 9          # the package __init__ (public API)
+          "relations": 4, "scope": 5, "engine": 6, "witness": 7, "sympy_api": 8, "ref": 9,
+          "_compat": 10}
+TOP = 10         # the package __init__ (public API)
 
 #: modules (or packages, by prefix) that import SymPy at module level: the
 #: knowledge per SymPy class and the domain test, the theories' adapters

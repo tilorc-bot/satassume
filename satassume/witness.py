@@ -33,6 +33,11 @@ an answer. The argument assumes:
    issue 247).
 5. *No registered knowledge*: with any function registered in the engine's ``extensions`` the check falls through,
    since a registration can state facts no table here knows. Templates registered by a user are not detected.
+6. *The engine's methods are its own*: a certified query calls none of ``Engine.ask``, ``verdict``,
+   ``_context_session`` and ``_within_budget`` (:data:`GUARDED`; formula ruling P1's methods and ``ask``). If one
+   of them is not the engine's own, on the instance or on the class, the check falls through, so a user's method
+   is called and its result used exactly as with the switch off. The engine's own are the methods the class had
+   when ``sympy_api`` was imported, a backend's replacements and registered instruments (:func:`accept`).
 
 Undecided is strict: if any atom of the proposition or the assumptions has no exact value at a point, the point is
 not used, and if an atom can have none at any point (``polar``, a function, a Float, an infinity, a relation of
@@ -40,7 +45,8 @@ non-terms, ``antihermitian``, a predicate outside the vocabulary) the check fall
 point.
 
 No SymPy object is constructed and no SymPy method that evaluates is called: the check reads ``type``, ``args``,
-``Rational.p``/``.q`` and ``assumptions0``. It keeps nothing across queries: no cache, no table, no counter.
+``Rational.p``/``.q`` and ``assumptions0``. This module imports no SymPy: ``sympy_api``, the SymPy front end, gives
+it the six classes it compares types with (:func:`bind`); until then every term is undecided. It keeps nothing across queries: no cache, no table, no counter.
 
 What still differs with the switch on (state, not answers): a certified query builds no session, so
 ``Engine.stats`` counts it nowhere, the engine's memos and caches are not filled by it, and
@@ -50,15 +56,24 @@ memoized like any other).
 import os
 from fractions import Fraction
 
-from sympy.core.add import Add
-from sympy.core.mul import Mul
-from sympy.core.numbers import Rational
-from sympy.core.power import Pow
-from sympy.core.symbol import Dummy, Symbol
-
 from .knowledge.extensions import Args
 from .knowledge.rules import BASIS, DEFINITIONS
 from .sat.formula import And, Equivalent, Exclusive, Implies, ITE, Not, Or, P
+
+
+class _Unbound:
+    """Stands for a SymPy class before :func:`bind`: no object is one, so every term is undecided."""
+
+
+#: SymPy's classes, compared with ``type(e)`` only. Set by :func:`bind` from ``sympy_api`` at its import.
+Add = Mul = Pow = Rational = Symbol = Dummy = _Unbound
+
+
+def bind(add, mul, pow_, rational, symbol, dummy):
+    """Called once by ``sympy_api``, which imports SymPy: the classes :func:`_term` and :func:`_formula` read."""
+    global Add, Mul, Pow, Rational, Symbol, Dummy
+    Add, Mul, Pow, Rational, Symbol, Dummy = add, mul, pow_, rational, symbol, dummy
+
 
 #: the switch, read once at import; a one-element list so a test or a driver can flip it
 ENABLED = [os.environ.get("SLICE_WITNESS") == "1"]
@@ -67,8 +82,39 @@ CAP = [int(os.environ.get("SLICE_WITNESS_CAP", "32"))]
 LIMIT = 2000
 #: planted bugs for the plant table (SLICE_WITNESS_PLANT), never set in normal use:
 #: 749 ``integer-half`` (the table says 1/2 is an integer), 750 ``single`` (one witness is enough),
-#: 751 ``skip-own`` (the symbols' own assumptions are not checked)
+#: 751 ``skip-own`` (the symbols' own assumptions are not checked), 752 ``skip-patched`` (a user's method on the
+#: engine is passed over)
 PLANT = [os.environ.get("SLICE_WITNESS_PLANT", "")]
+
+#: the Engine methods a certified query does not call: formula ruling P1's three and ``ask`` itself
+GUARDED = ("ask", "verdict", "_context_session", "_within_budget")
+#: name -> the objects that count as the engine's own method of that name (:func:`accept`). Registrations, not
+#: history: nothing a query does writes here.
+ACCEPTED = {n: [] for n in GUARDED}
+
+
+def accept(cls, *names):
+    """Record what ``cls`` holds now under ``names`` (default: all of :data:`GUARDED`) as the engine's own.
+    ``sympy_api`` calls it at import for Python's methods; a backend that replaces one, or an instrument of ours
+    that wraps one without changing its result, calls it after installing. A method never accepted is a user's."""
+    for n in names or GUARDED:
+        f = cls.__dict__.get(n)
+        if f is not None and not any(f is g for g in ACCEPTED[n]):
+            ACCEPTED[n].append(f)
+
+
+def _patched(eng):
+    """True if one of :data:`GUARDED` is not the engine's own, on the instance or on its class (the rule of
+    context.rs ``method_of``: the instance's ``__dict__`` first, then the class's attribute by identity)."""
+    d = getattr(eng, "__dict__", ())
+    cls = type(eng)
+    for n in GUARDED:
+        if n in d:
+            return True
+        f = getattr(cls, n, None)
+        if not any(f is g for g in ACCEPTED[n]):
+            return True
+    return False
 
 _MAX_EXP = 64         # |integer exponent| above this: undecided
 _MAX_BITS = 4096      # a power whose result could be longer: undecided
@@ -309,6 +355,7 @@ def _formula(f, q):
 def _own(sym):
     """The symbol's own assumptions as a function of its value: every fact of ``assumptions0`` holds. A fact the
     table does not decide makes the query undecided."""
+    # sympy-boundary: declared symbol facts, the ones the engine's symbol template reads; the table decides each
     lits = [(_pred(str(k)), v) for k, v in sym.assumptions0.items() if v is not None]
     return lambda v: all([f(v) == want for f, want in lits])
 
@@ -418,6 +465,8 @@ def witnesses(proposition, assumptions, eng=None):
     if eng is not None:
         ext = eng.extensions
         if ext is not None and (ext._handlers or ext._vocab):
+            return None
+        if PLANT[0] != "skip-patched" and _patched(eng):
             return None
     q = _Query()
     try:

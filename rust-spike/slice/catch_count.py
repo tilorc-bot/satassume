@@ -45,6 +45,9 @@ def install():
             raise
     Engine._complete_check = staticmethod(complete_check)
     Engine.verdict = counted_verdict
+    # An instrument of ours, on both backends: satassume.witness (SLICE_WITNESS=1) doesn't take it for a user's method.
+    import satassume.witness
+    satassume.witness.accept(Engine, "verdict")
     # The Rust backend: a registered instrument doesn't change which path runs (session_live.py `INSTRUMENTS`).
     live = sys.modules.get("session_live")
     if live is not None and hasattr(live, "register_instrument"):

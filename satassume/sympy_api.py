@@ -129,7 +129,13 @@ from sympy.logic.boolalg import (And as _SAnd, Or as _SOr, Not as _SNot,
                                  Implies as _SImplies, Equivalent as _SEquivalent,
                                  Xor as _SXor, ITE as _SITE,
                                  BooleanTrue as _BTrue, BooleanFalse as _BFalse)
+from sympy.core.symbol import Dummy as _Dummy, Symbol as _Symbol
 from .knowledge.rules import PRED_INDEX
+
+# satassume.witness (SLICE_WITNESS=1, off by default) imports no SymPy: it gets the classes it compares types with
+# here, and the engine's methods as they are now count as the engine's own (a user's replacement makes it fall through)
+_witness.bind(_SAdd, _SMul, _SPow, _Rational, _Symbol, _Dummy)
+_witness.accept(Engine)
 
 # SymPy's Boolean connectives that to_formula translates (Nand, Nor and Xnor
 # evaluate to Not of And, Or and Xor on construction, Exclusive to an And of
