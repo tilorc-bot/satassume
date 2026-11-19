@@ -30,6 +30,10 @@
 #   BASE          base suite rows (default: the last landing's, sa-port-91's, which rust-slice de8bd3a carries)
 #   PLANTS        SLICE_SESSION_PLANT names for dev and fuzz; `term:NAME` is SLICE_TERM_PLANT=NAME instead (term_live's
 #                 plants, e.g. term:mark-wrong-pattern, plant 666); the same in SUITE_PLANTS and FM_PLANTS
+#                 `witness:NAME` is SLICE_WITNESS_PLANT=NAME with SLICE_WITNESS=1 (satassume.witness, plants 749-752
+#                 and 754), and `witness:on` is no plant: SLICE_WITNESS=1 alone. A witness row on a workload is compared
+#                 with this run's Python under SLICE_WITNESS=1 and no plant (WL-pywit.jsonl; the verdict), and a second
+#                 time with this run's Python with the switch off (plant-WL-ROW.offcmp; sum prints its answers)
 #   SUITE_PLANTS  plants also run on the suite (may contain `zero`)
 #   TESTS         test files in rust-spike/slice, one pytest run (default test_session_limits.py)
 #   TESTS_SPLIT   1: one pytest process per file, logs in $B/tests/, a line per file in tests.txt; TESTS=all is every test_*.py
@@ -89,8 +93,21 @@ phase() { echo "$1 $(date -u +%FT%TZ) exit ${2:-0}" >> $B/phases.txt; }
 # `walk:rust` (SLICE_CONVERT=rust) and `both:rust` (that and the Rust frames) are no plants either: the Rust walker's
 # switch alone and with the frames. A `convert:*` row carries SLICE_CONVERT=rust itself, so it is usable on workloads
 # as well as on the suite
-penv() { case $1 in frames:rust) echo "SLICE_TERM_FRAMES=rust";; walk:rust) echo "SLICE_CONVERT=rust";; both:rust) echo "SLICE_CONVERT=rust SLICE_TERM_FRAMES=rust";; term:tl-*) echo "SLICE_TERM_PLANT=${1#term:} SLICE_TERM_FRAMES=rust";; term:*) echo "SLICE_TERM_PLANT=${1#term:}";; convert:*) echo "SLICE_CONVERT_PLANT=${1#convert:} SLICE_CONVERT=rust";; *) echo "SLICE_SESSION_PLANT=$1";; esac; }
-export -f penv
+# `witness:on` is no plant: SLICE_WITNESS=1 alone (the witness check, off by default); `witness:NAME` is
+# SLICE_WITNESS_PLANT=NAME (plants 749-752 and 754), which acts only with the switch on, so its row turns it on itself
+penv() { case $1 in witness:on) echo "SLICE_WITNESS=1";; witness:*) echo "SLICE_WITNESS_PLANT=${1#witness:} SLICE_WITNESS=1";; frames:rust) echo "SLICE_TERM_FRAMES=rust";; walk:rust) echo "SLICE_CONVERT=rust";; both:rust) echo "SLICE_CONVERT=rust SLICE_TERM_FRAMES=rust";; term:tl-*) echo "SLICE_TERM_PLANT=${1#term:} SLICE_TERM_FRAMES=rust";; term:*) echo "SLICE_TERM_PLANT=${1#term:}";; convert:*) echo "SLICE_CONVERT_PLANT=${1#convert:} SLICE_CONVERT=rust";; *) echo "SLICE_SESSION_PLANT=$1";; esac; }
+# pref DIR WL ROW: the Python run a workload row is compared with: this run's Python, DIR/WL-py.jsonl. A certified query
+# makes no session, so a `witness:*` row is compared with Python under the same switch and no plant, DIR/WL-pywit.jsonl
+pref() { case $3 in witness:*) echo "$1/$2-pywit.jsonl";; *) echo "$1/$2-py.jsonl";; esac; }
+# woff DIR WL ROW: a `witness:*` row's second comparison, with this run's Python with the switch off (answers; .offcmp)
+woff() { case $3 in witness:*) $PY livecmp.py $1/$2-py.jsonl $1/plant-$2-$3.jsonl > $1/plant-$2-$3.offcmp 2>&1;; esac; :; }
+# pywit DIR WL...: prints the background commands that make the witness rows' Python reference (nothing unless PLANTS has
+# a witness row), to be put in front of a command that ends in `wait`
+pywit() { local d=$1 wl; shift
+  case " $PLANTS " in *" witness:"*) ;; *) return 0;; esac
+  for wl in "$@"; do printf '%s' "( SLICE_WITNESS=1 \$PY live.py $wl py $d/$wl-pywit.jsonl --check entry > $d/$wl-pywit.tot 2> $d/$wl-pywit.err ) & "; done
+}
+export -f penv pref woff
 
 echo "== bar.sh $NAME $BR phases: $PHASES; script sha256 $(sha256sum "$0" | cut -c1-12)" | tee -a $CMDS
 [ -d $T/.git ] || run "git clone -q https://github.com/tilorc-bot/satassume $T"
@@ -148,7 +165,10 @@ suite) suite $B/suite; phase suite;;
 live) run "rm -rf $B/live; sh $S/run_live.sh $B/live entry"; phase live;;
 plants)
   for wl in dev fuzz; do for pl in $PLANTS; do echo "$wl $pl"; done; done > $B/plants.todo
-  run "xargs -P 10 -L 1 bash -c 'wl=\$0; pl=\$1; L=$B/live; env \$(penv \$pl) SESSION_REPORT=\$L/plant-\$wl-\$pl.session.json SLICE_TERM_COUNTS=\$L/plant-\$wl-\$pl.term.json \$PY live.py \$wl rust \$L/plant-\$wl-\$pl.jsonl --check entry > \$L/plant-\$wl-\$pl.tot 2> \$L/plant-\$wl-\$pl.err; \$PY livecmp.py \$L/\$wl-py.jsonl \$L/plant-\$wl-\$pl.jsonl > \$L/plant-\$wl-\$pl.cmp 2>&1' < $B/plants.todo"
+  # the rows run first (and, beside them, the witness rows' Python reference), the comparisons after; each row's run time
+  # goes to plant-WL-ROW.wall, in seconds
+  run "$(pywit $B/live dev fuzz)xargs -P 10 -L 1 bash -c 'wl=\$0; pl=\$1; L=$B/live; env \$(penv \$pl) SESSION_REPORT=\$L/plant-\$wl-\$pl.session.json SLICE_TERM_COUNTS=\$L/plant-\$wl-\$pl.term.json \$PY live.py \$wl rust \$L/plant-\$wl-\$pl.jsonl --check entry > \$L/plant-\$wl-\$pl.tot 2> \$L/plant-\$wl-\$pl.err; echo \$SECONDS > \$L/plant-\$wl-\$pl.wall' < $B/plants.todo; wait"
+  run "xargs -P 10 -L 1 bash -c 'wl=\$0; pl=\$1; L=$B/live; \$PY livecmp.py \$(pref \$L \$wl \$pl) \$L/plant-\$wl-\$pl.jsonl > \$L/plant-\$wl-\$pl.cmp 2>&1; woff \$L \$wl \$pl' < $B/plants.todo"
   phase plants;;
 seed1)
   [ "${SEED1:-0}" = 1 ] || continue
@@ -161,10 +181,10 @@ extra)
   [ -n "$WLS" ] || continue
   X=$B/extra; run "rm -rf $X; mkdir -p $X"
   for wl in $WLS; do
-    run "( \$PY live.py $wl py $X/$wl-py.jsonl --check entry > $X/$wl-py.tot 2> $X/$wl-py.err ) & ( \$PY live.py $wl py $X/$wl-py2.jsonl --check entry > $X/$wl-py2.tot 2> $X/$wl-py2.err ) & ( SESSION_REPORT=$X/$wl-rust.session.json \$PY live.py $wl rust $X/$wl-rust.jsonl --handlers $X/$wl-rust.handlers --check entry > $X/$wl-rust.tot 2> $X/$wl-rust.err ) & wait"
+    run "( \$PY live.py $wl py $X/$wl-py.jsonl --check entry > $X/$wl-py.tot 2> $X/$wl-py.err ) & ( \$PY live.py $wl py $X/$wl-py2.jsonl --check entry > $X/$wl-py2.tot 2> $X/$wl-py2.err ) & ( SESSION_REPORT=$X/$wl-rust.session.json \$PY live.py $wl rust $X/$wl-rust.jsonl --handlers $X/$wl-rust.handlers --check entry > $X/$wl-rust.tot 2> $X/$wl-rust.err ) & $(pywit $X $wl)wait"
     run "{ echo '== $wl py vs py (control)'; \$PY livecmp.py $X/$wl-py.jsonl $X/$wl-py2.jsonl; echo '== $wl py vs rust'; \$PY livecmp.py $X/$wl-py.jsonl $X/$wl-rust.jsonl; } >> $X/summary.txt 2>&1"
     for pl in $PLANTS; do echo "$wl $pl"; done > $X/plants.todo
-    run "xargs -P 10 -L 1 bash -c 'wl=\$0; pl=\$1; env \$(penv \$pl) SESSION_REPORT=$X/plant-\$wl-\$pl.session.json SLICE_TERM_COUNTS=$X/plant-\$wl-\$pl.term.json \$PY live.py \$wl rust $X/plant-\$wl-\$pl.jsonl --check entry > $X/plant-\$wl-\$pl.tot 2> $X/plant-\$wl-\$pl.err; \$PY livecmp.py $X/\$wl-py.jsonl $X/plant-\$wl-\$pl.jsonl > $X/plant-\$wl-\$pl.cmp 2>&1' < $X/plants.todo"
+    run "xargs -P 10 -L 1 bash -c 'wl=\$0; pl=\$1; env \$(penv \$pl) SESSION_REPORT=$X/plant-\$wl-\$pl.session.json SLICE_TERM_COUNTS=$X/plant-\$wl-\$pl.term.json \$PY live.py \$wl rust $X/plant-\$wl-\$pl.jsonl --check entry > $X/plant-\$wl-\$pl.tot 2> $X/plant-\$wl-\$pl.err; \$PY livecmp.py \$(pref $X \$wl \$pl) $X/plant-\$wl-\$pl.jsonl > $X/plant-\$wl-\$pl.cmp 2>&1; woff $X \$wl \$pl; echo \$SECONDS > $X/plant-\$wl-\$pl.wall' < $X/plants.todo"
   done
   phase extra;;
 suiteplants)

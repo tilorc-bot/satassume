@@ -116,7 +116,7 @@ for p in sorted(glob.glob(os.path.join(X, '*-rust.handlers'))):
 for p in sorted(glob.glob(os.path.join(L, 'seedx-*.cmp'))):
     print('  ', os.path.basename(p), ' | '.join((cat(p, 2) or [])))
 
-print('\n== plants (bar 3), each against this run\'s Python; fired = max(plant_fired, rel:plant_fired, a term plant\'s term:plant_fired)')
+print('\n== plants (bar 3), each against this run\'s Python (a witness:* row: against its Python under SLICE_WITNESS=1); fired = max(plant_fired, rel:plant_fired, a term plant\'s term:plant_fired)')
 print('| plant | wl | fired | verdict | first |')
 for p in sorted(glob.glob(os.path.join(L, 'plant-*.cmp'))) + sorted(glob.glob(os.path.join(X, 'plant-*.cmp'))):
     m = re.match(r'plant-([^-]+)-(.*)\.cmp$', os.path.basename(p))
@@ -135,6 +135,21 @@ for p in sorted(glob.glob(os.path.join(L, 'plant-*.cmp'))) + sorted(glob.glob(os
     lines = cat(p) or []
     first = next((l for l in lines if l.startswith('first:')), '')[:120]
     print(f'| {pl} | {wl} | {f} | {lines[-1] if lines else "?"} | {first} |')
+
+# `witness:*` rows (bar.sh's pref and woff): the verdict above is against this run's Python under SLICE_WITNESS=1 and no
+# plant, because a certified query makes no session; here the same row against this run's Python with the switch off.
+# session_count_diff counts the queries that made a session off and none on, so 0 there means the check certified nothing
+print('\n== witness rows, against this run\'s Python with the switch off (answers; sessions differ where the check certified)')
+print('| row | wl | answer_diff | msg_diff | session_count_diff | answers_sha off, row | wall s |')
+for p in sorted(glob.glob(os.path.join(L, 'plant-*.offcmp'))) + sorted(glob.glob(os.path.join(X, 'plant-*.offcmp'))):
+    wl, pl = re.match(r'plant-([^-]+)-(.*)\.offcmp$', os.path.basename(p)).groups()
+    lines = cat(p) or []
+    try:
+        n = json.loads(next(l for l in lines if l.startswith('{')))
+    except (StopIteration, ValueError):
+        n = {}
+    sha = next((l.split('|')[0].split()[1:] for l in lines if l.startswith('answers_sha')), '?')
+    print(f"| {pl} | {wl} | {n.get('answer_diff', '?')} | {n.get('msg_diff', '?')} | {n.get('session_count_diff', '?')} | {sha} | {' '.join(cat(p[:-7] + '.wall') or ['?'])} |")
 
 print('\n== suite plants, against this run\'s plain suite')
 for d in sorted(glob.glob(os.path.join(B, 'suite-*/'))):
