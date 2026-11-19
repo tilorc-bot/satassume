@@ -393,12 +393,21 @@ def test_off_means_not_called(monkeypatch):
         W.ENABLED[0] = old
 
 
-def test_on_skips_the_session(on):
+def test_on_skips_the_session_and_counts_the_query(on):
+    """A certified query is a query like any other in ``stats['queries']`` and counted by itself in
+    ``stats['witness_certified']``; it builds no session. The same query with the switch off builds one."""
+    def counts(eng):
+        return eng.stats['queries'], eng.stats['witness_certified'], eng.stats['sessions']
     eng = A.Engine()
     assert A.ask(Q.positive(x), Q.real(x), eng) is None
-    assert eng.stats['queries'] == 0        # certified before Engine.ask
+    assert counts(eng) == (1, 1, 0)         # certified before Engine.ask
     assert A.ask(Q.real(x), Q.positive(x), eng) is True
-    assert eng.stats['queries'] >= 1        # not certified: the unchanged path
+    assert counts(eng) == (2, 1, 1)
+    W.ENABLED[0] = False
+    off = A.Engine()
+    assert A.ask(Q.positive(x), Q.real(x), off) is None
+    assert counts(off) == (1, 0, 1)
+
 
 
 def test_the_cap_bounds_the_points_tried():

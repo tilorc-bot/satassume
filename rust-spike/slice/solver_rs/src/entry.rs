@@ -1,12 +1,12 @@
 //! Step 5c10d: query entry and counters, the last 5c10 part (inventory part 5, INVENTORY-state.md :293-299; planner's go,
 //! 8 Nov 23:50, and its inventory ruling (2), ~06:22).
 //!
-//! - **Rust-owned state:** `Engine.stats` and `Engine.last_budget_limited` live in one `EngineStats` per engine (twelve
+//! - **Rust-owned state:** `Engine.stats` and `Engine.last_budget_limited` live in one `EngineStats` per engine (thirteen
 //!   counters in Python's key order, and the flag), held in the instance's `__dict__` under `stats`. `StatsSlot` is the data
 //!   descriptor `session_live._install_entry` puts on `Engine` for both names: `Engine.__init__`'s `self.stats = {...}`
 //!   converts the dict (`st:slot_set`), its `self.last_budget_limited = False` sets the flag (`st:flag_set`, the one Python
 //!   write left, construction only). An engine made before the install converts at its first read. A dict whose keys aren't
-//!   Python's twelve, in order, stays a dict (foreign: the Rust writers then go through its own methods, `st:foreign`).
+//!   Python's thirteen, in order, stays a dict (foreign: the Rust writers then go through its own methods, `st:foreign`).
 //! - **Readers get a read-only view:** the `EngineStats` mapping methods (`[k]`, `get`, `keys`, `items`, `==`, `dict(...)`)
 //!   and the flag's descriptor; each Python call counted `st:py_read`. `[k] = v`, `clear`, `update` raise.
 //! - **Writers:** the rows below write natively. sympy_api's writers (public `ask`, `_ask`, `_ask_general`, `_consistent`,
@@ -44,9 +44,9 @@ use crate::session::{
 };
 
 /// Python's keys, in `Engine.__init__`'s order.
-pub(crate) const KEYS: [&str; 12] = [
+pub(crate) const KEYS: [&str; 13] = [
     "queries", "cache_hits", "escalations", "searches", "sessions", "relevant", "consistency_checks", "theory_gave_up",
-    "version_clears", "set_checks", "budget_limited", "scope_misses",
+    "version_clears", "set_checks", "budget_limited", "scope_misses", "witness_certified",
 ];
 pub(crate) const QUERIES: usize = 0;
 pub(crate) const CACHE_HITS: usize = 1;
@@ -60,16 +60,18 @@ pub(crate) const VERSION_CLEARS: usize = 8;
 pub(crate) const SET_CHECKS: usize = 9;
 pub(crate) const BUDGET_LIMITED: usize = 10;
 pub(crate) const SCOPE_MISSES: usize = 11;
+/// Contextual queries satassume.witness answered None before any session (SLICE_WITNESS=1, off by default).
+pub(crate) const WITNESS_CERTIFIED: usize = 12;
 
 #[pyclass(module = "sa_solver", name = "EngineStats", unsendable)]
 pub struct EngineStats {
-    c: [Cell<i64>; 12],
+    c: [Cell<i64>; 13],
     limited: Cell<bool>,
 }
 
 impl EngineStats {
-    fn order(&self) -> [usize; 12] {
-        let mut o = [0usize; 12];
+    fn order(&self) -> [usize; 13] {
+        let mut o = [0usize; 13];
         for (i, x) in o.iter_mut().enumerate() {
             *x = i;
         }
@@ -94,10 +96,10 @@ impl EngineStats {
     fn add(&self, i: usize, n: i64) {
         self.c[i].set(self.c[i].get() + n);
     }
-    /// From Python's dict, when it has exactly Python's twelve keys in order with int values.
+    /// From Python's dict, when it has exactly Python's thirteen keys in order with int values.
     fn from_dict(d: &Bound<'_, PyAny>) -> PyResult<Option<EngineStats>> {
         let Ok(d) = d.cast::<PyDict>() else { return Ok(None) };
-        if d.len() != 12 {
+        if d.len() != 13 {
             return Ok(None);
         }
         let s = EngineStats { c: Default::default(), limited: Cell::new(false) };
@@ -135,7 +137,7 @@ impl EngineStats {
         Self::index(k).is_some()
     }
     fn __len__(&self) -> usize {
-        12
+        13
     }
     fn __iter__<'py>(&self, p: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         tick(ST_PY_READ);
@@ -203,7 +205,7 @@ impl EngineStats {
     }
 }
 
-/// The instance's `EngineStats`, converting a dict of Python's twelve keys (and a flag in the `__dict__`) on the way;
+/// The instance's `EngineStats`, converting a dict of Python's thirteen keys (and a flag in the `__dict__`) on the way;
 /// otherwise whatever is there (foreign), or None.
 fn held<'py>(inst: &Bound<'py, PyAny>) -> PyResult<Option<Bound<'py, PyAny>>> {
     let p = inst.py();
@@ -280,7 +282,7 @@ impl StatsSlot {
     }
 }
 
-// The Rust writers and readers. A foreign `stats` (a dict that isn't Python's twelve keys) goes through its own methods.
+// The Rust writers and readers. A foreign `stats` (a dict that isn't Python's thirteen keys) goes through its own methods.
 
 pub(crate) fn bump(eng: &Bound<'_, PyAny>, i: usize, n: i64) -> PyResult<()> {
     let p = eng.py();
@@ -332,6 +334,15 @@ fn ent_record_relevant(eng: &Bound<'_, PyAny>) -> PyResult<()> {
         return Ok(());
     }
     bump(eng, RELEVANT, 1)
+}
+
+/// `Engine._record_certified`: a contextual query satassume.witness answered None before any session (sympy_api's
+/// `_engine_ask`, SLICE_WITNESS=1). A query like any other, and counted by itself. No tick of its own: the second
+/// counter it writes is the count of its calls.
+#[pyfunction]
+fn ent_record_certified(eng: &Bound<'_, PyAny>) -> PyResult<()> {
+    bump(eng, QUERIES, 1)?;
+    bump(eng, WITNESS_CERTIFIED, 1)
 }
 
 #[pyfunction]
@@ -870,7 +881,7 @@ fn ent_ask_inner<'py>(eng: &Bound<'py, PyAny>, s: &Bound<'py, PyAny>, lits: &Bou
     ask_inner(eng, s, lits, proposition, contextual)
 }
 
-/// Test-only: the twelve counters and the flag of an engine's `EngineStats` read in Rust (not through the view).
+/// Test-only: the thirteen counters and the flag of an engine's `EngineStats` read in Rust (not through the view).
 #[pyfunction]
 fn st_snapshot<'py>(eng: &Bound<'py, PyAny>) -> PyResult<Option<Bound<'py, PyTuple>>> {
     let p = eng.py();
@@ -889,6 +900,7 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<StatsSlot>()?;
     m.add_function(wrap_pyfunction!(ent_record_cache_hit, m)?)?;
     m.add_function(wrap_pyfunction!(ent_record_relevant, m)?)?;
+    m.add_function(wrap_pyfunction!(ent_record_certified, m)?)?;
     m.add_function(wrap_pyfunction!(ent_record_consistency_check, m)?)?;
     m.add_function(wrap_pyfunction!(ent_record_scope_miss, m)?)?;
     m.add_function(wrap_pyfunction!(ent_clear_budget_flag, m)?)?;

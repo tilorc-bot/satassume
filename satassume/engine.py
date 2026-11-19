@@ -1398,12 +1398,15 @@ class Engine:
         #: (``_settings_fingerprint``), part of the fact caches' memo key
         self._settings_key = self._settings_fingerprint()
         #: counters; ``theory_gave_up``: contextual queries whose session's
-        #: theory gave up (satassume.sat.theory, "Giving up"), answered None
+        #: theory gave up (satassume.sat.theory, "Giving up"), answered None;
+        #: ``witness_certified``: contextual queries ``satassume.witness``
+        #: answered None before any session (also in ``queries``; 0 unless
+        #: SLICE_WITNESS=1)
         self.stats = {"queries": 0, "cache_hits": 0, "escalations": 0,
                       "searches": 0, "sessions": 0,
                       "relevant": 0, "consistency_checks": 0, "theory_gave_up": 0,
                       "version_clears": 0, "set_checks": 0,
-                      "budget_limited": 0, "scope_misses": 0}
+                      "budget_limited": 0, "scope_misses": 0, "witness_certified": 0}
         #: whether the last query was over the discovery budget (its
         #: structural cone outweighs ``discovery_budget``: answered None,
         #: no session touched); a function of the query, cache hit or not
@@ -1422,6 +1425,12 @@ class Engine:
 
     def _record_relevant(self) -> None:
         self.stats["relevant"] += 1
+
+    def _record_certified(self) -> None:
+        # a contextual query ``satassume.witness`` answered None before any session (``sympy_api._engine_ask``;
+        # SLICE_WITNESS=1, off by default): a query like any other, and counted by itself
+        self.stats["queries"] += 1
+        self.stats["witness_certified"] += 1
 
     def _record_consistency_check(self) -> None:
         self.stats["consistency_checks"] += 1

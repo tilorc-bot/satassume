@@ -1064,6 +1064,7 @@ _ENTRY_METHODS = {'is_': 'ent_is', 'is_many': 'ent_is_many', '_decide': 'ent_dec
                   '_settings_changed': 'ent_settings_changed', '_drop_set_memos': 'ent_drop_set_memos',
                   '_fresh_session': 'ent_fresh_session', '_over_budget': 'bud_over_budget', '_note_budget': 'bud_note_budget',
                   '_record_cache_hit': 'ent_record_cache_hit', '_record_relevant': 'ent_record_relevant',
+                  '_record_certified': 'ent_record_certified',
                   '_record_consistency_check': 'ent_record_consistency_check', '_record_scope_miss': 'ent_record_scope_miss',
                   '_clear_budget_flag': 'ent_clear_budget_flag', '_keep_budget_flag': 'ent_keep_budget_flag'}
 _ENTRY_PLANTS = ('ent-is-no-hit-count', 'ent-is-many-queries-short', 'ent-decide-no-escalate', 'ent-put-result-no-put',

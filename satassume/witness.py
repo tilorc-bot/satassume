@@ -53,8 +53,9 @@ No SymPy object is constructed and no SymPy method that evaluates is called: the
 ``Rational.p``/``.q`` and ``assumptions0``. This module imports no SymPy: ``sympy_api``, the SymPy front end, gives
 it the six classes it compares types with (:func:`bind`); until then every term is undecided. It keeps nothing across queries: no cache, no table, no counter.
 
-What still differs with the switch on (state, not answers): a certified query builds no session, so
-``Engine.stats`` counts it nowhere, the engine's memos and caches are not filled by it, and
+What still differs with the switch on (state, not answers): a certified query builds no session, so of
+``Engine.stats`` it moves only ``queries``, like any other query, and ``witness_certified``
+(``Engine._record_certified``, called by ``sympy_api``); the engine's memos and caches are not filled by it, and
 ``last_budget_limited`` stays False for a certified query that is over the discovery budget (its None is then
 memoized like any other).
 """

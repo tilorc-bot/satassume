@@ -1135,7 +1135,9 @@ def _engine_ask(proposition, assumptions, eng: Engine) -> Optional[bool]:
         raise ValueError("inconsistent assumptions")
     if _witness.ENABLED[0] and assum is not None and _witness.independent(prop, assum, eng):
         # SLICE_WITNESS=1 (off by default): two exact rational points satisfy the assumptions and give the
-        # proposition both values, so no definite answer is entailed (satassume.witness); no session is built
+        # proposition both values, so no definite answer is entailed (satassume.witness); no session is built, and
+        # the query is counted like any other (``stats["queries"]``) and by itself (``stats["witness_certified"]``)
+        eng._record_certified()
         return None
     try:
         if assum is None and isinstance(prop, P):
