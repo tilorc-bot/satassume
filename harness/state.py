@@ -259,6 +259,10 @@ MODULE_CONSTANTS: frozenset = frozenset({
     ("satassume.knowledge.templates.core", "IPI_TABLE"),
     # the witness check's tables (issue 323, SLICE_WITNESS=1, off by default): built at import, never written
     ("satassume.witness", "TABLE"), ("satassume.witness", "TWO_WAY"), ("satassume.witness", "ONE_WAY"),
+    # exact pi: the table at a non-rational value of Q[pi] and the powers of the enclosure's bounds (and of plant
+    # 757's wrong ones)
+    ("satassume.witness", "PI_TABLE"), ("satassume.witness", "_LO"), ("satassume.witness", "_HI"),
+    ("satassume.witness", "_BAD_LO"), ("satassume.witness", "_BAD_HI"),
 })
 
 #: intern tables: they grow with use and are never emptied, because live
@@ -285,6 +289,9 @@ MODULE_CONFIG: frozenset = frozenset({
     # engine methods registered as the engine's own; no query writes any of them
     ("satassume.witness", "ENABLED"), ("satassume.witness", "CAP"), ("satassume.witness", "PLANT"),
     ("satassume.witness", "ACCEPTED"),
+    # the plants' fired counter (counter 740): written only where SLICE_WITNESS_PLANT set a plant, read by the bar,
+    # never by the check
+    ("satassume.witness", "FIRED"),
 })
 
 
