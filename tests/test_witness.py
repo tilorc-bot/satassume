@@ -628,6 +628,57 @@ def test_a_users_method_on_the_engine_is_called_and_its_answer_is_used(on, monke
     assert A.ask(p, a, A.Engine()) is None and not W._patched(A.Engine())   # the engine's own again: certified
 
 
+def _state(eng):
+    return dict(eng.stats), eng.last_budget_limited
+
+
+@pytest.mark.parametrize('budget', [0, 1, 2])
+def test_a_query_over_the_budget_is_the_engines_as_with_the_switch_off(budget):
+    """sa-port-346 (1): the engine's budget test comes before any point. Two points certify this query, and over the
+    discovery budget it is still the engine's: the same answer, counters and ``last_budget_limited`` as with the
+    switch off, and not counted as certified."""
+    p, a = Q.positive(x + y), Q.real(x) & Q.real(y)
+    assert pair(p, a) is not None
+    old = W.ENABLED[0]
+    try:
+        got = []
+        for sw in (False, True):
+            W.ENABLED[0] = sw
+            eng = A.Engine(discovery_budget=budget)
+            got.append((A.ask(p, a, eng), _state(eng)))
+        off, on_ = got
+        assert on_ == off and off[0] is None
+        assert off[1][0]['budget_limited'] == 1 and off[1][1] is True and off[1][0]['witness_certified'] == 0
+        eng = A.Engine()        # within the default budget the same query is certified
+        assert A.ask(p, a, eng) is None and eng.stats['witness_certified'] == 1 and not eng.last_budget_limited
+    finally:
+        W.ENABLED[0] = old
+
+
+def test_a_set_the_engine_knows_inconsistent_tries_no_point(on, monkeypatch):
+    """sa-port-346 (1): the set's memoized INCONSISTENT comes before any point. The first query under the set finds
+    no point that satisfies it and the engine raises; a second query under it is left to the engine at once."""
+    a = Q.positive(x) & Q.negative(x)
+    points = []
+    real = W._holds
+
+    def holds(pt, *rest):
+        points.append(list(pt))
+        return real(pt, *rest)
+    monkeypatch.setattr(W, '_holds', holds)
+    eng = A.Engine()
+    with pytest.raises(ValueError):
+        A.ask(Q.zero(x), a, eng)
+    first = len(points)
+    assert first > 0
+    with pytest.raises(ValueError):
+        A.ask(Q.integer(x), a, eng)
+    assert len(points) == first and eng.stats['witness_certified'] == 0
+    with pytest.raises(ValueError):
+        A.ask(Q.integer(x), a, A.Engine())      # an engine that has not seen the set: the points are tried
+    assert len(points) > first
+
+
 def test_off_means_not_called(monkeypatch):
     assert W.ENABLED[0] == (os.environ.get('SLICE_WITNESS') == '1')
     old = W.ENABLED[0]

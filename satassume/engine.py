@@ -1857,6 +1857,22 @@ class Engine:
         struct = self._struct
         return wp + sum(struct(x)[1] for x in ca if x not in cp) <= self._discovery_budget
 
+    def _ends_without_session(self, proposition, assumptions) -> bool:
+        """Whether :meth:`ask` of this contextual query ends before a
+        session is built, by one of two exits: the set's memoized
+        INCONSISTENT (``_verdict``, read by :meth:`_context_session` before
+        a build) or a query over the discovery budget
+        (:meth:`_within_budget`).  It answers nothing and sets no flag and
+        no counter: ``satassume.witness`` asks it before it tries a point,
+        and on True leaves the query to :meth:`ask`, which takes that exit
+        exactly as with the switch off.  (The set's memoized Uninterpreted,
+        ``_failed``, is not asked: no query of the workloads that has one
+        gets as far as this in the check.)"""
+        if self._epoch != _EPOCH[0]:
+            self._check_version()
+        return (self._verdict.get(assumptions) is INCONSISTENT
+                or not self._within_budget(proposition, assumptions))
+
     def _over_budget(self) -> None:
         """A query over the discovery budget: None, no session touched."""
         self.last_budget_limited = True

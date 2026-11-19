@@ -61,11 +61,15 @@ No SymPy object is constructed and no SymPy method that evaluates is called: the
 ``Rational.p``/``.q`` and ``assumptions0``. This module imports no SymPy: ``sympy_api``, the SymPy front end, gives
 it the seven classes it compares types with (:func:`bind`); until then every term is undecided. It keeps nothing across queries: no cache, no table, no counter.
 
+The engine's exits that need no session come first (sa-port-346): once a query is compiled and before a point is
+tried, the check asks ``Engine._ends_without_session``, and falls through if the query is over the discovery budget
+or its set has a memoized INCONSISTENT. Such a query is the engine's as with the switch off, with
+``last_budget_limited`` and ``stats["budget_limited"]`` set by it.
+
 What still differs with the switch on (state, not answers): a certified query builds no session, so of
 ``Engine.stats`` it moves only ``queries``, like any other query, and ``witness_certified``
-(``Engine._record_certified``, called by ``sympy_api``); the engine's memos and caches are not filled by it, and
-``last_budget_limited`` stays False for a certified query that is over the discovery budget (its None is then
-memoized like any other).
+(``Engine._record_certified``, called by ``sympy_api``); of the engine's memos and caches it fills only the ones
+the budget test reads (the structural cones: ``_kids``, ``_cones``, ``_qcones``).
 """
 import os
 from fractions import Fraction
@@ -808,6 +812,14 @@ def witnesses(proposition, assumptions, eng=None):
         return None
     if not q.syms:
         return None
+    if eng is not None:
+        # before any point is tried (sa-port-346): a user's method on the engine gets the query as with the switch
+        # off, and so does the engine where it ends without a session (the set's memoized INCONSISTENT, or a query
+        # over the discovery budget), with its own flag and counters
+        if PLANT[0] != "skip-patched" and _patched(eng):
+            return None
+        if eng._ends_without_session(proposition, assumptions):
+            return None
     pools = _pools(q, owns)
     sizes = [len(p) for p in pools]
     if 0 in sizes:
@@ -834,10 +846,8 @@ def witnesses(proposition, assumptions, eng=None):
     # decide again on the two points returned: the search above only proposed them
     if _holds(yes, owns, fa, fp) is not True or _holds(no, owns, fa, fp) is not False:
         return None
-    # asked last, so only a query that would be certified pays for them: knowledge a user registered may decide the
-    # query, and a user's method on the engine gets it
+    # asked last, so only a query that would be certified pays for it: knowledge a user registered may decide the
+    # query
     if eng is not None and PLANT[0] != "skip-users" and _users_knowledge(eng):
-        return None
-    if eng is not None and PLANT[0] != "skip-patched" and _patched(eng):
         return None
     return list(q.syms), yes, no, tried
