@@ -1,0 +1,29 @@
+   39 passed   tests/test_witness.py::test_registered_knowledge_falls_through
+   40 passed   tests/test_witness.py::test_a_users_knowledge_falls_through_and_the_engines_answer_is_used[template]
+   41 passed   tests/test_witness.py::test_a_users_knowledge_falls_through_and_the_engines_answer_is_used[lazy]
+   42 passed   tests/test_witness.py::test_a_users_knowledge_falls_through_and_the_engines_answer_is_used[templates-function]
+   43 passed   tests/test_witness.py::test_a_users_knowledge_falls_through_and_the_engines_answer_is_used[adapter]
+   44 passed   tests/test_witness.py::test_a_users_knowledge_falls_through_and_the_engines_answer_is_used[default-registry]
+   58 passed   tests/test_witness.py::test_on_skips_the_session_and_counts_the_query
+mode file tests 256 seven_passed 7/7 all failed=21 passed=235
+NOT-PASSED failed tests/test_notmpl_limits.py::test_bound_variable_context
+NOT-PASSED failed tests/test_notmpl_limits.py::test_declared_assumptions_of_the_bound_symbol
+NOT-PASSED failed tests/test_notmpl_limits.py::test_ends_in_context
+NOT-PASSED failed tests/test_notmpl_limits.py::test_reproducers[expr0-zero-True]
+NOT-PASSED failed tests/test_notmpl_limits.py::test_reproducers[expr1-zero-True]
+NOT-PASSED failed tests/test_notmpl_limits.py::test_reproducers[expr11-zero-False]
+NOT-PASSED failed tests/test_notmpl_limits.py::test_reproducers[expr12-positive-True]
+NOT-PASSED failed tests/test_notmpl_limits.py::test_reproducers[expr13-integer-True]
+NOT-PASSED failed tests/test_notmpl_limits.py::test_reproducers[expr14-zero-True]
+NOT-PASSED failed tests/test_notmpl_limits.py::test_reproducers[expr18-zero-True]
+NOT-PASSED failed tests/test_notmpl_limits.py::test_reproducers[expr19-zero-True]
+NOT-PASSED failed tests/test_notmpl_limits.py::test_reproducers[expr20-zero-True]
+NOT-PASSED failed tests/test_notmpl_limits.py::test_reproducers[expr21-zero-True]
+NOT-PASSED failed tests/test_notmpl_limits.py::test_reproducers[expr3-positive-True]
+NOT-PASSED failed tests/test_notmpl_limits.py::test_reproducers[expr4-finite-True]
+NOT-PASSED failed tests/test_notmpl_limits.py::test_reproducers[expr5-positive-True]
+NOT-PASSED failed tests/test_notmpl_limits.py::test_reproducers[expr6-nonnegative-True]
+NOT-PASSED failed tests/test_notmpl_limits.py::test_reproducers[expr8-finite-True]
+NOT-PASSED failed tests/test_rootof.py::test_against_sympy_on_random_polynomials
+NOT-PASSED failed tests/test_rootof.py::test_constructed_from_a_reducible_polynomial
+NOT-PASSED failed tests/test_rootof.py::test_reproducers
