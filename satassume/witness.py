@@ -112,7 +112,10 @@ def _patched(eng):
         if n in d:
             return True
         f = getattr(cls, n, None)
-        if not any(f is g for g in ACCEPTED[n]):
+        for g in ACCEPTED[n]:
+            if f is g:
+                break
+        else:
             return True
     return False
 
@@ -466,8 +469,6 @@ def witnesses(proposition, assumptions, eng=None):
         ext = eng.extensions
         if ext is not None and (ext._handlers or ext._vocab):
             return None
-        if PLANT[0] != "skip-patched" and _patched(eng):
-            return None
     q = _Query()
     try:
         fa = _formula(assumptions, q)
@@ -503,5 +504,8 @@ def witnesses(proposition, assumptions, eng=None):
         return list(q.syms), yes, no, tried
     # decide again on the two points returned: the search above only proposed them
     if _holds(yes, owns, fa, fp) is not True or _holds(no, owns, fa, fp) is not False:
+        return None
+    # asked last, so only a query that would be certified pays for it: a user's method on the engine gets the query
+    if eng is not None and PLANT[0] != "skip-patched" and _patched(eng):
         return None
     return list(q.syms), yes, no, tried
