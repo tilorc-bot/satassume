@@ -96,6 +96,88 @@ No workload reaches a difference under 758: the seven over-budget queries of bud
 and counters are the same with the check first. Under 759 wiring's certified count reads 231, not 215: answers the
 same. The bar's rows (suite and workloads, fired from counter 740) are owed.
 
+## (4) The gate on 180e501, read by sa-port-348
+
+Started by sa-port-347 (`tools347/go347.sh 180e501 2030cdc6 01e8ca74`), pareto0, shared lease 3ca5f4f4, 19:34Z to
+21:30Z 19 Nov; end marker "END 0" (go347.sh:18). Every tree ran the pareto venv .so cad764d46471b1c6 (no Rust
+change); witness.py b16c1ed1679d30c5. Rows on orion under ~/sa-rust-ids-work/sa-port-347 (job-180e501,
+jobb-180e501). 180e501 holds both halves of item (1): by the planner's ruling B these answers are evidence, and the
+gate of the landed source is section (5b)'s.
+
+| | 180e501 (base 2030cdc6) |
+|---|---|
+| suite by id, Rust: on / off / base | 6316 ids, 126 / 127 failed / 6309 ids, 127 failed |
+| suite by id, Python: on / off / base | 0 failed in all three (6275 / 6275 / 6268 passed) |
+| ids in one tree only | 7, all tests/test_witness.py (this step's tests) |
+| on against off, outcome differs | Rust 1 id (the planted-history test, below); Python 0 |
+| off against base, outcome differs | 0 ids, both backends |
+| quiet catches recorded | Rust 49 in 9 ids, Python 10 in 7 ids: on, off and base |
+| iv, 64 runs off + 64 on | failing ids differ off against on in 0 runs |
+| digests, dev and fuzz | 31cd0945c07f02a6, 173502b6ef285ad6: off and on, py and rust |
+| certified at cap 32 and 2500, dev / fuzz | 173 / 1284, py and rust |
+| 20 workloads, py and rust, off and on, at 2500 | 0 answers and 0 messages differ in the 40 rows; against 343's rows of 01e8ca74, 80 cells, answers and messages equal |
+| the same at SLICE_WITNESS_WORK=8400 | 80 cells, answers and messages equal |
+| the 20 workloads' cells | exit code 0 and an empty error file in all 80 (and in the 80 at 8400) |
+| queries that reach a solver, 20 workloads, off / on at 2500 / on at 8400 | 27466 / 25757 / 25741, py and rust: the 16 are wiring's lost certifications |
+| fuzz seeds 0, 1, 2, 42 under 4 hash seeds (evalbench py and rust, harness, harness-custom) | rows equal on every run, 0 differ, at 2500 and at 8400 |
+| certified on the seeds: evalbench / harness / harness-custom | 20964 of 43988 / 4 of 2908 / 0 of 2424, at 2500 and at 8400 (the rows of 01e8ca74: the same) |
+
+Exceptions on the seeds are equal off and on (ValueError 2748, 472 and 808). The zero workload records 7 raises at
+entry (`entails`) in each of its four cells, as on 01e8ca74.
+
+**budget's over-budget queries (bs.txt, bs347.py).** 15 of budget's 28 rows are over budget by
+`last_budget_limited` (rows 0 to 13 and 27), the same 15 off and on. On each of them the answer, the message,
+`last_budget_limited`, the rise of `budget_limited`, the whole of `Engine.stats` and the moved ids are equal on
+against off: 15 of 15, and 28 of 28 over all rows, py and rust, at 2500, at 8400 and under check-first. The last
+row's stats read `budget_limited` 15 and `witness_certified` 0 on both sides. The rows of 01e8ca74, before this step,
+read the same, so this comparison cannot tell the head from the base on this workload: none of the 15 is certified
+with or without item (1). What tells them apart is the kept test (tests/test_witness.py:636).
+
+**Known base rows, by id.** Rust base fails 127 ids (cause 672c421, not this step's), the list of
+witness-reasons.md (5): test_lra_fuzz.py 43, test_solver_incremental.py 36, test_solver.py 14, test_theory_hooks.py
+10, test_euf.py 7, test_euf_fuzz.py 4, test_solver_real_theories.py 3, test_writeback_provenance.py 3,
+test_transfer.py 2, and one each in test_public_incremental.py (the planted-history test), test_relations.py,
+test_lra_exhaustion.py, test_verify_integration.py and test_template_tables.py. The off-row fails the same 127 ids;
+the on-row those less the planted-history test. iv: Rust fails test_transfer.py::test_models_respect_transfer and
+::test_protocol_on_fuzz in 16 of 32 runs, off and on (known: witness-check.md:111 and :199); Python 0 of 64.
+
+`tests/test_public_incremental.py::test_public_comparison_catches_a_planted_history_dependence` (the known id()-reuse
+failure; not edited): the Rust on-row passed it once; off failed `assert 1 == 2` and base `assert 0 == 2` at :204.
+a28c548's method (pre/rep/rep-sum.txt), 20 runs a cell on 180e501:
+
+| | switch off | switch on |
+|---|---|---|
+| Rust, the test | 0 of 20 pass (14x `assert 0 == 2`, 6x `assert 1 == 2`) | 0 of 20 (16x, 4x) |
+| Rust, keep-alive | 20 of 20 | 20 of 20 |
+| Python, the test | 20 of 20 | 18 of 20 (2x `assert 1 == 2`) |
+| Python, keep-alive | 20 of 20 | 20 of 20 |
+
+The plain test fails, the keep-alive variant passes 80 of 80, and Python is at its base rate (a28c548: 2 and 6 in
+50): the signature of [137e], a test artifact.
+
+Plants on 180e501 (python, switch on; pre/dig/dig.jsonl, pre/tw/*.log; 193 tests a row: test_witness.py's 157 and
+the 36 that patch `Engine.ask`). Without a plant test_witness.py passes 157 in each of the four cells (py and rust,
+off and on) and the patch row 36, off and on.
+
+| plant | dev digest, certified | fuzz digest, certified | failed of 193 |
+|---|---|---|---|
+| none | 31cd0945c07f02a6, 173 | 173502b6ef285ad6, 1284 | 0 |
+| 758 check-first | MATCH, 173 | MATCH, 1284 | 4 |
+| 759 skip-work | MATCH, 173 | MATCH, 1284 | 2 |
+| 755 pi-sign | MATCH, 171 | DIFFER f2dbc80bca7b0658, 1232 | 11 |
+| 756 pi-rational | MATCH, 173 | MATCH, 1284 | 10 |
+| 757 pi-enclosure | MATCH, 173 | MATCH, 1284 | 9 |
+| 749 integer-half | DIFFER ff3a586753ddcf94, 184 | DIFFER f10fca19a50daa53, 1292 | 6 |
+| 750 single | DIFFER a5700e23ddbf22c0, 503 | DIFFER eb82d95f09e005c6, 2349 | 49 |
+| 751 skip-own | MATCH, 173 | MATCH, 1284 | 6 |
+| 752 skip-patched | MATCH, 173 | MATCH, 1284 | 7 |
+| 754 skip-users | MATCH, 173 | MATCH, 1284 | 6 |
+
+758 and 759 are caught by tests only, as (3) says: no workload reaches a difference under either on dev or fuzz.
+Under pi-sign fuzz reads 1232 certified and another digest than on 01e8ca74 (1234, f92b35588dda34ba): two of the
+plant's certifications no longer happen on this tree. Which of the two changes takes them is not traced; the plant is
+still caught, by fuzz and by 11 tests.
+
 ## (5) S1, sa-port-347: 180e501 against 2030cdc6, quiet lease on pareto1
 
 Lease 9e0c7e81, 19:34Z to 20:04Z 19 Nov, load at most 1.26; bench-container, CPU 2, sa-eval-bench:1; 12 rounds, the
