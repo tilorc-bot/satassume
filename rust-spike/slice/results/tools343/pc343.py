@@ -1,5 +1,5 @@
 """pc343.py WL MODE (sa-port-343, issue 323; tools328/wit328.py with the slice's workloads budget and wiring loaded as
-qt342.py loads them, and one row per call of the check): one cold pass over a workload with SLICE_WITNESS=1, every call
+qt342.py loads them, any other but dev and fuzz by live.py's load(), and one row per call of the check): one cold pass over a workload with SLICE_WITNESS=1, every call
 of the witness check timed, and what the engine did with the query after a call that fell through. Nothing in the
 package is changed: the rows come from wrappers set here, in the driver's process.
 
@@ -45,8 +45,13 @@ elif wl in ("budget", "wiring"):    # the slice's own workloads, as live.py's lo
     if S not in sys.path:
         sys.path.append(S)
     pairs = importlib.import_module({"budget": "budget_wl", "wiring": "knowledge_wiring_wl"}[wl]).queries()
-else:
+elif wl == "dev":
     pairs = workload(wl)
+else:                               # any other workload of the slice (the gate's 20), by live.py's load()
+    if S not in sys.path:
+        sys.path.append(S)
+    import live
+    pairs = live.load(wl)
 pc = time.perf_counter
 calls = []          # (query index, seconds, certified, points tried)
 compiled = [0]
