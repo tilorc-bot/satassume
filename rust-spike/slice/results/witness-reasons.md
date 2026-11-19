@@ -136,7 +136,58 @@ after the change is not measured. HANDOFF-sa-port-341.md has the order and the m
   148 passed without a plant; 11, 12 and 8 failed under the three, among them one test each that compares answers
   with the switch on and off and never reads the plant.
 
+## sa-port-342: the raises (planner (ii)), and the reasons table after the change; the gate's jobs started, not read
+
+Tested SHA dfb544e6 (source a0849b10, tests ef0b1335, tools342), base 29c5a0db. No Rust change, so both trees run the
+venv .so cad764d46471b1c6. Everything in this section is orion, pure Python, frozen archives of the two commits.
+
+**(ii) Every raise of witness.py (ef0b1335, tests only, no source change).** The module has two exception classes,
+`_Undecided` and its subclass `_NeedPi`, and 23 raise statements, each naming one of the two
+(`test_the_check_raises_only_its_own_undecided` reads this from the source). They are raised either while compiling
+(caught at `witnesses`' `except _Undecided`, the `_NeedPi` of the first compile one level in) or while evaluating a
+closure, and closures are called from three places only: `_roots` (try at :697), `_pools`' own-assumption call (try at
+:750, the [151] fix) and `_holds` (try at :781). The rest of `_pools` adds, subtracts and divides by 2, which raises
+nothing. `test_every_raise_of_the_check_is_caught_before_the_query_returns` runs one case per raise statement under a
+line trace of the module: 20 raise lines are reached by 20 cases through `ask` or `witnesses` (answers equal off and on,
+nothing raised), and three that no query reaches are executed directly: `_PiPoly.__truediv__` and `__rtruediv__` (the
+check divides only by a non-zero rational) and `_pred`'s definition branch (no definition names polar). A raise
+added without a case fails the test. With the [151] fix taken out (a copy of the tree, `except ZeroDivisionError` in
+`_pools`) the test fails, with ecf2ff12's own test. Nothing new was found to fix.
+
+tests/test_witness.py, one process: 150 passed; with test_sympy_api.py and test_layering.py 262 passed, switch off and
+on. Under the plants: pi-sign 11, pi-rational 12, pi-enclosure 9 (the new test is one of them), single 58 failed of 150.
+
+**The reasons table, before and after (tools342/cnt342.py, ana342.py; ana342-dfb544e6.txt has every row).** One pass
+per workload, cap and tree with the switch on; the answers and the calls of the check are the same in all six runs of
+a workload.
+
+| | dev, cap 32 | dev, uncapped | fuzz, cap 32 | fuzz, uncapped |
+|---|---|---|---|---|
+| calls of the check | 776 | 776 | 2772 | 2772 |
+| certified, 29c5a0db | 159 | 163 | 1060 | 1491 |
+| certified, dfb544e6 | 173 (+14) | 179 (+16) | 1283 (+223) | 1826 (+335) |
+| `atom: constant pi`, 29c5a0db -> dfb544e6 | 160 -> 0 | 160 -> 0 | 544 -> 0 | 544 -> 0 |
+| the 160 / 544 calls now compiled in Q[pi]: certified | 14 | 16 | 223 | 335 |
+| ... the same without (2b) (no `_PiPoly` root proposed) | 14 | 14 | 224 | 328 |
+| calls outside the pi class whose row changed | 0 | 0 | 0 | 0 |
+
+Of dev's 160 pi calls 70 now stop at `atom: type Pow` (1/pi, sqrt(pi), a power with pi), 26 at floor, 12 at tan, 6
+at I, 4 at sin and cos; 28 or 26 end without a pair. On fuzz all 544 compile and 321 (cap 32) or 209 (uncapped) end
+without a pair. **(2b) at the default cap gains nothing: 0 on dev and -1 on fuzz** (a root takes a place among the
+first 32 points); uncapped it gains 2 on dev and 7 on fuzz. It is committed and gated as it is; whether it stays is
+the planner's.
+
+**Started, not read (detached, tools342/go342.sh):** a on pareto0 (suite by id on/off/base, pre342.sh with plants
+755-757, iv) and b on pareto1 (gate330.sh on both trees with xans342.py, and the planner's (i): fz342.py on both
+trees, harness streams and evalbench fuzz, seeds 0 1 2 42 under hash seeds 0 1 2 42, 256 runs). An orion smoke of
+fz342.py (seed 1, hash seed 0, the worktree): rows equal off and on in the three kinds; the harness stream compiles
+almost nothing (1 of 172 calls; 40 reach the pi compile), evalbench certifies 1322 of 2752 calls. HANDOFF-sa-port-342.md
+says where the end markers are.
+
+**Sizing only, not S1** (orion, one cold run each, py, dfb544e6, qt342.py): budget 0.79 s off, 2.76 s on; wiring
+4.17 s off, 5.48 s on. The quiet-lease run (6) measures this at both SHAs.
+
 ## Owed, named here
 
 - A fired counter for the Rust walker's plants (above).
-- (5) the gate, (6) S1 and (7) the bar on a0849b10, and the reasons table after the change.
+- (5) the gate's two jobs read (started by sa-port-342), (6) S1 and (7) the bar.

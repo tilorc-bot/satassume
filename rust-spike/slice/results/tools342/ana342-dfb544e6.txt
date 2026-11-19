@@ -1,0 +1,54 @@
+## dev: 1985 queries, 892 None answers, 776 calls of the check; answers and calls equal in all six runs: True
+| why | base cap 32 | new cap 32 | base uncapped | new uncapped |
+|---|---|---|---|---|
+| certified | 159 | 173 | 163 | 179 |
+| no pair: F | 166 | 179 | 166 | 177 |
+| atom: constant pi | 160 | 0 | 160 | 0 |
+| no pair: T | 136 | 151 | 132 | 147 |
+| atom: type Pow | 0 | 70 | 0 | 70 |
+| atom: function re | 49 | 49 | 49 | 49 |
+| atom: function floor | 10 | 36 | 10 | 36 |
+| no pair: none | 32 | 32 | 32 | 32 |
+| atom: function sign | 17 | 17 | 17 | 17 |
+| atom: function tan | 2 | 14 | 2 | 14 |
+| atom: constant I | 4 | 10 | 4 | 10 |
+| atom: function Abs | 9 | 9 | 9 | 9 |
+| atom: function exp | 6 | 6 | 6 | 6 |
+| atom: infinity, zoo or nan | 6 | 6 | 6 | 6 |
+| atom: function sin | 1 | 4 | 1 | 4 |
+| atom: function cos | 2 | 3 | 2 | 3 |
+| atom: function coth | 3 | 3 | 3 | 3 |
+| atom: function csch | 3 | 3 | 3 | 3 |
+| atom: function im | 3 | 3 | 3 | 3 |
+| atom: function factorial | 2 | 2 | 2 | 2 |
+| atom: function log | 2 | 2 | 2 | 2 |
+| atom: function cosh | 1 | 1 | 1 | 1 |
+| atom: function sech | 1 | 1 | 1 | 1 |
+| atom: function sinh | 1 | 1 | 1 | 1 |
+| atom: function tanh | 1 | 1 | 1 | 1 |
+pi class, cap 32: base `atom: constant pi` 160 calls; new compiled in Q[pi] 160; in one and not the other 0
+  new, by reason: {'atom: type Pow': 70, 'atom: function floor': 26, 'no pair: T': 15, 'certified': 14, 'no pair: F': 13, 'atom: function tan': 12, 'atom: constant I': 6, 'atom: function sin': 3, 'atom: function cos': 1}
+  new without (2b), by reason: {'atom: type Pow': 70, 'atom: function floor': 26, 'no pair: T': 15, 'certified': 14, 'no pair: F': 13, 'atom: function tan': 12, 'atom: constant I': 6, 'atom: function sin': 3, 'atom: function cos': 1} ; _PiPoly roots dropped 55 in 35 calls
+  certified in the class: with (2b) 14 , without 14 ; certified outside the class: base 159 , new 159 ; calls outside the class whose row changed 0
+pi class, cap none: base `atom: constant pi` 160 calls; new compiled in Q[pi] 160; in one and not the other 0
+  new, by reason: {'atom: type Pow': 70, 'atom: function floor': 26, 'certified': 16, 'no pair: T': 15, 'atom: function tan': 12, 'no pair: F': 11, 'atom: constant I': 6, 'atom: function sin': 3, 'atom: function cos': 1}
+  new without (2b), by reason: {'atom: type Pow': 70, 'atom: function floor': 26, 'no pair: T': 15, 'certified': 14, 'no pair: F': 13, 'atom: function tan': 12, 'atom: constant I': 6, 'atom: function sin': 3, 'atom: function cos': 1} ; _PiPoly roots dropped 55 in 35 calls
+  certified in the class: with (2b) 16 , without 14 ; certified outside the class: base 163 , new 163 ; calls outside the class whose row changed 0
+
+## fuzz: 3000 queries, 2387 None answers, 2772 calls of the check; answers and calls equal in all six runs: True
+| why | base cap 32 | new cap 32 | base uncapped | new uncapped |
+|---|---|---|---|---|
+| certified | 1060 | 1283 | 1491 | 1826 |
+| no pair: T | 502 | 621 | 366 | 448 |
+| atom: constant pi | 544 | 0 | 544 | 0 |
+| no pair: F | 344 | 446 | 213 | 265 |
+| no pair: none | 322 | 422 | 158 | 233 |
+pi class, cap 32: base `atom: constant pi` 544 calls; new compiled in Q[pi] 544; in one and not the other 0
+  new, by reason: {'certified': 223, 'no pair: T': 119, 'no pair: F': 102, 'no pair: none': 100}
+  new without (2b), by reason: {'certified': 224, 'no pair: T': 118, 'no pair: F': 101, 'no pair: none': 101} ; _PiPoly roots dropped 552 in 544 calls
+  certified in the class: with (2b) 223 , without 224 ; certified outside the class: base 1060 , new 1060 ; calls outside the class whose row changed 0
+pi class, cap none: base `atom: constant pi` 544 calls; new compiled in Q[pi] 544; in one and not the other 0
+  new, by reason: {'certified': 335, 'no pair: T': 82, 'no pair: none': 75, 'no pair: F': 52}
+  new without (2b), by reason: {'certified': 328, 'no pair: T': 84, 'no pair: none': 79, 'no pair: F': 53} ; _PiPoly roots dropped 552 in 544 calls
+  certified in the class: with (2b) 335 , without 328 ; certified outside the class: base 1491 , new 1491 ; calls outside the class whose row changed 0
+
