@@ -306,6 +306,16 @@ def test_own_assumptions_bound_the_points():
     assert pair(Q.negative(d), Q.integer(d)) is None
 
 
+def test_an_own_assumption_undecided_at_a_value_leaves_the_value_out(on):
+    # 10**7 is above the bound of the trial division, so prime is undecided there: the value is not proposed, and
+    # nothing is raised (before sa-port-341 _Undecided left _pools and the query)
+    p = Symbol('p', prime=True)
+    assert pair(Q.gt(p, 10 ** 7), Q.integer(p)) is None
+    assert both(Q.gt(p, 10 ** 7), Q.integer(p)) == [None, None]
+    syms, yes, no, tried = pair(Q.gt(p, 3), Q.lt(p, 10 ** 7))
+    assert yes[0] in (5, 7) and no[0] in (2, 3)
+
+
 def test_integer_is_false_at_a_half(on):
     # a wrong table entry (integer true at 1/2) would make x = 1/2 a point of the set and 2*x = 1 odd there
     assert A.ask(Q.even(2 * x), Q.integer(x), A.Engine()) is True

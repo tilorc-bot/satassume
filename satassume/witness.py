@@ -482,8 +482,12 @@ def _pools(q, owns):
         for v in list(_HEAD) + crit + consts + list(_TAIL):
             if v not in seen:
                 seen.add(v)
-                if own is None or own(v):
-                    pool.append(v)
+                try:
+                    if own is None or own(v):
+                        pool.append(v)
+                except _Undecided:
+                    # an own assumption without an exact value here (a prime symbol above _MAX_PRIME): not proposed
+                    pass
         pools.append(pool)
     return pools
 
