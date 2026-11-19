@@ -64,10 +64,10 @@ RAISED = term_live.RAISED
 #: 'knowledge-value-multigamma-drop' drops the last clause of Rust's `value_units` pattern when multigamma's template calls it
 #: (special.py's `value_units(v, expr)`), for the reached-code ruling's value_units footnote; 'knowledge-no-query-drop' drops
 #: the last clause of a pattern Rust builds with no query on the stack (atoms' no-query path, 6g(a)); the dispatch-* plants
-#: are term/dispatch.rs's ('dispatch-nan-arg-off' is plant 753: `opaque` takes `may_be_nan`'s True for an argument as False).
+#: are term/dispatch.rs's ('dispatch-nan-arg-on' is plant 753: `opaque` takes `may_be_nan` as True for every argument).
 PLANTS = ('knowledge-rows-kept-raise', 'knowledge-pattern-drop', 'knowledge-value-multigamma-drop',
           'dispatch-ignores-epoch', 'dispatch-keeps-memo', 'dispatch-opaque-off', 'dispatch-redefines-off', 'dispatch-user-off',
-          'knowledge-no-query-drop', 'dispatch-slotted-off', 'dispatch-nan-arg-off') + knowledge_common_live.PLANTS
+          'knowledge-no-query-drop', 'dispatch-slotted-off', 'dispatch-nan-arg-on') + knowledge_common_live.PLANTS
 PLANT = [None]
 _UNDO = [None]
 

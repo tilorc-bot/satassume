@@ -96,23 +96,25 @@ impl Dispatch {
         }
     }
 
-    /// `_applied_to_nan(expr)`, the registry's `opaque`. Plant 753 (`dispatch-nan-arg-off`): a True of `may_be_nan`
-    /// for an argument is taken as False at this call, and counted in `fired`.
+    /// `_applied_to_nan(expr)`, the registry's `opaque`. Plant 753 (`dispatch-nan-arg-on`): `may_be_nan` is taken as
+    /// True for every argument at this call, the opposite wrong value to `dispatch-opaque-off`'s. `fired` counts the
+    /// calls whose result that changes: an application with arguments, none of which may be nan.
     fn opaque(&self, e: &Bound<'_, PyAny>, fired: &mut u64) -> PyResult<bool> {
         if !e.is_instance(self.application_t.bind(e.py()))? {
             return Ok(false);
         }
         let py = e.py();
+        let mut planted = false;
         for a in e.getattr("args")?.try_iter()? {
             if may_be_nan(&a?, self.basic_t.bind(py).as_any(), self.nan.bind(py), &self.specials)? {
-                if self.plant == "dispatch-nan-arg-off" {
-                    *fired += 1;
-                    continue;
-                }
                 return Ok(true);
             }
+            planted = self.plant == "dispatch-nan-arg-on";
         }
-        Ok(false)
+        if planted {
+            *fired += 1;
+        }
+        Ok(planted)
     }
 }
 
@@ -431,9 +433,9 @@ impl Dispatch {
         }
         let compiled = PyList::empty(py);
         let formulas = PyList::empty(py);
-        let mut nan_off = 0;
-        let mut opaque = slf.borrow().opaque(expr, &mut nan_off)?;
-        for _ in 0..nan_off {
+        let mut nan_on = 0;
+        let mut opaque = slf.borrow().opaque(expr, &mut nan_on)?;
+        for _ in 0..nan_on {
             bump(&mut slf.borrow_mut().counts, "plant:fired");
         }
         if opaque && slf.borrow().plant == "dispatch-opaque-off" {
