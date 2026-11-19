@@ -10,6 +10,7 @@ least 10 of the 12 rounds (med342.py's rule).
   C  head on against head cf (what item (1)'s test costs: cf is the head with the test taken out)
   D  head w8400 against head on (the two bounds), w8400 against base on, w8400 against head off
   E  the sum over the four workloads per round, bound 2500 (on32) against 8400, per mode and both modes together
+  F  head cf against base on and against head off (the step without item (1)'s test)
 Also the digests and .so hashes seen per workload, and wit.jsonl's counts where present."""
 import json, os, statistics as st, sys
 base, new, dirs = sys.argv[1], sys.argv[2], sys.argv[3:]
@@ -74,6 +75,11 @@ for wl in wls:
         cmp(wl, f"{new}:{m}-w8400", f"{new}:{m}-on32")
         cmp(wl, f"{new}:{m}-w8400", f"{base}:{m}-on32")
         cmp(wl, f"{new}:{m}-w8400", f"{new}:{m}-off")
+print("F the head with item (1)'s test taken out (check-first): against base on, and against head off:")
+for wl in wls:
+    for m in M:
+        cmp(wl, f"{new}:{m}-cf", f"{base}:{m}-on32")
+        cmp(wl, f"{new}:{m}-cf", f"{new}:{m}-off")
 print("E the sum over", " ".join(wls), "per round:")
 
 
