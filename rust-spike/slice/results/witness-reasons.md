@@ -106,7 +106,37 @@ construction; it can only help inside the pi class.
 No order lifts the count by 5% of the class, so (3) is not implemented. All 397 fuzz pairs found after point 32
 (and dev's 4) are queries of two symbols; the order of the tuples, not of the pools, was not simulated.
 
+## (1') The barchk job, read by sa-port-341
+
+pareto1, 1f6ddb5b, .so cad764d46471b1c6 loaded in every phase (so-loaded.txt), ended 12:54:01Z 19 Nov:
+`END void 3 fired 0`.
+
+- Void bar: exit 3; done.txt and void.txt read "VOID ... phase tests: sa_solver does not import from .../sa_solver.so".
+- "plant fired in the suite": witness:single 25,094 (witness); witness:integer-half 1,587,916 (witness);
+  term:mark-wrong-pattern 347 (term); dispatch-nan-arg-on 4,751 (plant:fired); convert:enc-int-no-sign "no counter";
+  witness:on "no plant in this row", every counter 0.
+- Plants table, fired: witness:on 0 and 0 (dev, fuzz), witness:single 922 and 3,812 (DIFFER), witness:skip-own 493
+  and 2,228 (MATCH on the workloads; its kept test catches it).
+
+Nothing was wrong, so no fix commit.
+
+## sa-port-341: exact pi (2) and plants (4), committed, not gated
+
+Head a0849b10 (source), orion only so far; the gate (5), S1 (6) and the bar (7) have not run, and the reasons table
+after the change is not measured. HANDOFF-sa-port-341.md has the order and the map.
+
+- ecf2ff12: with the switch on, an own assumption undecided at a proposed value (a prime symbol and a constant above
+  10**6) raised `_Undecided` out of the query on 29c5a0db; the value is now left out. A bug of the landed check,
+  unreached with the switch off.
+- 49e30f57: values in Q[pi] (`_PiPoly`), `PI_TABLE` with one argument an entry from (T) pi is transcendental and
+  (E) `_PI_LO < pi < _PI_LO + 10**-50` (50 decimals, OEIS A000796; proved again in the tests from Machin's formula),
+  `_sign` undecided when the bounds do not exclude 0, two compiles so a query without pi runs the old closures,
+  pi inside a function undecided, (2b) through `_roots`.
+- a0849b10: plants 755 pi-sign, 756 pi-rational, 757 pi-enclosure. tests/test_witness.py, one process, orion:
+  148 passed without a plant; 11, 12 and 8 failed under the three, among them one test each that compares answers
+  with the switch on and off and never reads the plant.
+
 ## Owed, named here
 
 - A fired counter for the Rust walker's plants (above).
-- The exit code of the void bar and the bar-level fired lines, unread at the handoff.
+- (5) the gate, (6) S1 and (7) the bar on a0849b10, and the reasons table after the change.
