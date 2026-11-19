@@ -21,8 +21,7 @@ an answer. The argument assumes:
    valuation of the symbols that satisfies the assumptions. Where the engine is unsound the check can replace a
    wrong definite answer by None; the answers then differ, which is what the gate compares.
 2. *Rational points are valuations*: a commutative ``Symbol`` or ``Dummy`` may stand for any rational number that
-   satisfies its own assumptions, and likewise for any real number p(pi), p a polynomial with rational
-   coefficients, that satisfies them (the own assumptions are read at that number by :data:`PI_TABLE`). Nothing
+   satisfies its own assumptions. A symbol is given rational values only, also in a query that holds pi. Nothing
    else is given a value: any other leaf but a rational constant and pi is undecided.
 3. *The formula is the query*: the check reads the formula ``to_formula`` made (``P`` atoms over the input terms, a
    relation as ``eq``/``lt`` atoms). It assumes that translation keeps the truth value at a point.
@@ -670,12 +669,11 @@ def _formula(f, q):
     raise _Undecided
 
 
-def _own(sym, pi=False):
+def _own(sym):
     """The symbol's own assumptions as a function of its value: every fact of ``assumptions0`` holds. A fact the
-    table does not decide makes the query undecided. ``pi``: the value may be a _PiPoly."""
+    table does not decide makes the query undecided."""
     # sympy-boundary: declared symbol facts, the ones the engine's symbol template reads; the table decides each
-    pred = _pi_pred if pi else _pred
-    lits = [(pred(str(k)), v) for k, v in sym.assumptions0.items() if v is not None]
+    lits = [(_pred(str(k)), v) for k, v in sym.assumptions0.items() if v is not None]
     return lambda v: all([f(v) == want for f, want in lits])
 
 
@@ -687,8 +685,8 @@ _TAIL = (3, -3, Fraction(3, 2), Fraction(-3, 2), 4, -4, Fraction(1, 3), Fraction
 def _roots(q, n):
     """Per symbol, exact roots of the query's atoms: for a relation the difference of its sides, for a predicate of a
     compound term the term. With the other symbols at 0 and then at 1, the secant through t = 0 and t = 1 gives a
-    candidate, kept only if the atom's function is exactly 0 there. Proposes values; decides nothing. In a query
-    that holds pi a root may be a _PiPoly; a symbol may stand for it like for a rational (assumption 2)."""
+    candidate, kept only if the atom's function is exactly 0 there. Proposes values; decides nothing. Only a
+    rational root is proposed: in a query that holds pi the secant can give a value outside Q, which is left out."""
     out = [[] for _ in range(n)]
     for d, used in q.probes:
         for i in used:
@@ -702,25 +700,15 @@ def _roots(q, n):
                     if d1 == d0:
                         continue
                     s = d1 - d0
-                    if type(s) is _PiPoly:      # the secant's root is not in Q[pi]
+                    if type(s) is _PiPoly or type(d0) is _PiPoly:   # the secant's root is not rational
                         continue
-                    r = -d0 / Fraction(s)       # a rational, or a _PiPoly: the root of x - pi/2 is pi/2
+                    r = Fraction(-d0) / s
                     pt[i] = r
                     if d(pt) == 0 and r not in out[i]:
                         out[i].append(r)
                 except _Undecided:
                     continue
     return out
-
-
-def _near(v):
-    """A rational next to ``v``: a _PiPoly's polynomial at pi's lower bound. For ordering proposals only."""
-    if type(v) is not _PiPoly:
-        return v
-    s = 0
-    for k, x in enumerate(v.c):
-        s += x * _LO[k]
-    return s
 
 
 def _pools(q, owns):
@@ -734,9 +722,7 @@ def _pools(q, owns):
         consts += [c, c + 1, c - 1, c + Fraction(1, 2), c - Fraction(1, 2)]
     pools = []
     for i in range(n):
-        # in a query that holds pi a root may be a _PiPoly: ordered by its value at pi's lower bound, which is total
-        # and raises nothing (the order only arranges proposals)
-        rs = sorted(roots[i][:12], key=_near if q.pi else None)
+        rs = sorted(roots[i][:12])
         crit = list(rs)
         for a, b in zip(rs, rs[1:]):
             crit.append((a + b) / 2)
@@ -751,8 +737,7 @@ def _pools(q, owns):
                     if own is None or own(v):
                         pool.append(v)
                 except _Undecided:
-                    # an own assumption without an exact value here (a prime symbol above _MAX_PRIME, a sign the
-                    # enclosure of pi does not give): not proposed
+                    # an own assumption without an exact value here (a prime symbol above _MAX_PRIME): not proposed
                     pass
         pools.append(pool)
     return pools
@@ -818,7 +803,7 @@ def witnesses(proposition, assumptions, eng=None):
             fa = _formula(assumptions, q)
             fp = _formula(proposition, q)
         skip = PLANT[0] == "skip-own"
-        owns = [None if skip else _own(s, q.pi) for s in q.syms]
+        owns = [None if skip else _own(s) for s in q.syms]
     except _Undecided:
         return None
     if not q.syms:

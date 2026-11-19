@@ -433,38 +433,34 @@ def test_the_sign_is_exact_or_undecided():
 
 
 def test_witness_points_with_pi_hold_by_the_tests_own_enclosure():
-    # x strictly between 3 and 63/20 and not pi: the proposition x > pi has both values there. Each returned point
-    # is checked with Machin's bounds, not with witness.py's enclosure
-    syms, yes, no, tried = pair(Q.gt(x, pi), Q.gt(x, 3) & Q.lt(x, Rational(63, 20)) & Q.ne(x, pi))
-    (ylo, yhi), (nlo, nhi) = enc(yes[0]), enc(no[0])
-    assert 3 < ylo and yhi < F(63, 20) and PI_HI < ylo
-    assert 3 < nlo and nhi < F(63, 20) and nhi < PI_LO
+    # x from 3 to 63/20: the proposition x > pi has both values there. Each returned point is rational and is
+    # checked with Machin's bounds, not with witness.py's enclosure
+    syms, yes, no, tried = pair(Q.gt(x, pi), Q.ge(x, 3) & Q.le(x, Rational(63, 20)))
+    assert type(yes[0]) is not W._PiPoly and type(no[0]) is not W._PiPoly
+    assert PI_HI < yes[0] <= F(63, 20) and 3 <= no[0] < PI_LO
     # pi**2 between 9 and 10: x**2 < pi**2 at one point of 3 <= x <= 22/7 with x != pi, not at another
     syms, yes, no, tried = pair(Q.lt(x ** 2, pi ** 2), Q.ge(x, 3) & Q.le(x, Rational(22, 7)) & Q.ne(x, pi))
-    (ylo, yhi), (nlo, nhi) = enc(yes[0]), enc(no[0])
-    assert 3 <= ylo and yhi < PI_LO and PI_HI < nlo and nhi <= F(22, 7)
+    assert type(yes[0]) is not W._PiPoly and type(no[0]) is not W._PiPoly
+    assert 3 <= yes[0] < PI_LO and PI_HI < no[0] <= F(22, 7)
     # a term in pi with rational points: x + pi > 0 at 0, not at -4
     syms, yes, no, tried = pair(Q.positive(x + pi), Q.rational(x))
     assert type(yes[0]) is not W._PiPoly and type(no[0]) is not W._PiPoly
     assert yes[0] + PI_LO > 0 and no[0] + PI_HI <= 0
 
 
-def test_a_symbol_may_stand_for_a_value_of_q_pi_only_in_a_query_with_pi():
-    # (2b): the root of x - pi/2 is proposed, and the symbol's own assumptions are read at it
-    syms, yes, no, tried = pair(Q.zero(x - pi / 2), Q.real(x))
-    assert yes == [PI / 2] and type(no[0]) is not W._PiPoly
-    xr, xq = Symbol('xr', real=True), Symbol('xq', rational=True)
-    syms, yes, no, tried = pair(Q.zero(xr - pi / 2), Q.real(y))
-    assert dict(zip(syms, yes))[xr] == PI / 2
-    assert pair(Q.zero(xq - pi / 2), Q.real(y)) is None
-    assert pair(Q.zero(xi - pi / 2), Q.real(y)) is None
-    syms, yes, no, tried = pair(Q.zero(xp - pi), Q.real(y))     # pi is positive: a positive symbol may be pi
-    assert dict(zip(syms, yes))[xp] == PI
-    assert pair(Q.zero(Symbol('xn', negative=True) - pi), Q.real(y)) is None
-    # without pi in the query the points are rational, as before
+def test_a_symbol_stands_for_rational_values_only():
+    # no value of Q[pi] outside Q is proposed for a symbol: x - pi/2 is zero at no rational x, so there is no pair
+    assert pair(Q.zero(x - pi / 2), Q.real(x)) is None
+    assert pair(Q.zero(xp - pi), Q.real(y)) is None
+    assert pair(Q.irrational(x), Q.gt(x, pi - 1) & Q.lt(x, pi + 1)) is None
+    syms, yes, no, tried = pair(Q.zero(x - pi / 2) | Q.zero(2 * x - 3), Q.real(x))
+    assert yes == [F(3, 2)] and type(no[0]) is not W._PiPoly
+    # a term of the query still has its value in Q[pi] at a rational point
+    syms, yes, no, tried = pair(Q.positive(x - pi), Q.real(x))
+    assert type(yes[0]) is not W._PiPoly and type(no[0]) is not W._PiPoly and no[0] < PI_LO and PI_HI < yes[0]
+    assert pair(Q.irrational(x + pi), Q.real(x)) is None        # irrational at every rational x
+    # without pi in the query, as before
     assert pair(Q.irrational(x), Q.real(x)) is None and pair(Q.transcendental(x), Q.gt(x, 3) & Q.lt(x, 4)) is None
-    syms, yes, no, tried = pair(Q.irrational(x), Q.gt(x, pi - 1) & Q.lt(x, pi + 1))
-    assert yes == [PI] and no[0].denominator == 1
 
 
 def test_a_positive_value_of_q_pi_is_not_negative(on):
