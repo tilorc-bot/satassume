@@ -1,6 +1,7 @@
 """The exact witness check before a contextual query's session (satassume/witness.py, issue 323; SLICE_WITNESS=1,
 off by default). The tests of behaviour turn the switch on themselves and never read the plant flag."""
 import os
+import sys
 from fractions import Fraction as F
 
 import pytest
@@ -9,12 +10,12 @@ from sympy import Dummy, Float, I, Q, Rational, Symbol, cos, exp, oo, pi, sin, s
 from satassume import sympy_api as A
 from satassume import witness as W
 from satassume.knowledge import extensions as E
-from satassume.knowledge.extensions import Extensions
+from satassume.knowledge.extensions import Args, Extensions
 from satassume.knowledge.rules import BASIS, DEFINITIONS
 from satassume.knowledge.templates import _common as TC
 from satassume.knowledge.templates import registry
 from satassume.relations import AdapterSpec, default_specs
-from satassume.sat.formula import P
+from satassume.sat.formula import Formula, P
 from satassume.state.epoch import bump
 
 x, y, z = symbols('x y z')
@@ -671,6 +672,107 @@ def test_the_cap_bounds_the_points_tried():
         assert pair(Q.positive(x), Q.real(x))[3] == 2
     finally:
         W.CAP[0] = old
+
+
+# ---- every raise of the check is caught before the query returns (sa-port-342, planner on [151]) ----
+
+def _raises():
+    """The line of every ``raise`` statement of satassume/witness.py and what it raises, and the module's exception
+    classes, read from the source."""
+    import ast
+    import inspect
+    tree = ast.parse(inspect.getsource(W))
+    lines = {n.lineno: ast.unparse(n.exc) if n.exc is not None else None
+             for n in ast.walk(tree) if isinstance(n, ast.Raise)}
+    classes = [getattr(W, n.name) for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]
+    return lines, [c for c in classes if issubclass(c, BaseException)]
+
+
+def test_the_check_raises_only_its_own_undecided():
+    # one except clause, ``except _Undecided``, covers every raise: the module has two exception classes, the second
+    # a subclass of the first, and no raise statement names anything else or re-raises
+    lines, classes = _raises()
+    assert sorted(classes, key=lambda c: c.__name__) == [W._NeedPi, W._Undecided]
+    assert issubclass(W._NeedPi, W._Undecided) and W._Undecided.__bases__ == (Exception,)
+    assert lines and set(lines.values()) == {'_Undecided', '_NeedPi'}
+
+
+class _OtherNode(Formula):
+    """A formula node the check does not know."""
+
+
+def _escapes():
+    """One case per raise statement of the check, each a call of the check's entry: ``(proposition, assumptions)``
+    for ``ask``, or ``(formula, formula, None)`` for ``witness.witnesses`` where no query gives the formula."""
+    xq = Symbol('xq', polar=True)
+    big = 10 ** 100
+    inside = W._LO[1] + F(1, 2 * 10 ** 50)      # between the two bounds of pi: the sign of pi - inside is not decided
+    inside = Rational(inside.numerator, inside.denominator)
+    return [
+        (Q.prime(x), Q.gt(x, 10 ** 7)),                         # _is_prime above its bound
+        (Q.gt(Symbol('p', prime=True), 10 ** 7), Q.integer(Symbol('p', prime=True))),   # [151]: the same in _pools
+        (Q.positive(pi ** 9 * (x + pi) ** 8), Q.real(x)),       # a product of degree 17 in pi
+        (Q.positive(x + pi ** 18), Q.real(x)),                  # a power of degree 18 in pi
+        (Q.gt(x + pi, inside), Q.real(x)),                      # a sign the enclosure does not give
+        (Q.positive(xq), Q.real(xq)),                           # polar, an own assumption without a table entry
+        (Q.antihermitian(x), Q.real(x)),                        # the one-way predicate without a value
+        (P('symmetric', x), True, None),                        # a predicate outside the vocabulary
+        (Q.positive(x / pi), Q.real(x)),                        # 1/pi
+        (Q.gt(2 ** x, 1), Q.gt(x, 0) & Q.lt(x, 1)),             # a root: 2**(1/2)
+        (Q.positive(x ** y), Q.real(x) & Q.real(y)),            # 0**0
+        (Q.positive(x ** 13 - 1), Q.gt(x, big)),                # a power too long
+        (Q.positive(sin(x)), Q.real(x)),                        # a function
+        (Q.positive(x ** pi), Q.real(x)),                       # pi as an exponent
+        (Q.positive((x + pi) ** -1), Q.real(x)),                # a negative power of a value with pi
+        (Q.positive(pi + 1 / x), Q.real(x)),                    # 1/0 in a query that holds pi
+        (Q.positive(pi + x ** 13), Q.gt(x, big)),               # a power too long in a query that holds pi
+        (P('eq', x), True, None),                               # a relation without its two sides
+        (P('positive', Args((x, y))), True, None),              # a unary predicate of two terms
+        (_OtherNode(P('positive', x)), True, None),             # a formula node the check does not know
+    ]
+
+
+def test_every_raise_of_the_check_is_caught_before_the_query_returns():
+    """[151] was an _Undecided that left the check and the query. Here every raise statement of witness.py is
+    executed (a line trace of the module says which) under a call of the check's entry, and nothing leaves it:
+    ``witnesses`` returns, and ``ask`` gives the answer it gives with the switch off. Three raises no query reaches
+    (below) are executed directly; a raise added to the module without a case here fails the last assertion."""
+    lines, _ = _raises()
+    seen = set()
+    fn = W.__file__
+
+    def trace(frame, event, arg):
+        if frame.f_code.co_filename != fn:
+            return None
+
+        def line(frame, event, arg):
+            if event == 'line':
+                seen.add(frame.f_lineno)
+            return line
+        return line
+
+    old = sys.gettrace()
+    sys.settrace(trace)
+    try:
+        for case in _escapes():
+            if len(case) == 3:
+                assert W.witnesses(case[0], case[1]) is None
+            else:
+                pair(*case)         # certified or not: it returns
+                off, on_ = both(*case)
+                assert off == on_, case
+        # the check divides a value only by a non-zero rational (the secant's slope in _roots, 2 in _pools), so no
+        # query reaches the two divisions that leave Q[pi]; and no definition of a derived predicate names polar,
+        # the only basis predicate without a table entry
+        with pytest.raises(W._Undecided):
+            W._PI / W._PI
+        with pytest.raises(W._Undecided):
+            1 / W._PI
+        with pytest.raises(W._Undecided):
+            W._pred('real', dict(W.TABLE, finite=None))
+    finally:
+        sys.settrace(old)
+    assert sorted(set(lines) - seen) == []
 
 
 QUERIES = [
