@@ -32,8 +32,8 @@
 #   BASE          base suite rows (default: the last landing's, sa-port-91's, which rust-slice de8bd3a carries)
 #   PLANTS        SLICE_SESSION_PLANT names for dev and fuzz; `term:NAME` is SLICE_TERM_PLANT=NAME instead (term_live's
 #                 plants, e.g. term:mark-wrong-pattern, plant 666); the same in SUITE_PLANTS and FM_PLANTS
-#                 `witness:NAME` is SLICE_WITNESS_PLANT=NAME with SLICE_WITNESS=1 (satassume.witness, plants 749-752
-#                 and 754), and `witness:on` is no plant: SLICE_WITNESS=1 alone. A witness row on a workload is compared
+#                 `witness:NAME` is SLICE_WITNESS_PLANT=NAME with SLICE_WITNESS=1 (satassume.witness, plants 749-752,
+#                 754 and 755-757), and `witness:on` is no plant: SLICE_WITNESS=1 alone. A witness row on a workload is compared
 #                 with this run's Python under SLICE_WITNESS=1 and no plant (WL-pywit.jsonl; the verdict), and a second
 #                 time with this run's Python with the switch off (plant-WL-ROW.offcmp; sum prints its answers)
 #   SUITE_PLANTS  plants also run on the suite (may contain `zero`)
@@ -96,7 +96,7 @@ phase() { echo "$1 $(date -u +%FT%TZ) exit ${2:-0}" >> $B/phases.txt; }
 # switch alone and with the frames. A `convert:*` row carries SLICE_CONVERT=rust itself, so it is usable on workloads
 # as well as on the suite
 # `witness:on` is no plant: SLICE_WITNESS=1 alone (the witness check, off by default); `witness:NAME` is
-# SLICE_WITNESS_PLANT=NAME (plants 749-752 and 754), which acts only with the switch on, so its row turns it on itself
+# SLICE_WITNESS_PLANT=NAME (plants 749-752, 754 and 755-757), which acts only with the switch on, so its row turns it on itself
 penv() { case $1 in witness:on) echo "SLICE_WITNESS=1";; witness:*) echo "SLICE_WITNESS_PLANT=${1#witness:} SLICE_WITNESS=1";; frames:rust) echo "SLICE_TERM_FRAMES=rust";; walk:rust) echo "SLICE_CONVERT=rust";; both:rust) echo "SLICE_CONVERT=rust SLICE_TERM_FRAMES=rust";; term:tl-*) echo "SLICE_TERM_PLANT=${1#term:} SLICE_TERM_FRAMES=rust";; term:*) echo "SLICE_TERM_PLANT=${1#term:}";; convert:*) echo "SLICE_CONVERT_PLANT=${1#convert:} SLICE_CONVERT=rust";; *) echo "SLICE_SESSION_PLANT=$1";; esac; }
 # pref DIR WL ROW: the Python run a workload row is compared with: this run's Python, DIR/WL-py.jsonl. A certified query
 # makes no session, so a `witness:*` row is compared with Python under the same switch and no plant, DIR/WL-pywit.jsonl

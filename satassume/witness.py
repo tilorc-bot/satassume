@@ -100,7 +100,9 @@ LIMIT = 2000
 #: 749 ``integer-half`` (the table says 1/2 is an integer), 750 ``single`` (one witness is enough),
 #: 751 ``skip-own`` (the symbols' own assumptions are not checked), 752 ``skip-patched`` (a user's method on the
 #: engine is passed over), 754 ``skip-users`` (a user's templates, adapters and default-registry functions are
-#: passed over)
+#: passed over), 755 ``pi-sign`` (:func:`_sign` calls a positive value of Q[pi] negative), 756 ``pi-rational``
+#: (:data:`PI_TABLE` says a non-rational value of Q[pi] is rational), 757 ``pi-enclosure`` (:func:`_sign` reads an
+#: interval that does not hold pi)
 #: how often a planted site read its own plant as set (the bar's fired column for a witness row, counter 740); it
 #: stays 0 unless the plant came from SLICE_WITNESS_PLANT
 FIRED = [0]
@@ -320,6 +322,9 @@ _PI_N, _PI_D = 314159265358979323846264338327950288419716939937510, 10 ** 50
 # the powers 0.._MAX_DEG of the two bounds: 0 < _PI_LO, so _PI_LO**k < pi**k < _PI_HI**k for every k >= 1
 _LO = [Fraction(_PI_N, _PI_D) ** k for k in range(_MAX_DEG + 1)]
 _HI = [Fraction(_PI_N + 1, _PI_D) ** k for k in range(_MAX_DEG + 1)]
+# plant 757 only: an interval that does not hold pi (3.2 < t < 3.3)
+_BAD_LO = [Fraction(32, 10) ** k for k in range(_MAX_DEG + 1)]
+_BAD_HI = [Fraction(33, 10) ** k for k in range(_MAX_DEG + 1)]
 
 
 class _PiPoly:
@@ -427,7 +432,7 @@ def _sign(v):
     if type(v) is not _PiPoly:
         return (v > 0) - (v < 0)
     c = v.c
-    lo, hi = _LO, _HI
+    lo, hi = (_BAD_LO, _BAD_HI) if PLANT[0] == "pi-enclosure" else (_LO, _HI)
     low = up = c[0]
     for k in range(1, len(c)):
         x = c[k]
@@ -438,10 +443,14 @@ def _sign(v):
             low += x * hi[k]
             up += x * lo[k]
     if low > 0:
-        return 1
+        return -1 if PLANT[0] == "pi-sign" else 1
     if up < 0:
         return -1
     raise _Undecided
+
+
+def _pi_rational(v):
+    return PLANT[0] == "pi-rational"
 
 
 # 16 entries, as TABLE, at a value v = p(pi) of Q[pi] that is not rational (a _PiPoly: p is not constant), then the
@@ -471,7 +480,7 @@ PI_TABLE = {
     # a prime is an integer
     'prime': lambda v: False,
     # a rational number is algebraic (the root of q*t - p), and v is transcendental by (T)
-    'rational': lambda v: False,
+    'rational': _pi_rational,
     # 0 is rational
     'zero': lambda v: False,
     # eq: by (T) two values of Q[pi] are the same number exactly when their polynomials are (_PiPoly.__eq__; a
