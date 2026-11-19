@@ -187,6 +187,95 @@ says where the end markers are.
 **Sizing only, not S1** (orion, one cold run each, py, dfb544e6, qt342.py): budget 0.79 s off, 2.76 s on; wiring
 4.17 s off, 5.48 s on. The quiet-lease run (6) measures this at both SHAs.
 
+## sa-port-343 and 344: (2b) reverted; (5) the gate on dfb544e6 and on 01e8ca74, read
+
+**(2b) reverted (c4d6e92c, the planner's ruling on sa-port-342's report).** A symbol takes rational values only: no
+root in Q[pi] is proposed. Exact pi stays. test_witness.py + test_sympy_api.py + test_layering.py: 262 passed, switch
+off and on (orion). The reasons table at the default cap is now the row "without (2b)" of the table above, and the
+gate's digest rows confirm it: **certified at cap 32, 29c5a0db -> 01e8ca74: dev 159 -> 173, fuzz 1060 -> 1284** (with
+(2b), dfb544e6: 173 and 1283). Uncapped, by sa-port-342's rows and not run again: dev 163 -> 177, fuzz 1491 -> 1819.
+
+Tested SHAs: dfb544e6 (with (2b); rows under orion ~/sa-rust-ids-work/sa-port-342) and **01e8ca74** (satassume source
+c4d6e92c, without (2b); rows under ~/sa-rust-ids-work/sa-port-343), each against base 29c5a0db. No Rust change since
+the base, so every tree runs the pareto venv .so cad764d46471b1c6. pareto0, one shared lease a job (tools342/job342.sh,
+tools343/jobb343.sh). The head bfceccc9 adds e2088c05 (harness/state.py only), tools and handoffs to 01e8ca74.
+
+| | dfb544e6 | 01e8ca74 |
+|---|---|---|
+| suite by id, Rust: on / off / base | 6309 ids, 129 failed, on and off / 6262 ids, 127 failed | 6309 ids, 127 / 128 failed / 6262 ids, 127 failed |
+| suite by id, Python: on / off / base | 2 failed, on and off / 0 failed | 1 failed, on and off / 0 failed |
+| ids in one tree only | 47, all tests/test_witness.py | 47, all tests/test_witness.py |
+| on against off, outcome differs | 0 ids, both backends | Rust 1 id (the planted-history test, below); Python 0 |
+| against base, outcome differs | 2 ids, both backends, on and off | 1 id, both backends, on and off; and the planted-history test on Rust on |
+| quiet catches recorded | Rust 49 in 9 ids, Python 10 in 7 ids: on, off and base | the same |
+| iv, 64 runs off + 64 on | failing ids differ off against on in 0 runs | 0 runs |
+| digests, dev and fuzz | 31cd0945c07f02a6, 173502b6ef285ad6: off and on, py and rust | the same four |
+| certified at cap 32, dev / fuzz | 173 / 1283 | 173 / 1284 |
+| 20 workloads, py and rust, off and on | answers equal on both trees; 80 cells, answers and messages equal | the same |
+| fuzz seeds (4 seeds, 4 hash seeds; evalbench py and rust, harness, harness-custom) | rows equal on every run; 0 differ | rows equal on every run; 0 differ |
+| certified on the seeds: evalbench / harness / harness-custom | 20960 of 43988 / 4 of 2908 / 0 of 2424 | 20964 / 4 / 0 (base 17400 / 0 / 0) |
+
+The ids against base:
+
+- `tests/test_history.py::test_module_state_inventory_is_classified` fails on both SHAs, both backends, on and off
+  (the check's `FIRED`, `PI_TABLE`, `_LO`, `_HI`, `_BAD_LO`, `_BAD_HI` were not classified). Fixed by e2088c05
+  (harness/state.py, a shared file, 2 hunks; not in the gate's SHA). On the head bfceccc9 (orion, .so
+  a956b03496066671): test_history.py, test_sympy_boundary.py, test_witness.py and test_layering.py, **377 passed in
+  each of the four cells** (python and rust backend, switch off and on).
+- `tests/test_sympy_boundary.py::test_static_check_passes_on_the_package` failed on dfb544e6 only (a `# sympy-boundary`
+  comment one line away from its read, in (2b)'s code); gone with c4d6e92c.
+- `tests/test_public_incremental.py::test_public_comparison_catches_a_planted_history_dependence` (the known
+  id()-reuse failure; not edited). On 01e8ca74 the Rust on-row passed it once (base and off failed, `assert 0 == 2` and
+  `assert 1 == 2` at :204), and it failed on **Python** in the gate's two patch rows (pre342.sh:32-33: the tests that
+  patch `Engine.ask`, one process, switch off and on; `assert 0 == 2`). a28c548's method each time it shows:
+
+| 20 runs a cell, 01e8ca74 (pre/rep/rep-sum.txt) | switch off | switch on |
+|---|---|---|
+| Rust, the test | 0 of 20 pass (19x `assert 0 == 2`, 1x `assert 1 == 2`) | 0 of 20 (16x, 4x) |
+| Rust, keep-alive | 20 of 20 | 20 of 20 |
+| Python, the test | 18 of 20 (2x `assert 1 == 2`) | 20 of 20 |
+| Python, keep-alive | 20 of 20 | 20 of 20 |
+
+| the patch row, Python, 12 runs a cell (tools344/rep344.sh, rep-sum-patch-row.txt) | switch off | switch on |
+|---|---|---|
+| 01e8ca74, the row as the gate runs it | 10 of 12 (2x `assert 0 == 2` at :204) | 10 of 12 (2x) |
+| 01e8ca74, the planted-history test replaced by the keep-alive variant | 12 of 12 | 12 of 12 |
+| 29c5a0db, the row | 10 of 12 (2x `assert 0 == 2`) | 12 of 12 |
+| 29c5a0db, keep-alive | 12 of 12 | 12 of 12 |
+
+  The base fails the row at the same rate, the keep-alive variant passes every run (80 of 80 and 48 of 48), and Python
+  is at its base rate
+  (a28c548: 2 and 6 in 50): the signature of [137e], a test artifact. dfb544e6's repeat check read Rust 0 of 20 off and
+  on, keep-alive 20 of 20, Python 20 of 20 in all four cells.
+
+Known base rows, by id. Rust base fails 127 ids (cause 672c421, not this step's): test_lra_fuzz.py 43,
+test_solver_incremental.py 36, test_solver.py 14, test_theory_hooks.py 10, test_euf.py 7, test_euf_fuzz.py 4,
+test_solver_real_theories.py 3, test_writeback_provenance.py 3, test_transfer.py 2, and one each in
+test_public_incremental.py (the planted-history test), test_relations.py, test_lra_exhaustion.py,
+test_verify_integration.py and test_template_tables.py. On 01e8ca74 the Rust off-row fails those 127 and the inventory
+test; the on-row those less the planted-history test, and the inventory test. iv: Rust fails
+test_transfer.py::test_models_respect_transfer and ::test_protocol_on_fuzz in 16 of 32 runs, off and on, both SHAs
+(known: witness-check.md:111 and :199); Python 0 of 64.
+
+Plants on 01e8ca74 (python, switch on; `pre/dig/dig.jsonl`, `pre/tw/*.log`, 186 tests a row: test_witness.py and the
+tests that patch `Engine.ask`):
+
+| plant | dev digest, certified | fuzz digest, certified | failed of 186 |
+|---|---|---|---|
+| none | 31cd0945c07f02a6, 173 | 173502b6ef285ad6, 1284 | 0 (test_witness.py alone: 150 passed, py and rust, off and on) |
+| 755 pi-sign | MATCH, 171 | DIFFER f92b35588dda34ba, 1234 | 11 |
+| 756 pi-rational | MATCH, 173 | MATCH, 1284 | 10 |
+| 757 pi-enclosure | MATCH, 173 | MATCH, 1284 | 9 |
+| 749 integer-half | DIFFER, 184 | DIFFER, 1292 | 6 |
+| 750 single | DIFFER, 503 | DIFFER, 2349 | 59 |
+| 751 skip-own | MATCH, 173 | MATCH, 1284 | 6 |
+| 752 skip-patched | MATCH, 173 | MATCH, 1284 | 10 |
+| 754 skip-users | MATCH, 173 | MATCH, 1284 | 6 |
+
+pi-sign moves the certified count on dev (173 -> 171) without moving dev's answers: on 01e8ca74 its workload catch is
+fuzz only (on dfb544e6 it was DIFFER on both). pi-rational and pi-enclosure are caught by tests only, as on dfb544e6.
+Nothing else differs on the head.
+
 ## Owed, named here
 
 - A fired counter for the Rust walker's plants (above).

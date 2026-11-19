@@ -1,0 +1,8 @@
+01e8ca74 python plain sw=0 exit 0 in 10 of 12; failed ids:       2 tests/test_public_incremental.py::test_public_comparison_catches_a_planted_history_dependence; asserts:       2 204 AssertionError: assert 0 == 2;      2 E   AssertionError: assert 0 == 2; last:       2 1 failed, 35 passed;     10 36 passed;
+01e8ca74 python plain sw=1 exit 0 in 10 of 12; failed ids:       2 tests/test_public_incremental.py::test_public_comparison_catches_a_planted_history_dependence; asserts:       2 204 AssertionError: assert 0 == 2;      2 E   AssertionError: assert 0 == 2; last:       2 1 failed, 35 passed;     10 36 passed;
+01e8ca74 python keep sw=0 exit 0 in 12 of 12; failed ids:  asserts:  last:      12 36 passed, 1 deselected;
+01e8ca74 python keep sw=1 exit 0 in 12 of 12; failed ids:  asserts:  last:      12 36 passed, 1 deselected;
+29c5a0db python plain sw=0 exit 0 in 10 of 12; failed ids:       2 tests/test_public_incremental.py::test_public_comparison_catches_a_planted_history_dependence; asserts:       2 204 AssertionError: assert 0 == 2;      2 E   AssertionError: assert 0 == 2; last:       2 1 failed, 35 passed;     10 36 passed;
+29c5a0db python plain sw=1 exit 0 in 12 of 12; failed ids:  asserts:  last:      12 36 passed;
+29c5a0db python keep sw=0 exit 0 in 12 of 12; failed ids:  asserts:  last:      12 36 passed, 1 deselected;
+29c5a0db python keep sw=1 exit 0 in 12 of 12; failed ids:  asserts:  last:      12 36 passed, 1 deselected;
