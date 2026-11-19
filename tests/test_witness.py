@@ -11,6 +11,7 @@ from satassume import witness as W
 from satassume.knowledge import extensions as E
 from satassume.knowledge.extensions import Extensions
 from satassume.knowledge.rules import BASIS, DEFINITIONS
+from satassume.knowledge.templates import _common as TC
 from satassume.knowledge.templates import registry
 from satassume.relations import AdapterSpec, default_specs
 from satassume.sat.formula import P
@@ -19,6 +20,62 @@ from satassume.state.epoch import bump
 x, y, z = symbols('x y z')
 xp = Symbol('xp', positive=True)
 xi = Symbol('xi', integer=True)
+
+
+_OWN = 'satassume.knowledge.templates.'      # the package's own template modules; anyone else's are a user's
+
+
+def _users(templates):
+    return [t for t in templates if not str(getattr(t, '__module__', '')).startswith(_OWN)]
+
+
+def _take_users_templates():
+    """Takes every user's template and declared module off the default registry and returns them. The package's
+    own stay, those of a built-in module loaded since the last call too: a declared module registers itself once,
+    when it is imported, so putting back an earlier copy of the lists would lose its templates for good."""
+    by_class = {c: _users(ts) for c, ts in registry._by_class.items()}
+    lazy = [(c, m) for c, m in registry._lazy if not m.startswith(_OWN)]
+    by_class = {c: ts for c, ts in by_class.items() if ts}
+    if by_class or lazy:
+        for c, users in by_class.items():
+            rest = [t for t in registry._by_class[c] if not any(t is u for u in users)]
+            if rest:
+                registry._by_class[c] = rest
+            else:
+                del registry._by_class[c]
+        registry._lazy = [(c, m) for c, m in registry._lazy if m.startswith(_OWN)]
+        _templates_changed()
+    return by_class, lazy
+
+
+def _put_back_users_templates(by_class, lazy):
+    """A user's template comes after every built-in one of its class, as ``register`` has it."""
+    if by_class or lazy:
+        for c, ts in by_class.items():
+            registry._by_class.setdefault(c, []).extend(ts)
+        registry._lazy = registry._lazy + lazy
+        _templates_changed()
+
+
+def _templates_changed():
+    """What ``TemplateRegistry.register`` drops for a new template."""
+    registry._mro_cache.clear()
+    registry._clauses_cache.clear()
+    TC._CACHE.clear()
+    bump()
+
+
+@pytest.fixture(autouse=True)
+def clean_default_registry():
+    """Every test here runs with no user's template on the default registry, and leaves the registry as it found
+    it. A template another test left there (tests/test_templates.py and tests/test_p4_review.py did) is a user's
+    knowledge for every engine of the process, so nothing would be certified. That is the guard working, which
+    ``test_a_template_left_on_the_default_registry_makes_the_check_fall_through`` asserts, and not what the other
+    tests are about. What a test here registers is taken off afterwards, and what was set aside is put back."""
+    before = _take_users_templates()
+    yield
+    _take_users_templates()
+    _put_back_users_templates(*before)
 
 
 @pytest.fixture
@@ -292,16 +349,10 @@ def _users_template(e):
 
 @pytest.fixture
 def users_knowledge():
-    """Removes what the test below registers: the registry has no unregister for a template or a declared module,
-    so its lists are restored by hand, and a new epoch drops what the engines derived meanwhile."""
-    by_class = {c: list(ts) for c, ts in registry._by_class.items()}
-    lazy = list(registry._lazy)
+    """Removes what the test below registers on the default ``extensions``, and a new epoch drops what the engines
+    derived meanwhile. Its template and its declared module are taken off the default registry by
+    ``clean_default_registry``, which keeps the built-in modules that ``register`` loaded."""
     yield
-    registry._by_class.clear()
-    registry._by_class.update(by_class)
-    registry._lazy[:] = lazy
-    registry._mro_cache.clear()
-    registry._clauses_cache.clear()
     E.extensions.unregister('positive')
     bump()
 
@@ -340,6 +391,29 @@ def test_a_users_knowledge_falls_through_and_the_engines_answer_is_used(on, user
     assert W.witnesses(fp, fa, make()) is None
     W.ENABLED[0] = False
     assert A.ask(p, a, make()) is answer
+
+
+def test_a_template_left_on_the_default_registry_makes_the_check_fall_through(on):
+    """A user's template on the default registry, for a class no query here mentions, is knowledge in force for
+    every engine of the process: the check falls through and the engine answers, with a session, as with the switch
+    off. Once the template is off the registry the same query is certified again."""
+    p, a = Q.positive(x), Q.real(x)
+    fp, fa = A._formula(p, True), A._formula(a, True, True)
+
+    def counts(eng):
+        return eng.stats['queries'], eng.stats['witness_certified'], eng.stats['sessions']
+    eng = A.Engine()
+    assert W.witnesses(fp, fa, eng) is not None and A.ask(p, a, eng) is None and counts(eng) == (1, 1, 0)
+    registry.register(_UsersSymbol)(lambda e: ())       # says nothing, and about no term of the query
+    eng = A.Engine()
+    assert W.witnesses(fp, fa, eng) is None
+    assert A.ask(p, a, eng) is None and counts(eng) == (1, 0, 1)
+    left = _take_users_templates()
+    assert list(left[0]) == [_UsersSymbol] and left[1] == []
+    eng = A.Engine()
+    assert W.witnesses(fp, fa, eng) is not None and A.ask(p, a, eng) is None and counts(eng) == (1, 1, 0)
+    _put_back_users_templates(*left)
+    assert W.witnesses(fp, fa, A.Engine()) is None      # back as it was left; the fixture takes it off
 
 
 @pytest.mark.parametrize('name', W.GUARDED)
