@@ -4,7 +4,7 @@ import os
 from fractions import Fraction as F
 
 import pytest
-from sympy import Dummy, Float, I, Q, Rational, Symbol, oo, pi, sin, sqrt, symbols
+from sympy import Dummy, Float, I, Q, Rational, Symbol, cos, exp, oo, pi, sin, sqrt, symbols
 
 from satassume import sympy_api as A
 from satassume import witness as W
@@ -261,7 +261,13 @@ def test_a_pair_is_two_points_with_both_values():
     (Q.positive(Symbol('pp', polar=True)), Q.real(x)),    # polar, as a symbol's own assumption
     (Q.positive(x * Float(1.5)), Q.real(x)),    # a Float
     (Q.positive(x + oo), Q.real(x)),            # an infinity
-    (Q.positive(x + pi), Q.real(x)),            # a transcendental constant
+    (Q.positive(x + exp(1)), Q.real(x)),            # a transcendental constant other than pi
+    (Q.positive(x + cos(pi * x)), Q.real(x)),   # pi inside a function
+    (Q.positive(x + sqrt(pi)), Q.real(x)),      # a root of pi: not in Q[pi]
+    (Q.positive(x / pi), Q.real(x)),            # 1/pi: not in Q[pi]
+    (Q.positive(x + pi ** x), Q.real(x)),       # pi**x is in Q[pi] only at x = 0, 1, 2, ...: undecided at 1/2
+    (Q.positive(x + x ** pi), Q.real(x)),       # an exponent outside Q
+    (Q.irrational(x), Q.real(x)),               # no pi in the query: no point outside Q is proposed
     (Q.positive(x + I), Q.real(x)),             # the imaginary unit
     (Q.positive(x + sqrt(2)), Q.real(x)),       # a root
     (Q.finite(x), Q.extended_real(x)),          # the False side needs an infinity
@@ -314,6 +320,168 @@ def test_an_own_assumption_undecided_at_a_value_leaves_the_value_out(on):
     assert both(Q.gt(p, 10 ** 7), Q.integer(p)) == [None, None]
     syms, yes, no, tried = pair(Q.gt(p, 3), Q.lt(p, 10 ** 7))
     assert yes[0] in (5, 7) and no[0] in (2, 3)
+
+
+# ---- exact pi (sa-port-341) ----
+
+def _atan_inv(n, terms):
+    """Bounds of atan(1/n) = 1/n - 1/(3 n**3) + 1/(5 n**5) - ...: the terms alternate and decrease, so a partial sum
+    that ends on a negative term is below the limit and the next partial sum is above it."""
+    assert terms % 2 == 0
+    s = sum(F((-1) ** k, (2 * k + 1) * n ** (2 * k + 1)) for k in range(terms))
+    return s, s + F(1, (2 * terms + 1) * n ** (2 * terms + 1))
+
+
+def _machin():
+    """An enclosure of pi from Machin's formula pi = 16 atan(1/5) - 4 atan(1/239), in Fractions; no SymPy."""
+    (a, b), (c, d) = _atan_inv(5, 50), _atan_inv(239, 16)
+    return 16 * a - 4 * d, 16 * b - 4 * c
+
+
+PI_LO, PI_HI = _machin()
+PI = W._PiPoly((0, 1))
+
+
+def enc(v):
+    """Bounds of a value of Q[pi] by the test's own enclosure of pi (not witness.py's)."""
+    if type(v) is not W._PiPoly:
+        return F(v), F(v)
+    lo = hi = F(v.c[0])
+    for k in range(1, len(v.c)):
+        a, b = v.c[k] * PI_LO ** k, v.c[k] * PI_HI ** k
+        lo, hi = lo + min(a, b), hi + max(a, b)
+    return lo, hi
+
+
+def test_the_enclosure_holds_pi():
+    assert 0 < PI_HI - PI_LO < F(1, 10 ** 60)
+    lo, hi = F(W._PI_N, W._PI_D), F(W._PI_N + 1, W._PI_D)
+    assert lo < PI_LO and PI_HI < hi and hi - lo == F(1, 10 ** 50)
+    assert len(W._LO) == len(W._HI) == W._MAX_DEG + 1
+    assert all(W._LO[k] == lo ** k and W._HI[k] == hi ** k for k in range(W._MAX_DEG + 1))
+
+
+# value: (algebraic complex composite even ext_neg ext_pos ext_real finite imaginary integer prime rational zero), by
+# hand: 22/7 and 355/113 are above pi, 9 < pi**2 < 10, 31 < pi**3 < 32
+PI_ROWS = {
+    'pi': (PI,                               (0, 1, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0)),
+    '-pi': (-PI,                             (0, 1, 0, 0, 1, 0, 1, 1, 0, 0, 0, 0, 0)),
+    'pi-3': (PI - 3,                         (0, 1, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0)),
+    '22/7-pi': (F(22, 7) - PI,               (0, 1, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0)),
+    'pi-355/113': (PI - F(355, 113),         (0, 1, 0, 0, 1, 0, 1, 1, 0, 0, 0, 0, 0)),
+    'pi**2-10': (PI * PI - 10,               (0, 1, 0, 0, 1, 0, 1, 1, 0, 0, 0, 0, 0)),
+    'pi**3-31': (PI ** 3 - 31,               (0, 1, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0)),
+    '32-pi**3': (32 - PI ** 3,               (0, 1, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0)),
+    'pi**2/2-3*pi+9/2': ((PI - 3) ** 2 / 2,  (0, 1, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0)),
+}
+
+
+@pytest.mark.parametrize('v', sorted(PI_ROWS))
+def test_table_at_a_value_of_q_pi(v):
+    val, row = PI_ROWS[v]
+    assert type(val) is W._PiPoly
+    names = [n for n in BASIS if n != 'polar']
+    assert tuple(int(W.PI_TABLE[n](val)) for n in names) == row
+    assert W.PI_TABLE['polar'] is None and tuple(W.PI_TABLE) == tuple(W.TABLE)
+    # the derived predicates through their definitions, and the two one-way ones
+    f = {n: W._pi_pred(n)(val) for n in DEFINITIONS if n != 'antihermitian'}
+    pos = bool(row[5])
+    assert f['real'] and f['irrational'] and f['transcendental'] and f['noninteger'] and f['nonzero']
+    assert f['hermitian'] and f['commutative'] and not f['odd'] and not f['infinite']
+    assert f['positive'] is pos and f['negative'] is (not pos) and f['nonnegative'] is pos
+    # at a rational the same function still reads TABLE
+    assert W._pi_pred('rational')(F(1, 2)) is True and W._pi_pred('irrational')(3) is False
+
+
+def test_q_pi_is_a_ring_with_one_polynomial_per_value():
+    assert (PI + 1) * (PI - 1) == PI * PI - 1 == PI ** 2 - 1
+    assert hash((PI + 1) * (PI - 1)) == hash(PI ** 2 - 1)
+    assert (PI / 2) * 2 == PI and PI / 2 + PI / 2 == PI and 2 * PI - PI == PI and 1 - (1 - PI) == PI
+    # a rational result is a rational again, never a _PiPoly
+    for r, want in ((PI - PI, 0), (PI * 0, 0), ((PI + 1) - (PI - F(1, 2)), F(3, 2)), (PI ** 0, 1)):
+        assert type(r) is not W._PiPoly and r == want
+    assert PI != F(22, 7) and not (PI == 3) and PI + 1 != PI and (PI + F(1, 2)).c == (F(1, 2), 1)
+    assert (PI - 1) ** 3 == PI ** 3 - 3 * PI ** 2 + 3 * PI - 1
+    # what leaves Q[pi], or passes the guards, is undecided
+    for f in (lambda: 1 / PI, lambda: PI / PI, lambda: PI / 0, lambda: PI ** -1, lambda: PI ** (W._MAX_DEG + 1),
+              lambda: (PI ** W._MAX_DEG) * PI, lambda: (PI * 2 ** 3000) ** 2):
+        with pytest.raises(W._Undecided):
+            f()
+    q = W._Query(True)
+    f = W._term(x ** y, q, set())
+    assert f([PI, 2]) == PI * PI and f([PI, 0]) == 1 and f([F(1, 2), -3]) == 8
+    for pt in ([PI, -1], [2, PI], [PI, F(1, 2)], [PI, 65], [0, 0]):
+        with pytest.raises(W._Undecided):
+            f(pt)
+
+
+def test_the_sign_is_exact_or_undecided():
+    assert W._sign(F(-1, 2)) == -1 and W._sign(0) == 0 and W._sign(7) == 1
+    assert W._sign(PI - 3) == 1 and W._sign(PI - F(22, 7)) == -1 and W._sign(F(355, 113) - PI) == 1
+    assert W._sign(PI * PI - 10) == -1 and W._sign(PI ** 3 - 31) == 1
+    lo = F(W._PI_N, W._PI_D)
+    # inside the enclosure nothing is decided; a step of 10**-50 outside it, everything is
+    for c in (lo, lo + F(1, 2 * 10 ** 50), lo + F(1, 10 ** 50)):
+        with pytest.raises(W._Undecided):
+            W._sign(PI - c)
+    assert W._sign(PI - (lo - F(1, 10 ** 50))) == 1 and W._sign(PI - (lo + F(2, 10 ** 50))) == -1
+    assert PI - 3 > 0 and PI < F(22, 7) and not PI > 4 and PI * 2 >= 6
+    assert W.PI_TABLE['lt'](3, PI) and not W.PI_TABLE['lt'](PI, 3) and not W.PI_TABLE['lt'](PI, PI)
+    assert W.PI_TABLE['lt'](1, 2) and not W.PI_TABLE['lt'](2, 1) and W.PI_TABLE['eq'](PI + 0, PI)
+    assert not W.PI_TABLE['eq'](PI, 3) and not W.PI_TABLE['eq'](3, PI) and W.PI_TABLE['eq'](F(1, 2), F(2, 4))
+
+
+def test_witness_points_with_pi_hold_by_the_tests_own_enclosure():
+    # x strictly between 3 and 63/20 and not pi: the proposition x > pi has both values there. Each returned point
+    # is checked with Machin's bounds, not with witness.py's enclosure
+    syms, yes, no, tried = pair(Q.gt(x, pi), Q.gt(x, 3) & Q.lt(x, Rational(63, 20)) & Q.ne(x, pi))
+    (ylo, yhi), (nlo, nhi) = enc(yes[0]), enc(no[0])
+    assert 3 < ylo and yhi < F(63, 20) and PI_HI < ylo
+    assert 3 < nlo and nhi < F(63, 20) and nhi < PI_LO
+    # pi**2 between 9 and 10: x**2 < pi**2 at one point of 3 <= x <= 22/7 with x != pi, not at another
+    syms, yes, no, tried = pair(Q.lt(x ** 2, pi ** 2), Q.ge(x, 3) & Q.le(x, Rational(22, 7)) & Q.ne(x, pi))
+    (ylo, yhi), (nlo, nhi) = enc(yes[0]), enc(no[0])
+    assert 3 <= ylo and yhi < PI_LO and PI_HI < nlo and nhi <= F(22, 7)
+    # a term in pi with rational points: x + pi > 0 at 0, not at -4
+    syms, yes, no, tried = pair(Q.positive(x + pi), Q.rational(x))
+    assert type(yes[0]) is not W._PiPoly and type(no[0]) is not W._PiPoly
+    assert yes[0] + PI_LO > 0 and no[0] + PI_HI <= 0
+
+
+def test_a_symbol_may_stand_for_a_value_of_q_pi_only_in_a_query_with_pi():
+    # (2b): the root of x - pi/2 is proposed, and the symbol's own assumptions are read at it
+    syms, yes, no, tried = pair(Q.zero(x - pi / 2), Q.real(x))
+    assert yes == [PI / 2] and type(no[0]) is not W._PiPoly
+    xr, xq = Symbol('xr', real=True), Symbol('xq', rational=True)
+    syms, yes, no, tried = pair(Q.zero(xr - pi / 2), Q.real(y))
+    assert dict(zip(syms, yes))[xr] == PI / 2
+    assert pair(Q.zero(xq - pi / 2), Q.real(y)) is None
+    assert pair(Q.zero(xi - pi / 2), Q.real(y)) is None
+    syms, yes, no, tried = pair(Q.zero(xp - pi), Q.real(y))     # pi is positive: a positive symbol may be pi
+    assert dict(zip(syms, yes))[xp] == PI
+    assert pair(Q.zero(Symbol('xn', negative=True) - pi), Q.real(y)) is None
+    # without pi in the query the points are rational, as before
+    assert pair(Q.irrational(x), Q.real(x)) is None and pair(Q.transcendental(x), Q.gt(x, 3) & Q.lt(x, 4)) is None
+    syms, yes, no, tried = pair(Q.irrational(x), Q.gt(x, pi - 1) & Q.lt(x, pi + 1))
+    assert yes == [PI] and no[0].denominator == 1
+
+
+def test_a_positive_value_of_q_pi_is_not_negative(on):
+    # plant 755 (the sign of a positive value flipped): pi*x would be negative at x = 1, and y decides
+    assert both(Q.positive(pi * x) | Q.positive(y), Q.positive(x)) == [True, True]
+    assert both(Q.gt(pi * x, 3 * x), Q.positive(x)) == [True, True]
+
+
+def test_a_value_with_pi_is_not_rational(on):
+    # plant 756 (a _PiPoly called rational): x + pi would be rational at x = 0, and y decides
+    assert both(Q.irrational(pi + x) | Q.positive(y), Q.rational(x)) == [True, True]
+    assert both(Q.rational(x + pi), Q.rational(x)) == [False, False]
+
+
+def test_pi_is_below_22_sevenths(on):
+    # plant 757 (an interval that does not hold pi): between 22/7 and 63/20 x would be below pi
+    a = Q.gt(x, Rational(22, 7)) & Q.lt(x, 4) & Q.ne(x, Rational(63, 20))
+    assert both(Q.gt(x, pi), a) == [True, True]
 
 
 def test_integer_is_false_at_a_half(on):
@@ -520,6 +688,15 @@ QUERIES = [
     (Q.positive(x), Q.positive(x) & Q.negative(x)), (Q.positive(z), Q.gt(z, x) & Q.gt(x, y) & Q.ge(y, 0)),
     (Q.positive(z), Q.gt(z, x) & Q.gt(x, y) & Q.ge(y, -1)), (Q.irrational(x), Q.real(x) & ~Q.rational(x)),
     (Q.imaginary(x), Q.real(x)), (Q.algebraic(x), Q.rational(x)), (Q.gt(2 * x, x), Q.positive(x)), (Q.gt(2 * x, x), Q.real(x)),
+    # with pi (sa-port-341)
+    (Q.positive(x + pi), Q.real(x)), (Q.gt(x, pi), Q.gt(x, 3) & Q.lt(x, Rational(63, 20))), (Q.rational(x + pi), Q.real(x)),
+    (Q.rational(x + pi), Q.rational(x)), (Q.zero(x - pi / 2), Q.real(x)), (Q.positive(x ** 2 - pi), Q.real(x)),
+    (Q.positive(x / pi), Q.real(x)), (Q.positive(pi ** 2 - 9), Q.real(x)), (Q.integer(x * pi), Q.rational(x)),
+    (Q.lt(x, pi), Q.gt(x, Rational(22, 7)) & Q.lt(x, Rational(63, 20))), (Q.positive(pi * x), Q.positive(x)),
+    (Q.gt(pi * x, 3 * x), Q.positive(x)), (Q.eq(x * pi, y * pi), Q.real(x) & Q.real(y)),
+    (Q.irrational(x), Q.gt(x, pi - 1) & Q.lt(x, pi + 1)), (Q.transcendental(x * pi + 1), Q.rational(x) & Q.nonzero(x)),
+    (Q.transcendental(x * pi + 1), Q.rational(x)), (Q.algebraic(xi * pi), Q.real(y)), (Q.positive(pi - xp), Q.real(y)),
+    (Q.even(x + pi), Q.real(x)), (Q.irrational(x * pi), Q.rational(x)), (Q.lt(x * pi, y), Q.lt(x, y) & Q.positive(x)),
 ]
 
 

@@ -5,7 +5,8 @@
 Python's entry and in Rust's alike) and the query returns None when it returns True. In every other case the query
 goes on exactly as before.
 
-What it does. A *point* gives every symbol of the query a rational value. :func:`independent` returns True only when
+What it does. A *point* gives every symbol of the query a rational value (in a query that holds the constant pi
+outside every function: a value of Q[pi], see "Exact pi" below). :func:`independent` returns True only when
 it holds two points, each of which satisfies every assumption of the query and each symbol's own assumptions
 (``assumptions0``, the facts the engine's symbol template reads), with the proposition True at one and False at the
 other. The search (:func:`_pools`) only proposes points; :func:`_holds` decides, and it runs again on the two points
@@ -20,9 +21,11 @@ an answer. The argument assumes:
    valuation of the symbols that satisfies the assumptions. Where the engine is unsound the check can replace a
    wrong definite answer by None; the answers then differ, which is what the gate compares.
 2. *Rational points are valuations*: a commutative ``Symbol`` or ``Dummy`` may stand for any rational number that
-   satisfies its own assumptions. Nothing else is given a value: any other leaf is undecided.
+   satisfies its own assumptions, and likewise for any real number p(pi), p a polynomial with rational
+   coefficients, that satisfies them (the own assumptions are read at that number by :data:`PI_TABLE`). Nothing
+   else is given a value: any other leaf but a rational constant and pi is undecided.
 3. *The formula is the query*: the check reads the formula ``to_formula`` made (``P`` atoms over the input terms, a
-   relation as ``eq``/``lt`` atoms). It assumes that translation keeps the truth value at a rational point.
+   relation as ``eq``/``lt`` atoms). It assumes that translation keeps the truth value at a point.
 4. *Evaluation is exact*: a term has a value only by integer and ``Fraction`` arithmetic on ``Add``, ``Mul``, ``Pow``
    with an integer exponent, rational constants and the point (:func:`_term`); a predicate has a value only by the
    tables below: :data:`TABLE`, 16 entries (the 14 basis predicates of ``rules.BASIS`` from sa-port-325's table,
@@ -30,7 +33,12 @@ an answer. The argument assumes:
    ``rules.DEFINITIONS`` where the definition is two-way in SymPy's own rule base (:data:`TWO_WAY`, 16 entries) or
    the value a one-way SymPy rule gives every rational (:data:`ONE_WAY`: ``hermitian`` and ``commutative``;
    ``antihermitian`` is undecided). Every line carries its argument. SymPy's evaluation is never asked (satassume
-   issue 247).
+   issue 247). Exact pi (sa-port-341): the constant pi has the value pi, a term's value is then in Q[pi]
+   (:class:`_PiPoly`: Add, Mul and a power by a non-negative integer; anything that leaves Q[pi] is undecided),
+   and a predicate at a non-rational value of Q[pi] is read off :data:`PI_TABLE`, 16 entries whose arguments rest
+   on the transcendence of pi and on one fixed rational enclosure of pi to 50 decimals (:func:`_sign`; a sign the
+   enclosure does not give is undecided). A query without pi is compiled and evaluated as before, on rationals
+   only; pi inside a function is undecided with the function.
 5. *No registered knowledge*: with any function registered in the engine's ``extensions`` the check falls through,
    since a registration can state facts no table here knows. So it does on any other knowledge a user gave
    (:func:`_users_knowledge`): a function in the default registry, a template in the registry the engine reads
@@ -47,11 +55,12 @@ an answer. The argument assumes:
 Undecided is strict: if any atom of the proposition or the assumptions has no exact value at a point, the point is
 not used, and if an atom can have none at any point (``polar``, a function, a Float, an infinity, a relation of
 non-terms, ``antihermitian``, a predicate outside the vocabulary) the check falls through at once without trying a
-point.
+point. (pi is not such an atom since sa-port-341; a power of pi by a negative or a non-integer rational literal,
+``1/pi`` or ``sqrt(pi)``, is one.)
 
 No SymPy object is constructed and no SymPy method that evaluates is called: the check reads ``type``, ``args``,
 ``Rational.p``/``.q`` and ``assumptions0``. This module imports no SymPy: ``sympy_api``, the SymPy front end, gives
-it the six classes it compares types with (:func:`bind`); until then every term is undecided. It keeps nothing across queries: no cache, no table, no counter.
+it the seven classes it compares types with (:func:`bind`); until then every term is undecided. It keeps nothing across queries: no cache, no table, no counter.
 
 What still differs with the switch on (state, not answers): a certified query builds no session, so of
 ``Engine.stats`` it moves only ``queries``, like any other query, and ``witness_certified``
@@ -72,13 +81,14 @@ class _Unbound:
 
 
 #: SymPy's classes, compared with ``type(e)`` only. Set by :func:`bind` from ``sympy_api`` at its import.
-Add = Mul = Pow = Rational = Symbol = Dummy = _Unbound
+Add = Mul = Pow = Rational = Symbol = Dummy = Pi = _Unbound
 
 
-def bind(add, mul, pow_, rational, symbol, dummy):
-    """Called once by ``sympy_api``, which imports SymPy: the classes :func:`_term` and :func:`_formula` read."""
-    global Add, Mul, Pow, Rational, Symbol, Dummy
-    Add, Mul, Pow, Rational, Symbol, Dummy = add, mul, pow_, rational, symbol, dummy
+def bind(add, mul, pow_, rational, symbol, dummy, pi):
+    """Called once by ``sympy_api``, which imports SymPy: the classes :func:`_term` and :func:`_formula` read.
+    ``pi`` is the class of the constant pi, ``type(S.Pi)``."""
+    global Add, Mul, Pow, Rational, Symbol, Dummy, Pi
+    Add, Mul, Pow, Rational, Symbol, Dummy, Pi = add, mul, pow_, rational, symbol, dummy, pi
 
 
 #: the switch, read once at import; a one-element list so a test or a driver can flip it
@@ -189,6 +199,7 @@ def _users_knowledge(eng):
 _MAX_EXP = 64         # |integer exponent| above this: undecided
 _MAX_BITS = 4096      # a power whose result could be longer: undecided
 _MAX_PRIME = 10 ** 6  # primality is decided by trial division up to here; above: undecided
+_MAX_DEG = 16         # a value of Q[pi] of a higher degree in pi: undecided
 
 
 class _Undecided(Exception):
@@ -291,12 +302,195 @@ ONE_WAY = {
 assert set(TWO_WAY) | set(ONE_WAY) == set(DEFINITIONS) and not set(TWO_WAY) & set(ONE_WAY)
 
 
-def _pred(name):
+# ---- exact pi (sa-port-341) ----
+#
+# A query that holds the constant pi outside every function has its terms' values in Q[pi], the polynomials in pi
+# with rational coefficients. Everything below rests on one theorem and one enclosure:
+#
+# (T) pi is transcendental (Lindemann 1882): p(pi) != 0 for every non-zero polynomial p with rational coefficients.
+#     So a value of Q[pi] has exactly one polynomial, two values are equal exactly when their polynomials are, and
+#     a non-constant p gives a transcendental number: were a = p(pi) algebraic, pi would be a root of the
+#     non-constant polynomial p(t) - a with algebraic coefficients, and so algebraic.
+# (E) _PI_LO < pi < _PI_HI, where _PI_LO is pi's decimal expansion cut after 50 places and _PI_HI is _PI_LO plus
+#     10**-50. Source of the digits: OEIS A000796 (the decimal expansion of pi), whose places 51 to 55 are 58209,
+#     so the cut is strict on both sides. tests/test_witness.py::test_the_enclosure_holds_pi proves (E) again
+#     from Machin's formula pi = 16*atan(1/5) - 4*atan(1/239) with the alternating series' own error bounds, in
+#     Fraction arithmetic. Nothing here computes pi, and SymPy's evaluation is not asked (issue 247).
+_PI_N, _PI_D = 314159265358979323846264338327950288419716939937510, 10 ** 50
+# the powers 0.._MAX_DEG of the two bounds: 0 < _PI_LO, so _PI_LO**k < pi**k < _PI_HI**k for every k >= 1
+_LO = [Fraction(_PI_N, _PI_D) ** k for k in range(_MAX_DEG + 1)]
+_HI = [Fraction(_PI_N + 1, _PI_D) ** k for k in range(_MAX_DEG + 1)]
+
+
+class _PiPoly:
+    """A value of Q[pi] that is not rational: ``c[0] + c[1]*pi + ... + c[d]*pi**d`` with rational ``c``, ``d >= 1``
+    and ``c[d] != 0``. By (T) the tuple ``c`` is the value's only representation, so ``==`` and ``hash`` read the
+    tuple. A rational result of an operation is returned as an int or a Fraction (:func:`_poly`), never as a
+    _PiPoly. The operations are the ring's: + - * with a rational or a _PiPoly, / by a non-zero rational, ** by an
+    int n >= 0; what leaves Q[pi] (a division by a _PiPoly, a negative power) is undecided."""
+    __slots__ = ("c",)
+
+    def __init__(self, c):
+        self.c = c
+
+    def __repr__(self):
+        return "_PiPoly(%r)" % (self.c,)
+
+    def __eq__(self, o):
+        # a rational is never equal to a non-rational value
+        return type(o) is _PiPoly and self.c == o.c
+
+    def __hash__(self):
+        return hash(self.c)
+
+    def __add__(self, o):
+        a = self.c
+        if type(o) is _PiPoly:
+            b = o.c
+            if len(a) < len(b):
+                a, b = b, a
+            return _poly([x + y for x, y in zip(a, b)] + list(a[len(b):]))
+        return _PiPoly((a[0] + o,) + a[1:])     # a rational moves c[0] only: the degree stays
+
+    __radd__ = __add__
+
+    def __neg__(self):
+        return _PiPoly(tuple([-x for x in self.c]))
+
+    def __sub__(self, o):
+        return self + (-o)
+
+    def __rsub__(self, o):
+        return (-self) + o
+
+    def __mul__(self, o):
+        a = self.c
+        if type(o) is _PiPoly:
+            b = o.c
+            if len(a) + len(b) - 2 > _MAX_DEG:
+                raise _Undecided
+            out = [0] * (len(a) + len(b) - 1)
+            for i, x in enumerate(a):
+                for j, y in enumerate(b):
+                    out[i + j] += x * y
+            return _poly(out)
+        return _poly([x * o for x in a])        # by 0 this is the rational 0
+
+    __rmul__ = __mul__
+
+    def __truediv__(self, o):
+        if type(o) is _PiPoly or o == 0:        # 1/p(pi) is not in Q[pi]; 1/0 is no number
+            raise _Undecided
+        return self * (Fraction(1) / o)
+
+    def __rtruediv__(self, o):
+        raise _Undecided
+
+    def __pow__(self, n):
+        """``n`` an int >= 0. The product of n factors, undecided where it could pass _MAX_DEG or _MAX_BITS."""
+        c = self.c
+        bits = max([abs(x.numerator).bit_length() + x.denominator.bit_length() for x in c]) + len(c).bit_length()
+        if n < 0 or (len(c) - 1) * n > _MAX_DEG or bits * n > _MAX_BITS:
+            raise _Undecided
+        r = 1
+        for _ in range(n):
+            r = r * self
+        return r
+
+    def __lt__(self, o):
+        return _sign(self - o) < 0
+
+    def __gt__(self, o):
+        return _sign(self - o) > 0
+
+    def __le__(self, o):
+        return _sign(self - o) <= 0
+
+    def __ge__(self, o):
+        return _sign(self - o) >= 0
+
+
+def _poly(c):
+    """The value with the coefficient list ``c``: a _PiPoly, or the rational c[0] when no power of pi is left."""
+    n = len(c)
+    while n > 1 and c[n - 1] == 0:
+        n -= 1
+    return c[0] if n == 1 else _PiPoly(tuple(c[:n]))
+
+
+def _sign(v):
+    """The sign of a value of Q[pi]: 1, 0 or -1, or _Undecided. A rational's sign is its own. For a _PiPoly, (E)
+    bounds each term: c*_PI_LO**k < c*pi**k < c*_PI_HI**k for c > 0 and k >= 1, the other way round for c < 0. The
+    sum of the lower bounds is below the value and the sum of the upper bounds above it; a lower sum above 0 is a
+    positive value, an upper sum below 0 a negative one, and anything else is undecided (never 0: by (T) a _PiPoly
+    is not 0)."""
+    if type(v) is not _PiPoly:
+        return (v > 0) - (v < 0)
+    c = v.c
+    lo, hi = _LO, _HI
+    low = up = c[0]
+    for k in range(1, len(c)):
+        x = c[k]
+        if x > 0:
+            low += x * lo[k]
+            up += x * hi[k]
+        elif x < 0:
+            low += x * hi[k]
+            up += x * lo[k]
+    if low > 0:
+        return 1
+    if up < 0:
+        return -1
+    raise _Undecided
+
+
+# 16 entries, as TABLE, at a value v = p(pi) of Q[pi] that is not rational (a _PiPoly: p is not constant), then the
+# two relations of two values of Q[pi], rational or not. One argument each, from (T) and (E).
+PI_TABLE = {
+    # (T): p(pi) is transcendental
+    'algebraic': lambda v: False,
+    # pi is a real number and p has rational coefficients, so p(pi) is real, and a real number is complex
+    'complex': lambda v: True,
+    # a composite number is an integer, and v is not rational (see 'rational')
+    'composite': lambda v: False,
+    # an even number is an integer
+    'even': lambda v: False,
+    # v is real and not 0, so it has a sign; (E) gives it or leaves it undecided (_sign)
+    'extended_negative': lambda v: _sign(v) < 0,
+    'extended_positive': lambda v: _sign(v) > 0,
+    # v is real
+    'extended_real': lambda v: True,
+    # v is a real number, not an infinity
+    'finite': lambda v: True,
+    # an imaginary number is a non-zero real multiple of I; v is real
+    'imaginary': lambda v: False,
+    # an integer is rational
+    'integer': lambda v: False,
+    # polar: not decided, as in TABLE
+    'polar': None,
+    # a prime is an integer
+    'prime': lambda v: False,
+    # a rational number is algebraic (the root of q*t - p), and v is transcendental by (T)
+    'rational': lambda v: False,
+    # 0 is rational
+    'zero': lambda v: False,
+    # eq: by (T) two values of Q[pi] are the same number exactly when their polynomials are (_PiPoly.__eq__; a
+    # rational and a _PiPoly are never equal; two rationals as in TABLE)
+    'eq': lambda a, b: a == b,
+    # lt: a < b exactly when b - a, a value of Q[pi], is positive (_sign: exact, or undecided)
+    'lt': lambda a, b: _sign(b - a) > 0,
+}
+assert tuple(PI_TABLE) == BASIS + RELATIONS
+# TWO_WAY's definitions are read at a _PiPoly as at a rational, over PI_TABLE. ONE_WAY's two values hold at a
+# _PiPoly for the same one-way rules, since it is real: real -> hermitian, extended_real -> commutative.
+
+
+def _pred(name, table=TABLE):
     """``name`` at a rational value as a function: by TABLE for a basis predicate, by its definition
     (rules.DEFINITIONS, a conjunction or disjunction of basis literals) for a TWO_WAY derived predicate, by ONE_WAY
-    for the other three."""
+    for the other three. With ``table=PI_TABLE``: at a _PiPoly."""
     if name in BASIS_SET:
-        f = TABLE[name]
+        f = table[name]
         if f is None:       # polar
             raise _Undecided
         return f
@@ -312,7 +506,7 @@ def _pred(name):
     lits = []
     for t in d.split("|" if disj else "&"):
         t = t.strip()
-        f = TABLE[t.lstrip("!")]
+        f = table[t.lstrip("!")]
         if f is None:
             raise _Undecided
         lits.append((f, not t.startswith("!")))
@@ -321,11 +515,22 @@ def _pred(name):
     return lambda v: all([f(v) == want for f, want in lits])
 
 
+def _pi_pred(name):
+    """``name`` at a value of Q[pi]: by PI_TABLE at a _PiPoly, as before at a rational."""
+    r, p = _pred(name), _pred(name, PI_TABLE)
+    return lambda v: p(v) if type(v) is _PiPoly else r(v)
+
+
+class _NeedPi(_Undecided):
+    """The query holds pi outside a function: :func:`witnesses` compiles it again with values in Q[pi]."""
+
+
 class _Query:
     """One query's compiled form. Lives for one call of :func:`independent`."""
-    __slots__ = ("syms", "consts", "probes")
+    __slots__ = ("syms", "consts", "probes", "pi")
 
-    def __init__(self):
+    def __init__(self, pi=False):
+        self.pi = pi        # True: values are in Q[pi] (the second compile of a query that holds pi)
         self.syms = {}      # symbol -> index in a point
         self.consts = []    # the query's rational constants, in walk order
         self.probes = []    # (difference of an atom's sides, or its term; the indices of its symbols)
@@ -362,6 +567,11 @@ def _term(e, q, used):
         return mul
     if t is Pow:
         fb, fx = _term(e.args[0], q, used), _term(e.args[1], q, used)
+        if q.pi:
+            b, x = e.args
+            if type(b) is Pi and isinstance(x, Rational) and (x.q != 1 or x.p < 0):
+                raise _Undecided    # 1/pi, sqrt(pi): outside Q[pi] at every point, so no point is tried
+            return _pi_power(fb, fx)
 
         def power(pt):
             b, n = fb(pt), fx(pt)
@@ -375,7 +585,36 @@ def _term(e, q, used):
                 raise _Undecided
             return b ** n if n >= 0 else Fraction(b) ** n
         return power
-    raise _Undecided        # a function, a Float, an infinity, a named constant, a Wild, a matrix, a non-term
+    if t is Pi:
+        if not q.pi:
+            raise _NeedPi
+        return lambda pt: _PI
+    raise _Undecided        # a function, a Float, an infinity, another named constant, a Wild, a matrix, a non-term
+
+
+#: the value of the constant pi
+_PI = _PiPoly((0, 1))
+
+
+def _pi_power(fb, fx):
+    """A power with values in Q[pi]: an integer power of a rational as in :func:`_term`; of a _PiPoly, a power by an
+    int n >= 0 (the product of n factors, 1 for n = 0 since a _PiPoly is not 0). An exponent that is a _PiPoly and a
+    negative power of a _PiPoly are not in Q[pi]: undecided."""
+    def power(pt):
+        b, n = fb(pt), fx(pt)
+        if type(n) is _PiPoly or n.denominator != 1:
+            raise _Undecided
+        n = int(n)
+        if type(b) is _PiPoly:
+            if n < 0 or n > _MAX_EXP:
+                raise _Undecided
+            return b ** n
+        if abs(n) > _MAX_EXP or (b == 0 and n <= 0):
+            raise _Undecided
+        if (abs(b.numerator).bit_length() + b.denominator.bit_length()) * abs(n) > _MAX_BITS:
+            raise _Undecided
+        return b ** n if n >= 0 else Fraction(b) ** n
+    return power
 
 
 def _formula(f, q):
@@ -392,11 +631,11 @@ def _formula(f, q):
                 raise _Undecided
             fa, fb = _term(e[0], q, used), _term(e[1], q, used)
             q.probes.append((lambda pt: fa(pt) - fb(pt), used))
-            rel = TABLE[name]
+            rel = PI_TABLE[name] if q.pi else TABLE[name]
             return lambda pt: rel(fa(pt), fb(pt))
         if type(e) is Args:
             raise _Undecided
-        pr, ft = _pred(name), _term(e, q, used)
+        pr, ft = _pi_pred(name) if q.pi else _pred(name), _term(e, q, used)
         if type(e) is not Symbol and type(e) is not Dummy:
             q.probes.append((ft, used))
         return lambda pt: pr(ft(pt))
@@ -422,11 +661,12 @@ def _formula(f, q):
     raise _Undecided
 
 
-def _own(sym):
+def _own(sym, pi=False):
     """The symbol's own assumptions as a function of its value: every fact of ``assumptions0`` holds. A fact the
-    table does not decide makes the query undecided."""
+    table does not decide makes the query undecided. ``pi``: the value may be a _PiPoly."""
     # sympy-boundary: declared symbol facts, the ones the engine's symbol template reads; the table decides each
-    lits = [(_pred(str(k)), v) for k, v in sym.assumptions0.items() if v is not None]
+    pred = _pi_pred if pi else _pred
+    lits = [(pred(str(k)), v) for k, v in sym.assumptions0.items() if v is not None]
     return lambda v: all([f(v) == want for f, want in lits])
 
 
@@ -438,7 +678,8 @@ _TAIL = (3, -3, Fraction(3, 2), Fraction(-3, 2), 4, -4, Fraction(1, 3), Fraction
 def _roots(q, n):
     """Per symbol, exact roots of the query's atoms: for a relation the difference of its sides, for a predicate of a
     compound term the term. With the other symbols at 0 and then at 1, the secant through t = 0 and t = 1 gives a
-    candidate, kept only if the atom's function is exactly 0 there. Proposes values; decides nothing."""
+    candidate, kept only if the atom's function is exactly 0 there. Proposes values; decides nothing. In a query
+    that holds pi a root may be a _PiPoly; a symbol may stand for it like for a rational (assumption 2)."""
     out = [[] for _ in range(n)]
     for d, used in q.probes:
         for i in used:
@@ -451,13 +692,26 @@ def _roots(q, n):
                     d1 = d(pt)
                     if d1 == d0:
                         continue
-                    r = Fraction(-d0) / (d1 - d0)
+                    s = d1 - d0
+                    if type(s) is _PiPoly:      # the secant's root is not in Q[pi]
+                        continue
+                    r = -d0 / Fraction(s)       # a rational, or a _PiPoly: the root of x - pi/2 is pi/2
                     pt[i] = r
                     if d(pt) == 0 and r not in out[i]:
                         out[i].append(r)
                 except _Undecided:
                     continue
     return out
+
+
+def _near(v):
+    """A rational next to ``v``: a _PiPoly's polynomial at pi's lower bound. For ordering proposals only."""
+    if type(v) is not _PiPoly:
+        return v
+    s = 0
+    for k, x in enumerate(v.c):
+        s += x * _LO[k]
+    return s
 
 
 def _pools(q, owns):
@@ -471,7 +725,9 @@ def _pools(q, owns):
         consts += [c, c + 1, c - 1, c + Fraction(1, 2), c - Fraction(1, 2)]
     pools = []
     for i in range(n):
-        rs = sorted(roots[i][:12])
+        # in a query that holds pi a root may be a _PiPoly: ordered by its value at pi's lower bound, which is total
+        # and raises nothing (the order only arranges proposals)
+        rs = sorted(roots[i][:12], key=_near if q.pi else None)
         crit = list(rs)
         for a, b in zip(rs, rs[1:]):
             crit.append((a + b) / 2)
@@ -486,7 +742,8 @@ def _pools(q, owns):
                     if own is None or own(v):
                         pool.append(v)
                 except _Undecided:
-                    # an own assumption without an exact value here (a prime symbol above _MAX_PRIME): not proposed
+                    # an own assumption without an exact value here (a prime symbol above _MAX_PRIME, a sign the
+                    # enclosure of pi does not give): not proposed
                     pass
         pools.append(pool)
     return pools
@@ -542,10 +799,17 @@ def witnesses(proposition, assumptions, eng=None):
             return None
     q = _Query()
     try:
-        fa = _formula(assumptions, q)
-        fp = _formula(proposition, q)
+        try:
+            fa = _formula(assumptions, q)
+            fp = _formula(proposition, q)
+        except _NeedPi:
+            # pi outside a function: compile again with values in Q[pi]. A query without pi never comes here and
+            # runs the closures above on rationals only.
+            q = _Query(True)
+            fa = _formula(assumptions, q)
+            fp = _formula(proposition, q)
         skip = PLANT[0] == "skip-own"
-        owns = [None if skip else _own(s) for s in q.syms]
+        owns = [None if skip else _own(s, q.pi) for s in q.syms]
     except _Undecided:
         return None
     if not q.syms:

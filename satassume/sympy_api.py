@@ -123,7 +123,7 @@ from sympy.core.mul import Mul as _SMul
 from sympy.core.power import Pow as _SPow
 from sympy.core.expr import Expr as _Expr
 from sympy.core.relational import Relational as _Relational
-from sympy.core.numbers import Rational as _Rational
+from sympy.core.numbers import Rational as _Rational, Pi as _Pi
 from sympy.core.singleton import S as _S
 from sympy.logic.boolalg import (And as _SAnd, Or as _SOr, Not as _SNot,
                                  Implies as _SImplies, Equivalent as _SEquivalent,
@@ -134,7 +134,7 @@ from .knowledge.rules import PRED_INDEX
 
 # satassume.witness (SLICE_WITNESS=1, off by default) imports no SymPy: it gets the classes it compares types with
 # here, and the engine's methods as they are now count as the engine's own (a user's replacement makes it fall through)
-_witness.bind(_SAdd, _SMul, _SPow, _Rational, _Symbol, _Dummy)
+_witness.bind(_SAdd, _SMul, _SPow, _Rational, _Symbol, _Dummy, _Pi)
 _witness.accept(Engine)
 
 # SymPy's Boolean connectives that to_formula translates (Nand, Nor and Xnor
