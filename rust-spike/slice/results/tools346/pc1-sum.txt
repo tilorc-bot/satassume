@@ -1,0 +1,24 @@
+== budget py digest 35bc2c4a937bebc0 s 3.022 fires 19 compiled 12 certified 0 check_s 0.377 work 2500 {'queries': 26, 'budget_limited': 15, 'witness_certified': 0}
+   nosession asked 19 true 7 s 0.3072 med us 393.0 max 98256.1
+   fall-through reaching pools: n 12 work med 2522 90% 2613 99% 2613 max 2613 | size med 453 90% 457 max 862 | s 0.2531
+== budget rust digest 35bc2c4a937bebc0 s 2.073 fires 19 compiled 12 certified 0 check_s 0.305 work 2500 {}
+   nosession asked 19 true 7 s 0.2229 med us 566.2 max 50483.8
+   fall-through reaching pools: n 12 work med 2522 90% 2613 99% 2613 max 2613 | size med 453 90% 457 max 862 | s 0.1754
+== dev py digest 31cd0945c07f02a6 s 3.058 fires 776 compiled 535 certified 173 check_s 0.728 work 2500 {'queries': 883, 'budget_limited': 0, 'witness_certified': 173}
+   nosession asked 535 true 0 s 0.3793 med us 39.1 max 220169.2
+   fall-through reaching pools: n 362 work med 108 90% 348 99% 491 max 696 | size med 4 90% 9 max 22 | s 0.5516
+== dev rust digest 31cd0945c07f02a6 s 1.472 fires 776 compiled 535 certified 173 check_s 0.191 work 2500 {}
+   nosession asked 535 true 0 s 0.0669 med us 23.3 max 3960.8
+   fall-through reaching pools: n 362 work med 108 90% 348 99% 491 max 696 | size med 4 90% 9 max 22 | s 0.1249
+== fuzz py digest 173502b6ef285ad6 s 9.745 fires 2772 compiled 2732 certified 1284 check_s 2.483 work 2500 {'queries': 3031, 'budget_limited': 0, 'witness_certified': 1284}
+   nosession asked 2772 true 40 s 1.1818 med us 358.9 max 139637.6
+   fall-through reaching pools: n 1448 work med 712 90% 1372 99% 1936 max 2540 | size med 18 90% 33 max 61 | s 1.5291
+== fuzz rust digest 173502b6ef285ad6 s 10.741 fires 2772 compiled 2732 certified 1284 check_s 2.942 work 2500 {}
+   nosession asked 2772 true 40 s 1.5239 med us 525.6 max 5878.2
+   fall-through reaching pools: n 1448 work med 712 90% 1372 99% 1936 max 2540 | size med 18 90% 33 max 61 | s 1.7168
+== wiring py digest a0df9fd43e5180c1 s 5.034 fires 4814 compiled 1503 certified 215 check_s 0.535 work 2500 {'queries': 5628, 'budget_limited': 0, 'witness_certified': 215}
+   nosession asked 1503 true 0 s 0.0197 med us 7.8 max 146.5
+   fall-through reaching pools: n 1288 work med 149 90% 2508 99% 2516 max 2516 | size med 4 90% 74 max 75 | s 0.4339
+== wiring rust digest a0df9fd43e5180c1 s 8.255 fires 4814 compiled 1503 certified 215 check_s 0.620 work 2500 {}
+   nosession asked 1503 true 0 s 0.035 med us 12.4 max 227.8
+   fall-through reaching pools: n 1288 work med 149 90% 2508 99% 2516 max 2516 | size med 4 90% 74 max 75 | s 0.4653
