@@ -13,7 +13,9 @@ def test_reregistered_template_key_does_not_reuse_compiled_pattern():
     the earlier compiled pattern: here facts saying ``positive`` for a
     class whose template says ``negative``."""
     from satassume.knowledge.templates import registry
+    from satassume.knowledge.templates import _common
     from satassume.knowledge.templates._common import units
+    from satassume.state.epoch import bump
 
     class _P4A(Symbol):
         pass
@@ -23,20 +25,34 @@ def test_reregistered_template_key_does_not_reuse_compiled_pattern():
 
     key = ('p4_review_reused_key',)
 
-    @registry.register(_P4A)
-    def template_a(expr):
-        return units(key, lambda: [('positive', True)], expr)
+    # the two templates are taken off the default registry at the end: a
+    # template left there is a user's knowledge for every later query of the
+    # process (the witness check falls through)
+    try:
+        @registry.register(_P4A)
+        def template_a(expr):
+            return units(key, lambda: [('positive', True)], expr)
 
-    a = _P4A('a')
-    assert ask(Q.positive(a), True, Engine()) is True
+        a = _P4A('a')
+        assert ask(Q.positive(a), True, Engine()) is True
 
-    @registry.register(_P4B)
-    def template_b(expr):
-        return units(key, lambda: [('negative', True)], expr)
+        @registry.register(_P4B)
+        def template_b(expr):
+            return units(key, lambda: [('negative', True)], expr)
 
-    b = _P4B('b')
-    assert ask(Q.negative(b), True, Engine()) is True
-    assert ask(Q.positive(b), True, Engine()) is not True
+        b = _P4B('b')
+        assert ask(Q.negative(b), True, Engine()) is True
+        assert ask(Q.positive(b), True, Engine()) is not True
+    finally:
+        # the two classes' keys only, so the built-in modules loaded
+        # meanwhile stay; then what register() drops for a new template,
+        # for the ones now gone
+        registry._by_class.pop(_P4A, None)
+        registry._by_class.pop(_P4B, None)
+        registry._mro_cache.clear()
+        registry._clauses_cache.clear()
+        _common._CACHE.clear()
+        bump()
 
 
 def test_every_adopted_memo_name_resolves():

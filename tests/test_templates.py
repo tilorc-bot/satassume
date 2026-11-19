@@ -661,6 +661,7 @@ def test_template_key_error_is_not_read_as_inconsistent():
     from satassume import Engine
     from satassume.knowledge.templates import _common as C
     from satassume.knowledge.templates.registry import registry
+    from satassume.state.epoch import bump
     from satassume.sympy_api import ask
 
     class G(Function):
@@ -668,15 +669,26 @@ def test_template_key_error_is_not_read_as_inconsistent():
 
     x, y = Symbol('x'), Symbol('y')
 
-    # G is local to this test: its template stays registered, harmlessly
-    @registry.register(G)
-    def g_templates(expr):
-        a, b = expr.args
-        return C.facts(C.pattern_key('add', 2, {}), lambda: [([(1, 'positive', True)],
-                                                                [(0, 'positive', True)])],
-                       {}, (expr, a, b), 0)
+    # G is local to this test, and its template is taken off the default
+    # registry at the end: a template left there is a user's knowledge for
+    # every later query of the process (the witness check falls through)
+    try:
+        @registry.register(G)
+        def g_templates(expr):
+            a, b = expr.args
+            return C.facts(C.pattern_key('add', 2, {}), lambda: [([(1, 'positive', True)],
+                                                                    [(0, 'positive', True)])],
+                           {}, (expr, a, b), 0)
 
-    e = Engine()
-    assert ask(Q.positive(x + y), Q.positive(x) & Q.positive(y), engine=e) is True
-    with pytest.raises(C.TemplateKeyError):
-        ask(Q.positive(G(x, y)), Q.positive(x) & Q.positive(y), engine=e)
+        e = Engine()
+        assert ask(Q.positive(x + y), Q.positive(x) & Q.positive(y), engine=e) is True
+        with pytest.raises(C.TemplateKeyError):
+            ask(Q.positive(G(x, y)), Q.positive(x) & Q.positive(y), engine=e)
+    finally:
+        # G's key only, so the built-in modules loaded meanwhile stay; then
+        # what register() drops for a new template, for the one now gone
+        registry._by_class.pop(G, None)
+        registry._mro_cache.clear()
+        registry._clauses_cache.clear()
+        C._CACHE.clear()
+        bump()
