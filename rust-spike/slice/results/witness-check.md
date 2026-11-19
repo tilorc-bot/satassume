@@ -1,36 +1,46 @@
 # The witness check: an exact pre-session check for None answers (issue 323, prototype)
 
-NOT LANDED, no PR. Branch `report/witness-check` (sa-port-328 to 331, 18-19 Nov), base rust-slice e5db633.
-`SLICE_WITNESS` is off by default and the unchanged path is the default. With `SLICE_WITNESS=1`, a contextual query
-is first given to `satassume.witness.independent`, which returns True only when it holds two exact rational points
-that satisfy the assumptions and give the proposition both values; the query then returns None without a session.
-No SymPy object is constructed and nothing of SymPy's is evaluated at query time: the check reads `type`, `args`,
-`Rational.p`/`.q` and `assumptions0`.
+NOT LANDED, no PR. Branch `port/witness-check` (sa-port-328 to 337, 18-19 Nov), on rust-slice 32ba9a3; tested SHA
+786410d (also origin `bar/witness-check-786410d`), venv .so cad764d46471b1c6, bench .so 0982a28074215658.
+`SLICE_WITNESS` is off by default and the unchanged path is the default, except that `Engine.stats` now has a 13th
+key, `witness_certified`, which is 0 with the switch off (a change to the default path's visible state; section 3).
+With `SLICE_WITNESS=1`, a contextual query is first given to `satassume.witness.independent`, which returns True only
+when it holds two exact rational points that satisfy the assumptions and give the proposition both values; the query
+then returns None without a session. No SymPy object is constructed and nothing of SymPy's is evaluated at query
+time: the check reads `type`, `args`, `Rational.p`/`.q` and `assumptions0`. The Rust change is entry.rs: KEYS has 13
+entries and `ent_record_certified` counts a certified query without a tick.
 
-**Result.** With the switch on, every answer of every workload is equal to the answer with the switch off, on both
-backends. The check removes 1604 of 30482 engine queries over the 20 workloads (5.3%), 1060 of them in fuzz; 8
-workloads have a certified query. Wall time at cap 32 (S1, reported, not a gate): Python dev -3.9%, fuzz -28.3%;
-Rust dev +0.5%, fuzz -19.0%. **Proposal: land it in Python behind the switch, off by default, cap 32; the sized
-follow-up is a Rust port of the per-call part** (section 9).
+**Result on 786410d (sa-port-337, 19 Nov).** Dev and fuzz answers are equal with the switch on and off, on both
+backends, and S1 holds: fuzz -28.2% Python and -19.2% Rust, dev -2.7% Python and +1.1% Rust (inside the spread).
+**Two things stop the landing** (Status: question): (1) 7 ids of tests/test_witness.py fail whenever one of two older
+tests, which leave a template registered, ran earlier in the same process; this does not depend on the switch
+(section 8). (2) sa-port-336's bar had no .so: every Rust row is empty and its `END 0` is void; it was relaunched as
+sa-port-337's and had not ended when this was written (section 10).
+
+Sections 6, 7's table and 9 are from the earlier SHAs named in them and were not redone. Earlier result, for the 20
+workloads (5e6e46a and c5239b9): every answer equal on and off on both backends; the check removes 1604 of 30482
+engine queries (5.3%), 1060 of them in fuzz; 8 workloads have a certified query. Proposal: section 9.
 
 ## 1. Tested SHAs and what each number rests on
 
 | what | SHA | where |
 |---|---|---|
+| suite by id on/off/base, dev and fuzz digests, test_witness.py, plants 749-752 and 754, repeat check, iv (128 runs) | 786410d against base 32ba9a3 | pareto0, shared lease, .so cad764d46471b1c6 (base: c20c326f) |
+| S1 wall time, the check's cost a call, `_users_knowledge` a certified call | 786410d | pareto1, quiet lease 00bc95e0, pinned CPU 2, bench .so 0982a28074215658 |
+| the bar (witness:on rows on 17 workloads, plant rows, suite rows) | 786410d | pareto0; sa-port-336's is void, sa-port-337's rerun not read here (section 10) |
 | 20-workload gate, iv history check, cost split per call | 5e6e46a | pareto1, .so 45f63fdfb8e8523c |
-| 20-workload gate from a frozen copy, dev and fuzz digests, test_witness.py, plants 749-752, repeat check | c5239b9 | orion, .so a188b7fa95f27a88 |
-| S1 wall time and the certified counts | 47b7a0d | pareto1, pinned CPU 2, .so 45f63fdfb8e8523c |
-| suite by id against base (e5db633) | c5239b9 | pareto0, .so 45f63fdfb8e8523c |
+| 20-workload gate from a frozen copy, the cap, reasons | c5239b9 | orion, .so a188b7fa95f27a88 |
+| S1 with no cap | 47b7a0d | pareto1, pinned CPU 2, .so 45f63fdfb8e8523c |
 
+- 786410d is the function SHA: da6eb2ee (the users'-knowledge guard d52129da with plant 754, the 13th stats key and
+  entry.rs) plus p1/bar.sh and bar_sum.py. The 20-workload gate was not rerun on it; dev and fuzz were (section 2),
+  and the bar's witness:on rows are the other 15 workloads' check.
 - c5239b9 is the function SHA. Against 5e6e46a it adds the P1 guard (section 3), the layer and the removal of the
   module-level SymPy import; against 47b7a0d, 5e6e46a changed only which derived predicates are decided (section 3),
   no workload query mentions `hermitian` or `antihermitian`, and the one dev query with a `commutative` atom does not
   reach the check, so 47b7a0d and 5e6e46a return the same value on every workload query.
-- S1 is on 47b7a0d and was not re-measured after the P1 guard, which costs about 2 us per certified query (2.2 us by
-  orion timeit; 159 dev and 1060 fuzz queries: about 0.35 ms and 2.3 ms, under 0.1% of either pass). The cost split
-  was not re-measured on c5239b9 either.
-- S1 is reported, not a gate. Shares from shared-lease runs are not wall times. In the cap table the rows other than
-  32 and none are a model, not measurements.
+- S1 is the landing measure and was re-measured on 786410d with both guards in (section 5). Shares from shared-lease
+  runs are not wall times. In the cap table the rows other than 32 and none are a model, not measurements.
 - "Exact" rests on sa-port-325's table of the 14 basis predicates and its one-line arguments (origin
   `report/none-certify`, `exact325.py`), carried as the comments of `witness.TABLE`. Issue 247 applies: SymPy
   evaluation is not ground truth, and neither is the table; it is short enough to review.
@@ -38,6 +48,66 @@ follow-up is a Rust port of the per-call part** (section 9).
   and is not the gate.
 
 ## 2. The gate: answers equal, per workload
+
+### 786410d: dev and fuzz digests, test_witness.py, the suite by id, iv
+
+All on pareto0 under one shared lease (go336.sh, ended 08:51:42Z 19 Nov, `END 0`), from the staged tree of 786410d
+(`tree.txt`, `pre-source.txt`: .so cad764d46471b1c6, witness.py 090625c1).
+
+Digests (`pre/dig/dig.jsonl`, 18 rows, `err.txt` empty):
+
+| workload | queries | digest off | digest on | check called | certified |
+|---|---|---|---|---|---|
+| dev | 1985 | 31cd0945c07f02a6 | 31cd0945c07f02a6 | 776 | 159 |
+| fuzz (seed 424242) | 3000 | 173502b6ef285ad6 | 173502b6ef285ad6 | 2772 | 1060 |
+
+Python and Rust give the same digest, calls and certified counts in every cell, and the digests are the base's. With
+the switch off the check is called 0 times.
+
+tests/test_witness.py alone, one process (`pre/tw/tw-*.log`): 102 passed on python and on rust, switch off and on.
+
+Suite by id (suite331.sh; the bar's derandomized hypothesis profile, 3 workers an arm, six arms at once: on
+`SLICE_WITNESS=1`, off `=0`, base 32ba9a3 with the variable unset):
+
+| backend | arm | ids | passed | failed |
+|---|---|---|---|---|
+| python | base | 6159 | 6118 | 0 |
+| python | off | 6261 | 6220 | 0 |
+| python | on | 6261 | 6213 | 7 |
+| rust | base | 6159 | 5991 | 127 |
+| rust | off | 6261 | 6093 | 127 |
+| rust | on | 6261 | 6086 | 134 |
+
+23 skipped and 18 xfailed in every arm. The 102 ids off and on have and base lacks are tests/test_witness.py.
+
+- **Off against base:** 0 ids differ, on python and on rust. The rust base's 127 failures are the same 127 ids in
+  the off arm. By file: test_lra_fuzz.py 43, test_solver_incremental.py 36, test_solver.py 14, test_theory_hooks.py
+  10, test_euf.py 7, test_euf_fuzz.py 4, test_writeback_provenance.py 3, test_solver_real_theories.py 3,
+  test_transfer.py 2, and 1 each in test_lra_exhaustion.py, test_template_tables.py, test_verify_integration.py,
+  test_relations.py and test_public_incremental.py (the planted-history test, the known id()-reuse failure). They
+  are the base's and were not read here.
+- **On against off: 7 ids differ, the same 7 on both backends, all in tests/test_witness.py** (on failed, off
+  passed): `test_registered_knowledge_falls_through`, the five cases of
+  `test_a_users_knowledge_falls_through_and_the_engines_answer_is_used`, and
+  `test_on_skips_the_session_and_counts_the_query`. **The switch is not the cause; the order of tests in a worker
+  is** (section 8). No answer of an older test moved, and no id outside test_witness.py differs.
+- `test_sympy_api.py::test_in_scope_query_returns_none_only_when_undecided`, which failed with the switch on up to
+  c5239b9, passes: a certified query is now counted in `stats['queries']` (da6eb2ee).
+- No row was needed in harness/state.py or tests/test_memos.py for the 13th stats key or for `_TEMPLATES` and
+  `_THEORIES`: tests/test_memos.py and the state checks pass in all four arms of 786410d.
+- State, on against off, as ids whose recorded state differs: python `py_made` 103. Rust `rust_made` 91, `lra` 55,
+  `session` 789; the rust `session` counters also differ in 801 ids between off and base, two runs of code that is
+  the same on that path (mostly `pm:key_eq`, which follows the order of tests in a worker), so 789 is at that noise
+  level. A certified query builds no session, so `py_made`, `rust_made` and `lra` are expected to differ.
+- Quiet catches (`engine.py`'s `except Exception` around the complete check) are equal id by id in all three arms:
+  rust 49 in 9 ids, python 10 in 7 ids. Handler rows: rust 39 in every arm, python 0. The counter does fire here,
+  which is what makes the equality mean something.
+
+iv history check (iv336.sh, 64 run names x off/on, `iv-cmp.txt`): 0 runs whose failing ids differ off against on.
+Python: rc 0 in all 64. Rust: `test_transfer.py::test_models_respect_transfer` and `::test_protocol_on_fuzz` fail in
+16 runs with the switch off and the same 16 with it on, as on 5e6e46a.
+
+### The 20-workload gate (5e6e46a and c5239b9; not rerun on 786410d)
 
 Each workload runs through `live.py --check entry` four times: py and rust (`SLICE_CONVERT=rust
 SLICE_TERM_FRAMES=rust`), each with `SLICE_WITNESS=0` and `=1`; `ans328.py` compares answers and messages per query,
@@ -82,7 +152,7 @@ and certifies 159 and 1060, the same on both backends. The Rust rows record 0 di
 files hold 0 rows in all 80 runs; I did not show that counter fire on a planted raise in the gate, so that zero says
 little. In the suite the counters do fire and are equal across arms (below).
 
-### Suite by id against base
+### Suite by id against base, earlier: c5239b9
 
 c5239b9 and base e5db633, pareto0 (staged trees, shared lease 77dcab26, 03:09Z to 03:16Z 19 Nov, pareto0 otherwise
 unleased), the bar's derandomized hypothesis profile, 3 workers an arm, six arms at once: on (`SLICE_WITNESS=1`), off
@@ -187,20 +257,31 @@ structure tests that failed on 5e6e46a with the switch off pass on c5239b9, off 
 Shared files touched: `rust-spike/slice/session_live.py` (+4 lines), `rust-spike/slice/catch_count.py` (+3),
 `harness/state.py` (+6, classification rows), `tests/test_layering.py` (LAYERS).
 
-## 4. Plants 749-752
+## 4. Plants 749-752 and 754
 
-Each is `SLICE_WITNESS_PLANT` with the switch on, c5239b9, orion, frozen copy. "Tests" is of 133: test_witness.py's
-97 and the 36 of test_history.py's two tests that patch `Engine.ask` and test_public_incremental.py. Each catching check asserts behaviour and reads no plant flag.
+Each is `SLICE_WITNESS_PLANT` with the switch on, 786410d, pareto0, python (`pre/tw/plant-*.log`, `pre/dig`).
+"Tests" is of 138: test_witness.py's 102 and the 36 of test_history.py's two tests that patch `Engine.ask` and
+test_public_incremental.py (36 passed with no plant, switch off and on). Each catching check asserts behaviour and
+reads no plant flag. With no plant the digests are dev 31cd0945c07f02a6 and fuzz 173502b6ef285ad6.
 
 | plant | what it breaks | caught by answers | caught by tests |
 |---|---|---|---|
-| 749 integer-half | `integer` is True at a half | dev digest ff3a586753ddcf94, fuzz f10fca19a50daa53 (base 31cd0945c07f02a6, 173502b6ef285ad6) | 6 fail, among them `test_integer_is_false_at_a_half` |
-| 750 single | one witness is taken as a pair | dev 52d6bc53c55fc204, fuzz 92fcf1f54e0699c5 | 40 fail, among them `test_one_witness_is_not_enough` |
-| 751 skip-own | the symbols' own assumptions are not read | the 20-workload gate on 5e6e46a under the plant: 6 rows differ, ground (query 15: True off, None on), zero (query 844: True, None) and core (21 queries, False off, None on), py and rust alike | 4 fail: `test_falls_through[p1-a1]`, `test_own_assumptions_bound_the_points`, `test_the_symbols_own_assumptions_count`, `test_answers_are_equal_on_and_off[27]` |
-| 752 skip-patched | the P1 guard is skipped | none: dev and fuzz digests unchanged, since no workload replaces an engine method | 10 fail: 9 of the 12 cases of the P1 test, and `test_history.py::test_ddmin_shrinks_to_the_responsible_query` |
+| 749 integer-half | `integer` is True at a half | dev digest ff3a586753ddcf94, fuzz f10fca19a50daa53 (certified 170 and 1068, not 159 and 1060) | 6 fail, among them `test_integer_is_false_at_a_half` |
+| 750 single | one witness is taken as a pair | dev 52d6bc53c55fc204, fuzz 92fcf1f54e0699c5 (certified 461 and 1906) | 45 fail, among them `test_one_witness_is_not_enough` |
+| 751 skip-own | the symbols' own assumptions are not read | not by dev or fuzz (digests unchanged); the 20-workload gate on 5e6e46a under the plant: 6 rows differ, ground (query 15: True off, None on), zero (query 844: True, None) and core (21 queries, False off, None on), py and rust alike | 4 fail: `test_falls_through[p1-a1]`, `test_own_assumptions_bound_the_points`, `test_the_symbols_own_assumptions_count`, `test_answers_are_equal_on_and_off[27]` |
+| 752 skip-patched | the P1 guard is skipped | none: dev and fuzz digests unchanged, since no workload replaces an engine method | 11 fail: 9 of the 12 cases of the P1 test, `test_history.py::test_ddmin_shrinks_to_the_responsible_query`, and the planted-history test of test_public_incremental.py |
+| 754 skip-users | the users'-knowledge guard is skipped | none: dev and fuzz digests unchanged, since no workload registers a template, a lazy module, an adapter or a function | 5 fail: the five cases of `test_a_users_knowledge_falls_through_and_the_engines_answer_is_used` (template, lazy, templates-function, adapter, default-registry) |
 
-- 750: 30 tests failed on f46e40e and 40 on c5239b9. The 10 more are the 9 P1 cases and test_ddmin: the plant's
-  early return now comes before the guard, which c5239b9 moved to the end.
+- 754 is a kept-test catch. No workload reaches it because no workload gives the engine knowledge of its own. Two of
+  its five cases (template, templates-function) assert an answer that differs: the user's unsound template makes the
+  engine answer True where the check would certify None.
+- 752: the eleventh failure is the planted-history test, which had passed under this plant on c5239b9. It is the
+  test with the known id()-reuse failure (section 7), one run, so it is not counted as a catch.
+- The bar's plant rows (749 and 750 by answers on workloads, 751, 752 and 754 by kept tests in their suite rows)
+  are not read: section 10.
+- 750: 30 tests failed on f46e40e, 40 on c5239b9 and 45 on 786410d. The 10 more on c5239b9 are the 9 P1 cases and
+  test_ddmin: the plant's early return comes before the guards at the end. The 5 more on 786410d are the five
+  users'-knowledge cases, for the same reason.
 - 751: dev and fuzz cannot reach it. Fuzz declares no symbol (0 of 3000 queries), and dev has 12 queries whose
   symbol's own assumptions exclude a candidate value, none of which changes the certified set. Three other workloads
   reach it, as the gate under the plant shows.
@@ -210,8 +291,37 @@ Each is `SLICE_WITNESS_PLANT` with the switch on, c5239b9, orion, frozen copy. "
 
 ## 5. Measures
 
-S1 (47b7a0d, sa-port-328's quiet lease on pareto1, pinned CPU 2, 12 rounds, load <= 1.16, one digest per workload
-over all 144 rows), median seconds:
+**S1 on 786410d, the landing measure** (sa-port-336's quiet lease 00bc95e0 on pareto1, 08:39Z to 08:46Z 19 Nov,
+pinned CPU 2, i5-13600T, bench .so 0982a28074215658, 12 rounds, load 1.06 to 2.36 falling in the first two minutes,
+`err.txt` empty, one digest per workload over all rows: dev 31cd0945c07f02a6, fuzz 173502b6ef285ad6). Seconds:
+
+| | off: median (min to max) | cap 32: median (min to max) | on against off |
+|---|---|---|---|
+| dev, Python | 0.5309 (0.5268 to 0.5357) | 0.5168 (0.5124 to 0.5203) | -2.7% |
+| dev, Rust | 0.6446 (0.6373 to 0.6485) | 0.6517 (0.6442 to 0.6561) | +1.1% |
+| fuzz, Python | 8.0622 (7.9857 to 8.1387) | 5.7847 (5.7438 to 5.8457) | -28.2% |
+| fuzz, Rust | 5.8474 (5.7513 to 5.9115) | 4.7252 (4.6821 to 4.8156) | -19.2% |
+
+- Fuzz gains beyond the spread on both backends: the slowest on-run is faster than the fastest off-run by 2.14 s
+  (Python) and 0.94 s (Rust).
+- Dev on Python gains beyond the spread (the ranges do not overlap). Dev on Rust is 7.1 ms slower by the median with
+  overlapping ranges (off reaches 0.6485, on starts at 0.6442; each arm's own range is 11 to 12 ms): not a loss
+  beyond the spread.
+- The check on this run (`med.txt`, py / rust): dev 776 calls, 44.4 / 49.1 ms, median 49 / 56 us a call, certified
+  159; fuzz 2772 calls, 507 / 544 ms, median 178 / 191 us, certified 1060.
+- `_users_knowledge` (`uk.jsonl`, same lease) runs once per certified call and nowhere else:
+
+| | calls | total a pass | median us a call (90%, max) | scan at the end |
+|---|---|---|---|---|
+| dev, Python | 159 | 1.05 ms (0.20% of the pass) | 6.2 (8.5, 9.7) | 34 templates in 32 classes, 17 lazy, 2 specs |
+| dev, Rust | 159 | 1.29 ms (0.20%) | 8.1 (9.0, 13.9) | the same |
+| fuzz, Python | 1060 | 5.13 ms (0.09%) | 5.2 (5.5, 8.6) | 7 templates in 7 classes, 23 lazy, 2 specs |
+| fuzz, Rust | 1060 | 5.95 ms (0.13%) | 5.6 (6.0, 11.0) | 8 templates in 8 classes, 22 lazy, 2 specs |
+
+  So the uncached scan is not what S1 turns on, and no memo or generation counter was added.
+
+Earlier S1, with the no-cap arm (47b7a0d, sa-port-328's quiet lease on pareto1, pinned CPU 2, 12 rounds, load <=
+1.16), median seconds:
 
 | | off | cap 32 | no cap |
 |---|---|---|---|
@@ -222,7 +332,7 @@ over all 144 rows), median seconds:
 
 Rust is `SLICE_CONVERT=rust SLICE_TERM_FRAMES=rust`. There is no S1 for the other 18 workloads.
 
-Counts (identical py and rust, 47b7a0d, 5e6e46a and c5239b9). The check is called at most once a query: dev 776,
+Counts (identical py and rust, 47b7a0d, 5e6e46a, c5239b9 and 786410d). The check is called at most once a query: dev 776,
 fuzz 2772. Certified at caps 4, 8, 16, 32, none: dev 106, 137, 156, 159, 163; fuzz 382, 603, 806, 1060, 1491.
 
 Cost per call (5e6e46a, sa-port-329's quiet lease, 3 rounds, median per call), py / rust:
@@ -298,6 +408,12 @@ on-runs):
 | Python | plain | 20 of 20 | 20 of 20 |
 | Python | keep-alive | 20 of 20 | 20 of 20 |
 
+The same on 786410d (pareto0, `pre/rep/rep-sum.txt`, 20 runs a cell): Rust plain 0 of 20 off (13x `assert 0 == 2`,
+7x `assert 1 == 2`) and 0 of 20 on (12x, 8x); Rust keep-alive 20 of 20 off and on; Python keep-alive 20 of 20 off and
+on; Python plain 20 of 20 off and **19 of 20 on** (1x `assert 1 == 2` at :204). The Python on-cell has the flake's
+shape too (plain fails, keep-alive is clean), and it is the second time Python fails it only with the switch on
+(5e6e46a below: 18 of 20). Reported by id; not edited.
+
 Every failure is at `test_public_incremental.py:204`. Plain fails, keep-alive is clean, and the off rate is the
 same: the flake's shape, so it is the known id()-reuse failure, reported by id and not edited. On f46e40e the same
 table read 0 of 20 and 1 of 20 for Rust plain and 20 of 20 in the other six cells. One earlier row differs:
@@ -305,20 +421,43 @@ sa-port-329's run on 5e6e46a (pareto1, plain only, before the P1 guard) had Pyth
 both failures `assert 1 == 2` at the same line. It had no keep-alive cell, so it classifies nothing alone, and
 the 40 Python plain on-runs on f46e40e and c5239b9 did not repeat it.
 
-## 8. The one test that fails with the switch on
+## 8. Tests that fail with the switch on, and the 7 that fail after a leaked template
 
-`tests/test_sympy_api.py::test_in_scope_query_returns_none_only_when_undecided`, on both backends:
+**The stats test passes now.** `tests/test_sympy_api.py::test_in_scope_query_returns_none_only_when_undecided` failed
+with the switch on up to c5239b9 (`assert 0 == 1` on `eng.stats['queries']`: a certified query was counted nowhere).
+Since da6eb2ee a certified query is counted in `stats['queries']` and by itself in the new `stats['witness_certified']`
+(`Engine._record_certified`; entry.rs `ent_record_certified`, no tick). The 13th key is on the default path too,
+where it is 0.
 
-    assert out_of_scope(Q.positive(y), Q.real(y)) is None
-    assert ask(Q.positive(y), Q.real(y), eng) is None
-    assert eng.stats['queries'] == 1
+**Seven ids of tests/test_witness.py depend on what ran before them in the process** (found by sa-port-337 in
+786410d's suite by id; not fixed, because this step lands only): `test_registered_knowledge_falls_through`, the five
+cases of `test_a_users_knowledge_falls_through_and_the_engines_answer_is_used`, and
+`test_on_skips_the_session_and_counts_the_query`. Each first asserts that a query is certified. Two older tests, both
+on rust-slice and on main before this branch, register a template of their own on the default `registry` and leave
+it there:
 
-It fails at the third line, `assert 0 == 1` (`:210`); the answer on the second line is None as before. That is state,
-not an answer: `stats['queries']` is incremented inside the engine's own methods, and a certified query never calls
-them, so the engine's counter counts it nowhere. The test uses the counter to show the None came from the engine
-and not from the scope filter. README.md and docs/ do not state the counter as a contract (docs/testing.md only says
-to check the query log's totals against it, and a certified query is in neither). A landing with the switch on by default would
-have to decide whether a certified query is counted, and where; with the switch off the test passes.
+- `tests/test_templates.py::test_template_key_error_is_not_read_as_inconsistent` (`:672`, with the comment "its
+  template stays registered, harmlessly"),
+- `tests/test_p4_review.py::test_reregistered_template_key_does_not_reuse_compiled_pattern` (`:26`, `:33`).
+
+After either, `witness._users_knowledge` is True for every engine in that process (a template whose module is not
+the package's: decision (f), d52129da), the check falls through for every query, and the seven assertions fail.
+That is the guard doing what it was written to do; what is wrong is that the seven tests assume a clean registry.
+
+- It does not depend on the switch. On orion, python, one process, either leaking test followed by test_witness.py:
+  7 failed, 96 passed with `SLICE_WITNESS=0` and with `=1`; test_witness.py first: 103 passed with both
+  (`~/sa-rust-ids-work/sa-port-337/order/min-*.log`, `rev-*.log`).
+- In the suite by id it showed as "on against off" only because xdist put the files in different workers: in both
+  on-arms a leaking test ran in the worker that later ran the seven (python: the test_p4_review one, all 7 in that
+  worker; rust: the test_p4_review one before 1 of them and the test_templates one before the other 6); in both
+  off-arms the leaking tests ran in workers that never ran test_witness.py. The same 3-worker suite with the switch
+  off, or the bar's 6-worker suite rows, can fail the same 7 ids on another distribution.
+- Consequence for the switch itself: in a process where a user's template is registered the check certifies
+  nothing, so after either test the rest of that worker's suite runs the unchanged path even with the switch on.
+
+Possible fixes, for a working step (none made here): the seven tests restore the default registry before their
+first assertion (the `users_knowledge` fixture already restores it afterwards), or the two older tests remove what
+they register. The first touches only this branch's test file.
 
 Other state that differs with the switch on (module docstring): the engine's memos and caches are not filled by a
 certified query, and `last_budget_limited` stays False for a certified query that is over the discovery budget.
@@ -376,22 +515,44 @@ port decides.
 
 ## 10. Owed, and not done
 
-- S1 and the cost split on c5239b9 (the P1 guard).
-- The iv history check on c5239b9 (run on 5e6e46a only).
-- Whether a certified query is counted in `Engine.stats` (section 8), before the switch could be the default.
-- Detection of user-registered templates (decision (f) covers `extensions` only).
-- The quiet-handler counter in the gate runs was not shown to fire (section 2).
-- No bar was run: nothing here was landed.
+- **Not landed.** sa-port-337 was a land-only step and stopped with Status: question on the two items below.
+- **The 7 order-dependent ids of tests/test_witness.py** (section 8) need a test change, which a land-only step does
+  not make.
+- **The bar on 786410d is not read.** sa-port-336's bar (pareto0, 08:52Z to 09:35Z 19 Nov) wrote `END 0` but is
+  void: job336bar.sh copied the .so into the bar's clone before the clone had `rust-spike/slice` checked out (`cp:
+  cannot create regular file`, bar-launch.log), no phase checks for the .so, and every phase exited 0. Its direct.txt
+  reads `ModuleNotFoundError: No module named 'sa_solver'`, its suite has no rows, and every "py vs rust" cell is
+  empty. Only its Python cells are real: dev and fuzz py against py MATCH with the base digests. sa-port-337
+  relaunched it as tools337/job337bar.sh (the branch is checked out before the copy, and the job stops with `END
+  so-missing` unless the copied .so hashes to cad764d46471b1c6) at 09:42Z 19 Nov under shared lease 34a14557; end
+  marker orion `~/sa-rust-ids-work/sa-port-337/gobar-end.txt`. Its witness:on rows, plant rows 749-752 and 754,
+  quiet-handler rows and wall time per row (`python3 tools/wall336.py bar/bar`) are for the next step to read. Its
+  suite rows can show the 7 ids above, by distribution.
+- The planted-history test failed 1 of 20 plain runs on Python with the switch on, and 0 of 20 with it off (section
+  7). It has the id()-reuse shape; whether the switch raises its rate on Python is not measured beyond these 20.
+- OWED, to be named in the report: `Engine.stats`' 13th key on the default path; `ent_record_certified` has no tick;
+  bar.sh's witness rows have no plant-fired counter (their catches are answers and kept tests) ([147]).
+- The 20-workload gate was not rerun on 786410d (dev and fuzz were); the cap table and the reasons table are from
+  the earlier SHAs.
+- Main taking the check, and the 13th stats key with it, is Tilo's decision.
 
 ## 11. Where the numbers are
 
-- Handoffs: `~/sa-rust-ids-work/sa-port-328/HANDOFF-sa-port-328.md`, `sa-port-329/HANDOFF-sa-port-329.md`,
+- 786410d (sa-port-336's jobs, read by sa-port-337), orion `~/sa-rust-ids-work/sa-port-336/`: suite by id
+  `job-786410d/suite-cmp.txt` and `suite-{on,off,base}-{python,rust}/` (rows from pareto0
+  `~/sp19/sa-rust-ids-work/sa-port-336/`); digests `job-786410d/pre/dig/dig.jsonl`; tests and plants
+  `job-786410d/pre/tw/`; repeat check `job-786410d/pre/rep/rep-sum.txt`; iv `job-786410d/iv-cmp.txt`; S1
+  `timing-r1/med.txt`, `uk.jsonl`, `env.txt`, `load.txt`; the void bar `bar/` and `bar-launch.log`.
+- sa-port-337, orion `~/sa-rust-ids-work/sa-port-337/`: the order reproductions `order/`; the bar rerun `bar/`,
+  `gobar-end.txt`, `bar-launch.log` (pareto0 `~/sp19/sa-rust-ids-work/sa-port-337/`).
+- Handoffs: HANDOFF-sa-port-333.md and HANDOFF-sa-port-336.md at the branch root (file:line maps);
+  `~/sa-rust-ids-work/sa-port-328/HANDOFF-sa-port-328.md`, `sa-port-329/HANDOFF-sa-port-329.md`,
   `sa-port-330/HANDOFF-sa-port-330.md`.
 - Gate 5e6e46a: pareto1 `~/sa-rust-ids-work/sa-port-329/job/gate/` (`answers.txt`, `rc.txt`); under plant 751
   `job/gate-751/answers.txt`. Gate c5239b9: orion `~/sa-rust-ids-work/sa-port-330/c5239b9/gate/`; digests `dig/`,
   tests and plants `tw/`, repeat check `rep/rep-sum.txt`.
-- Suite by id: orion `~/sa-rust-ids-work/sa-port-331/job-c5239b9/` (`suite-cmp.txt`; rows from pareto0
-  `~/sp19/sa-rust-ids-work/sa-port-331/job-c5239b9/`), `job-f46e40e/suite-cmp.txt`; 5e6e46a's: `sa-port-329/job/suite-cmp.txt`.
-- iv: `sa-port-329/job/iv-cmp.txt`. S1: `sa-port-328/timing-r1`. Cost split and reasons: `sa-port-329/cnt/ana.txt`.
-  Cap: `sa-port-330/cap/cap.txt`.
-- Tools: `rust-spike/slice/results/tools328/` (`*328*`, `*329*`, `*330*`, `*331*`).
+- Earlier suites by id: orion `~/sa-rust-ids-work/sa-port-331/job-c5239b9/` (`suite-cmp.txt`),
+  `job-f46e40e/suite-cmp.txt`; 5e6e46a's: `sa-port-329/job/suite-cmp.txt`.
+- Earlier iv: `sa-port-329/job/iv-cmp.txt`. Earlier S1: `sa-port-328/timing-r1`. Cost split and reasons:
+  `sa-port-329/cnt/ana.txt`. Cap: `sa-port-330/cap/cap.txt`.
+- Tools: `rust-spike/slice/results/tools328/` (`*328*`, `*329*`, `*330*`, `*331*`), `tools336/`, `tools337/`.
