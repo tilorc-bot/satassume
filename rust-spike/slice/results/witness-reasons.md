@@ -392,11 +392,12 @@ it newly. Second, a bound on the search's work in place of the point count. Afte
 that decide all 32 points and find no pair: 12 on budget (0.344 s) and 502 on wiring (0.640 s of 0.795 s), 81% and
 more of the check's time on both, and their cost is points times formula size (1.9 ms a point on budget, 38 us on
 wiring). The compiled size is known after a compile that costs under 5% of the check, so the cap can be on points
-times size: small formulas keep 32 points (fuzz's certified calls need them: median 7, 90% 26), and a 200-term sum
-gets a few. What that costs in certified answers per workload has to be read from the reasons counter before it is
+times size: small formulas keep 32 points (on fuzz med-s1.txt's row of points tried reads median 7, 90% 26, max 32), and a
+200-term sum gets a few. What that costs in certified answers per workload has to be read from the reasons counter before it is
 chosen; it is not measured here.
 
 ## Owed, named here
 
 - A fired counter for the Rust walker's plants (above).
-- (5) the gate's two jobs read (started by sa-port-342), (6) S1 and (7) the bar.
+- (7) the bar: started by sa-port-344 on bfceccc9 (tools344/gobar344.sh, job344bar.sh), not read; then the landing.
+- tools343/pc343.py and cx343.sh: py rows void for certified calls (section (6)); use tools344/pc344.py.
