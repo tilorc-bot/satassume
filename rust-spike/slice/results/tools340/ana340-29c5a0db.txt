@@ -1,0 +1,60 @@
+== dev: 1985 queries, digest 31cd0945c07f02a6 (329's 31cd0945c07f02a6; None in the same places 1985/1985), witness.py b0dc44997214e71f; calls 776; certified uncapped 163 (329: 163)
+ -- 325's class (i) Nones with both witnesses: 368
+   (2a) pi-blocked (329's reason 'a constant pi'): 82
+           44 ( 53.7%)  pi outside a function, and also undecided: function
+           19 ( 23.2%)  RECOVERABLE AT MOST: pi only under Add, Mul and non-negative integer literal powers; nothing else undecided
+           15 ( 18.3%)  pi only outside functions, but under another power: base:other
+            2 (  2.4%)  pi outside a function, and also undecided: constant, function
+            1 (  1.2%)  pi outside a function, and also undecided: function, function
+            1 (  1.2%)  pi outside a function, and also undecided: constant
+        queries with a pi anywhere (any reason): 92; by 329's reason: {'atom: constant': 82, 'atom: function': 10}
+   (2b) no-rational-pair rows (search ended with no pair, uncapped): 37; with a pi leaf: 0; with a pi inside a function: 0
+   (3) certified within 32 points, by pool order (uncapped in brackets):
+        hrct:   157 [161]  gained    0 (of the 4 found after point 32: 0), lost    0; net +0 = +0.0% of the class
+        rhct:   154 [161]  gained    0 (of the 4 found after point 32: 0), lost    3; net -3 = -0.8% of the class
+        rcht:   154 [161]  gained    0 (of the 4 found after point 32: 0), lost    3; net -3 = -0.8% of the class
+        crht:   153 [161]  gained    0 (of the 4 found after point 32: 0), lost    4; net -4 = -1.1% of the class
+        chrt:   153 [161]  gained    0 (of the 4 found after point 32: 0), lost    4; net -4 = -1.1% of the class
+        the 4 found after point 32, by number of symbols: {2: 4}
+ -- all None answers: 892
+   (2a) pi-blocked (329's reason 'a constant pi'): 101
+           56 ( 55.4%)  pi outside a function, and also undecided: function
+           19 ( 18.8%)  RECOVERABLE AT MOST: pi only under Add, Mul and non-negative integer literal powers; nothing else undecided
+           18 ( 17.8%)  pi only outside functions, but under another power: base:other
+            3 (  3.0%)  pi outside a function, and also undecided: constant
+            3 (  3.0%)  pi outside a function, and also undecided: constant, function
+            2 (  2.0%)  pi outside a function, and also undecided: function, function
+        queries with a pi anywhere (any reason): 115; by 329's reason: {'atom: constant': 101, 'atom: function': 14}
+   (2b) no-rational-pair rows (search ended with no pair, uncapped): 39; with a pi leaf: 0; with a pi inside a function: 0
+   (3) certified within 32 points, by pool order (uncapped in brackets):
+        hrct:   159 [163]  gained    0 (of the 4 found after point 32: 0), lost    0; net +0 = +0.0% of the class
+        rhct:   156 [163]  gained    0 (of the 4 found after point 32: 0), lost    3; net -3 = -0.3% of the class
+        rcht:   156 [163]  gained    0 (of the 4 found after point 32: 0), lost    3; net -3 = -0.3% of the class
+        crht:   154 [163]  gained    0 (of the 4 found after point 32: 0), lost    5; net -5 = -0.6% of the class
+        chrt:   154 [163]  gained    0 (of the 4 found after point 32: 0), lost    5; net -5 = -0.6% of the class
+        the 4 found after point 32, by number of symbols: {2: 4}
+== fuzz: 3000 queries, digest 173502b6ef285ad6 (329's 173502b6ef285ad6; None in the same places 3000/3000), witness.py b0dc44997214e71f; calls 2772; certified uncapped 1491 (329: 1491)
+ -- 325's class (i) Nones with both witnesses: 2157
+   (2a) pi-blocked (329's reason 'a constant pi'): 372
+          372 (100.0%)  RECOVERABLE AT MOST: pi only under Add, Mul and non-negative integer literal powers; nothing else undecided
+        queries with a pi anywhere (any reason): 372; by 329's reason: {'atom: constant': 372}
+   (2b) no-rational-pair rows (search ended with no pair, uncapped): 260; with a pi leaf: 0; with a pi inside a function: 0
+   (3) certified within 32 points, by pool order (uncapped in brackets):
+        hrct:   986 [1383]  gained    0 (of the 397 found after point 32: 0), lost    0; net +0 = +0.0% of the class
+        rhct:  1001 [1383]  gained  150 (of the 397 found after point 32: 150), lost  135; net +15 = +0.7% of the class
+        rcht:   999 [1383]  gained  150 (of the 397 found after point 32: 150), lost  137; net +13 = +0.6% of the class
+        crht:   892 [1383]  gained   64 (of the 397 found after point 32: 64), lost  158; net -94 = -4.4% of the class
+        chrt:   887 [1383]  gained   63 (of the 397 found after point 32: 63), lost  162; net -99 = -4.6% of the class
+        the 397 found after point 32, by number of symbols: {2: 397}
+ -- all None answers: 2387
+   (2a) pi-blocked (329's reason 'a constant pi'): 404
+          404 (100.0%)  RECOVERABLE AT MOST: pi only under Add, Mul and non-negative integer literal powers; nothing else undecided
+        queries with a pi anywhere (any reason): 404; by 329's reason: {'atom: constant': 404}
+   (2b) no-rational-pair rows (search ended with no pair, uncapped): 327; with a pi leaf: 0; with a pi inside a function: 0
+   (3) certified within 32 points, by pool order (uncapped in brackets):
+        hrct:  1060 [1491]  gained    0 (of the 431 found after point 32: 0), lost    0; net +0 = +0.0% of the class
+        rhct:  1070 [1491]  gained  157 (of the 431 found after point 32: 157), lost  147; net +10 = +0.4% of the class
+        rcht:  1068 [1491]  gained  157 (of the 431 found after point 32: 157), lost  149; net +8 = +0.3% of the class
+        crht:   959 [1491]  gained   69 (of the 431 found after point 32: 69), lost  170; net -101 = -4.2% of the class
+        chrt:   953 [1491]  gained   68 (of the 431 found after point 32: 68), lost  175; net -107 = -4.5% of the class
+        the 431 found after point 32, by number of symbols: {2: 431}
