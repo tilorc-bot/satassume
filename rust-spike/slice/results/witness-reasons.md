@@ -1,14 +1,20 @@
-# Witness reasons: raising how many Nones the check certifies (issue 323) — IN PROGRESS, NOTHING LANDED
+# Witness reasons: raising how many Nones the check certifies (issue 323) — exact pi: gate, S1 and bar read; lands with section (7)'s commit
 
-sa-port-340, branch port/witness-reasons from rust-slice 29c5a0db. Items (0), (1), (2a) and the (3) simulation are
-done; exact pi (2), (2b), the plants (4), the gate (5), S1 (6) and the bar (7) are not. HANDOFF-sa-port-340.md has
-the order and the map.
+sa-port-340 to 345, branch port/witness-reasons from rust-slice 29c5a0db. Done: (0), (1), (2a), the (3) simulation,
+exact pi (2), the plants (4) 755 to 757, the raises (ii), (2b) reverted (c4d6e92c), the gate (5), S1 (6) and the bar
+(7). The step lands on rust-slice with the commit that added section (7), by `bar.sh land bfceccc9` (sa-port-345, 19
+Nov); if that commit is not on origin/rust-slice, the step has not landed. No PR.
 
-Tested SHAs and .so: base 29c5a0db (source-equal to 81e6561e in satassume/, tests/ and rust-spike/slice outside
-results/), pareto .so cad764d46471b1c6 (338's venv build, and the same hash from the bar's own build of 1f6ddb5b),
-orion .so a956b03496066671. Head 1f6ddb5b changes no Rust. SLICE_WITNESS is off by default and the unchanged path is
-the default. No SymPy construction or evaluation at query time. "Exact" rests on 325's 14-predicate table (issue
-247: SymPy evaluation is not ground truth); (2)'s arguments are not written yet. S1 has not been run.
+Tested SHAs and .so: base 29c5a0db; the gate and S1 on 01e8ca74 (satassume source c4d6e92c); the bar on bfceccc9
+(01e8ca74 plus harness/state.py e2088c05, tools and handoffs). Pareto venv .so cad764d46471b1c6 (338's build of
+29c5a0db's crate; no Rust change since), bench .so 0982a28074215658, orion .so a956b03496066671. SLICE_WITNESS is off
+by default and the unchanged path is the default. No SymPy construction or evaluation at query time. "Exact" rests on
+325's 14-predicate table plus (2)'s arguments: (T) pi is transcendental and (E) the fixed 50-decimal enclosure (issue
+247: SymPy evaluation is not ground truth). Certified at cap 32, 29c5a0db -> 01e8ca74: dev 159 -> 173, fuzz 1060 ->
+1284 (uncapped, 342's rows: 163 -> 177, 1491 -> 1819). S1 (pareto1, quiet leases only, section (6)), head against
+base with the switch on: dev +0.7% py and +0.6% rust (within the spread), fuzz -7.0% and -2.6% (faster), budget and
+wiring within. The bar's rows and wall times: section (7). Known base rows by id: section (5). The Rust port of the
+per-call compile and pools follows this step and is not started.
 
 ## (0) Ride-alongs, read-only, on 29c5a0db
 
@@ -396,8 +402,84 @@ times size: small formulas keep 32 points (on fuzz med-s1.txt's row of points tr
 200-term sum gets a few. What that costs in certified answers per workload has to be read from the reasons counter before it is
 chosen; it is not measured here.
 
+## sa-port-345: (7) the bar on bfceccc9, read
+
+pareto0, shared lease 096a1000 (1 h 21 m, exit 0), 17:16Z to 18:37Z 19 Nov, started by sa-port-344
+(tools344/gobar344.sh, job344bar.sh): `p1/bar.sh` of bfceccc9 on the frozen branch origin/bar/witness-reasons-bfceccc9,
+N=6, phases tests, suite, live, plants, extra, suiteplants, fmrows, sum. Rows: pareto0
+~/sp19/sa-rust-ids-work/sa-port-344/bar; the small files on orion ~/sa-rust-ids-work/sa-port-344/bar; the two reads
+below in orion ~/sa-rust-ids-work/sa-port-345 (suite-by-id.txt, wall.txt). BASE is the last landing's bar suite
+(sa-port-337's, on 786410d). Read as section 12 of witness-check.md read 786410d's.
+
+The bar is valid: gobar-end.txt `END 0 END 0 2026-11-19T18:37:03Z cad764d4 bfceccc9`; source.txt bfceccc9; build.txt
+and so-loaded.txt have .so cad764d46471b1c6 in all seven phases; the eight phases exit 0; 72 test files exit 0;
+direct.txt ends `exit 0`; "suite: no rows" is absent. The launcher had no SLICE_ variable. env-summary.txt (the
+/proc watcher on the suite rows' processes): the plain suite none, `witness:on` SLICE_WITNESS=1, the three plant rows
+SLICE_WITNESS=1 and their SLICE_WITNESS_PLANT.
+
+**Plain suite (Rust, switch off: the default path).** 6309 ids: 127 failed, 6141 passed, 23 skipped, 18 xfailed.
+Against BASE (6261 ids): new 48, all tests/test_witness.py and all passed (this step's 47 and 81e6561e's kept test,
+which is on rust-slice and not in BASE's SHA); gone 0; changed outcome 0. The 127 are the base's 127 by id (the list
+in section (5)). `test_history.py::test_module_state_inventory_is_classified`, which failed on the gate's SHA, passes
+(e2088c05 is in bfceccc9). Handler rows 39 in 2 tests, the same multiset as BASE; quiet catches recorded in the rows
+49, the same in each of the five suite rows; TermFault 0.
+
+**Workloads, switch off.** dev and fuzz MATCH py against py, py against rust and both end-state rows (answers
+31cd0945c07f02a6 and 173502b6ef285ad6); the 15 extra workloads: 30 rows MATCH. Kept and refused shares equal BASE's
+on all 17. Handler files of the workload runs (157 files, the step rows included): 0 rows each. fm rows: 20
+workloads, 0 differ; the two fm plants are caught (4 and 3 differ, exit 1).
+
+**`witness:on`** (Rust with the switch on). Against Python with the switch on: MATCH on all 17 workloads. Against
+Python with the switch off: answer_diff 0 and msg_diff 0 on all 17; sessions differ where the check certified (fuzz
+1273, wiring 231, dev 178, core 92, zero 52, transfer:7:60 2, transfer2:3:40 1, cert 1, the other nine 0). That the
+switch was on in these rows: queries that made a solver, off -> on, are dev 867 -> 697, fuzz 2937 -> 1756, wiring
+5628 -> 5397, core 1634 -> 1542, zero 654 -> 611, the same number on the Python reference and on the Rust row. On the
+nine workloads where nothing is certified the row shows nothing but its command line. Suite row: 127 failed, 0 ids
+change against the plain suite; test_witness.py 150 passed.
+
+**The step's plants**, each with the switch on. Workload rows against Python with the switch on; suite rows against
+this bar's plain suite, every changed id `passed -> failed`:
+
+| plant | fired on workloads | workload rows | fired in the suite | suite row |
+|---|---|---|---|---|
+| 755 pi-sign | dev 379, fuzz 6986, cert 2632 | DIFFER on fuzz (answers 24, messages 9, answers f92b35588dda34ba, the gate's digest) and on dev (answers 0, messages 0; 3 sessions and 1640 stats rows: 699 queries make a solver against 697); MATCH on the other 15 | 17212 | 143 failed; 16 ids: test_witness.py 11, test_lra_constants.py 3, test_lra_constant_coefficients.py 1, test_relevance.py 1 |
+| 756 pi-rational | 0 on all 17: no workload reaches it | MATCH on all 17 | 216 | 137 failed; 10 ids, all test_witness.py |
+| 757 pi-enclosure | dev 974, fuzz 13407, cert 1641 | MATCH on all 17 | 52899 | 137 failed; 10 ids: test_witness.py 9, test_lra_constants.py 1 |
+
+The counts in test_witness.py (11, 10, 9) are section (5)'s on 01e8ca74. pi-sign's workload catch by answers is fuzz
+only, as section (5) says; the bar's dev row differs in sessions and stats (section (5) reads certified 173 -> 171),
+not in answers. pi-rational and pi-enclosure change no workload answer and are caught by kept tests only; pi-rational
+fires on no workload at all, so its site is reached by the suite only (a footnote under P2). test_witness.py's tests
+turn the switch on themselves and do not read the plant flag.
+
+**The planted-history test** (`test_public_incremental.py::test_public_comparison_catches_a_planted_history_dependence`,
+the known id()-reuse failure, not edited): failed in BASE and in all five suite rows, at :204 (`assert 0 == 2` in the
+plain, `witness:on` and pi-sign rows, `assert 1 == 2` in the pi-rational and pi-enclosure rows), so no outcome
+changes in this bar. The repeat check by a28c548's method for this source is section (5)'s (01e8ca74, which differs
+from bfceccc9 in harness/state.py only): Rust plain 0 of 20, keep-alive 20 of 20; it was not run again.
+
+**Wall times** (tools336/wall336.py; one machine, shared lease, rows of a phase side by side). Total 80 m 59 s:
+tests 2 m 28 s, suite 1 m 54 s, live 14 m 21 s, plants 9 m 04 s, extra 44 m 40 s, suite plants 7 m 34 s, fmrows
+0 m 57 s. Suite rows: plain 1 m 54 s, `witness:on` 1 m 50 s, pi-enclosure 1 m 54 s, pi-rational 1 m 56 s, pi-sign
+1 m 54 s. Workload rows, seconds:
+
+| row | sum of 17 | fuzz | budget | rootof | wiring | value | dev | f6 | zero | core | the other 8 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| witness:on | 1699 | 470 | 356 | 302 | 271 | 74 | 61 | 53 | 40 | 27 | 45 |
+| witness:pi-sign | 1699 | 480 | 357 | 307 | 271 | 74 | 46 | 53 | 40 | 27 | 44 |
+| witness:pi-rational | 1704 | 480 | 359 | 302 | 272 | 74 | 52 | 53 | 40 | 27 | 45 |
+| witness:pi-enclosure | 1694 | 472 | 356 | 305 | 271 | 74 | 51 | 53 | 40 | 27 | 45 |
+
+The other 8: transfer2:3:40 12 (11 under pi-sign), transfer:7:60 11, opaque 9, loop 6, scope 3, cert 2, cls 2, twin
+0. These are not the speed measure: S1 (section (6)) is.
+
+**Landing.** Nothing in the bar is new against BASE or against sections (5) and (6), and no source or test changed
+after bfceccc9 (`git diff --name-only bfceccc9 HEAD` outside results/ and the HANDOFF files is empty). The step lands
+with this commit by `bar.sh land bfceccc9`, whose guard compares satassume/ and rust-spike/slice/ outside results/
+between bfceccc9 and the landing commit.
+
 ## Owed, named here
 
 - A fired counter for the Rust walker's plants (above).
-- (7) the bar: started by sa-port-344 on bfceccc9 (tools344/gobar344.sh, job344bar.sh), not read; then the landing.
+- 756 pi-rational fires on no workload of the bar (section (7)): caught by test_witness.py only.
 - tools343/pc343.py and cx343.sh: py rows void for certified calls (section (6)); use tools344/pc344.py.

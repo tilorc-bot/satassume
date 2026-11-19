@@ -1,6 +1,7 @@
 # The witness check: an exact pre-session check for None answers (issue 323, prototype)
 
-NOT LANDED when this was written (sa-port-339, 19 Nov: Status: question, section 12), no PR. Branch
+LANDED on rust-slice as 29c5a0db (11:26Z 19 Nov, sa-port-339: 81e6561e's source, after the planner's ruling on section
+12's question; this file was written before that), no PR. Branch
 `port/witness-check` (sa-port-328 to 339, 18-19 Nov), on rust-slice 32ba9a3. Tested SHAs: the bar, S1, digests and iv
 on 786410d (also origin `bar/witness-check-786410d`); the suite by id, the order runs, the plants on test_witness.py
 and the repeat check on **81e6561e, the SHA to land** (786410d plus two test-only commits; guarded source identical,
