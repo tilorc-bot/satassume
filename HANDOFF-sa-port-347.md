@@ -1,7 +1,7 @@
 # HANDOFF sa-port-347: rebased, S1 read (the landing rule FAILS on dev and fuzz), the gate started and NOT READ, the bar not started; NOTHING IS LANDED
 
-Stopped at the context budget, on the architect's word, with a question open to the planner (report 25f6298: A land
-as is, B take the budget half of item (1) out, C a cheaper test as a new step). Branch port/witness-bounds (pushed),
+Stopped at the context budget, on the architect's word. The question of report 25f6298 (A land as is, B take the
+budget half of item (1) out, C a cheaper test as a new step) is answered: the planner ruled B. Branch port/witness-bounds (pushed),
 worktree ~/sa-rust-ids-work/sa-port-346/wt in clone ~/dev/sa-port-5, rebased onto rust-slice 2030cdc6. Tested source
 180e501 (43e3ee8 before the rebase, the same diff); the commits after it are results and tools only.
 
@@ -39,7 +39,11 @@ My waiter shell on it is stopped. Nothing else of mine runs; pareto1's lease is 
      of 01e8ca74 every row's stats and last_budget_limited were equal on against off BEFORE this step; so bs.txt
      cannot tell the head from the base on this workload. The kept test (tests/test_witness.py:636) is what does.
    Write it as section (4) of results/witness-bounds.md.
-2. Apply the planner's answer to report 25f6298 (the architect appends it to the NEXT brief):
+2. THE PLANNER RULED B (20:07Z 19 Nov, verbatim at the end of ~/dev/architect/briefs/NEXT-port-witness-bounds.txt,
+   conditions 1-4): the budget half of item (1) goes, WORK stays 2500, dev's +0.9% / +1.2% is an accepted, named
+   exception. B is not the cf arm's exact source (cf skips both halves), so the answer gate, iv and the suite are
+   rerun on the frozen B SHA; no new S1 (condition 2 reads the existing off rows, all within the spread). Tests of
+   the removed hunk and plant go with it, listed by id. The three answers as I had put them:
    - (A) land as is: comment at witness.py:104-107 saying 2500 was chosen by S1 (sum of dev, fuzz, budget, wiring
      3.6% py / 3.7% rust lower than 8400, 12 of 12 rounds, lease 9e0c7e81) at the price of wiring's 16
      certifications; that is a source change, so the tested SHA moves: rerun the suite part of the gate or rely on
