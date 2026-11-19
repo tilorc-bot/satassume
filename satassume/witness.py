@@ -111,7 +111,8 @@ WORK = [int(os.environ.get("SLICE_WITNESS_WORK", "2500"))]
 #: engine is passed over), 754 ``skip-users`` (a user's templates, adapters and default-registry functions are
 #: passed over), 755 ``pi-sign`` (:func:`_sign` calls a positive value of Q[pi] negative), 756 ``pi-rational``
 #: (:data:`PI_TABLE` says a non-rational value of Q[pi] is rational), 757 ``pi-enclosure`` (:func:`_sign` reads an
-#: interval that does not hold pi)
+#: interval that does not hold pi), 758 ``check-first`` (points are tried before the engine is asked whether the
+#: query ends without a session), 759 ``skip-work`` (:data:`WORK` is passed over)
 #: how often a planted site read its own plant as set (the bar's fired column for a witness row, counter 740); it
 #: stays 0 unless the plant came from SLICE_WITNESS_PLANT
 FIRED = [0]
@@ -560,7 +561,7 @@ class _Query:
         none of them and :func:`witnesses` falls through."""
         w = self.work = self.work + n
         bound = WORK[0]
-        return bound != 0 and w > bound
+        return bound != 0 and w > bound and PLANT[0] != "skip-work"
 
 
 def _term(e, q, used):
@@ -845,7 +846,7 @@ def witnesses(proposition, assumptions, eng=None):
         # over the discovery budget), with its own flag and counters
         if PLANT[0] != "skip-patched" and _patched(eng):
             return None
-        if eng._ends_without_session(proposition, assumptions):
+        if PLANT[0] != "check-first" and eng._ends_without_session(proposition, assumptions):
             return None
     pools = _pools(q, owns)
     if pools is None:
