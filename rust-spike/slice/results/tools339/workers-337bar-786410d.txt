@@ -1,0 +1,78 @@
+ids21 21
+== suite
+  rows.3671929.jsonl n=1149 leak=[] witness ids=0 at None..None not passed=0 [template] at None; of the 21: here 0, after [template] 0, not passed 0
+  rows.3671932.jsonl n=516 leak=[] witness ids=91 at 325..415 not passed=0 [template] at 354; of the 21: here 0, after [template] 0, not passed 0
+  rows.3671935.jsonl n=1160 leak=[('test_templates.py', 1024), ('test_p4_review.py', 568)] witness ids=0 at None..None not passed=0 [template] at None; of the 21: here 0, after [template] 0, not passed 0
+  rows.3671938.jsonl n=1213 leak=[] witness ids=0 at None..None not passed=0 [template] at None; of the 21: here 18, after [template] 0, not passed 0
+  rows.3671941.jsonl n=1723 leak=[] witness ids=11 at 1697..1707 not passed=0 [template] at None; of the 21: here 3, after [template] 0, not passed 0
+  rows.3671944.jsonl n=500 leak=[] witness ids=0 at None..None not passed=0 [template] at None; of the 21: here 0, after [template] 0, not passed 0
+== suite-witness:integer-half
+  rows.1205865.jsonl n=1241 leak=[] witness ids=0 at None..None not passed=0 [template] at None; of the 21: here 0, after [template] 0, not passed 0
+  rows.1205868.jsonl n=400 leak=[] witness ids=0 at None..None not passed=0 [template] at None; of the 21: here 0, after [template] 0, not passed 0
+  rows.1205871.jsonl n=1024 leak=[('test_templates.py', 951), ('test_p4_review.py', 568)] witness ids=0 at None..None not passed=0 [template] at None; of the 21: here 0, after [template] 0, not passed 0
+  rows.1205874.jsonl n=1434 leak=[] witness ids=13 at 1363..1375 not passed=1 [template] at None; of the 21: here 18, after [template] 0, not passed 0
+      witness not passed: test_table_at_a_rational[v4]
+  rows.1205877.jsonl n=1505 leak=[] witness ids=0 at None..None not passed=0 [template] at None; of the 21: here 3, after [template] 0, not passed 0
+  rows.1205880.jsonl n=657 leak=[] witness ids=89 at 481..569 not passed=5 [template] at 508; of the 21: here 0, after [template] 0, not passed 0
+      witness not passed: test_derived_predicates_follow_the_definitions
+      witness not passed: test_integer_is_false_at_a_half
+      witness not passed: test_answers_are_equal_on_and_off[2]
+      witness not passed: test_answers_are_equal_on_and_off[11]
+      witness not passed: test_answers_are_equal_on_and_off[25]
+== suite-witness:on
+  rows.1247129.jsonl n=1106 leak=[] witness ids=0 at None..None not passed=0 [template] at None; of the 21: here 0, after [template] 0, not passed 0
+  rows.1247132.jsonl n=439 leak=[] witness ids=0 at None..None not passed=0 [template] at None; of the 21: here 0, after [template] 0, not passed 0
+  rows.1247135.jsonl n=1045 leak=[('test_p4_review.py', 568)] witness ids=102 at 837..938 not passed=7 [template] at 877; of the 21: here 0, after [template] 0, not passed 0
+      witness not passed: test_registered_knowledge_falls_through
+      witness not passed: test_a_users_knowledge_falls_through_and_the_engines_answer_is_used[template]
+      witness not passed: test_a_users_knowledge_falls_through_and_the_engines_answer_is_used[lazy]
+      witness not passed: test_a_users_knowledge_falls_through_and_the_engines_answer_is_used[templates-function]
+      witness not passed: test_a_users_knowledge_falls_through_and_the_engines_answer_is_used[adapter]
+      witness not passed: test_a_users_knowledge_falls_through_and_the_engines_answer_is_used[default-registry]
+      witness not passed: test_on_skips_the_session_and_counts_the_query
+  rows.1247138.jsonl n=1211 leak=[] witness ids=0 at None..None not passed=0 [template] at None; of the 21: here 18, after [template] 0, not passed 0
+  rows.1247141.jsonl n=2006 leak=[('test_templates.py', 1872)] witness ids=0 at None..None not passed=0 [template] at None; of the 21: here 3, after [template] 0, not passed 0
+  rows.1247144.jsonl n=454 leak=[] witness ids=0 at None..None not passed=0 [template] at None; of the 21: here 0, after [template] 0, not passed 0
+== suite-witness:single
+  rows.1288467.jsonl n=1652 leak=[('test_templates.py', 1219)] witness ids=90 at 1425..1514 not passed=44 [template] at 1453; of the 21: here 0, after [template] 0, not passed 0
+  rows.1288470.jsonl n=365 leak=[] witness ids=0 at None..None not passed=0 [template] at None; of the 21: here 0, after [template] 0, not passed 0
+  rows.1288473.jsonl n=787 leak=[('test_p4_review.py', 568)] witness ids=0 at None..None not passed=0 [template] at None; of the 21: here 0, after [template] 0, not passed 0
+  rows.1288476.jsonl n=1265 leak=[] witness ids=0 at None..None not passed=0 [template] at None; of the 21: here 18, after [template] 0, not passed 0
+  rows.1288479.jsonl n=1718 leak=[] witness ids=0 at None..None not passed=0 [template] at None; of the 21: here 3, after [template] 0, not passed 0
+  rows.1288482.jsonl n=474 leak=[] witness ids=12 at 454..465 not passed=0 [template] at None; of the 21: here 0, after [template] 0, not passed 0
+== suite-witness:skip-own
+  rows.1329848.jsonl n=1320 leak=[('test_templates.py', 1273)] witness ids=0 at None..None not passed=0 [template] at None; of the 21: here 0, after [template] 0, not passed 0
+  rows.1329851.jsonl n=341 leak=[] witness ids=12 at 329..340 not passed=0 [template] at None; of the 21: here 0, after [template] 0, not passed 0
+  rows.1329854.jsonl n=1019 leak=[('test_p4_review.py', 568)] witness ids=90 at 836..925 not passed=9 [template] at 864; of the 21: here 0, after [template] 0, not passed 0
+      witness not passed: test_falls_through[p1-a1]
+      witness not passed: test_own_assumptions_bound_the_points
+      witness not passed: test_registered_knowledge_falls_through
+      witness not passed: test_a_users_knowledge_falls_through_and_the_engines_answer_is_used[template]
+      witness not passed: test_a_users_knowledge_falls_through_and_the_engines_answer_is_used[lazy]
+      witness not passed: test_a_users_knowledge_falls_through_and_the_engines_answer_is_used[templates-function]
+      witness not passed: test_a_users_knowledge_falls_through_and_the_engines_answer_is_used[adapter]
+      witness not passed: test_a_users_knowledge_falls_through_and_the_engines_answer_is_used[default-registry]
+      witness not passed: test_on_skips_the_session_and_counts_the_query
+  rows.1329857.jsonl n=1561 leak=[] witness ids=0 at None..None not passed=0 [template] at None; of the 21: here 18, after [template] 0, not passed 0
+  rows.1329860.jsonl n=1503 leak=[] witness ids=0 at None..None not passed=0 [template] at None; of the 21: here 3, after [template] 0, not passed 0
+  rows.1329863.jsonl n=517 leak=[] witness ids=0 at None..None not passed=0 [template] at None; of the 21: here 0, after [template] 0, not passed 0
+== suite-witness:skip-patched
+  rows.1371091.jsonl n=1106 leak=[] witness ids=0 at None..None not passed=0 [template] at None; of the 21: here 0, after [template] 0, not passed 0
+  rows.1371094.jsonl n=532 leak=[] witness ids=60 at 400..459 not passed=0 [template] at 427; of the 21: here 0, after [template] 0, not passed 0
+  rows.1371097.jsonl n=811 leak=[('test_p4_review.py', 568)] witness ids=0 at None..None not passed=0 [template] at None; of the 21: here 0, after [template] 0, not passed 0
+  rows.1371100.jsonl n=1133 leak=[] witness ids=0 at None..None not passed=0 [template] at None; of the 21: here 18, after [template] 0, not passed 0
+  rows.1371103.jsonl n=2212 leak=[('test_templates.py', 1950)] witness ids=29 at 2110..2138 not passed=1 [template] at None; of the 21: here 3, after [template] 0, not passed 0
+      witness not passed: test_a_users_knowledge_falls_through_and_the_engines_answer_is_used[default-registry]
+  rows.1371106.jsonl n=467 leak=[] witness ids=13 at 454..466 not passed=0 [template] at None; of the 21: here 0, after [template] 0, not passed 0
+== suite-witness:skip-users
+  rows.1410044.jsonl n=1106 leak=[] witness ids=0 at None..None not passed=0 [template] at None; of the 21: here 0, after [template] 0, not passed 0
+  rows.1410049.jsonl n=503 leak=[] witness ids=0 at None..None not passed=0 [template] at None; of the 21: here 0, after [template] 0, not passed 0
+  rows.1410158.jsonl n=811 leak=[('test_p4_review.py', 568)] witness ids=0 at None..None not passed=0 [template] at None; of the 21: here 0, after [template] 0, not passed 0
+  rows.1410263.jsonl n=1789 leak=[('test_templates.py', 1498)] witness ids=89 at 1633..1721 not passed=5 [template] at 1660; of the 21: here 18, after [template] 0, not passed 0
+      witness not passed: test_a_users_knowledge_falls_through_and_the_engines_answer_is_used[template]
+      witness not passed: test_a_users_knowledge_falls_through_and_the_engines_answer_is_used[lazy]
+      witness not passed: test_a_users_knowledge_falls_through_and_the_engines_answer_is_used[templates-function]
+      witness not passed: test_a_users_knowledge_falls_through_and_the_engines_answer_is_used[adapter]
+      witness not passed: test_a_users_knowledge_falls_through_and_the_engines_answer_is_used[default-registry]
+  rows.1410392.jsonl n=1585 leak=[] witness ids=0 at None..None not passed=0 [template] at None; of the 21: here 3, after [template] 0, not passed 0
+  rows.1410549.jsonl n=467 leak=[] witness ids=13 at 454..466 not passed=0 [template] at None; of the 21: here 0, after [template] 0, not passed 0

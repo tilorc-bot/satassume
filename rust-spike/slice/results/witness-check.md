@@ -1,7 +1,10 @@
 # The witness check: an exact pre-session check for None answers (issue 323, prototype)
 
-NOT LANDED, no PR. Branch `port/witness-check` (sa-port-328 to 337, 18-19 Nov), on rust-slice 32ba9a3; tested SHA
-786410d (also origin `bar/witness-check-786410d`), venv .so cad764d46471b1c6, bench .so 0982a28074215658.
+NOT LANDED when this was written (sa-port-339, 19 Nov: Status: question, section 12), no PR. Branch
+`port/witness-check` (sa-port-328 to 339, 18-19 Nov), on rust-slice 32ba9a3. Tested SHAs: the bar, S1, digests and iv
+on 786410d (also origin `bar/witness-check-786410d`); the suite by id, the order runs, the plants on test_witness.py
+and the repeat check on **81e6561e, the SHA to land** (786410d plus two test-only commits; guarded source identical,
+so the same build). Venv .so cad764d46471b1c6, bench .so 0982a28074215658.
 `SLICE_WITNESS` is off by default and the unchanged path is the default, except that `Engine.stats` now has a 13th
 key, `witness_certified`, which is 0 with the switch off (a change to the default path's visible state; section 3).
 With `SLICE_WITNESS=1`, a contextual query is first given to `satassume.witness.independent`, which returns True only
@@ -12,10 +15,11 @@ entries and `ent_record_certified` counts a certified query without a tick.
 
 **Result on 786410d (sa-port-337, 19 Nov).** Dev and fuzz answers are equal with the switch on and off, on both
 backends, and S1 holds: fuzz -28.2% Python and -19.2% Rust, dev -2.7% Python and +1.1% Rust (inside the spread).
-**Two things stop the landing** (Status: question): (1) 7 ids of tests/test_witness.py fail whenever one of two older
-tests, which leave a template registered, ran earlier in the same process; this does not depend on the switch
-(section 8). (2) sa-port-336's bar had no .so: every Rust row is empty and its `END 0` is void; it was relaunched as
-sa-port-337's and had not ended when this was written (section 10).
+The two things that stopped sa-port-337 are closed: (1) the 7 order-dependent ids of tests/test_witness.py are fixed
+in tests only (32c167ee, 81e6561e; section 8), and (2) sa-port-337's rerun of the bar on 786410d ended `END 0` with
+the .so loaded and is read in section 12. **One thing is open** (section 12): the bar's `suite-witness:on` row on
+786410d shows the 7 ids and none of the 21 the planner expected there, so the planner's condition for landing is not
+met as written, and the landing waits for a ruling.
 
 Sections 6, 7's table and 9 are from the earlier SHAs named in them and were not redone. Earlier result, for the 20
 workloads (5e6e46a and c5239b9): every answer equal on and off on both backends; the check removes 1604 of 30482
@@ -423,6 +427,9 @@ the 40 Python plain on-runs on f46e40e and c5239b9 did not repeat it.
 
 ## 8. Tests that fail with the switch on, and the 7 that fail after a leaked template
 
+After this section was written the 7 were fixed in tests only (32c167ee and 81e6561e) and a second effect of the
+same fixture was found, 21 ids of two later files; both are in section 12, with the runs on 81e6561e.
+
 **The stats test passes now.** `tests/test_sympy_api.py::test_in_scope_query_returns_none_only_when_undecided` failed
 with the switch on up to c5239b9 (`assert 0 == 1` on `eng.stats['queries']`: a certified query was counted nowhere).
 Since da6eb2ee a certified query is counted in `stats['queries']` and by itself in the new `stats['witness_certified']`
@@ -515,6 +522,8 @@ port decides.
 
 ## 10. Owed, and not done
 
+The bar named below as not read is read in section 12.
+
 - **Not landed.** sa-port-337 was a land-only step and stopped with Status: question on the two items below.
 - **The 7 order-dependent ids of tests/test_witness.py** (section 8) need a test change, which a land-only step does
   not make.
@@ -556,3 +565,121 @@ port decides.
 - Earlier iv: `sa-port-329/job/iv-cmp.txt`. Earlier S1: `sa-port-328/timing-r1`. Cost split and reasons:
   `sa-port-329/cnt/ana.txt`. Cap: `sa-port-330/cap/cap.txt`.
 - Tools: `rust-spike/slice/results/tools328/` (`*328*`, `*329*`, `*330*`, `*331*`), `tools336/`, `tools337/`.
+
+## 12. sa-port-339: 81e6561e's suite by id, the 786410d bar, and the plants on 81e6561e
+
+Outputs: orion `~/sa-rust-ids-work/sa-port-338/job-81e6561e` (suite by id, order runs), `~/sa-rust-ids-work/
+sa-port-337/bar/bar` (the bar), `~/sa-rust-ids-work/sa-port-339` (`orion/out`, `p1`: the plants and the repeat check;
+`workers-337bar.txt`). Tools: results/tools339.
+
+### The test-only fix (32c167ee, 81e6561e) and the 21 ids
+
+`git diff --stat 786410d..81e6561e` outside results and HANDOFF files: tests/test_p4_review.py, tests/test_templates.py
+and tests/test_witness.py; 0 files under satassume/ or rust-spike/slice/ source. The two older tests now take their
+own classes' keys off the default registry in a `finally`; test_witness.py has an autouse fixture that takes every
+user's template and declared module off the default registry before each test and puts them back, and one kept test,
+`test_a_template_left_on_the_default_registry_makes_the_check_fall_through` (103 ids, was 102). No assertion changed.
+
+786410d's `users_knowledge` fixture also put back a copy of the registry's lists taken before `register()` loaded the
+built-in modules, so after the `[template]` case the templates of rootof, special, nodes and limits were gone for the
+rest of the process: 21 ids fail after it in one process on 786410d (18 of tests/test_notmpl_limits.py, 3 of
+tests/test_rootof.py; results/tools338/lost-templates-786410d-ids.txt), 0 on 81e6561e. `TemplateRegistry` has no
+unregister; other test files that restore the registry by copy were not searched for.
+
+### Suite by id on 81e6561e against base 32ba9a3 (pareto1, shared lease, 3 workers a suite)
+
+| backend | on | off | base | on against off | off against base |
+|---|---|---|---|---|---|
+| python | 6221 passed, 0 failed | 6221 passed, 0 failed | 6118 passed, 0 failed | 0 ids differ | 0 ids differ |
+| rust | 6094 passed, 127 failed | 6095 passed, 126 failed | 5991 passed, 127 failed | 1 id differs | 1 id differs |
+
+The 103 ids of tests/test_witness.py are absent on base and pass in all four cells. The one Rust id is
+`test_public_incremental.py::test_public_comparison_catches_a_planted_history_dependence` (base failed `assert 0 ==
+2`, off passed, on failed `assert 1 == 2`): the known id()-reuse failure, classified again below. Quiet handler
+catches: rust 49 in 9 ids and 39 handler rows in each of on, off and base; python 10 in 7 ids and 0 rows in each.
+
+The 24 one-process order runs of test_templates.py, test_p4_review.py and test_witness.py on 81e6561e (rust and
+python, switch off and on; the two once-leaking tests first, last, interleaved, and three shuffles): 538 passed and
+the seven 7 of 7 in every run; no NOT-PASSED line.
+
+### The repeat check on 81e6561e (a28c548's method, pareto1, 20 fresh processes a cell)
+
+| backend | cell | switch off | switch on |
+|---|---|---|---|
+| Rust | plain | 0 of 20 pass (15x `assert 0 == 2`, 5x `assert 1 == 2`) | 0 of 20 pass (18x, 2x) |
+| Rust | keep-alive | 20 of 20 | 20 of 20 |
+| Python | plain | 20 of 20 | 19 of 20 (1x `assert 1 == 2`) |
+| Python | keep-alive | 20 of 20 | 20 of 20 |
+
+Every failure is at `test_public_incremental.py:204`; plain fails and keep-alive is clean, so it is the known
+id()-reuse failure, reported by id and not edited. All 160 runs imported the staged tree and .so cad764d4; the
+switch read True in the 80 on-runs. Python fails it only with the switch on, 1 of 20, as on 786410d (section 7).
+
+### The bar on 786410d (sa-port-337's rerun, pareto0, 09:42Z to 11:12Z 19 Nov, `END 0`)
+
+The bar is valid: build.txt has the clone's .so at cad764d4, direct.txt ends `exit 0`, "suite: no rows" is absent, 72
+test files exit 0, every phase exit 0.
+
+- Plain suite (rust, switch off): 127 failed, 6093 passed; against base (sa-port-334's bar suite) new 102 (test_witness.py),
+  gone 0, changed outcome 0. The 127 are the base's rows by id: test_lra_fuzz.py 43, test_solver_incremental.py 36,
+  test_solver.py 14, test_theory_hooks.py 10, test_euf.py 7, test_euf_fuzz.py 4, test_writeback_provenance.py 3,
+  test_solver_real_theories.py 3, test_transfer.py 2, and 1 each in test_verify_integration.py, test_template_tables.py,
+  test_relations.py, test_public_incremental.py (the planted-history test) and test_lra_exhaustion.py. Handler rows 39
+  in 2 tests, the same multiset as base; TermFault 0.
+- Live: dev and fuzz MATCH py against py, py against rust, and both end-state rows (answers 31cd0945c07f02a6 and
+  173502b6ef285ad6); the 15 extra workloads: 30 rows MATCH. Handler files of the workload runs: 0 rows each.
+- `witness:on` (rust with the switch on against Python with the switch on): MATCH on all 17 workloads; against
+  Python with the switch off, answer_diff 0 and msg_diff 0 on all 17 (sessions differ where the check certified,
+  161 on dev). The witness rows have no plant-fired counter (their `fired` column is 0 by construction; owed, [147]).
+- Plant rows on workloads: 749 integer-half DIFFER on dev, fuzz, core, wiring, zero (answers 12, 3, 15, 7, 1);
+  750 single on dev, fuzz, budget, core, transfer:7:60, wiring, zero (627, 208, 9, 49, 8, 645, 102); 751 skip-own on
+  core and zero (21, 1); 752 skip-patched and 754 skip-users MATCH on all 17, as section 4 says they must.
+
+Suite rows with the switch on, against the bar's plain suite, by worker (`rows.PID.jsonl` is in run order; tools339/
+workers339.py, workers-337bar-786410d.txt):
+
+| row | changed ids | which worker ran what |
+|---|---|---|
+| suite (off) | 0 | both leaking tests in one worker with no test_witness.py id; `[template]` in a worker with none of the 21 |
+| witness:on | 7, the seven of section 8, all `passed -> failed` | one worker ran test_p4_review.py's leaking test (position 568) and then all 102 ids of test_witness.py (837 to 938); none of the 21 ran in that worker, so **0 of the 21 show** |
+| 749 integer-half | 25 | no leaking test before any test_witness.py id; 6 of test_witness.py fail, the same 6 as on 81e6561e below |
+| 750 single | 297 | a leaking test before 90 of the ids; caught by answers in any case |
+| 751 skip-own | 12 | a leaking test before 90 of the ids: the 7, plus `test_falls_through[p1-a1]` and `test_own_assumptions_bound_the_points` |
+| 752 skip-patched | 3 | `test_history.py::test_ddmin_shrinks_to_the_responsible_query` fails (its worker ran it before any leaking test: a clean catch). The 12 P1 cases ran after test_templates.py's leaking test in their worker and **all pass under the plant**: the leaked template made the check fall through, so the plant was masked. `[default-registry]` fails there from the leak |
+| 754 skip-users | 6 | the five users'-knowledge cases fail, but in a worker that ran a leaking test first, where they fail with no plant too (the witness:on row): **this row does not show the plant caught** |
+
+In no row did any of the 21 ids run after `[template]` in its worker, so the 21 fail nowhere in this bar. The
+planted-history test flips `failed -> passed` in the 749, 752 and 754 rows and stays failed in the others (the flake
+above). So on 786410d the bar's suite rows show 752 caught by test_ddmin only and do not show 754 caught; that is the
+leak, and the next table is the evidence for the plants.
+
+### test_witness.py under each plant on 81e6561e, SLICE_WITNESS=1, one process
+
+| plant | orion, python | pareto1, python | pareto1, rust (.so cad764d4) |
+|---|---|---|---|
+| none (switch on) | 103 passed | 103 passed | 103 passed |
+| none (switch off) | 103 passed | 103 passed | 103 passed |
+| 749 integer-half | 6 failed | 6 failed | 6 failed |
+| 750 single | 45 failed | 45 failed | 45 failed |
+| 751 skip-own | 4 failed | 4 failed | 4 failed |
+| 752 skip-patched | 9 failed (the 9 P1 cases) | 9 failed | 9 failed |
+| 754 skip-users | 6 failed (the five users'-knowledge cases and the new kept test) | 6 failed | 6 failed |
+
+Each plant fails at least one kept test and the file passes with no plant, on both backends. Every run printed the
+frozen tree it imported, the switch and the plant. Outside test_witness.py, test_ddmin also fails under 750 and 752
+(python and rust).
+
+### Wall times of the bar (wall336.py; one machine, shared lease, rows of a phase side by side)
+
+Total 90 m 07 s: tests 2 m 23 s, suite 1 m 53 s, live 14 m 47 s, plants 11 m 11 s, extra 48 m 09 s, suite plants
+10 m 46 s, fmrows 0 m 57 s. Suite rows 1 m 45 s to 1 m 53 s each. `witness:on` workload rows, seconds: fuzz 605,
+budget 393, rootof 374, wiring 320, value 89, dev 65, f6 63, zero 48, core 31, transfer2:3:40 14, transfer:7:60 12,
+opaque 10, loop 7, scope 4, cert 2, cls 2, twin 0 (sum 2039; the plant rows sum 1438 to 2026). These are not the
+speed measure: S1 (section 5) is.
+
+### What is open
+
+The planner's condition for this landing: a question if the bar's suite rows show anything other than the 21 ids
+and the known base rows. They show the 7 instead of the 21. The 7 are the ids of section 8, they fail only in
+workers that ran a leaking test first, and on 81e6561e they pass in 24 order runs and in the suite by id on both
+backends. Whether that meets the condition is the planner's to say; nothing is landed.
