@@ -1,6 +1,11 @@
 # Witness bounds: the engine's exits first, and a bound on the check's work (issue 323) — IN PROGRESS, NOTHING LANDED
 
-**State, sa-port-347, 20:20Z 19 Nov: NOT LANDED, a question to the planner.** Rebased onto rust-slice 2030cdc6 (345's
+**State, sa-port-348, 22:55Z 19 Nov: NOT LANDED; the bar is running.** The planner ruled B on sa-port-347's question:
+the budget half of item (1) is out, the bound stays 2500. Tested source **82d4ddf** (section (5b)): its gate is
+read and clean, and its bar was started at 22:48Z and is not read. The gate of 180e501 (both halves of item (1)) is
+section (4). Sections (1) and (3) describe 180e501; where they speak of the budget test, (5b) supersedes them.
+
+State as sa-port-347 left it, 20:20Z 19 Nov: rebased onto rust-slice 2030cdc6 (345's
 landing): source 180e501 (43e3ee8 before the rebase, the same diff). S1 is read, section (5) below: with the switch on
 the head is slower than 345's SHA on dev and fuzz beyond the spread (item (1)'s budget test, paid by every certified
 call), and faster on budget and wiring. The landing rule asks for no loss on any of the four, so nothing is landed.
@@ -232,9 +237,126 @@ spread. The price is wiring's 16 certifications (231 -> 215). The constant is no
 180e501; the comment at witness.py:104 does not yet say how it was chosen (owed with whatever source change follows
 the planner's answer, or as a comment-only commit before the bar).
 
+## (5b) Ruling B applied, sa-port-348: source 82d4ddf
+
+The planner ruled B on report 25f6298 (20:07Z 19 Nov): the budget half of item (1) goes, the work bound stays at
+2500, and dev's loss against 345's SHA is an accepted, named exception to the landing rule. 82d4ddf does that:
+
+- `witness.witnesses` asks `Engine._known_inconsistent(assumptions)` (engine.py:1860; `_ends_without_session` with its
+  budget half and its `proposition` argument gone): the version check and one `_verdict` read. `_within_budget` is no
+  longer called by the check, so a certified call no longer pays the structural cones.
+- What that changes with the switch on: an over-budget query that two points certify is certified. Its answer is
+  None either way; it is now counted in `stats["witness_certified"]` and not in `stats["budget_limited"]`, and
+  `last_budget_limited` is False, where 180e501 left both to the engine. This is 2030cdc6's behaviour again. No
+  workload has such a query: budget's 15 over-budget rows are equal on against off in every field, below.
+- Plant 758 `check-first` stays, with the INCONSISTENT read as its site.
+- The comment at `WORK` (witness.py:104) says how 2500 was chosen.
+- No Rust change; harness/state.py is not touched.
+
+Tests, by id (tests/test_witness.py, 157 before and after):
+
+- removed with the hunk: `test_a_query_over_the_budget_is_the_engines_as_with_the_switch_off[0]`, `[1]`, `[2]`. Its
+  assertion was that answer, `Engine.stats` and `last_budget_limited` are equal on against off for an over-budget
+  query that two points certify, which only the budget test gave.
+- in its place, what still holds of it: `test_a_query_over_the_budget_still_answers_none[0]`, `[1]`, `[2]`, the same
+  query and budgets: None off and on; off counts it as budget limited, on as certified.
+- `test_a_set_the_engine_knows_inconsistent_tries_no_point` stays as it is, and is now plant 758's only catch (it
+  failed 4 under the plant on 180e501: this test and the three removed ids).
+- No other test is touched.
+
+orion, 82d4ddf, .so a956b03496066671: test_witness.py, test_sympy_api.py, test_layering.py, test_history.py,
+test_sympy_boundary.py and test_budget_cone.py, 429 passed in each of the four cells (python and rust backend, switch
+off and on). Under check-first 1 failed of 193 (the INCONSISTENT-set test), under skip-work 2 (the two work-bound
+tests).
+
+**What the INCONSISTENT read costs (orion under load, one py pass, a count and a rough time, not S1; ki348.py).** dev:
+535 calls, none True, 0.8 ms of a 0.81 s pass. fuzz: 2772 calls, 40 True, 9.7 ms of an 8.41 s pass, the timer's own
+cost included. That is 0.1% of either pass, well inside S1's spread (1.0 to 1.7%), so the check-first arm of (5),
+which skips this read too, is read as B's time. No new S1 was run, by the ruling.
+
+**Condition 2, the default path.** With the switch off neither changed function is called, so the off rows of (5)
+are B's: head off against 345 off reads dev -0.2% (py) and +0.6% (rust), fuzz -0.1% and -0.4%, budget +0.0% and
++0.2%, wiring -0.1% and -0.1%, each within the spread (tools347/s1-med.txt, block A).
+
+**The dev exception, named.** With the switch on, dev is slower than at 345's SHA: +0.9% (py, 0.5263 s against
+0.5214 s) and +1.2% (rust, 0.6649 s against 0.6570 s), slower in 12 rounds of 12 (the cf arm of (5)). The cause is
+item (2), the work count: `_Query.spend` is called once per point and once per evaluation of an atom for a root, and
+the compile counts the terms. On the instrumented pass under the same lease (tools347/s1-med.txt, the wit rows; not
+an S1 time) the check's own time on dev rises from 0.0615 s to 0.0659 s a pass on py and from 0.0674 s to 0.0727 s on
+rust, cf against base on; per call the median goes from 56.5 to 63.2 us (py) and from 63.6 to 71.0 us (rust), a
+certified call from 69.1 to 75.6 us and from 81.3 to 88.6 us. That 4.4 ms and 5.3 ms is most of the 4.9 ms and
+7.9 ms between the wall medians. dev has no query near the bound (its largest certified call is 354 evaluations),
+so it pays the count and gets nothing back; budget and wiring get the count's whole gain. fuzz pays the same count
+(0.7790 s to 0.8106 s, py) and reads +0.7% and +0.8%, within the spread.
+
+**Certified at 2500 against 8400** (S1's arm pass, arm347.py, and the gate's digest rows): dev 173 and 173, fuzz
+1284 and 1284; on the gate's seed runs of (4) (seeds 0, 1, 2 and 42 under four hash seeds, evalbench) 20964 and 20964. The bound takes certifications from wiring only (215
+against 231).
+
+**The gate on 82d4ddf (condition 1).** A frozen copy of 82d4ddf against base 2030cdc6, pareto0, shared lease
+1758122d, 21:39Z to 22:47Z 19 Nov, "END 0" (tools348/stage348.sh, go348.sh:18; job347.sh, then jobb348.sh). .so
+cad764d46471b1c6 on every tree; witness.py 49d02b0abb2ba388, engine.py 7b84c4966d87a31d. Rows on orion under
+~/sa-rust-ids-work/sa-port-348 (job-82d4ddf, jobb-82d4ddf). The arm at 8400 was not run again: condition 1 does not
+ask for it and (4) reads it on 180e501.
+
+| | 82d4ddf (base 2030cdc6) |
+|---|---|
+| suite by id, Rust: on / off / base | 6316 ids, 127 / 127 failed / 6309 ids, 127 failed: the same 127 ids in all three, the known base rows of (4) |
+| suite by id, Python: on / off / base | 0 failed in all three (6275 / 6275 / 6268 passed) |
+| ids in one tree only | 7, all tests/test_witness.py |
+| on against off, and each against base, outcome differs | 0 ids, both backends |
+| quiet catches recorded | Rust 49 in 9 ids, Python 10 in 7 ids: on, off and base |
+| iv, 64 runs off + 64 on | failing ids differ off against on in 0 runs; Rust fails test_transfer.py's two known ids in 16 of 32 runs, off and on; Python 0 of 64 |
+| digests, dev and fuzz | 31cd0945c07f02a6, 173502b6ef285ad6: off and on, py and rust |
+| certified, dev / fuzz | 173 / 1284, py and rust |
+| 20 workloads, py and rust, off and on | 0 answers and 0 messages differ in the 40 rows; against 343's rows of 01e8ca74, 80 cells, answers and messages equal |
+| the 20 workloads' cells | exit code 0 and an empty error file in all 80 |
+| queries that reach a solver, 20 workloads, off / on | 27466 / 25757, py and rust, as on 180e501 |
+| budget's over-budget rows (bs.txt) | the same 15 off and on; answer, message, `last_budget_limited`, the rise of `budget_limited`, `Engine.stats` and moved ids equal on 15 of 15, and on 28 of 28 rows, py and rust, and under check-first |
+| fuzz seeds 0, 1, 2, 42 under 4 hash seeds | rows equal on every run, 0 differ; 128 runs, exit code 0 |
+| certified on the seeds: evalbench / harness / harness-custom | 20964 of 43988 / 4 of 2908 / 0 of 2424 |
+
+On 82d4ddf the budget rows do tell something: the check now reaches the over-budget queries, and none of budget's 15
+is certified (`witness_certified` 0, `budget_limited` 15 on both sides). The planted-history test failed in all three
+Rust rows this time; a28c548's method on 82d4ddf (pre/rep/rep-sum.txt, 20 runs a cell): Rust 0 of 20 off and on (19x
+`assert 0 == 2`, 1x `assert 1 == 2` each), keep-alive 20 of 20 off and on; Python 18 of 20 off and 19 of 20 on
+(`assert 1 == 2`), keep-alive 20 of 20: the signature of [137e]. The zero workload records 7 raises at entry in each
+of its four cells, as on the base.
+
+Plants on 82d4ddf (python, switch on; 193 tests a row; without a plant test_witness.py passes 157 in each of the four
+cells and the patch row 36 off and on). Digests and certified counts are those of (4)'s table in every row.
+
+| plant | dev | fuzz | failed of 193 (on 180e501) |
+|---|---|---|---|
+| 758 check-first | MATCH, 173 | MATCH, 1284 | 1 (4): the INCONSISTENT-set test |
+| 759 skip-work | MATCH, 173 | MATCH, 1284 | 2 (2) |
+| 755 pi-sign | MATCH, 171 | DIFFER f2dbc80bca7b0658, 1232 | 11 (11) |
+| 756 pi-rational | MATCH, 173 | MATCH, 1284 | 10 (10) |
+| 757 pi-enclosure | MATCH, 173 | MATCH, 1284 | 10 (9) |
+| 749 integer-half | DIFFER, 184 | DIFFER, 1292 | 7 (6) |
+| 750 single | DIFFER, 503 | DIFFER, 2349 | 49 (49) |
+| 751 skip-own | MATCH, 173 | MATCH, 1284 | 6 (6) |
+| 752 skip-patched | MATCH, 173 | MATCH, 1284 | 10 (7) |
+| 754 skip-users | MATCH, 173 | MATCH, 1284 | 6 (6) |
+
+Every plant is caught. The rows that read one more than on 180e501 (pi-enclosure, integer-half) hold
+test_public_incremental.py, whose planted-history test fails on Python in 1 or 2 runs of 20; which id it was is not
+read. skip-patched reads 10 as on 01e8ca74, against 7 on 180e501; not traced (likely the three tests of a replaced
+`_within_budget`, which 180e501's budget test still called under the plant).
+
+**The bar (6): started, not read.** On the frozen branch origin/bar/witness-bounds-82d4ddf, pareto0, shared lease
+9d4bce81, started 22:48Z 19 Nov, detached from orion (`tools348/gobar348.sh 82d4ddf cad764d46471b1c6`, job348bar.sh);
+rows witness:on, witness:check-first, witness:skip-work as workload and suite rows; BASE sa-port-344's bar suite. End
+marker ~/sa-rust-ids-work/sa-port-348/gobar-end.txt on orion, written by gobar348.sh:20. Nothing is landed.
+
 ## Owed, named here
 
-- (4) the gate, (5) S1, (6) the bar and the landing; rebase onto rust-slice once 345 has landed.
+- (6) the bar on 82d4ddf read, then `bar.sh land 82d4ddf`, guard, PUSH=1.
+- A cheaper budget test for the check is not a step (the planner's ruling B). Its trigger, for
+  OWED-satassume-rust.md: a workload with an over-budget query that the check certifies slowly. None of the 20
+  workloads has one today (budget's 15 over-budget queries are not certified, and cost at most 2500 evaluations each).
+- With the switch on, an over-budget query that two points certify is counted as certified and not as budget
+  limited (kept test `test_a_query_over_the_budget_still_answers_none`).
 - `Engine._ends_without_session` fills `_kids`, `_cones` and `_qcones` for a certified query: witness.py's docstring
   says so; whether the state comparison of the bar's `witness:on` row reads it has to be checked there.
 - harness/state.py (shared) changed: `WORK` classified.
