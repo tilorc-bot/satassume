@@ -8,8 +8,13 @@ from sympy import Dummy, Float, I, Q, Rational, Symbol, oo, pi, sin, sqrt, symbo
 
 from satassume import sympy_api as A
 from satassume import witness as W
+from satassume.knowledge import extensions as E
 from satassume.knowledge.extensions import Extensions
 from satassume.knowledge.rules import BASIS, DEFINITIONS
+from satassume.knowledge.templates import registry
+from satassume.relations import AdapterSpec, default_specs
+from satassume.sat.formula import P
+from satassume.state.epoch import bump
 
 x, y, z = symbols('x y z')
 xp = Symbol('xp', positive=True)
@@ -275,6 +280,66 @@ def test_registered_knowledge_falls_through():
     assert W.witnesses(fp, fa, eng) is not None
     eng.extensions._vocab['positive'] = [((Symbol,), lambda e: True)]
     assert W.witnesses(fp, fa, eng) is None
+
+
+class _UsersSymbol(Symbol):
+    """A class of the test's own, for a declaration that reaches no other test's terms."""
+
+
+def _users_template(e):
+    return P('positive', e)             # unsound on purpose: no symbol is positive for being a Symbol
+
+
+@pytest.fixture
+def users_knowledge():
+    """Removes what the test below registers: the registry has no unregister for a template or a declared module,
+    so its lists are restored by hand, and a new epoch drops what the engines derived meanwhile."""
+    by_class = {c: list(ts) for c, ts in registry._by_class.items()}
+    lazy = list(registry._lazy)
+    yield
+    registry._by_class.clear()
+    registry._by_class.update(by_class)
+    registry._lazy[:] = lazy
+    registry._mro_cache.clear()
+    registry._clauses_cache.clear()
+    E.extensions.unregister('positive')
+    bump()
+
+
+@pytest.mark.parametrize('how', ['template', 'lazy', 'templates-function', 'adapter', 'default-registry'])
+def test_a_users_knowledge_falls_through_and_the_engines_answer_is_used(on, users_knowledge, how):
+    """With knowledge a user registered in force, by any entry point, the check falls through, as it does for a
+    function in the engine's ``extensions``. A user's template may be unsound: the engine then gives a definite
+    answer where two points exist, and the answer with the switch on is the engine's, as with the switch off."""
+    u = Symbol('u_users')
+    p, a = Q.positive(u), Q.real(u) & Q.positive(y)
+    fp, fa = A._formula(p, True), A._formula(a, True, True)
+    assert W.witnesses(fp, fa, A.Engine()) is not None and A.ask(p, a, A.Engine()) is None  # certified before
+    make, answer = A.Engine, None
+    if how == 'template':
+        registry.register(Symbol)(_users_template)
+        answer = True
+    elif how == 'lazy':
+        # declared like a built-in module: its templates would register on the class's first use, with no new epoch
+        registry.lazy(__name__, _UsersSymbol)
+    elif how == 'templates-function':
+        def make():
+            return A.Engine(templates=lambda node: [_users_template(node)] if type(node) is Symbol else ())
+        answer = True
+    elif how == 'adapter':
+        def make():                     # the package's adapter in all but its module
+            lra = default_specs()[0]
+            return A.Engine(relations=[AdapterSpec(lra.name, type('UsersAdapter', (lra.factory,), {}), lra.guarded)])
+    else:
+        def make():                     # the engine reads its own registry; the default one decides the scope
+            eng = A.Engine()
+            eng.extensions = Extensions()
+            return eng
+        E.register(Q.positive, _UsersSymbol)(lambda e: True)
+    assert A.ask(p, a, make()) is answer
+    assert W.witnesses(fp, fa, make()) is None
+    W.ENABLED[0] = False
+    assert A.ask(p, a, make()) is answer
 
 
 @pytest.mark.parametrize('name', W.GUARDED)

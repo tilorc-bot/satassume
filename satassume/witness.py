@@ -32,7 +32,12 @@ an answer. The argument assumes:
    ``antihermitian`` is undecided). Every line carries its argument. SymPy's evaluation is never asked (satassume
    issue 247).
 5. *No registered knowledge*: with any function registered in the engine's ``extensions`` the check falls through,
-   since a registration can state facts no table here knows. Templates registered by a user are not detected.
+   since a registration can state facts no table here knows. So it does on any other knowledge a user gave
+   (:func:`_users_knowledge`): a function in the default registry, a template in the registry the engine reads
+   (``TemplateRegistry.register``, or a module declared with ``lazy``), a templates function of the user's
+   (``Engine(templates=...)``, ``Engine.templates``) and a relation adapter that is not the package's
+   (``Engine(relations=...)``, ``Engine.relation_specs``). A user's template may be unsound: the engine then
+   gives a definite answer where two points exist, and with the switch off that answer is the one returned.
 6. *The engine's methods are its own*: a certified query calls none of ``Engine.ask``, ``verdict``,
    ``_context_session`` and ``_within_budget`` (:data:`GUARDED`; formula ruling P1's methods and ``ask``). If one
    of them is not the engine's own, on the instance or on the class, the check falls through, so a user's method
@@ -56,7 +61,7 @@ memoized like any other).
 import os
 from fractions import Fraction
 
-from .knowledge.extensions import Args
+from .knowledge.extensions import Args, extensions as _DEFAULT
 from .knowledge.rules import BASIS, DEFINITIONS
 from .sat.formula import And, Equivalent, Exclusive, Implies, ITE, Not, Or, P
 
@@ -83,7 +88,8 @@ LIMIT = 2000
 #: planted bugs for the plant table (SLICE_WITNESS_PLANT), never set in normal use:
 #: 749 ``integer-half`` (the table says 1/2 is an integer), 750 ``single`` (one witness is enough),
 #: 751 ``skip-own`` (the symbols' own assumptions are not checked), 752 ``skip-patched`` (a user's method on the
-#: engine is passed over)
+#: engine is passed over), 754 ``skip-users`` (a user's templates, adapters and default-registry functions are
+#: passed over)
 PLANT = [os.environ.get("SLICE_WITNESS_PLANT", "")]
 
 #: the Engine methods a certified query does not call: formula ruling P1's three and ``ask`` itself
@@ -118,6 +124,42 @@ def _patched(eng):
         else:
             return True
     return False
+
+#: the package whose modules register the engine's own templates, and the one that holds its relation adapters
+_TEMPLATES = __package__ + ".knowledge.templates."
+_THEORIES = __package__ + ".theories."
+
+
+def _users_knowledge(eng):
+    """True if knowledge a user gave may be in force besides the functions of the engine's own registry, which
+    :func:`witnesses` asks first (assumption 5). The entry points: ``extensions.register`` on the default registry
+    while the engine uses another (it still decides ``sympy_api``'s scope), ``TemplateRegistry.register`` and
+    ``lazy``, ``Engine(templates=...)`` and ``Engine.templates``, ``Engine(relations=...)`` and
+    ``Engine.relation_specs``. Whose a template or an adapter is, is read off its module: the package's own are
+    the engine's, a backend's replacements keep the module of what they replace. Nothing is written here."""
+    if _DEFAULT._handlers or _DEFAULT._vocab:
+        return True
+    if eng.clause_templates is None:
+        # a templates function given by the user (or no SymPy): the registry's compiled path is off
+        return True
+    reg = getattr(eng._templates, "__self__", None)
+    by_class, lazy = getattr(reg, "_by_class", None), getattr(reg, "_lazy", None)
+    if by_class is None or lazy is None:
+        return True
+    for spec in eng._relation_specs:
+        if not str(getattr(spec.factory, "__module__", "")).startswith(_THEORIES):
+            return True
+    own = _TEMPLATES
+    for _, module in lazy:
+        # a module declared by a user registers like a built-in one, without a new epoch, when it is first used
+        if not module.startswith(own):
+            return True
+    for ts in by_class.values():
+        for t in ts:
+            if not str(getattr(t, "__module__", "")).startswith(own):
+                return True
+    return False
+
 
 _MAX_EXP = 64         # |integer exponent| above this: undecided
 _MAX_BITS = 4096      # a power whose result could be longer: undecided
@@ -505,7 +547,10 @@ def witnesses(proposition, assumptions, eng=None):
     # decide again on the two points returned: the search above only proposed them
     if _holds(yes, owns, fa, fp) is not True or _holds(no, owns, fa, fp) is not False:
         return None
-    # asked last, so only a query that would be certified pays for it: a user's method on the engine gets the query
+    # asked last, so only a query that would be certified pays for them: knowledge a user registered may decide the
+    # query, and a user's method on the engine gets it
+    if eng is not None and PLANT[0] != "skip-users" and _users_knowledge(eng):
+        return None
     if eng is not None and PLANT[0] != "skip-patched" and _patched(eng):
         return None
     return list(q.syms), yes, no, tried
