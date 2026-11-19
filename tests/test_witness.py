@@ -633,10 +633,9 @@ def _state(eng):
 
 
 @pytest.mark.parametrize('budget', [0, 1, 2])
-def test_a_query_over_the_budget_is_the_engines_as_with_the_switch_off(budget):
-    """sa-port-346 (1): the engine's budget test comes before any point. Two points certify this query, and over the
-    discovery budget it is still the engine's: the same answer, counters and ``last_budget_limited`` as with the
-    switch off, and not counted as certified."""
+def test_a_query_over_the_budget_still_answers_none(budget):
+    """sa-port-348: the check does not ask the discovery budget. Two points certify this query, so over the budget it
+    is certified: None, the answer the engine gives it with the switch off, where it is counted as budget limited."""
     p, a = Q.positive(x + y), Q.real(x) & Q.real(y)
     assert pair(p, a) is not None
     old = W.ENABLED[0]
@@ -647,10 +646,9 @@ def test_a_query_over_the_budget_is_the_engines_as_with_the_switch_off(budget):
             eng = A.Engine(discovery_budget=budget)
             got.append((A.ask(p, a, eng), _state(eng)))
         off, on_ = got
-        assert on_ == off and off[0] is None
+        assert on_[0] is None and off[0] is None
         assert off[1][0]['budget_limited'] == 1 and off[1][1] is True and off[1][0]['witness_certified'] == 0
-        eng = A.Engine()        # within the default budget the same query is certified
-        assert A.ask(p, a, eng) is None and eng.stats['witness_certified'] == 1 and not eng.last_budget_limited
+        assert on_[1][0]['budget_limited'] == 0 and on_[1][1] is False and on_[1][0]['witness_certified'] == 1
     finally:
         W.ENABLED[0] = old
 

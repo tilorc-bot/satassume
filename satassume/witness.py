@@ -61,12 +61,13 @@ No SymPy object is constructed and no SymPy method that evaluates is called: the
 ``Rational.p``/``.q`` and ``assumptions0``. This module imports no SymPy: ``sympy_api``, the SymPy front end, gives
 it the seven classes it compares types with (:func:`bind`); until then every term is undecided. It keeps nothing across queries: no cache, no table, no counter.
 
-The engine's exits that need no session come first (sa-port-346): once a query is compiled and before a point is
-tried, the check asks ``Engine._ends_without_session``, and falls through if the query is over the discovery budget
-or its set has a memoized INCONSISTENT. Such a query is the engine's as with the switch off, with
-``last_budget_limited`` and ``stats["budget_limited"]`` set by it. The search is bounded by its work as well as by
-its points (:data:`WORK`, :data:`CAP`); both bounds are functions of the query alone, and past either the check
-falls through.
+A set the engine knows to be inconsistent comes first (sa-port-346): once a query is compiled and before a point is
+tried, the check asks ``Engine._known_inconsistent``, and falls through if the set has a memoized INCONSISTENT, so the
+engine raises as with the switch off. The discovery budget is not asked (sa-port-348): a query over it that two
+points certify is certified, None as from the engine, and counted in ``stats["witness_certified"]`` and not in
+``stats["budget_limited"]``, with ``last_budget_limited`` False. The search is bounded by its work as well as by its
+points (:data:`WORK`, :data:`CAP`); both bounds are functions of the query alone, and past either the check falls
+through.
 
 What still differs with the switch on (state, not answers): a certified query builds no session, so of
 ``Engine.stats`` it moves only ``queries``, like any other query, and ``witness_certified``
@@ -104,6 +105,11 @@ LIMIT = 2000
 #: term evaluations per query at most (SLICE_WITNESS_WORK; 0: no bound): each point tried is charged the query's
 #: compiled terms (:attr:`_Query.size`), each evaluation of an atom for a root its own. A function of the query
 #: alone. Past it the check falls through like past the cap: speed only, the caller goes on unchanged.
+#: 2500 was chosen by wall time (S1, quiet lease 9e0c7e81 on pareto1, 19 Nov 2026; results/witness-bounds.md (5)): the
+#: sum of the dev, fuzz, budget and wiring workloads is 3.6% (py) and 3.7% (rust) lower than at 8400, in 12 rounds of
+#: 12. It is above every certified call of dev and fuzz (at most 2282 on five fuzz seeds), so those lose none; the
+#: price is 16 certifications of wiring (231 -> 215: sign questions on one long sum, 8138 to 8356 evaluations each),
+#: which 8400 would keep.
 WORK = [int(os.environ.get("SLICE_WITNESS_WORK", "2500"))]
 #: planted bugs for the plant table (SLICE_WITNESS_PLANT), never set in normal use:
 #: 749 ``integer-half`` (the table says 1/2 is an integer), 750 ``single`` (one witness is enough),
@@ -112,7 +118,7 @@ WORK = [int(os.environ.get("SLICE_WITNESS_WORK", "2500"))]
 #: passed over), 755 ``pi-sign`` (:func:`_sign` calls a positive value of Q[pi] negative), 756 ``pi-rational``
 #: (:data:`PI_TABLE` says a non-rational value of Q[pi] is rational), 757 ``pi-enclosure`` (:func:`_sign` reads an
 #: interval that does not hold pi), 758 ``check-first`` (points are tried before the engine is asked whether the
-#: query ends without a session), 759 ``skip-work`` (:data:`WORK` is passed over)
+#: set has a memoized INCONSISTENT), 759 ``skip-work`` (:data:`WORK` is passed over)
 #: how often a planted site read its own plant as set (the bar's fired column for a witness row, counter 740); it
 #: stays 0 unless the plant came from SLICE_WITNESS_PLANT
 FIRED = [0]
@@ -842,11 +848,10 @@ def witnesses(proposition, assumptions, eng=None):
         return None
     if eng is not None:
         # before any point is tried (sa-port-346): a user's method on the engine gets the query as with the switch
-        # off, and so does the engine where it ends without a session (the set's memoized INCONSISTENT, or a query
-        # over the discovery budget), with its own flag and counters
+        # off, and so does the engine where the set has a memoized INCONSISTENT (it raises)
         if PLANT[0] != "skip-patched" and _patched(eng):
             return None
-        if PLANT[0] != "check-first" and eng._ends_without_session(proposition, assumptions):
+        if PLANT[0] != "check-first" and eng._known_inconsistent(assumptions):
             return None
     pools = _pools(q, owns)
     if pools is None:
