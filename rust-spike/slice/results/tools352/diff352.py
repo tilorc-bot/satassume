@@ -65,6 +65,8 @@ if arm == "diff":
             _Base.__init__(self, pi)
             last_q[0] = self
     W._Query = _Q
+    # an instrument of ours: the native path stays on with it in place (witness_live._replaced)
+    witness_live._OWN = tuple((n, vars(W)[n]) for n, _ in witness_live._OWN)
     real_c = sa_solver.witness_compile
 
     def compile_(*a):

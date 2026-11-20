@@ -13,7 +13,7 @@ KEYS = ("rust_made", "py_made", "session", "lra", "private_writes", "caught")
 def wn(d):
     c, hook = Counter(), set()
     for f in glob.glob(d + "/wn.*.json"):
-        r = json.load(open(f))
+        r = json.loads(open(f).read() or '{"counts": null, "hook": null}')      # a cell that crashed at session end
         c.update(r["counts"] or {})
         hook.add(r["hook"])
     return dict(c), sorted(hook)

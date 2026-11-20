@@ -1,10 +1,10 @@
 #!/bin/bash
-# build352.sh SHA (sa-port-352, pareto1, under a shared lease; tools336/build336.sh with this session's paths): the two
+# build352.sh SHA [SESSION] (sa-port-352; SESSION names the output directory, default sa-port-352; pareto1, under a shared lease; tools336/build336.sh with this session's paths): the two
 # x86-64 builds of SHA's crate from the staged tree ~/sa-rust-ids-work/sa-port-352/s1/bench-SHA/tree (a git archive).
 #  1. the suite and bar build: ~/sp19's venv Python, cargo on the host -> sa-port-352/so-venv-SHA/sa_solver.so
 #  2. the S1 build: in sa-cy-build:1, the bench image's Python -> the bench tree's sa_solver.so
 # End marker: sa-port-352/build-SHA/DONE-BUILD, the last line here.
-SHA=$1; X=/home/tilo/sa-rust-ids-work/sa-port-352; B=$X/s1/bench-$SHA; O=$X/build-$SHA; mkdir -p $O $X/so-venv-$SHA
+SHA=$1; X=/home/tilo/sa-rust-ids-work/${2:-sa-port-352}; B=$X/s1/bench-$SHA; O=$X/build-$SHA; mkdir -p $O $X/so-venv-$SHA
 [ -d $B/tree ] || { echo "no $B/tree"; exit 2; }
 ( export CARGO_HOME=/home/tilo/.cargo RUSTUP_HOME=/home/tilo/.rustup PATH=/home/tilo/.cargo/bin:$PATH HOME=/home/tilo/sp19
   . $HOME/sa-rust-ids-work/env.sh
