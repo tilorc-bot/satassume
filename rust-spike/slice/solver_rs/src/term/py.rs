@@ -177,6 +177,11 @@ impl PyTermTable {
         self.2.insert((session, nid), (x.clone().unbind(), t));
     }
 
+    /// The table itself, for witness.rs: read only.
+    pub(crate) fn witness_table(&self) -> &TermTable {
+        &self.0
+    }
+
     pub(crate) fn read_is_rational(&self, t: u32) -> bool {
         self.0.class_of(TermId(t)).flags & super::table::flag::IS_RATIONAL != 0
     }

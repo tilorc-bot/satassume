@@ -47,6 +47,7 @@ mod theory;
 mod theory_flags;
 mod transfer;
 mod transfer_py;
+mod witness;
 
 use block::Closure;
 use pyo3::exceptions::{PyNotImplementedError, PyOverflowError, PyRuntimeError, PyValueError};
@@ -644,6 +645,7 @@ fn sa_solver(m: &Bound<'_, PyModule>) -> PyResult<()> {
     payloads::register(m)?;
     formula_py::register(m)?;
     formula::register(m)?;
+    witness::register(m)?;
     realroots::register(m)?;
     rows::register(m)?;
     session::register(m)?;

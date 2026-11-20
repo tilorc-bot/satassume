@@ -122,6 +122,10 @@ WORK = [int(os.environ.get("SLICE_WITNESS_WORK", "2500"))]
 #: how often a planted site read its own plant as set (the bar's fired column for a witness row, counter 740); it
 #: stays 0 unless the plant came from SLICE_WITNESS_PLANT
 FIRED = [0]
+#: the native check's hook, None unless a backend sets it (the slice's witness_live.py, SLICE_WITNESS_RUST=1): a
+#: function of ``(proposition, assumptions, eng)`` that returns what :func:`witnesses` returns from its compile on, or
+#: ``NotImplemented`` to leave the query to the code below. This module stays the default and the reference.
+NATIVE = [None]
 
 
 class _Plant(str):
@@ -829,6 +833,11 @@ def witnesses(proposition, assumptions, eng=None):
         ext = eng.extensions
         if ext is not None and (ext._handlers or ext._vocab):
             return None
+    native = NATIVE[0]
+    if native is not None:
+        r = native(proposition, assumptions, eng)
+        if r is not NotImplemented:
+            return r
     q = _Query()
     try:
         try:

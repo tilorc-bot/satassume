@@ -1273,6 +1273,8 @@ def from_env(default='terms'):
         PLANT[0] = _Plant(PLANT[0])
     CHECK[0] = bool(os.environ.get('SLICE_TERM_CHECK'))
     convert.from_env()      # SLICE_CONVERT: which walker reads the input (Python's `_Walk` unless it says so)
+    import witness_live     # SLICE_WITNESS_RUST: the witness check on this module's table (off unless it says so)
+    witness_live.from_env()
     frames = os.environ.get('SLICE_TERM_FRAMES', 'py')     # the per-query frames: Python's (the default) or term/live.rs
     if frames not in ('py', 'rust'):
         raise SystemExit(f'SLICE_TERM_FRAMES={frames}: py or rust')
