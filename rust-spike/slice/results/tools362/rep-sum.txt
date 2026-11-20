@@ -1,0 +1,8 @@
+rust:off orig passed 0 of 20; asserts:      17 E   AssertionError: assert 0 == 2;      3 E   AssertionError: assert 1 == 2; at:      20 test_public_incremental.py:204: Assert; last:      20 1 failed;
+rust:off keep passed 20 of 20; asserts:  at:  last:      20 1 passed;
+rust:conv orig passed 0 of 20; asserts:      13 E   AssertionError: assert 0 == 2;      7 E   AssertionError: assert 1 == 2; at:      20 test_public_incremental.py:204: Assert; last:      20 1 failed;
+rust:conv keep passed 20 of 20; asserts:  at:  last:      20 1 passed;
+rust:nat orig passed 0 of 20; asserts:      19 E   AssertionError: assert 0 == 2;      1 E   AssertionError: assert 1 == 2; at:      20 test_public_incremental.py:204: Assert; last:      20 1 failed;
+rust:nat keep passed 20 of 20; asserts:  at:  last:      20 1 passed;
+python:off orig passed 17 of 20; asserts:       3 E   AssertionError: assert 1 == 2; at:       3 test_public_incremental.py:204: Assert; last:       3 1 failed;     17 1 passed;
+python:off keep passed 20 of 20; asserts:  at:  last:      20 1 passed;

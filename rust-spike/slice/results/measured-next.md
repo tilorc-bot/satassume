@@ -1,4 +1,4 @@
-# The next port chosen by measured time (issue 323) — (1) the profile, (2) the target, (3) the port, (4) the gate, (5) S1, (6) the ruling, the pre-bar checks, the bar started
+# The next port chosen by measured time (issue 323) — (1) the profile, (2) the target, (3) the port, (4) the gate, (5) S1, (6) the ruling, the pre-bar checks, the bar started, (7) the bar read and the landing
 
 Planner's ruling for sa-port-356, items 1 and 2. No source of the package, the slice or the crate is changed by these
 two items: Python stays the default and the reference, no switch is added yet, the probe count stays 21 of 32.
@@ -418,3 +418,94 @@ convdiff phase, BASE sa-port-354's bar suite rows, then the kept file under no p
 (kept.txt). One end marker on orion for both outcomes, ~/sa-rust-ids-work/sa-port-361/gobar-end.txt: `NO-BAR reasons`
 (chain361.sh:18) or `END rc ...` (gobar361.sh:19). Still owed for the landing: reading the bar, [137e]'s check when the
 planted-history test shows, bar.sh land, guard, PUSH=1, rule [91].
+
+## (7) The bar on 5b20d1f2 read: END 0; the planted-history repeat check; the landing (sa-port-362)
+
+Land-only step: no source, test or bar tool changed. The marker ~/sa-rust-ids-work/sa-port-361/gobar-end.txt says
+`END 0 END 0 2026-11-20T18:03:43Z 0f78ac29 5b20d1f2`; pre-end.txt says `answer rows 60, MATCH 60` (lra's three rows,
+pending when (6) was written: MATCH). The bar ran on pareto0 under a shared lease for 3h20m, tree 5b20d1f2 from
+origin/bar/measured-next-5b20d1f2, files in sa-port-361/bar. phases.txt: tests, suite, live, plants, extra,
+suiteplants, fmrows, convdiff, sum, each `exit 0`. **Which .so loaded:** 0f78ac2962f34b3a (the x86-64 venv build of
+00535462, whose crate is source-equal to 5b20d1f2's) in all eight phases of so-loaded.txt. launcher-env.txt: no SLICE_
+variable in the launcher's environment; env-summary.txt: each suite row's processes carried its own row's variables and
+no other. bar.log has no traceback, kill or timeout line.
+
+| row | result |
+|---|---|
+| tests | 73 files, none with a non-zero exit (test_convert_walk.py 34 passed, test_lazy_reads.py 74 passed and 5 skipped, test_term_live.py 20 passed and 1 skipped); direct.txt `exit 0` |
+| suite, Rust backend, against sa-port-354's bar suite as base | 6,317 ids: 6,149 passed, 127 failed, 23 skipped, 18 xfailed; new 0, gone 0, changed outcome 0. The 127 are the base's by id ((4)); the planted-history test is one of them (below) |
+| quiet handlers, suite | 39 rows in 2 tests, the same multiset as base (34 and 4 `_consistent` AttributeError rows in tests/test_invariants.py::test_ci_stream_reports_only_what_replays, 1 `Engine._build_context` RuntimeError in tests/test_transfer.py::test_protocol_on_fuzz); ids whose caught rows differ from base: 0; TermFault 0 |
+| live, dev and fuzz | 8 of 8 MATCH (py against py, py against rust, traced against untraced end states for both): answers, messages, sessions, end states, streams, lra, Engine.stats, moved rows and their order, 0 differences each; 14 handler files, 0 rows |
+| extra, 15 workloads | 30 of 30 MATCH (control and py against rust for each), the same nine difference counts all 0; 15 handler files, 0 rows |
+| wnative:on (SLICE_WITNESS=1 SLICE_CONVERT=rust SLICE_WITNESS_RUST=1) | answers and messages equal to Python's with the switch off on all 17 workloads; its suite row: changed outcome 0 |
+| fm rows | 20 workloads, 0 differ, exit 0; both fm plants caught (4 and 3 workloads differ, exit 1) |
+| the differential (convdiff phase, the suite pass without the plugin, ruling (a)) | 63,782 inputs (the suite and the bar's 15 workloads), **0 differences**, 13,468,551 reads, slow 1 (`Q.lt(x, sin(exp(exp(exp(5)))))`, the known row), reread 0, `exit 0`; answers 45 of 45 MATCH. The 20-workload run is (6)'s: 69,527 inputs, 0 differences, 60 of 60 |
+| kept.txt (test_convert_walk.py in plain pytest, SLICE_CONVERT=rust, no plant and under each of the six) | 7 lines, each rc 0, 34 passed, `[700-too-deep]` PASSED |
+| kept reasons | every share equal to base on all 17 workloads |
+
+The zeros of the quiet handlers stand on (4)'s planted case (`SLICE_PLANT_HANDLER=complete_check`: 661 rows on dev).
+
+### The plant table (P2: each caught by a check that does not read the plant's flag)
+
+| plant | workload rows that DIFFER (of 17) | whole suite, ids changed (of 6,317) | the differential on dev and fuzz (4,219 inputs), differences | kept test (passed in the tests phase) |
+|---|---|---|---|---|
+| 768 calls-structural-not | 10: dev, fuzz, cert, cls, scope, transfer2, transfer, twin, value, zero | 81 passed to failed | 4,195 | test_plant_is_caught[768] |
+| 769 power-rows-drop-last | 0 | 0 | 109 | test_plant_is_caught[769] |
+| 770 read-commutative-not | 2: fuzz, cls (Engine.stats) | 0 | 4,195 | test_plant_is_caught[770] |
+| 771 entry-no-assumptions | 0 | 0 | 4,195 | test_plant_is_caught[771] |
+| 772 formula-and-as-or | 0 | 0 | 2,816 | test_plant_is_caught[772] |
+| 773 entry-skip-replaced | 0 | 0 | not run (no workload replaces a definition of convert.py, (3)) | test_plant_773_is_caught |
+
+Every plant is caught: 768 to 772 by the differential (`exit 1` each, convdiff-plants.txt), which compares the two
+walkers' output and reads no flag, and by their kept tests; 773 by its kept test, which reads the replacement's own
+calls. The workload rows have no `fired` counter for the walker's plants (the column says 0 for all of them, 768
+included), so a MATCH there is read with the next paragraph, not as a zero of its own.
+
+**Three plants move no workload answer and no suite id: 769, 771 and 772. The reason for 771 and 772 is that the
+table's formula skeleton is not read by the engine's answer.** Checked on orion (aarch64 .so 4d8921d9c510e99f, three
+queries, each plant against no plant in one process, a no-plant control equal): 771 and 772 change `tables['formula']`
+and the string numbering that follows from it (`strings`, and the ids inside `terms` and `settings`); the number of
+terms and of objects is unchanged, so the assumptions' terms are still walked. `tables['formula']` is read by table.rs
+when the TermTable is made (:346) and from there only by `TermTable.formula()` (term/py.rs:311), whose one caller is
+term_shadow.py:623 `check_formula`, a check; the engine's own formula comes from formula.rs `formula_ask`
+(term_live.py:1140). So with 771 leaving the assumptions' skeleton out, the 29,216 queries of the 17 workloads answer as Python does. This is
+the reference's shape, not the port's: Python's `formula` in convert.py made the same skeleton for the same readers.
+It bears on "each ported result is read by something": the skeleton's readers are table.rs's constructor and the
+shadow check, nothing that answers. 769 changes `powers` alone (109 of 4,219 inputs on dev and fuzz have a power row to
+lose); no answer, stat or state row of the 17 workloads depends on the last power row, and which reader of `powers`
+would is not traced here.
+
+### The planted-history test shows, so a28c548's method was run ([137e])
+
+tests/test_public_incremental.py::test_public_comparison_catches_a_planted_history_dependence FAILED at :204 in each of
+the bar's eight suite rows, as on base (changed outcome 0): `assert 0 == 2` in the plain row, wnative:on, 768 and 772,
+`assert 1 == 2` in 769, 770, 771 and 773. No row flips. The check (tools362/rep362.sh and gorep362.sh, tools355's with
+this step's cells; pareto0, shared lease 268d0099, the bar's own tree of 5b20d1f2 and .so 0f78ac2962f34b3a, one fresh
+process a run, 20 runs a cell; tools362/rep-sum.txt; trees.txt: every run on that tree and .so, the Rust walker on in
+the 80 runs that set SLICE_CONVERT=rust):
+
+| cell | the test, passed | failures | keep-alive variant, passed |
+|---|---|---|---|
+| rust, every switch off | 0 of 20 | :204 `assert 0 == 2` 17, `1 == 2` 3 | 20 of 20 |
+| rust, SLICE_CONVERT=rust | 0 of 20 | :204 `0 == 2` 13, `1 == 2` 7 | 20 of 20 |
+| rust, wnative:on's environment | 0 of 20 | :204 `0 == 2` 19, `1 == 2` 1 | 20 of 20 |
+| python, every switch off | 17 of 20 | :204 `1 == 2` 3 | 20 of 20 |
+
+That is [137e]'s signature in every cell: :204, `assert N == 2` with N < 2, the plain test failing and sa-port-185's
+keep-alive variant passing 20 of 20. Python's 3 of 20 is above 355's 1 of 20 and near the top of a28c548's base rate
+(2 of 50 and 6 of 50). Reported by id as the known id()-reuse failure; the test is not edited. Footnotes with OWED
+[157]: the id at tests/test_noncommutative.py:546 is not among the failed ids of any suite row here ((6) condition
+3), and `[700-too-deep]` (the ruled skipif under a monitoring tool) ran and PASSED in the tests phase and in plain
+pytest under no plant and each plant (kept.txt).
+
+### The landing
+
+`bash rust-spike/slice/p1/bar.sh land 5b20d1f2` in the worktree: origin/rust-slice is still de88d9b9, the tested SHA's
+base, so the incoming diff is empty and the rebase is a no-op. Tested against landing source: only HANDOFF files and
+rust-spike/slice/results differ, so the guard lists no file under satassume/ or rust-spike/slice/ outside results/.
+Rule [91]: no other session's bar was running (`agent ls --all`, `machine ls`). Pushed with PUSH=1 from the commit
+that holds this section.
+
+Still owed, for the architect's list: the memory-only base row ((4), 360's `current()` check); the 15 plugin-mode ids
+([157](b)), undiagnosed; and, new here, the formula skeleton of the converted tables is read only by table.rs's
+constructor and term_shadow.py's check (P2: redundant code is removed or listed with an owner).
