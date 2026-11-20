@@ -18,7 +18,11 @@ printf '%s\n' $WLS | xargs -P $P -I{} bash -c 'n=$(echo {} | tr -d :); SLICE_CON
 if [ -z "$PL" ]; then
   ( export SLICE_CONVERT=py SLICE_CONVERT_DIFF=$O/suite SLICE_SUITE_OUT=$O/suite-rows SLICE_SUITE_BACKEND=rust PYTHONPATH=$PYTHONPATH:$S HYPOTHESIS_STORAGE_DIRECTORY=$O/hyp
     mkdir -p $O/suite-rows; cd "$T" || exit 2
-    $PY -m pytest -p rust_plugin -p handler_count -p plant_count -n $N -q --tb=short -p no:cacheprovider tests > $O/suite-pytest.log 2>&1; echo "$? $(tail -n 1 $O/suite-pytest.log)" > $O/suite-exit.txt )
+    # no `-p handler_count` here (planner, 20 Nov, sa-port-361): under its EXCEPTION_HANDLED tool CPython hangs on a deep
+    # RecursionError at some call depths (OWED [157]), and the two walkers differ by one Python frame, so the suite's
+    # `Q.commutative(Trace(M*N))` was the one difference of 69,476 inputs; nothing reads handler rows from this pass (the
+    # bar's sum reads them from its own suite rows, p1/bar.sh's suite(), which keep the plugin)
+    $PY -m pytest -p rust_plugin -p plant_count -n $N -q --tb=short -p no:cacheprovider tests > $O/suite-pytest.log 2>&1; echo "$? $(tail -n 1 $O/suite-pytest.log)" > $O/suite-exit.txt )
 fi
 $PY convert_diff.py $O/wl-* $O/suite > $O/total.txt 2>&1; echo "exit $?" >> $O/total.txt
 [ -n "$PL" ] && exit 0
