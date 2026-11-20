@@ -140,7 +140,6 @@ pub struct TermRow {
     pub content: Arc<[V]>,
     pub free: Box<[TermId]>,
     pub bits: u8,
-    pub level: u8,
     /// `decompose_power` can split this term, so a key asks for its base and exponent.
     pub has_power: bool,
 }
@@ -310,7 +309,7 @@ impl TermTable {
         let mut rows = Vec::with_capacity(n_terms);
         let mut index = HashMap::with_capacity(n_terms);
         for i in 0..n_terms {
-            let f = r.tuple(&strings, 6)?;
+            let f = r.tuple(&strings, 5)?;
             let class = ClassId(int(&f[0])? as u32);
             let args = ids(&f[1])?;
             let content: Arc<[V]> = match &f[2] {
@@ -332,7 +331,6 @@ impl TermTable {
                 content,
                 free,
                 bits: int(&f[4])? as u8,
-                level: int(&f[5])? as u8,
                 has_power: false,
             });
         }

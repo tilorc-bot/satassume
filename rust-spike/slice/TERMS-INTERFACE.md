@@ -51,7 +51,7 @@ use crate::term::{TermId, ClassId, TermTable, Refuse};
 table.kind(t);          // Kind enum: Add, Mul, Pow, Symbol, Integer, ..., Other
 table.class(t);         // ClassId; table.class_name(c) is its name
 table.args(t);          // &[TermId]
-table.facts(t);         // is_number, free symbols, has_* bits, nc level, may_be_nan
+table.facts(t);         // is_number, free symbols, has_* bits, may_be_nan (no nc level: the engine computes it on its read, engine.py `_construction_level`, entry.rs `construction_level`)
 table.neg(t);           // Result<TermId, Refuse>: -t, as SymPy builds it
 table.sub(a, b);        // a - b
 table.add(&[a, b]);     // Add(a, b)

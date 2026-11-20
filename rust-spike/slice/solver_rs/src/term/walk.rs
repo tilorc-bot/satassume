@@ -162,7 +162,6 @@ pub struct WalkCtx {
     not_in_table: Py<PyAny>,
     templates_for: Py<PyAny>,
     registry: Py<PyAny>,
-    constructed_nc: Py<PyAny>,
     getattr: Py<PyAny>,
     reversed: Py<PyAny>,
     int_t: Py<PyAny>,
@@ -268,7 +267,6 @@ impl WalkCtx {
             not_in_table: g("_NotInTable")?,
             templates_for: g("TEMPLATES_FOR")?,
             registry: g("registry")?,
-            constructed_nc: g("constructed_noncommutative")?,
             getattr: builtins.getattr("getattr")?.unbind(),
             reversed: builtins.getattr("reversed")?.unbind(),
             int_t: builtins.getattr("int")?.unbind(),
@@ -791,7 +789,7 @@ impl<'py> W<'py> {
         let args = t.getattr(intern!(py, "args"))?;
         let n = args.len()?;
         out.append(T_TUPLE)?;
-        out.append(6)?;
+        out.append(5)?;
         out.append(T_INT)?;
         out.append(c)?;
         out.append(T_TUPLE)?;
@@ -823,7 +821,7 @@ impl<'py> W<'py> {
             self.enc(content.as_any(), out, false)?;
         }
         if t.is_instance(cx.skeleton.bind(py))? {
-            for x in [T_NONE, T_INT, 0, T_INT, 0] {
+            for x in [T_NONE, T_INT, 0] {
                 out.append(x)?;
             }
             return Ok(());
@@ -862,11 +860,8 @@ impl<'py> W<'py> {
         if t.call_method1(intern!(py, "atoms"), (cx.applied_undef.bind(py),))?.is_truthy()? {
             bits |= F_UNDEF;
         }
-        let nc = cx.constructed_nc.bind(py).call1((t,))?;
         out.append(T_INT)?;
-        out.append(bits)?;
-        out.append(T_INT)?;
-        out.append(nc)
+        out.append(bits)
     }
     //@end term_row
 

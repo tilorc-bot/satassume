@@ -324,7 +324,7 @@ impl PyTermTable {
             .map(|t| t.into_any())
     }
 
-    /// (args, content, key, free, bits, level, closed, power). Key, closed and power are what's been read so far, None
+    /// (args, content, key, free, bits, closed, power). Key, closed and power are what's been read so far, None
     /// if nothing has: this forces no read. `sort_key`, `closed`, `power` and `commutative` read.
     fn row<'py>(&self, py: Python<'py>, i: u32) -> PyResult<Bound<'py, PyAny>> {
         let r = self.0.row(TermId(i));
@@ -339,7 +339,6 @@ impl PyTermTable {
             key,
             r.free.iter().map(|a| a.0).collect::<Vec<_>>(),
             r.bits,
-            r.level,
             closed,
             power,
         )

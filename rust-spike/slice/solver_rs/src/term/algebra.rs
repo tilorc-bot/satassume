@@ -99,7 +99,6 @@ impl TermTable {
             content,
             free: free.into(),
             bits,
-            level: 0,
             has_power: false,
         });
         id
@@ -120,7 +119,6 @@ impl TermTable {
             content,
             free: Box::default(),
             bits: fact::READ | fact::COMMUTATIVE | fact::NUMBER,
-            level: 0,
             has_power: false,
         });
         id
@@ -155,7 +153,7 @@ impl TermTable {
         }
         let id = TermId(self.terms.len() as u32);
         self.index_insert(class, content.clone(), id);
-        self.terms.push(TermRow { class, args: Box::default(), content, free: Box::default(), bits: fact::READ, level: 0, has_power: false });
+        self.terms.push(TermRow { class, args: Box::default(), content, free: Box::default(), bits: fact::READ, has_power: false });
         id
     }
 

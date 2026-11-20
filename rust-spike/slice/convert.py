@@ -24,7 +24,6 @@ from sympy.core.symbol import Dummy, Symbol, Wild
 from sympy.logic.boolalg import BooleanAtom, BooleanFunction
 
 from satassume import sympy_api as A
-from satassume.knowledge.domain import constructed_noncommutative
 from satassume.knowledge.templates import registry
 
 #: Rust's `Dispatch.templates_for` once knowledge_live.install_dispatch() runs (6g(a)): the class walk the engine's dispatch
@@ -267,7 +266,7 @@ class _Walk:
     # ---- rows
 
     def term_row(self, t, out):
-        out += (T_TUPLE, 6, T_INT, self.classes[type(t)], T_TUPLE, len(t.args))
+        out += (T_TUPLE, 5, T_INT, self.classes[type(t)], T_TUPLE, len(t.args))
         ids = self.ids
         for a in t.args:
             out += (T_TERM, ids[a])
@@ -276,7 +275,7 @@ class _Walk:
         else:
             self.enc(tuple(t._hashable_content()), out)
         if isinstance(t, _SKELETON):
-            out += (T_NONE, T_INT, 0, T_INT, 0)
+            out += (T_NONE, T_INT, 0)
             return
         # NaN's key holds -oo (numbers.py:3456), the one key that holds a term `.args` doesn't reach on dev, fuzz and corpus
         # (key_growth.py). A lazy key can't add a term, so its row goes in here, where the eager key's walk put it.
@@ -302,7 +301,7 @@ class _Walk:
             bits |= F_FLOAT
         if t.atoms(AppliedUndef):
             bits |= F_UNDEF
-        out += (T_INT, bits, T_INT, constructed_noncommutative(t))
+        out += (T_INT, bits)
 
     def power_rows(self, n):
         """Ids of the terms whose as_base_exp can split, so a key reads `decompose_power` of them. None of this test

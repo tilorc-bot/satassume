@@ -158,8 +158,8 @@ def test_reserved_bit_is_zero(items):
             for o in list(w.objects):
                 row = []
                 w.term_row(o, row)
-                assert row[-4] == convert.T_INT and row[-2] == convert.T_INT
-                assert row[-3] & convert.F_READ and not row[-3] & convert.F_RESERVED_32
+                assert row[1] == 5 and row[-2] == convert.T_INT
+                assert row[-1] & convert.F_READ and not row[-1] & convert.F_RESERVED_32
 
 
 def test_the_inputs_reach_every_branch():

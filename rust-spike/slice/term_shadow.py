@@ -24,7 +24,6 @@ from satassume import sympy_api
 from satassume import relations as R
 from satassume.sat import formula as F
 from satassume.knowledge.extensions import Args
-from satassume.knowledge.domain import constructed_noncommutative
 from satassume.theories.euf.euf_adapter import structural
 from satassume.theories.lra import lra_adapter as L
 from satassume import engine as E
@@ -125,7 +124,7 @@ def check_table(c, table):
             bad('class-key', t, ckey)
         if (struct_bit and bool(t.args)) != structural(t):
             bad('structural', t, struct_bit)
-        args, content, _key, free, bits, level, _closed, _power = table.row(i)
+        args, content, _key, free, bits, _closed, _power = table.row(i)
         if args != [ids[a] for a in t.args]:
             bad('args', t, args)
         real_content = t._hashable_content()
@@ -164,8 +163,6 @@ def check_table(c, table):
             bad('facts', t, bits, want)
         if table.commutative(i) != (t.is_commutative is True):
             bad('commutative', t)
-        if level != constructed_noncommutative(t):
-            bad('level', t, level)
         if number and isinstance(t, Expr):
             COUNTS['closed'] += 1
             finite, z = table.finite(i), table.complex(i)
