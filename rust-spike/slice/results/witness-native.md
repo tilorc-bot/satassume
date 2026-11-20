@@ -1,7 +1,7 @@
-# The witness check in Rust (issue 323) — (1) the profile, (2) the port, (3) the same behaviour, (4) the plant rows; items 5-7 open
+# The witness check in Rust (issue 323) — (1) the profile, (2) the port, (3) the same behaviour, (4) the plant rows, (5) S1; items 6-7 open
 
 Planner's ruling for sa-port-350 (20 Nov, on sa-port-349 52bdf2d), items 1-7. This file takes them in order. State:
-items 1 to 4 done (items 1 to 3 measured on b79f6657, on rust-slice 6ee354f9); no bar, no S1 and nothing landed. SLICE_WITNESS stays off
+items 1 to 5 done (items 1 to 3 measured on b79f6657, item 5 on b7302f83, on rust-slice 6ee354f9); no bar read and nothing landed. SLICE_WITNESS stays off
 by default, Python's witness.py the default and the reference, the unchanged path the default.
 
 ## (1) Profile before building, sa-port-350: 6ee354f9, quiet leases on pareto1
@@ -244,6 +244,69 @@ reaches the bar through plant_count.py (a `wnative` entry, the suite rows) and t
 `witness_plant_fired`, to which session_live.py's `_write_report` now adds it (the workload rows; **session_live.py
 is a shared file**, changed by 3 lines). 760, 761 and 763 tick the crate's `rel:plant_fired`.
 
-Not done: items 5 to 7 (S1, the count rule, the bar and the landing). Items 1 to 3 were measured on b79f6657; item 4
-moves the source (plant_count.py, session_live.py, a comment in p1/bar.sh), so the bar's tested SHA is this commit or
-a later one.
+## (5) S1, sa-port-354: b7302f83 against 6ee354f9, quiet lease on pareto1
+
+Lease ed51ef36 (04:51Z to 05:13Z 20 Nov, 22 minutes), load at most 1.19; bench-container, CPU 2, sa-eval-bench:1
+(Python 3.12.15), S1's environment (sa-port-350's s1/common); 12 rounds, cold processes, 9 arms alternating inside
+one invocation with the order rotated each round (tools354/time354.sh, onlease354.sh, gos1354.sh; the table by
+med354.py, kept as tools354/s1-med.txt). Trees: the archive of b7302f83 with its own bench .so 0b6f073f5c5a600b
+(stage352.sh rebuilt it and the pareto venv .so 37b7560e245df518: both hashes as on b79f6657, the crate is unchanged)
+and the archive of 6ee354f9 with 0982a28074215658. "rust" is the slice with both Rust switches on; off is
+SLICE_WITNESS=0, on32 SLICE_WITNESS=1 at cap 32 with Python's witness.py, **nat** on32 plus SLICE_WITNESS_RUST=1. The
+timed driver is tools342/qt342.py, which wraps nothing of witness.py, so the native path stays on (`_replaced`). One
+digest per workload on all 9 arms: dev 31cd0945c07f02a6, fuzz 173502b6ef285ad6, budget 35bc2c4a937bebc0, wiring
+a0df9fd43e5180c1. After the rounds one counted pass per workload and arm (tools354/wn354.py): the nat arm holds
+`witness_live.native` and counts `wn:compile` 776 on dev, 2,772 on fuzz, 19 on budget, 4,814 on wiring; every other
+arm has no hook; certified is 173, 1,284, 0 and 215 on every switch-on arm, native or not.
+
+Median seconds of 12 rounds (the interquartile range of every arm is 0.3% to 1.7% of its median):
+
+| workload | base py off | base py on32 | base rust off | base rust on32 | head py off | head py on32 | head rust off | head rust on32 | head rust nat |
+|---|---|---|---|---|---|---|---|---|---|
+| dev | 0.5324 | 0.5233 | 0.6440 | 0.6610 | 0.5329 | 0.5225 | 0.6464 | 0.6632 | **0.6192** |
+| fuzz | 8.0641 | 5.4324 | 5.8466 | 4.6429 | 8.0662 | 5.4237 | 5.8309 | 4.6392 | **4.1637** |
+| budget | 0.4744 | 0.4932 | 0.3182 | 0.3346 | 0.4743 | 0.4940 | 0.3172 | 0.3338 | **0.3316** |
+| wiring | 2.7340 | 3.0396 | 3.2370 | 3.5665 | 2.7421 | 3.0391 | 3.2557 | 3.5839 | **3.3850** |
+
+"Beyond the spread" is med342.py's rule, unchanged: the ratio of the medians is outside 1 by more than the larger
+interquartile share of the two arms, and the first arm is slower (or faster) in at least 10 of the 12 paired rounds.
+
+**The landing rule holds.** Rust-on with the native check against Rust-on at 6ee354f9 (head rust nat / base rust
+on32):
+
+| workload | medians | per round, median (quartiles) | slower in | larger iqr | |
+|---|---|---|---|---|---|
+| dev | -6.3% | -6.2% (-6.4%, -5.8%) | 0 of 12 | 0.6% | faster beyond the spread |
+| fuzz | -10.3% | -10.0% (-10.7%, -9.9%) | 0 of 12 | 1.5% | faster beyond the spread |
+| budget | -0.9% | -1.0% (-1.4%, -0.7%) | 0 of 12 | 0.5% | faster beyond the spread |
+| wiring | -5.1% | -5.0% (-5.6%, -4.6%) | 0 of 12 | 0.8% | faster beyond the spread |
+
+Faster beyond the spread on wiring, and no worse on any of the four. Against the profile's "before" in (1), what
+would move was 10.1% of Rust dev, 9.4% of Rust wiring and 17.8% of Rust fuzz: the port takes 6.3%, 5.1% and 10.3%
+of the wall time. The rest of that share is still there as the guards, the hook, the lookups and the table's symbol
+reads ((6)), and the native search itself.
+
+**The unchanged paths stay within the spread**, head against base in the same mode and switch, all 16 rows: py off
++0.1%, +0.0%, -0.0%, +0.3% (dev, fuzz, budget, wiring); py on32 -0.1%, -0.2%, +0.2%, -0.0%; rust off +0.4%, -0.3%,
+-0.3%, +0.6%; rust on32 +0.3%, -0.1%, -0.2%, +0.5%. The sum over the four workloads per round: -0.0% to +0.2% on
+each of those four arms.
+
+**On against off** (the default question), same tree and mode, medians; every row is beyond the spread:
+
+| workload | rust: native check on / off | rust: Python's check on / off | py: Python's check on / off |
+|---|---|---|---|
+| dev | **-4.2%** (0 of 12 slower) | +2.6% | -2.0% |
+| fuzz | **-28.6%** (0 of 12) | -20.4% | -32.8% |
+| budget | **+4.5%** (12 of 12 slower) | +5.3% | +4.2% |
+| wiring | **+4.0%** (12 of 12) | +10.1% | +10.8% |
+| the four summed | **-15.2%** | -8.2% | -19.8% |
+
+With the native check the switch turns from a cost into a gain on Rust dev, keeps and widens fuzz's gain, and still
+costs on budget and wiring: wiring's cost falls from +10.1% to +4.0%, budget's is nearly unchanged (+5.3% to +4.5%;
+budget makes 19 calls of the check, each compiling about 200 symbols, and certifies none). So the check is not free
+on the two workloads where it certifies little or nothing, with or without the port. Native against Python's check
+in the head's own tree (rust nat / rust on32): dev -6.6%, fuzz -10.2%, budget -0.7%, wiring -5.6%, each beyond the
+spread.
+
+Not done: items 6 and 7 (the count rule, the bar and the landing). S1 above was taken on b7302f83, the commit of item
+4; the commits after it add results and tools only.
