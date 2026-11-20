@@ -170,10 +170,51 @@ plant goes (a source change, so a new tested SHA and gate), is the planner's.
 on both in off). The repeat check ((5), [1]) shows [137e]'s signature, so by the rule it is the known id()-reuse
 row, not a DIFFER. Listed here because it is a new-against-base difference by id.
 
+## (8) The planner's ruling on (7), the bar's tools, the bar started (sa-port-370)
+
+Land-only step: no source or test changed; the tested SHA is still f5c1f3f4 (.so x86-64 venv a653fd4179da9161).
+
+**The ruling on (7)'s three rows** (planner, ~23:0xZ 20 Nov, on sa-port-365's 92001fb):
+1. `life.alive` is not a DIFFER; a footnote, with (7)'s reasoning corrected. "Not reproducible on one tree" is only
+   partly true: rep.txt has wiring under Python's walker at base 4 against head 10 in both repeats. What decides is
+   `alive_gc`, the count after one collection: 0 or 1 in every row and equal to base, so no object is leaked, only
+   cycles still waiting for the automatic collection; the removal changes how much is allocated, and that moves when
+   the automatic collection happens. **`alive` is reported but not compared; `alive_gc` is the leak check; it is equal
+   in all 48 rows.** No new gate; cmp363.py is unchanged.
+2. Plant 771 is a kept-test catch. test_plant_is_caught[771] asserts a behaviour (the refusal reason 'out-of-scope'
+   against 'non-basic'), so it is independent under P2. The bar's CONVERT_PLANTS loses 771 along with 772; 771 keeps
+   its workload rows and its suite row. Why no workload reaches it: no workload input has an in-scope proposition
+   with out-of-scope assumptions ((7), row 2). OWED, for a later working step: a workload input that reaches that
+   branch, so that the differential has a catch again.
+3. The planted-history test is the known id()-reuse row ([137e]; (5), [1]): reported by id, the test untouched.
+
+**The bar's tools** (675af65, results/tools363; each a copy with the SHA, paths, branch name, row names and plant
+list changed, the diff against the source script in sa-port-370's report):
+
+| copy | from | what changed |
+|---|---|---|
+| job363bar.sh | tools361/job361bar.sh | paths (sa-port-370; BASE = sa-port-361's bar suite, the rows of rust-slice 966268c); the branch bar/skeleton-removal-SHA; the plant rows without convert:formula-and-as-or (five: 768, 769, 770, 771, 773); CONVERT_PLANTS = 768, 769, 770; the kept loop without formula-and-as-or; build.txt's sentence; the header |
+| gobar363.sh | tools361/gobar361.sh | WT, X, L; the branch name; the job's name; the lease's reason; the header |
+| gopc363.sh | tools361/gopc361.sh | WT, X, R1; the base .so (sa-port-361's 5b20d1f2 build, 0f78ac2962f34b3a; 966268c's source equals 5b20d1f2's); the lease's reason; the header |
+
+chain361.sh is not copied: all it does is wait for gopre361.sh's marker and read that job's files (cond3.txt, the
+pre-bar differential), which this step does not have; what it stood for is the gate of (5), read by sa-port-365
+and ruled on. So gobar363.sh was started directly under setsid, and the one end marker has one writer.
+
+**The bar is running** (started 22:59Z 20 Nov, pareto0, shared lease; 361's took 3h20m, so about 02:20Z 21 Nov):
+`setsid bash gobar363.sh f5c1f3f4 a653fd4179da9161`. It tests origin/bar/skeleton-removal-f5c1f3f4 (= f5c1f3f4,
+pushed for it) through f5c1f3f4's own p1/bar.sh (p1/ is unchanged since 5b20d1f2). Checked at its start, on pareto0:
+the tree's HEAD f5c1f3f4 on that branch, build.txt and so-loaded.txt a653fd4179da9161, launcher-env.txt `(none)`,
+base rows sa-port-361/bar/suite.
+**ONE end marker: orion ~/sa-rust-ids-work/sa-port-370/gobar-end.txt, written by gobar363.sh:19** (its last line:
+`END rc <first line of pareto0's bar-end.txt> | time`; a clean bar reads `END 0 END 0 <time> a653fd41 f5c1f3f4 |
+<time>`). gobar363.sh:8 and :9 write the same file only when the bar is not started (branch head or staged .so
+wrong; neither happened). On pareto0 the job's own marker is sa-port-370/bar-end.txt (job363bar.sh:64).
+
 ## Not done
 
-- The bar (a tools363 copy of tools361's job361bar.sh, gobar361.sh, chain361.sh, with the plant list without
-  formula-and-as-or), the probe count against 21 of 32 (tools361/gopc361.sh), R5 and "nothing kept across queries"
-  (R1, H2) as the bar's rows show them, the quiet-catch count, bar.sh land, the guard, PUSH=1, rule [91].
-- The bar's plant list depends on the ruling on row 2: job361bar.sh's CONVERT_PLANTS runs the differential per plant
-  and 771 would now show 0 differences there.
+- Reading the bar (the rows of measured-next.md (7) are the template: phases, which .so loaded, tests, suite by id
+  against base, quiet handlers with the planted proof, live, extra, wnative:on, fm rows, the differential, kept.txt
+  with 6 lines of 33 passed, the plant table for 768, 769, 770, 771, 773, R5 from term_discard, R1/H2), the
+  planted-history repeat check if the test shows ([137e]), the probe count against 21 of 32 (gopc363.sh, running on
+  pareto1 when this was written), bar.sh land, the guard, PUSH=1, rule [91].
