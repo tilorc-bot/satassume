@@ -9,7 +9,7 @@ WT=~/sa-rust-ids-work/sa-port-356/wt; X=~/sa-rust-ids-work/sa-port-361; L=/home/
 [ "$(sha256sum $X/so/sa_solver-$SHA.so | cut -c1-16)" = "$WANT" ] || { echo "END staged .so is not $WANT" > $X/gobar-end.txt; exit 2; }
 ssh pareto0 "mkdir -p $L/so; echo $SHA > $L/so/source.txt; echo $WANT > $L/so/want.txt"
 git -C $WT show $SHA:rust-spike/slice/p1/bar.sh | ssh pareto0 "cat > /home/tilo/sp19/bar-sa-port-361.sh"
-ssh pareto0 "cat > $L/job361bar.sh" < $WT/rust-spike/slice/results/tools361/job361bar.sh
+ssh pareto0 "cat > $L/job361bar.sh" < $X/tools/job361bar.sh
 ssh pareto0 "cat > $L/so/sa_solver.so" < $X/so/sa_solver-$SHA.so
 ssh pareto0 "cat > $L/so/so.txt" < $X/so/so-$SHA.txt
 machine run pareto0 --shared --wait 4h -r "sa-port-361: convert.py port (issue 323): the full bar on $SHA with the convdiff phase, about 3 hours" -- bash $L/job361bar.sh > $X/bar-launch.log 2>&1

@@ -1,4 +1,4 @@
-# The next port chosen by measured time (issue 323) — (1) the profile, (2) the target, (3) the port, (4) the gate, (5) S1
+# The next port chosen by measured time (issue 323) — (1) the profile, (2) the target, (3) the port, (4) the gate, (5) S1, (6) the ruling, the pre-bar checks, the bar started
 
 Planner's ruling for sa-port-356, items 1 and 2. No source of the package, the slice or the crate is changed by these
 two items: Python stays the default and the reference, no switch is added yet, the probe count stays 21 of 32.
@@ -353,8 +353,68 @@ The other two Rust pairs agree (rust-on32: -2.3%, -1.5%, -1.1%, -2.5%; rust-off:
 worse on any, Python rows within the spread: met (four of four). Against (2)'s expectation of 2-4% on dev and wiring:
 3.2% and 3.5%.
 
-## (6) The bar: not run
+## (6) Ruling (a), the pre-bar checks, the probe count; the bar started detached (sa-port-361)
 
-Not run: one row of it is known to differ (the differential above), which is a question by the ruling. Still owed for
-the landing: the bar with tools358/rows358.sh's rows, [137e]'s check when the planted-history test shows, the probe
-count against 21 of 32.
+**The ruling (planner, ~13:00Z 20 Nov): option (a).** `p1/convert_diff.sh`'s suite pass no longer loads
+`-p handler_count` (commit 5b20d1f2, one line removed, a comment citing OWED [157] and the row). **p1/convert_diff.sh is
+a shared bar tool changed by this step.** It is guarded source, so **the tested SHA is now 5b20d1f2** (00535462 plus
+that one file). The crate is unchanged (`git diff --quiet 00535462 5b20d1f2 -- rust-spike/slice/solver_rs`), so the .so
+hashes stay: x86-64 venv 0f78ac2962f34b3a, bench 8b8041d3fe6223c2, aarch64 4d8921d9c510e99f. The frozen branch is
+origin/bar/measured-next-5b20d1f2.
+
+**Condition 2, nothing checked vanishes.** No reader took handler rows from the differential's pass: `p1/bar_sum.py`
+reads `handlers.*.jsonl` only from the bar's suite rows (:28, :73, :161), `*.handlers` from the live rows (:107) and the
+extra rows (:118), and has no reference to `convdiff`. Those rows are written by `p1/bar.sh` `suite()` (:131), which
+keeps `-p rust_plugin -p handler_count -p plant_count`. `convert_diff.py` reads only the `SLICE_CONVERT_DIFF` files.
+
+**Condition 3, the same exposure in the bar's own suite rows: head and base behave the same.**
+`tests/test_noncommutative.py::test_scalar_valued_matrix_functions_stay_in_scope` (the id at :546, the suite's
+`Q.commutative(Trace(M*N))`) alone under `suite()`'s exact invocation (`-p rust_plugin -p handler_count -p plant_count
+-p hyp_profile --hypothesis-profile=bar -n 6`), each cell under `timeout 300`, pareto0 (tools361/pre361.sh):
+
+| tree, .so | SLICE_CONVERT=py | SLICE_CONVERT=rust |
+|---|---|---|
+| head 5b20d1f2, 0f78ac2962f34b3a | rc 0, 1 passed in 1.07 s | rc 0, 1 passed in 0.95 s |
+| base de88d9b9, 37b7560e245df518 | rc 0, 1 passed in 1.08 s | rc 0, 1 passed in 0.95 s |
+
+The plugin was loaded in every cell (a `handlers.PID.jsonl` per process, 0 rows; the row file has the id, passed, on
+the Rust backend). The same four cells with `-n 0` (the main process, another call depth): 1 passed in 0.08 s each. No
+cell hangs, so the bar's suite rows are not exposed here; that fits the test's own ask not making the read (`is_complex` of
+`M*N`) that the differential forces (not traced). Footnote, OWED [157]: the hang is reachable only where something reads every lazy
+read under an EXCEPTION_HANDLED tool, which after (a) nothing in the bar does.
+
+**Condition 4, the rerun differential, from the changed script as it stands** (pareto0, tree 5b20d1f2, N=6 P=7;
+tools361/pre361.sh; output ~/sa-rust-ids-work/sa-port-361/pre-5b20d1f2/convdiff): **69,527 inputs, 0 differences**,
+14,267,639 reads compared, 1,783,462 terms, `exit 0`. Of these the suite: 40,166 inputs, 0 differences, 10,779,167
+reads (sa-port-360's pass without the plugin: 40,163; the pass is not under the derandomized hypothesis profile); the
+20 workloads: 29,361 inputs. slow 1: `Q.lt(x, sin(exp(exp(exp(5)))))`, the known row. reread 100, all on rootof, all
+`finite` of `x*CRootOf(...)`: Python's own second ask answering differently, the known row of
+results/convert-step.md:129 (84, then 59 there; 0 in sa-port-359's run; it follows SymPy's assumptions shuffle), not a
+difference between the walkers. The suite pass: 132 failed, 6144 passed, 23 skipped, 18 xfailed, the same line as
+sa-port-360's pass without the plugin. The 20 workloads each exit 0. The answers (py, rust with Python's walker, rust
+with Rust's): 57 of 57 rows MATCH when this was written, lra's three rows still running (lra takes 27.5 minutes in the
+differential's first pass, as in sa-port-359's job, then 29 minutes on Python and about 20 on Rust in the answer runs: the job is about 1h40m,
+not the 40 minutes its lease line says). tools361/chain361.sh starts the bar only on 60 of 60.
+
+**The probe count stays 21 of 32; convert.py does not start to count.** tools354/pc354.sh on 5b20d1f2 and de88d9b9,
+pareto1, three cells each, 20 workloads, 30,753 queries, 60 of 60 rows `ref 0 run 0 cmp 0` on each tree
+(tools361/gopc361.sh, pctab361.py, pc-tab.txt):
+- d0, every switch unset (the default): every probed file equal to base, 0 rows differ per workload and function.
+  convert.py 14,559,922 calls on both: Python's walker is the default, so convert.py is still per-query Python there.
+- w1 (`SLICE_CONVERT=rust`, with SLICE_WITNESS=1 and SLICE_TERM_FRAMES=rust): convert.py **2,272,599 -> 58,980** calls,
+  per query 42.2 -> 1.2 on dev, 98.6 -> 2.0 on fuzz, 927.9 -> 2.4 on budget, 77.5 -> 2.0 on wiring, 163.9 -> 2.0 on
+  lra. What is left per query is `convert` (29,361) and `Converted.__init__` (29,331); functions of convert.py called
+  35 -> 16. Gone: `rust_walk`'s lambdas (838,516 and 263,354), `_structural_class` 425,137, `_template_name` 326,137,
+  `formula` 90,166, `default_engine_settings` 29,361 and its generator 58,722, `_Walk.read` 36,503, `_Walk.__init__`
+  and `_RustWalk.__init__` 29,337 each, `_Walk.power_rows` 29,331, `_read_key` 21,114, `_read_commutative` 14,650,
+  `_rel` 10,929. nat (w1 plus SLICE_WITNESS_RUST=1): 2,429,056 -> 58,980.
+- No other probed file changes in any cell (w1 and nat: 0 functions differ between base and head).
+
+**The bar: started detached by tools361/chain361.sh, not read by this session.** `gobar361.sh 5b20d1f2
+0f78ac2962f34b3a` (tools360's launcher and job with this session's paths; neither had run before): p1/bar.sh as of
+5b20d1f2 on origin/bar/measured-next-5b20d1f2, pareto0, shared lease, phases `tests suite live plants extra suiteplants
+fmrows convdiff sum`, rows wnative:on and the six convert:NAME rows as PLANTS and SUITE_PLANTS, CONVERT_PLANTS for the
+convdiff phase, BASE sa-port-354's bar suite rows, then the kept file under no plant and each plant in plain pytest
+(kept.txt). One end marker on orion for both outcomes, ~/sa-rust-ids-work/sa-port-361/gobar-end.txt: `NO-BAR reasons`
+(chain361.sh:18) or `END rc ...` (gobar361.sh:19). Still owed for the landing: reading the bar, [137e]'s check when the
+planted-history test shows, bar.sh land, guard, PUSH=1, rule [91].

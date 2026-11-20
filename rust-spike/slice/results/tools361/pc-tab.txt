@@ -1,0 +1,71 @@
+1 calls per file over the workloads: d0 base new | w1 base new | nat base new
+  base: workloads {'d0': 20, 'w1': 20, 'nat': 20} queries {'d0': 30753, 'w1': 30753, 'nat': 30753}
+  new: workloads {'d0': 20, 'w1': 20, 'nat': 20} queries {'d0': 30753, 'w1': 30753, 'nat': 30753}
+  __init__.py | 20 20 | 20 20 | 20 20
+  compile.py | 142 142 | 142 142 | 142 142
+  convert.py | 14559922 14559922 | 2272599 58980 * | 2429056 58980 *
+  engine.py | 255617 255617 | 265569 265569 | 265569 265569
+  formula.py | 183111 183111 | 169270 169270 | 169270 169270
+  knowledge_common_live.py | 60 60 | 60 60 | 60 60
+  knowledge_core_live.py | 32857 32857 | 32857 32857 | 32857 32857
+  knowledge_live.py | 7646 7646 | 7646 7646 | 7646 7646
+  lra_adapter.py | 289052 289052 | 246881 246881 | 246881 246881
+  session_live.py | 764616 764616 | 705699 705699 | 705699 705699
+  sympy_api.py | 650746 650746 | 650746 650746 | 650746 650746
+  term_live.py | 8497075 8497075 | 1131832 1131832 | 1131832 1131832
+  wiring.py | 612852 612852 | 612852 612852 | 612852 612852
+  witness.py | 420 420 | 5441984 5441984 | 127039 127039
+  witness_live.py | 100 100 | 100 100 | 34679 34679
+2 NEW d0 against BASE d0, per workload and function
+  rows that differ: 0 []
+3 convert.py under SLICE_CONVERT=rust (cell w1): calls per workload, base new, per query
+  budget queries 28 base 25981 new 68 per query 927.9 -> 2.4
+  cert queries 61 base 5263 new 134 per query 86.3 -> 2.2
+  cls queries 72 base 2589 new 84 per query 36.0 -> 1.2
+  core queries 1636 base 100683 new 3280 per query 61.5 -> 2.0
+  dev queries 1985 base 83760 new 2454 per query 42.2 -> 1.2
+  f6 queries 2902 base 171451 new 5816 per query 59.1 -> 2.0
+  fuzz queries 3000 base 295699 new 6008 per query 98.6 -> 2.0
+  ground queries 18 base 1691 new 48 per query 93.9 -> 2.7
+  loop queries 420 base 22370 new 780 per query 53.3 -> 1.9
+  lra queries 1500 base 245857 new 3010 per query 163.9 -> 2.0
+  opaque queries 2546 base 152861 new 5104 per query 60.0 -> 2.0
+  port queries 19 base 1613 new 50 per query 84.9 -> 2.6
+  rootof queries 5187 base 352737 new 9580 per query 68.0 -> 1.8
+  scope queries 169 base 12538 new 350 per query 74.2 -> 2.1
+  transfer2340 queries 40 base 6695 new 92 per query 167.4 -> 2.3
+  transfer760 queries 60 base 7609 new 132 per query 126.8 -> 2.2
+  twin queries 2 base 220 new 16 per query 110.0 -> 8.0
+  value queries 3742 base 203587 new 7446 per query 54.4 -> 2.0
+  wiring queries 6512 base 504968 new 13036 per query 77.5 -> 2.0
+  zero queries 854 base 74427 new 1492 per query 87.2 -> 1.7
+  by function over the 20 (base new), the 25 largest of either:
+    convert.py:rust_walk.<locals>.<lambda> 838516 0
+    convert.py:_structural_class 425137 0
+    convert.py:_template_name 326137 0
+    convert.py:rust_walk.<locals>._RustWalk.<lambda> 263354 0
+    convert.py:formula 90166 0
+    convert.py:default_engine_settings.<locals>.<genexpr> 58722 0
+    convert.py:_Walk.read 36503 0
+    convert.py:convert 29361 29361
+    convert.py:default_engine_settings 29361 0
+    convert.py:rust_walk.<locals>._RustWalk.__init__ 29337 0
+    convert.py:_Walk.__init__ 29337 0
+    convert.py:_Walk.power_rows 29331 0
+    convert.py:Converted.__init__ 29331 29331
+    convert.py:_Walk._read_key 21114 0
+    convert.py:_Walk._read_commutative 14650 0
+    convert.py:_rel 10929 0
+    convert.py:formula.<locals>.<genexpr> 10236 0
+    convert.py:_Walk._read_symbol 569 0
+    convert.py:_Walk._read_finite 96 0
+    convert.py:_Walk._read_constant.<locals>.<genexpr> 62 0
+    convert.py:_Walk._read_constant 62 0
+    convert.py:rust_walk.<locals>.<genexpr> 40 40
+    convert.py:Kept.__init__ 30 30
+    convert.py:Converted 20 20
+    convert.py:_Walk 20 20
+  functions of convert.py called: base 35 new 16; no longer called: ['convert.py:_Walk.__init__', 'convert.py:_Walk._read_commutative', 'convert.py:_Walk._read_constant', 'convert.py:_Walk._read_constant.<locals>.<genexpr>', 'convert.py:_Walk._read_finite', 'convert.py:_Walk._read_key', 'convert.py:_Walk._read_symbol', 'convert.py:_Walk.power_rows', 'convert.py:_Walk.read', 'convert.py:_rel', 'convert.py:_structural_class', 'convert.py:_template_name', 'convert.py:default_engine_settings', 'convert.py:default_engine_settings.<locals>.<genexpr>', 'convert.py:formula', 'convert.py:formula.<locals>.<genexpr>', 'convert.py:rust_walk.<locals>.<lambda>', 'convert.py:rust_walk.<locals>._RustWalk.<lambda>', 'convert.py:rust_walk.<locals>._RustWalk.__init__']
+4 other probed files, functions whose count differs base/new
+  w1: 0 []
+  nat: 0 []
