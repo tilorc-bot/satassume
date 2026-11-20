@@ -1568,9 +1568,12 @@ def _write_report(path):
     import json
     import satassume.witness
     # witness_plant_fired: satassume.witness's own count of its planted sites (SLICE_WITNESS_PLANT), the bar's fired
-    # column for a `witness:*` row
+    # column for a `witness:*` row, plus witness_live's for its two (SLICE_WITNESS_RUST_PLANT 762 and 764; a
+    # `wnative:*` row sets no witness.py plant, so one of the two terms is 0)
+    import sys
+    wn = sys.modules.get('witness_live')
     json.dump(dict(so=sa_solver.__file__, counts=counts(), nodes=CENSUS, plant_fired=PLANT_FIRED[0], var_preds=VAR_PREDS,
-                   witness_plant_fired=satassume.witness.FIRED[0]), open(path, 'w'), sort_keys=True)
+                   witness_plant_fired=satassume.witness.FIRED[0] + (wn.FIRED[0] if wn else 0)), open(path, 'w'), sort_keys=True)
 
 
 def from_env():

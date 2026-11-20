@@ -8,6 +8,8 @@ only the crate's `rel:plant_fired`, which a term, dispatch, knowledge or witness
   term       term_live.COUNTS['plant_fired'] and the dispatch's `plant:fired`  (SLICE_TERM_PLANT)
   knowledge  term_live.COUNTS['knowledge:plant_fired']
   witness    satassume.witness.FIRED[0]                                        (SLICE_WITNESS_PLANT)
+  wnative    witness_live.FIRED[0]: plants 762 and 764, whose sites are in witness_live.py (SLICE_WITNESS_RUST_PLANT;
+             760, 761 and 763 are in the crate and tick `rel:plant_fired`)
 The Rust walker's plants (SLICE_CONVERT_PLANT) have no counter, so a `convert:*` row has no entry and the summary says so.
 Tests clear some of these counters, so the counts are summed test by test: after each test the rise since the reading
 before it is added (a counter that fell was cleared, and then its whole value is the rise). The crate's counters as they
@@ -44,6 +46,9 @@ def _read():
     m = sys.modules.get('satassume.witness')
     if m is not None:
         out['witness'] = m.FIRED[0]
+    m = sys.modules.get('witness_live')
+    if m is not None:
+        out['wnative'] = m.FIRED[0]
     return out
 
 

@@ -96,7 +96,7 @@ phase() { echo "$1 $(date -u +%FT%TZ) exit ${2:-0}" >> $B/phases.txt; }
 # switch alone and with the frames. A `convert:*` row carries SLICE_CONVERT=rust itself, so it is usable on workloads
 # as well as on the suite
 # `wnative:on` is no plant: the native witness check (SLICE_WITNESS_RUST=1 with the two switches it needs; sa-port-351);
-# `wnative:NAME` is SLICE_WITNESS_RUST_PLANT=NAME (plants 760-763) on that path; both are compared like a `witness:*` row
+# `wnative:NAME` is SLICE_WITNESS_RUST_PLANT=NAME (plants 760-764) on that path; both are compared like a `witness:*` row
 # `witness:on` is no plant: SLICE_WITNESS=1 alone (the witness check, off by default); `witness:NAME` is
 # SLICE_WITNESS_PLANT=NAME (plants 749-752, 754 and 755-757), which acts only with the switch on, so its row turns it on itself
 penv() { case $1 in wnative:on) echo "SLICE_WITNESS=1 SLICE_CONVERT=rust SLICE_WITNESS_RUST=1";; wnative:*) echo "SLICE_WITNESS_RUST_PLANT=${1#wnative:} SLICE_WITNESS=1 SLICE_CONVERT=rust SLICE_WITNESS_RUST=1";; witness:on) echo "SLICE_WITNESS=1";; witness:*) echo "SLICE_WITNESS_PLANT=${1#witness:} SLICE_WITNESS=1";; frames:rust) echo "SLICE_TERM_FRAMES=rust";; walk:rust) echo "SLICE_CONVERT=rust";; both:rust) echo "SLICE_CONVERT=rust SLICE_TERM_FRAMES=rust";; term:tl-*) echo "SLICE_TERM_PLANT=${1#term:} SLICE_TERM_FRAMES=rust";; term:*) echo "SLICE_TERM_PLANT=${1#term:}";; convert:*) echo "SLICE_CONVERT_PLANT=${1#convert:} SLICE_CONVERT=rust";; *) echo "SLICE_SESSION_PLANT=$1";; esac; }

@@ -1,7 +1,7 @@
-# The witness check in Rust (issue 323) — (1) the profile, (2) the port, (3) the same behaviour; items 4-7 open
+# The witness check in Rust (issue 323) — (1) the profile, (2) the port, (3) the same behaviour, (4) the plant rows; items 5-7 open
 
 Planner's ruling for sa-port-350 (20 Nov, on sa-port-349 52bdf2d), items 1-7. This file takes them in order. State:
-items 1 to 3 done (source b79f6657 on rust-slice 6ee354f9); no bar, no S1 and nothing landed. SLICE_WITNESS stays off
+items 1 to 4 done (items 1 to 3 measured on b79f6657, on rust-slice 6ee354f9); no bar, no S1 and nothing landed. SLICE_WITNESS stays off
 by default, Python's witness.py the default and the reference, the unchanged path the default.
 
 ## (1) Profile before building, sa-port-350: 6ee354f9, quiet leases on pareto1
@@ -213,5 +213,37 @@ or pass/fail counts. The Rust-backend runs that fail (16 per switch) fail the sa
 (tests/test_transfer.py::test_models_respect_transfer and ::test_protocol_on_fuzz); the Python-backend runs all exit
 0. nat runs made 14,368 native compiles and 5,792 searches (fallbacks type 252, off 48); wit runs none.
 
-Not done: items 4 to 7 (plant rows in the bar, S1, the count rule, the bar and the landing). The tested SHA for items
-1 to 3 is b79f6657.
+## (4) Plants 760-764 and their bar rows, sa-port-353 (the bar itself is item 7)
+
+Rows (tools353/job353bar.sh, through bar.sh's penv): `witness:on` (Python's witness.py, the reference), `wnative:on`
+(no plant) and one row per plant, each with SLICE_WITNESS=1 SLICE_CONVERT=rust SLICE_WITNESS_RUST=1, as workload rows
+and as suite rows; after the bar the job runs test_witness_native.py under each plant on the bar's tree (kept.txt).
+No kept test reads a plant's flag: each compares the native side with witness.py on the same input, or reads the
+fallback counters (P2).
+
+| plant | site | what it does | fired dev / fuzz | dev, fuzz against Python | caught by |
+|---|---|---|---|---|---|
+| 760 wn-integer-half | witness.rs `pred` | a wrong table entry: integer at 1/2 | 403 / 343 | DIFFER, DIFFER | the workload rows; test_the_native_table_is_pythons, test_the_native_check_is_pythons_per_query |
+| 761 wn-work-one | witness.rs `spend` | the work bound trips one evaluation early | 0 / 0 | MATCH, MATCH | test_the_work_bound_trips_on_the_same_evaluation |
+| 762 wn-skip-patched | witness_live.py `native` | the P1 guard `witness._patched` passed over | 535 / 2697 | MATCH, MATCH | test_a_users_method_on_the_engine_is_left_to_the_engine |
+| 763 wn-int-side | witness.rs `side` | the lookup's type check passed over | 3032 / 19426 | MATCH, MATCH | test_a_python_int_side_goes_to_python |
+| 764 wn-skip-own | witness_live.py `_replaced` | a replaced function of witness.py passed over | 776 / 2772 | MATCH, MATCH | test_a_replaced_function_of_witness_py_is_called |
+
+The numbers are an orion run of bar.sh's plants command on the worktree at this commit (tools353/rows353.sh; not the
+bar and not a timing); `wnative:on` gives MATCH on both. Why a kept test and no workload:
+- 761 fires only when a query's work count lands exactly on WORK (2500), and no query of dev or fuzz does (fired 0).
+  The kept test sets WORK to the query's own count.
+- 762: no workload puts a user's method on the engine. Its site is in witness_live.py because the guards stay Python
+  by ruling (P1); that hook is the native path's entry, called once per query before the search.
+- 763: no query of dev or fuzz has a Python int or bool as an atom side.
+- 764: no workload replaces a function of witness.py; tests/test_witness.py does, so its suite row is expected to
+  fail test_a_set_the_engine_knows_inconsistent_tries_no_point (to be read in the bar).
+
+**The fired route for 762 and 764** (the planner asked which): their sites count in `witness_live.FIRED`, and that
+reaches the bar through plant_count.py (a `wnative` entry, the suite rows) and through the session report's
+`witness_plant_fired`, to which session_live.py's `_write_report` now adds it (the workload rows; **session_live.py
+is a shared file**, changed by 3 lines). 760, 761 and 763 tick the crate's `rel:plant_fired`.
+
+Not done: items 5 to 7 (S1, the count rule, the bar and the landing). Items 1 to 3 were measured on b79f6657; item 4
+moves the source (plant_count.py, session_live.py, a comment in p1/bar.sh), so the bar's tested SHA is this commit or
+a later one.
