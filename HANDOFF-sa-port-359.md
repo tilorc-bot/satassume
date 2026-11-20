@@ -70,7 +70,7 @@ x86-64 bench build 8b8041d3fe6223c2 (S1). Base de88d9b9 (crate equal to b7302f83
 - `git worktree remove` ~/sa-rust-ids-work/sa-port-357/base when no step needs it (holder359.py used it).
 
 ## File:line map
-- rust-spike/slice/test_convert_walk.py: exception_handled_tool :264, TOO_DEEP :282, test_a_deep_formula_is_pythons :289.
+- rust-spike/slice/test_convert_walk.py: exception_handled_tool :263, TOO_DEEP :283, test_a_deep_formula_is_pythons :290.
 - rust-spike/slice/results/tools359: stage359.sh, go359.sh -> job359.sh -> gate359.sh, suite359.sh, iv359.sh;
   diff359.py (per query rows; `life`), cmp359.py, tab359.py, gate-perquery.txt; byid359.py; cv_seen.py (plugin);
   gos1359.sh -> onlease359.sh -> time359.sh, wn359.py; med359.py; lazyrun359.py; holder359.py.
