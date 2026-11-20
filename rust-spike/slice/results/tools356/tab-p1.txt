@@ -1,0 +1,53 @@
+| workload | arm | rounds | median s | min | max | iqr/median | digest | .so |
+|---|---|---|---|---|---|---|---|---|
+| dev | rust-nat | 5 | 0.6145 | 0.6125 | 0.6168 | 0.6% | 31cd0945c07f02a6 | 0b6f073f5c5a600b |
+| dev | py-on32 | 5 | 0.5206 | 0.5180 | 0.5607 | 4.5% | 31cd0945c07f02a6 | None |
+| fuzz | rust-nat | 5 | 4.1414 | 4.1199 | 4.1606 | 0.6% | 173502b6ef285ad6 | 0b6f073f5c5a600b |
+| fuzz | py-on32 | 5 | 5.3998 | 5.3758 | 5.4140 | 0.6% | 173502b6ef285ad6 | None |
+| budget | rust-nat | 5 | 0.3240 | 0.3233 | 0.3261 | 0.5% | 35bc2c4a937bebc0 | 0b6f073f5c5a600b |
+| budget | py-on32 | 5 | 0.4832 | 0.4820 | 0.4849 | 0.5% | 35bc2c4a937bebc0 | None |
+| wiring | rust-nat | 5 | 3.3688 | 3.3428 | 3.4046 | 1.5% | a0df9fd43e5180c1 | 0b6f073f5c5a600b |
+| wiring | py-on32 | 5 | 2.9831 | 2.9788 | 3.0177 | 0.7% | a0df9fd43e5180c1 | None |
+
+samples and categories (ana195), share of the in-loop samples:
+  dev: N 18785, runs 30, digests ['31cd0945c07f02a6']; capi<-rust 44.0%, callback 20.2%, rust 16.1%, sympy<-rust 9.5%, glue 8.6%, python 1.4%, unattributed 0.2%
+  fuzz: N 25251, runs 6, digests ['173502b6ef285ad6']; capi<-rust 42.3%, rust 22.0%, callback 15.2%, sympy<-rust 10.5%, glue 9.0%, python 0.6%, unattributed 0.3%
+  budget: N 9779, runs 30, digests ['35bc2c4a937bebc0']; capi<-rust 39.1%, sympy<-rust 19.1%, rust 17.7%, callback 17.1%, glue 6.5%, unattributed 0.4%, python 0.1%
+  wiring: N 27293, runs 8, digests ['a0df9fd43e5180c1']; capi<-rust 44.1%, callback 20.2%, rust 14.9%, sympy<-rust 11.7%, glue 7.8%, python 1.1%, unattributed 0.2%
+
+| file | dev own (bytecode + C) | dev incl | fuzz own (bytecode + C) | fuzz incl | budget own (bytecode + C) | budget incl | wiring own (bytecode + C) | wiring incl | own summed | calls dev/fuzz/budget/wiring |
+|---|---|---|---|---|---|---|---|---|---|---|
+| sympy | 9.18% (3.23 + 5.95) | 9.3% | 10.31% (3.99 + 6.32) | 10.6% | 24.15% (8.26 + 15.89) | 24.8% | 11.16% (3.96 + 7.20) | 11.2% | 54.80% | -/-/-/- |
+| slice/convert.py | 5.50% (2.22 + 3.28) | 31.1% | 2.92% (1.15 + 1.77) | 18.1% | 2.79% (0.99 + 1.80) | 35.6% | 6.33% (2.50 + 3.83) | 38.4% | 17.54% | 89769/319485/47492/611358 |
+| sa/knowledge/domain.py | 1.80% (0.48 + 1.31) | 2.0% | 1.45% (0.28 + 1.17) | 1.5% | 4.47% (0.70 + 3.77) | 4.6% | 3.66% (0.63 + 3.03) | 3.7% | 11.38% | 15921/43870/42068/158385 |
+| slice/term_live.py | 2.87% (1.07 + 1.80) | 98.5% | 2.61% (1.22 + 1.39) | 99.3% | 0.19% (0.07 + 0.12) | 99.8% | 2.64% (0.92 + 1.73) | 98.9% | 8.32% | 26012/198830/748/119269 |
+| sa/sympy_api.py | 2.47% (1.16 + 1.31) | 99.3% | 1.36% (0.71 + 0.65) | 99.6% | 0.62% (0.22 + 0.40) | 99.8% | 2.31% (1.11 + 1.21) | 99.5% | 6.76% | 25597/89472/1451/186905 |
+| sa/state/memos.py | 2.54% (0.96 + 1.58) | 2.9% | 0.91% (0.39 + 0.52) | 1.0% | 0.12% (0.06 + 0.06) | 0.1% | 2.47% (0.97 + 1.51) | 2.7% | 6.05% | 95225/218879/2069/511546 |
+| stdlib | 0.93% (0.29 + 0.64) | 1.0% | 1.34% (0.52 + 0.82) | 1.5% | 0.66% (0.19 + 0.47) | 0.7% | 0.53% (0.26 + 0.27) | 0.6% | 3.47% | -/-/-/- |
+| slice/session_live.py | 0.92% (0.43 + 0.49) | 18.6% | 0.82% (0.36 + 0.46) | 37.9% | 0.25% (0.13 + 0.11) | 7.3% | 0.96% (0.53 + 0.43) | 7.0% | 2.95% | 20493/69606/2176/135804 |
+| sa/theories/euf/euf_adapter.py | 1.02% (0.28 + 0.74) | 1.2% | 0.62% (0.26 + 0.36) | 1.1% | 0.02% (0.01 + 0.01) | 0.0% | 0.84% (0.21 + 0.63) | 0.8% | 2.50% | 13474/86484/218/55160 |
+| sa/sat/formula.py | 0.12% (0.03 + 0.09) | 0.3% | 0.23% (0.06 + 0.17) | 0.4% | 2.00% (0.01 + 1.99) | 2.4% | 0.13% (0.04 + 0.09) | 0.4% | 2.48% | 4065/46981/12702/12721 |
+| slice/lra_backend.py | 0.52% (0.22 + 0.30) | 3.1% | 1.56% (0.74 + 0.81) | 5.7% | 0.00% (0.00 + 0.00) | 0.0% | 0.00% (0.00 + 0.00) | 0.0% | 2.08% | 17807/338351/1/- |
+| other | 0.54% (0.13 + 0.40) | 0.6% | 0.40% (0.11 + 0.29) | 0.4% | 0.40% (0.08 + 0.32) | 0.4% | 0.22% (0.04 + 0.18) | 0.2% | 1.56% | -/-/-/- |
+| harness | 0.54% (0.19 + 0.35) | 99.9% | 0.25% (0.07 + 0.18) | 99.9% | 0.03% (0.00 + 0.03) | 99.9% | 0.44% (0.16 + 0.28) | 99.9% | 1.26% | -/-/-/- |
+| sa/witness.py | 0.42% (0.18 + 0.24) | 4.6% | 0.61% (0.27 + 0.34) | 8.4% | 0.01% (0.00 + 0.01) | 3.9% | 0.21% (0.15 + 0.06) | 4.4% | 1.25% | 2260/90126/57/11346 |
+| slice/witness_live.py | 0.38% (0.27 + 0.11) | 4.5% | 0.23% (0.16 + 0.07) | 7.8% | 0.06% (0.02 + 0.04) | 3.9% | 0.36% (0.25 + 0.11) | 4.3% | 1.03% | 2328/8316/57/14442 |
+| sa/engine.py | 0.25% (0.10 + 0.15) | 0.4% | 0.14% (0.06 + 0.08) | 0.3% | 0.16% (0.13 + 0.03) | 0.2% | 0.20% (0.08 + 0.12) | 0.3% | 0.75% | 8196/34060/25797/42463 |
+| sa/theories/lra/lra_adapter.py | 0.13% (0.07 + 0.06) | 0.3% | 0.41% (0.23 + 0.17) | 0.7% | 0.01% (0.01 + 0.00) | 0.0% | 0.00% (0.00 + 0.00) | 0.0% | 0.55% | 2896/59180/60/6 |
+| sa/_compat.py | 0.20% (0.07 + 0.13) | 0.3% | 0.11% (0.04 + 0.07) | 0.1% | 0.00% (0.00 + 0.00) | 0.1% | 0.23% (0.10 + 0.13) | 0.2% | 0.54% | 1248/3016/46/6537 |
+| sa/knowledge/templates/registry.py | 0.23% (0.09 + 0.14) | 0.6% | 0.01% (0.00 + 0.01) | 0.0% | 0.18% (0.09 + 0.09) | 0.5% | 0.03% (0.02 + 0.01) | 0.1% | 0.45% | 4564/1991/1328/2361 |
+| sa/knowledge/templates/_common.py | 0.24% (0.04 + 0.21) | 0.4% | 0.03% (0.00 + 0.03) | 0.1% | 0.00% (0.00 + 0.00) | 0.1% | 0.05% (0.01 + 0.04) | 0.1% | 0.33% | 4808/2208/40/6943 |
+| slice/backend.py | 0.11% (0.04 + 0.07) | 0.5% | 0.04% (0.02 + 0.02) | 0.2% | 0.00% (0.00 + 0.00) | 0.0% | 0.18% (0.08 + 0.10) | 0.7% | 0.33% | 1519/4360/34/11206 |
+| slice/knowledge_live.py | 0.06% (0.02 + 0.04) | 0.3% | 0.00% (0.00 + 0.00) | 0.0% | 0.13% (0.05 + 0.08) | 0.8% | 0.00% (0.00 + 0.00) | 0.0% | 0.20% | 139/25/909/104 |
+
+SymPy and stdlib own time by the nearest repository file on the stack (share of samples):
+  dev: slice/convert.py 5.71%, sa/sympy_api.py 2.43%, slice/session_live.py 0.77%, slice/backend.py 0.23%, sa/theories/euf/euf_adapter.py 0.21%, sa/knowledge/templates/_common.py 0.17%, slice/term_live.py 0.13%, sa/theories/lra/lra_adapter.py 0.11%
+  fuzz: slice/convert.py 4.73%, slice/session_live.py 3.08%, sa/sympy_api.py 2.05%, sa/theories/euf/euf_adapter.py 0.53%, slice/term_live.py 0.34%, sa/theories/lra/lra_adapter.py 0.27%, sa/witness.py 0.18%, slice/lra_backend.py 0.17%
+  budget: slice/convert.py 20.70%, sa/sympy_api.py 3.80%, sa/knowledge/templates/_common.py 0.11%, slice/session_live.py 0.09%, sa/knowledge/domain.py 0.06%, slice/backend.py 0.02%, sa/sat/formula.py 0.01%, sa/theories/lra/lra_adapter.py 0.01%
+  wiring: slice/convert.py 8.62%, sa/sympy_api.py 2.38%, slice/backend.py 0.36%, sa/knowledge/templates/_common.py 0.07%, sa/sat/formula.py 0.05%, sa/knowledge/domain.py 0.04%, slice/witness_live.py 0.04%, sa/engine.py 0.04%
+
+own time by function, top 14 per workload:
+  dev: sympy:Basic.__hash__ 1.75%, sa/knowledge/domain.py:constructed_noncommutative 1.22%, sa/state/memos.py:_path 1.17%, sa/state/memos.py:Memos.items 1.06%, slice/convert.py:convert 0.92%, slice/convert.py:_template_name 0.88%, sympy:__cacheit.<locals>.func_wrapper.<locals>.wrapper 0.80%, sa/theories/euf/euf_adapter.py:_inherits_from_basic 0.78%, slice/convert.py:formula 0.72%, sympy:Basic.atoms 0.71%, sympy:Basic.free_symbols 0.62%, slice/term_live.py:_install.<locals>._ask_once 0.56%, slice/convert.py:default_engine_settings 0.54%, harness:<module> 0.54%
+  fuzz: sympy:Basic.__hash__ 2.26%, sa/knowledge/domain.py:constructed_noncommutative 1.29%, sympy:__cacheit.<locals>.func_wrapper.<locals>.wrapper 0.90%, sympy:Integer.__hash__ 0.73%, stdlib:Fraction._from_coprime_ints 0.72%, sympy:Basic.free_symbols 0.67%, sympy:Basic.atoms 0.59%, sympy:Basic.__eq__ 0.56%, sa/state/memos.py:_path 0.44%, sympy:preorder_traversal._preorder_traversal 0.44%, slice/convert.py:convert 0.43%, slice/convert.py:rust_walk.<locals>.<lambda> 0.41%, slice/convert.py:_Walk.read 0.41%, sa/theories/lra/lra_adapter.py:relation 0.41%
+  budget: sympy:Basic._has 3.78%, sympy:Basic.__hash__ 3.09%, sa/knowledge/domain.py:constructed_noncommutative 2.82%, sympy:__cacheit.<locals>.func_wrapper.<locals>.wrapper 2.36%, sympy:Expr._parse_order.<locals>.neg 1.91%, sympy:Basic.__eq__ 1.47%, sympy:Basic.atoms 1.45%, sympy:Basic.has 1.34%, sa/sat/formula.py:Formula.__init__ 1.17%, slice/convert.py:_Walk.read 1.10%, sa/knowledge/domain.py:_fixed_noncommutative 1.05%, sympy:default_sort_key 0.97%, sympy:iterargs 0.82%, sympy:Number.__hash__ 0.82%
+  wiring: sa/knowledge/domain.py:constructed_noncommutative 3.04%, sympy:Basic.__hash__ 2.09%, sympy:Basic.atoms 1.50%, sympy:__cacheit.<locals>.func_wrapper.<locals>.wrapper 1.37%, sa/state/memos.py:_path 1.12%, sympy:Basic.free_symbols 1.12%, slice/convert.py:convert 1.11%, sa/state/memos.py:Memos.items 0.96%, slice/convert.py:rust_walk.<locals>.<lambda> 0.90%, slice/convert.py:formula 0.84%, sa/theories/euf/euf_adapter.py:_inherits_from_basic 0.84%, sympy:preorder_traversal._preorder_traversal 0.79%, slice/convert.py:_template_name 0.77%, slice/term_live.py:_install.<locals>._ask_once 0.60%

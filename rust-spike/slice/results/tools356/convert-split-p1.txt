@@ -1,0 +1,9 @@
+convert.py own time by group, share of in-loop samples (dev fuzz budget wiring); the lambdas at :426-:432 are split by cProfile tottime into enc (:426, the read path's) and klass/term_row/walk/enc_int (the walk's)
+  read dispatch [156]                           0.59  0.76  1.82  0.54
+  per query entry                               3.08  1.41  0.53  3.66
+  per class callbacks                           1.38  0.46  0.07  1.34
+  walk trampolines (Rust to Python to Rust)     0.42  0.30  0.36  0.77
+  other convert.py                              0.03  0.00  0.01  0.00
+  convert.py own, all                           5.50  2.92  2.79  6.33
+  [156] share of convert.py's own                11%   26%   65%    9%
+  reads and Python calls of convert.py per workload (cProfile): read [1318, 16147, 6336, 12192] convert.py calls [89769, 319485, 47492, 611358]
