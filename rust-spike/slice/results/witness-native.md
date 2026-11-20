@@ -1,7 +1,7 @@
-# The witness check in Rust (issue 323) — (1) the profile, (2) the port, (3) the same behaviour, (4) the plant rows, (5) S1, (6) the count rule; item 7 open
+# The witness check in Rust (issue 323) — (1) the profile, (2) the port, (3) the same behaviour, (4) the plant rows, (5) S1, (6) the count rule, (7) the bar and the landing
 
 Planner's ruling for sa-port-350 (20 Nov, on sa-port-349 52bdf2d), items 1-7. This file takes them in order. State:
-items 1 to 6 done (items 1 to 3 measured on b79f6657, items 5 and 6 on b7302f83, on rust-slice 6ee354f9); no bar read and nothing landed. SLICE_WITNESS stays off
+items 1 to 7 done (items 1 to 3 measured on b79f6657, items 5 to 7 on b7302f83, on rust-slice 6ee354f9); the bar on b7302f83 is read in (7) and ended 0. SLICE_WITNESS stays off
 by default, Python's witness.py the default and the reference, the unchanged path the default.
 
 ## (1) Profile before building, sa-port-350: 6ee354f9, quiet leases on pareto1
@@ -365,5 +365,111 @@ difference is witness_live.py's 5 calls a process at install (`<module>`, a gene
 `plant`), none per query. With the switch off nothing of this step runs per query. With SLICE_WITNESS on, witness.py
 remains a per-query Python module outside the 32, with 2 to 4 calls per call of the check in place of 300 to 3,300.
 
-Not done: item 7 (the bar and the landing). S1 and the count probe were taken on b7302f83, the commit of item 4; the
-commits after it add results and tools only, so the bar's tested SHA is b7302f83.
+## (7) The bar on b7302f83 and the landing, sa-port-355
+
+**What ran.** tools354/gobar354.sh (sa-port-354 launched it; this session read it): p1/bar.sh as of b7302f83 on the
+frozen branch origin/bar/witness-native-b7302f83 (head b7302f83), pareto0, shared lease 508ab9ad, 04:56Z to 06:31Z
+20 Nov (1h35m), base rows sa-port-348's bar on 82d4ddf3. The pareto venv .so 37b7560e245df518 loaded in all seven
+phases (so-loaded.txt). **END 0** (the job's rc 0 and the bar's END 0), every phase exit 0: tests 04:58Z, suite
+05:00Z, live 05:15Z, plants 05:26Z, extra 06:18Z, suiteplants 06:30Z, fmrows 06:31Z. Output:
+~/sa-rust-ids-work/sa-port-354/bar on orion. Wall times below are pareto0 under a shared lease with 6 rows at a time:
+bar row times, not a timing (S1 is (5)).
+
+**Tests, suite, live.**
+- tests: 73 files, none not exit 0 (test_witness_native.py 10 passed, test_discard_exempt.py 10 passed); direct.txt
+  exit 0.
+- suite (111 s): 127 failed, 6149 passed, 23 skipped, 18 xfailed, ids 6317 against base's 6316: new 1
+  (tests/test_history.py::test_the_witness_checks_native_hook_is_configuration, passed), gone 0, changed outcome 0. The
+  127 failed ids are the base's, by id (the list in (3)); the planted-history test is one of them.
+- Quiet catches (engine.py:1906 and the other counted handlers): 39 handler rows in 2 tests in the suite and in each of
+  the 7 suite rows below, the same multiset as base (34 and 4 in
+  tests/test_invariants.py::test_ci_stream_reports_only_what_replays, 1 in tests/test_transfer.py::test_protocol_on_fuzz),
+  so the counter fires; 0 rows in every workload's handler file (dev and fuzz 7 files each, the 15 extra workloads, the
+  plant rows); TermFault 0 in every suite row.
+- live and extra: 38 of 38 comparisons MATCH with equal answers_sha (dev and fuzz: py against py, py against rust,
+  and the two traced end-state rows; each of the 15 extra workloads py against py and py against rust). Kept reasons
+  per workload equal base on all 17. fm rows: 20 workloads, 0 differ; its two plants caught (4 and 3 differ, exit 1).
+
+**The rows of this step, 7 rows on 17 workloads (119 rows): 114 MATCH, 5 DIFFER, all five 760's.** Each row is compared
+with this run's Python under SLICE_WITNESS=1 (state, stats, sessions) and with Python with the switch off (answers).
+- `witness:on` (Python's witness.py on the Rust path) and `wnative:on` (the native check): MATCH on all 17, answers
+  equal to the switch-off Python on all 17, and the same session_count_diff against it as each other on all 17 (dev
+  178, fuzz 1273, wiring 215, core 92, zero 52, transfer 2, transfer2 1, cert 1, the other nine 0).
+- The bar's session reports carry no native counter for `wnative:on`, so its MATCH alone does not show the native
+  path ran there. The plant rows do, on the same tree, .so and environment plus the plant: 764's fired count is one
+  per call of the native entry and reads 776, 2772, 19 and 4814 on dev, fuzz, budget and wiring, which are S1's
+  wn:compile counts in (5); 760 changes answers.
+- 760 wn-integer-half: DIFFER on dev (12 answers), fuzz (3), core (15), wiring (7) and zero (1); fired and MATCH on
+  cert, transfer and transfer2 (175, 29, 8); fired 0 on the other nine.
+- **761 wn-work-one on all 17 workloads, as it reads: fired 0 and MATCH on every one.** No query of any of the 17
+  lands its work count exactly on WORK, budget and wiring included. It stays a kept-test catch, and its suite row
+  catches it too (fired 3).
+- 762, 763, 764: fired on the workloads (dev 535, 3032, 776) and MATCH on all 17, as in (4): no workload puts a
+  user's method on the engine, has a Python int or bool side, or replaces a function of witness.py.
+
+Row wall times in seconds (tools355/bar-witness-rows.txt has all 17):
+
+| workload | witness:on | wnative:on | 763 int-side | 760 integer-half | 764 skip-own | 762 skip-patched | 761 work-one |
+|---|---|---|---|---|---|---|---|
+| dev | 51 | 51 | 66 | 69 | 53 | 67 | 49 |
+| fuzz | 603 | 580 | 572 | 592 | 561 | 578 | 621 |
+| budget | 448 | 488 | 489 | 453 | 449 | 456 | 472 |
+| wiring | 356 | 347 | 344 | 355 | 348 | 350 | 362 |
+| rootof | 396 | 398 | 401 | 407 | 404 | 422 | 412 |
+| value | 94 | 93 | 92 | 102 | 91 | 91 | 94 |
+| f6 | 70 | 69 | 66 | 64 | 69 | 66 | 66 |
+| zero | 53 | 49 | 51 | 49 | 53 | 48 | 50 |
+| core | 33 | 33 | 34 | 33 | 35 | 35 | 32 |
+
+**Suite rows, against this run's plain suite, and the kept test (kept.txt: `none` rc 0, 10 passed; every plant rc 1).**
+
+| row | suite s | failed | changed against the plain suite | fired in the suite | kept test FAILED (test_witness_native.py) |
+|---|---|---|---|---|---|
+| witness:on | 108 | 127 | 0 | no plant | |
+| wnative:on | 100 | 127 | 0 | 0 | |
+| 760 wn-integer-half | 105 | 154 | 27 passed to failed (test_lra_integers 8, test_prover_gaps 6, test_witness 4, test_unevaluated_sums 3, test_sympy_api 2, and one each in test_add_rows, test_invariant_repros, test_switched_glue, test_total_templates) | 12,046 | test_the_native_check_is_pythons_per_query, test_the_native_table_is_pythons |
+| 761 wn-work-one | 106 | 128 | tests/test_witness.py::test_past_the_work_bound_the_check_falls_through_and_the_engine_answers passed to failed | 3 | test_the_work_bound_trips_on_the_same_evaluation |
+| 762 wn-skip-patched | 102 | 136 | 10 passed to failed (tests/test_witness.py::test_a_users_method_on_the_engine_is_called_and_its_answer_is_used, its 9 parameters; tests/test_history.py::test_ddmin_shrinks_to_the_responsible_query, :598, `d.shrunk` None, in this row only); planted-history failed to passed | 16,648 | test_a_users_method_on_the_engine_is_left_to_the_engine |
+| 763 wn-int-side | 106 | 126 | planted-history failed to passed, nothing else | 615,322 | test_a_python_int_side_goes_to_python |
+| 764 wn-skip-own | 110 | 127 | tests/test_witness.py::test_a_set_the_engine_knows_inconsistent_tries_no_point passed to failed (expected, (4)); planted-history failed to passed | 34,200 | test_a_replaced_function_of_witness_py_is_called |
+
+Every plant is caught by a check that does not read its flag (P2): 760 by workload rows, its suite row and two kept
+tests; 761, 762 and 764 by a suite test and a kept test; **763 by its kept test alone** (its suite row changes
+nothing but the planted-history test: no test of the suite has a Python int or bool as an atom side; the kept test
+makes one). Handler rows are base's 39 in every row.
+
+**The planted-history test flipped failed to passed in three plant rows (762, 763, 764), so a28c548's method was
+run** ([137e]; tools355/rep355.sh and gorep355.sh, pareto0, shared lease 74324a18, on the bar's own tree of b7302f83
+with .so 37b7560e245df518; one fresh process a run, 20 runs a cell; tools355/rep-sum.txt):
+
+| cell | the test, passed | failures | keep-alive variant, passed |
+|---|---|---|---|
+| rust, every switch off | 1 of 20 | :204 `assert 0 == 2` 16, `1 == 2` 3 | 20 of 20 |
+| rust, the native check (`wnative:on`'s environment) | 2 of 20 | :204 `0 == 2` 13, `1 == 2` 5 | 20 of 20 |
+| rust, 762 wn-skip-patched | 0 of 20 | :204 `0 == 2` 20 | 20 of 20 |
+| rust, 763 wn-int-side | 0 of 20 | :204 `0 == 2` 13, `1 == 2` 7 | 20 of 20 |
+| rust, 764 wn-skip-own | 0 of 20 | :204 `0 == 2` 12, `1 == 2` 8 | 20 of 20 |
+| python, every switch off | 19 of 20 | :204 `1 == 2` 1 | 20 of 20 |
+
+That is [137e]'s signature in every cell: tests/test_public_incremental.py:204, `assert N == 2` with N < 2, the plain
+test failing some or all runs and sa-port-185's keep-alive variant passing 20 of 20; Python's 1 of 20 is within its
+base rate (a28c548: 2 of 50 and 6 of 50). The test also passes now and then under Rust with no plant (3 of 40 here),
+so a pass in a suite row is the same flip in the other direction, and it hides no catch: each of the three plants is
+caught as in the table above. Footnoted by id as the known id()-reuse failure; the test is not edited. Two notes on
+the method as run here: alone, the test did not pass under any of the three plants (0 of 60), while in the bar's
+suite rows it passed under all three, so the rate depends on what ran before it in the process; and trees.txt's
+`NATIVE False` is the probe line's, which imports witness.py without the plugin's install: with
+`term_live.from_env()` (rust_plugin.py:94-95) the same environments give `NATIVE native`, checked on the same tree.
+
+**`witness_live._OWN` (the first condition on the `_replaced` rule).** No source line, by the planner's ruling for
+sa-port-355: harness/state.py's inventory covers satassume modules only; witness_live.py is a slice module
+(rust-spike/slice), like term_live.py, and no slice module's state is in that inventory. `_OWN` (witness_live.py:42)
+is a tuple built once at import, and its only reader is `_replaced` (:60); nothing writes it. The other two
+conditions: the 23 identity reads per call are inside S1 (5) and reported as boundary reads in (6) (262,545 on the 20
+workloads); the fallback is 0 on every workload when nothing is replaced, from the counters in (6) (`_replaced`'s
+calls equal wn:compile in all 20 rows).
+
+**Landing.** `bash rust-spike/slice/p1/bar.sh land b7302f83` from this worktree: origin/rust-slice was still 6ee354f9
+(b7302f83's own base, so no incoming diff), the guard's list empty (b7302f83 to the landing head differs only in
+results/ and the handoff files), then PUSH=1; no other session's bar was running (rule [91]). The landed SHA is in
+the report.

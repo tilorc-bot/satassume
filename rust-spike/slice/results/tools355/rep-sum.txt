@@ -1,0 +1,12 @@
+rust:off orig passed 1 of 20; asserts:      16 E   AssertionError: assert 0 == 2;      3 E   AssertionError: assert 1 == 2; at:      19 test_public_incremental.py:204: Assert; last:      19 1 failed;      1 1 passed;
+rust:off keep passed 20 of 20; asserts:  at:  last:      20 1 passed;
+rust:nat orig passed 2 of 20; asserts:      13 E   AssertionError: assert 0 == 2;      5 E   AssertionError: assert 1 == 2; at:      18 test_public_incremental.py:204: Assert; last:      18 1 failed;      2 1 passed;
+rust:nat keep passed 20 of 20; asserts:  at:  last:      20 1 passed;
+rust:wn-skip-patched orig passed 0 of 20; asserts:      20 E   AssertionError: assert 0 == 2; at:      20 test_public_incremental.py:204: Assert; last:      20 1 failed;
+rust:wn-skip-patched keep passed 20 of 20; asserts:  at:  last:      20 1 passed;
+rust:wn-int-side orig passed 0 of 20; asserts:      13 E   AssertionError: assert 0 == 2;      7 E   AssertionError: assert 1 == 2; at:      20 test_public_incremental.py:204: Assert; last:      20 1 failed;
+rust:wn-int-side keep passed 20 of 20; asserts:  at:  last:      20 1 passed;
+rust:wn-skip-own orig passed 0 of 20; asserts:      12 E   AssertionError: assert 0 == 2;      8 E   AssertionError: assert 1 == 2; at:      20 test_public_incremental.py:204: Assert; last:      20 1 failed;
+rust:wn-skip-own keep passed 20 of 20; asserts:  at:  last:      20 1 passed;
+python:off orig passed 19 of 20; asserts:       1 E   AssertionError: assert 1 == 2; at:       1 test_public_incremental.py:204: Assert; last:       1 1 failed;     19 1 passed;
+python:off keep passed 20 of 20; asserts:  at:  last:      20 1 passed;

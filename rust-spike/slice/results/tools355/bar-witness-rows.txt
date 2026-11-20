@@ -1,0 +1,31 @@
+119 rows
+wall s | witness:on | on | wn-int-side | wn-integer-half | wn-skip-own | wn-skip-patched | wn-work-one
+dev | 51 | 51 | 66 | 69 | 53 | 67 | 49
+fuzz | 603 | 580 | 572 | 592 | 561 | 578 | 621
+budget | 448 | 488 | 489 | 453 | 449 | 456 | 472
+cert | 3 | 3 | 3 | 3 | 3 | 3 | 3
+cls | 2 | 2 | 2 | 2 | 2 | 3 | 2
+core | 33 | 33 | 34 | 33 | 35 | 35 | 32
+f6 | 70 | 69 | 66 | 64 | 69 | 66 | 66
+loop | 8 | 8 | 8 | 8 | 8 | 10 | 8
+opaque | 11 | 10 | 11 | 10 | 11 | 10 | 11
+rootof | 396 | 398 | 401 | 407 | 404 | 422 | 412
+scope | 5 | 4 | 5 | 4 | 4 | 4 | 4
+transfer2:3:40 | 16 | 15 | 15 | 16 | 15 | 17 | 15
+transfer:7:60 | 13 | 13 | 13 | 14 | 14 | 13 | 14
+twin | 1 | 1 | 1 | 1 | 1 | 1 | 1
+value | 94 | 93 | 92 | 102 | 91 | 91 | 94
+wiring | 356 | 347 | 344 | 355 | 348 | 350 | 362
+zero | 53 | 49 | 51 | 49 | 53 | 48 | 50
+nonzero answer_diff/msg_diff:
+  wnative:wn-integer-half dev ('12', '0', '189')
+  wnative:wn-integer-half fuzz ('3', '0', '1280')
+  wnative:wn-integer-half core ('15', '0', '124')
+  wnative:wn-integer-half wiring ('7', '0', '225')
+  wnative:wn-integer-half zero ('1', '0', '53')
+session_count_diff differing from witness:on:
+  wnative:wn-integer-half dev 189 vs 178
+  wnative:wn-integer-half fuzz 1280 vs 1273
+  wnative:wn-integer-half core 124 vs 92
+  wnative:wn-integer-half wiring 225 vs 215
+  wnative:wn-integer-half zero 53 vs 52
