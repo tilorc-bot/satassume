@@ -7,5 +7,5 @@ def pytest_sessionfinish(session, exitstatus):
     out = os.environ.get('SLICE_SUITE_OUT')
     if out:
         with open(os.path.join(out, f'wn.{os.getpid()}.json'), 'w') as h:
-            json.dump(dict(counts=wl.counts() if wl else None, hook=bool(w and w.NATIVE[0]), enabled=bool(w and w.ENABLED[0]),
+            json.dump(dict(counts=wl.counts() if wl and hasattr(so, 'witness_counts') else None, hook=bool(w and getattr(w, 'NATIVE', [None])[0]), enabled=bool(w and w.ENABLED[0]),
                            env=os.environ.get('SLICE_WITNESS_RUST'), so=getattr(so, '__file__', None)), h)

@@ -121,6 +121,11 @@ if a.term != "py":
     term_live.PLANT[0] = a.term_plant
     term_live.CHECK[0] = a.term_check
     term_live.PLANT_NO_ROLLBACK[0] = a.no_rollback
+    if os.environ.get("SLICE_WITNESS_RUST") == "1":    # the native witness check under --discard (sa-port-352, R5); else untouched
+        import convert
+        import witness_live
+        convert.from_env()
+        WN = witness_live.from_env()
     if a.lra:
         import lra_live
         lra_live.install()
@@ -132,6 +137,12 @@ if a.term != "py":
     if a.discard:
         import term_discard as TD
         TD.install()
+        if os.environ.get("SLICE_WITNESS_RUST") == "1":
+            # term_discard's wrapper of `Engine.verdict` is an instrument of ours (as catch_count.py's), so it is accepted:
+            # else witness.py's P1 guard takes it for a user's method and the check, native or not, stands down after its
+            # compile in every run, and no discarded run would hold a native search (sa-port-352, R5).
+            from satassume import engine as _engine, witness as _witness
+            _witness.accept(_engine.Engine, "verdict")
     if a.formula_plant:
         import sa_solver
         sa_solver.formula_plant(a.formula_plant)
@@ -197,5 +208,7 @@ if a.term_out:
         if a.lra:
             out.update(lra=lra_live.counts(), check_bad=lra_live.CHECK_BAD[:50], scaffold_bad=lra_live.SCAFFOLD_BAD[:20])
         fh.write(TD.report() if TD else json.dumps(out, indent=0, sort_keys=True, default=repr))
+if a.term_out and os.environ.get("SLICE_WITNESS_RUST") == "1":
+    json.dump(dict(on=WN, counts=witness_live.counts()), open(a.term_out + ".wn.json", "w"), sort_keys=True)
 if a.counts:
     json.dump(dict(counts, queries=len(pairs)), open(a.counts, "w"), indent=1, sort_keys=True)
