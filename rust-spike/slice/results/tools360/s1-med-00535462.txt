@@ -1,0 +1,116 @@
+digests per workload (the arms that gave each):
+  dev 31cd0945c07f02a6 py-off py-on32 rust-nat rust-off rust-on32
+  fuzz 173502b6ef285ad6 py-off py-on32 rust-nat rust-off rust-on32
+  budget 35bc2c4a937bebc0 py-off py-on32 rust-nat rust-off rust-on32
+  wiring a0df9fd43e5180c1 py-off py-on32 rust-nat rust-off rust-on32
+so per arm {'00535462:py-off': ['None'], '00535462:py-on32': ['None'], '00535462:rust-nat': ['8b8041d3fe6223c2'], '00535462:rust-off': ['8b8041d3fe6223c2'], '00535462:rust-on32': ['8b8041d3fe6223c2'], 'de88d9b9:py-off': ['None'], 'de88d9b9:py-on32': ['None'], 'de88d9b9:rust-nat': ['0b6f073f5c5a600b'], 'de88d9b9:rust-off': ['0b6f073f5c5a600b'], 'de88d9b9:rust-on32': ['0b6f073f5c5a600b']}
+wl arm n median min max iqr%
+budget 00535462:py-off 12 0.4742 0.4652 0.4785 0.9%
+budget 00535462:py-on32 12 0.4929 0.4844 0.4959 0.5%
+budget 00535462:rust-nat 12 0.3272 0.3197 0.3305 0.5%
+budget 00535462:rust-off 12 0.3143 0.3128 0.3153 0.3%
+budget 00535462:rust-on32 12 0.3305 0.3239 0.3314 0.3%
+budget de88d9b9:py-off 12 0.4746 0.4645 0.5060 0.5%
+budget de88d9b9:py-on32 12 0.4952 0.4841 0.5004 1.1%
+budget de88d9b9:rust-nat 12 0.3302 0.3249 0.3314 0.3%
+budget de88d9b9:rust-off 12 0.3176 0.3112 0.3217 0.5%
+budget de88d9b9:rust-on32 12 0.3341 0.3274 0.3369 0.3%
+dev 00535462:py-off 12 0.5306 0.5259 0.5374 0.8%
+dev 00535462:py-on32 12 0.5229 0.5187 0.5280 0.7%
+dev 00535462:rust-nat 12 0.5992 0.5956 0.6017 0.5%
+dev 00535462:rust-off 12 0.6290 0.6223 0.6323 0.9%
+dev 00535462:rust-on32 12 0.6454 0.6380 0.6518 1.0%
+dev de88d9b9:py-off 12 0.5317 0.5274 0.5354 0.9%
+dev de88d9b9:py-on32 12 0.5247 0.5189 0.5285 1.0%
+dev de88d9b9:rust-nat 12 0.6190 0.6142 0.6235 1.2%
+dev de88d9b9:rust-off 12 0.6446 0.6367 0.6600 1.7%
+dev de88d9b9:rust-on32 12 0.6606 0.6517 0.6675 0.8%
+fuzz 00535462:py-off 12 8.0739 7.9840 8.1275 0.7%
+fuzz 00535462:py-on32 12 5.4231 5.3773 5.5655 0.8%
+fuzz 00535462:rust-nat 12 4.0875 4.0609 4.1218 0.4%
+fuzz 00535462:rust-off 12 5.7509 5.7295 5.7996 0.8%
+fuzz 00535462:rust-on32 12 4.5757 4.5474 4.6441 1.2%
+fuzz de88d9b9:py-off 12 8.0844 8.0140 8.1334 1.0%
+fuzz de88d9b9:py-on32 12 5.4239 5.3798 5.4677 0.8%
+fuzz de88d9b9:rust-nat 12 4.1570 4.1276 4.1990 0.6%
+fuzz de88d9b9:rust-off 12 5.8425 5.7811 5.8843 0.8%
+fuzz de88d9b9:rust-on32 12 4.6434 4.6174 4.6764 0.6%
+wiring 00535462:py-off 12 2.7418 2.7238 2.7960 0.4%
+wiring 00535462:py-on32 12 3.0392 3.0031 3.0588 0.6%
+wiring 00535462:rust-nat 12 3.2701 3.2556 3.3316 0.9%
+wiring 00535462:rust-off 12 3.1468 3.1226 3.1982 0.8%
+wiring 00535462:rust-on32 12 3.4915 3.4329 3.5324 0.8%
+wiring de88d9b9:py-off 12 2.7436 2.7155 2.7723 0.5%
+wiring de88d9b9:py-on32 12 3.0307 3.0183 3.0783 0.8%
+wiring de88d9b9:rust-nat 12 3.3885 3.3583 3.4159 0.8%
+wiring de88d9b9:rust-off 12 3.2463 3.1925 3.3167 0.8%
+wiring de88d9b9:rust-on32 12 3.5817 3.5503 3.6474 0.7%
+A the landing rule: Rust at the head against Rust at the base, same switches:
+dev 00535462:rust-nat / de88d9b9:rust-nat: medians 0.5992 / 0.6190 -3.2%; per round median -3.2% quartiles -3.8% -2.8%; slower in 0 of 12; larger iqr 1.2%; BEYOND THE SPREAD: faster
+fuzz 00535462:rust-nat / de88d9b9:rust-nat: medians 4.0875 / 4.1570 -1.7%; per round median -1.6% quartiles -2.2% -1.1%; slower in 0 of 12; larger iqr 0.6%; BEYOND THE SPREAD: faster
+budget 00535462:rust-nat / de88d9b9:rust-nat: medians 0.3272 / 0.3302 -0.9%; per round median -1.0% quartiles -1.2% -0.8%; slower in 1 of 12; larger iqr 0.5%; BEYOND THE SPREAD: faster
+wiring 00535462:rust-nat / de88d9b9:rust-nat: medians 3.2701 / 3.3885 -3.5%; per round median -3.3% quartiles -3.9% -2.7%; slower in 0 of 12; larger iqr 0.9%; BEYOND THE SPREAD: faster
+dev 00535462:rust-on32 / de88d9b9:rust-on32: medians 0.6454 / 0.6606 -2.3%; per round median -2.4% quartiles -2.7% -2.0%; slower in 0 of 12; larger iqr 1.0%; BEYOND THE SPREAD: faster
+fuzz 00535462:rust-on32 / de88d9b9:rust-on32: medians 4.5757 / 4.6434 -1.5%; per round median -1.4% quartiles -1.9% -0.8%; slower in 1 of 12; larger iqr 1.2%; BEYOND THE SPREAD: faster
+budget 00535462:rust-on32 / de88d9b9:rust-on32: medians 0.3305 / 0.3341 -1.1%; per round median -1.1% quartiles -1.2% -0.9%; slower in 0 of 12; larger iqr 0.3%; BEYOND THE SPREAD: faster
+wiring 00535462:rust-on32 / de88d9b9:rust-on32: medians 3.4915 / 3.5817 -2.5%; per round median -2.7% quartiles -3.4% -2.0%; slower in 0 of 12; larger iqr 0.8%; BEYOND THE SPREAD: faster
+dev 00535462:rust-off / de88d9b9:rust-off: medians 0.6290 / 0.6446 -2.4%; per round median -2.7% quartiles -3.7% -2.0%; slower in 0 of 12; larger iqr 1.7%; BEYOND THE SPREAD: faster
+fuzz 00535462:rust-off / de88d9b9:rust-off: medians 5.7509 / 5.8425 -1.6%; per round median -1.2% quartiles -1.9% -0.9%; slower in 0 of 12; larger iqr 0.8%; BEYOND THE SPREAD: faster
+budget 00535462:rust-off / de88d9b9:rust-off: medians 0.3143 / 0.3176 -1.0%; per round median -1.0% quartiles -1.1% -0.6%; slower in 1 of 12; larger iqr 0.5%; BEYOND THE SPREAD: faster
+wiring 00535462:rust-off / de88d9b9:rust-off: medians 3.1468 / 3.2463 -3.1%; per round median -3.1% quartiles -4.1% -2.5%; slower in 1 of 12; larger iqr 0.8%; BEYOND THE SPREAD: faster
+P the Python rows: head against base:
+dev 00535462:py-off / de88d9b9:py-off: medians 0.5306 / 0.5317 -0.2%; per round median -0.0% quartiles -0.7% +0.2%; slower in 6 of 12; larger iqr 0.9%; within the spread
+fuzz 00535462:py-off / de88d9b9:py-off: medians 8.0739 / 8.0844 -0.1%; per round median -0.2% quartiles -0.8% +0.7%; slower in 5 of 12; larger iqr 1.0%; within the spread
+budget 00535462:py-off / de88d9b9:py-off: medians 0.4742 / 0.4746 -0.1%; per round median -0.1% quartiles -0.4% +0.7%; slower in 6 of 12; larger iqr 0.9%; within the spread
+wiring 00535462:py-off / de88d9b9:py-off: medians 2.7418 / 2.7436 -0.1%; per round median -0.1% quartiles -0.7% +0.4%; slower in 6 of 12; larger iqr 0.5%; within the spread
+dev 00535462:py-on32 / de88d9b9:py-on32: medians 0.5229 / 0.5247 -0.3%; per round median -0.3% quartiles -0.4% +0.0%; slower in 3 of 12; larger iqr 1.0%; within the spread
+fuzz 00535462:py-on32 / de88d9b9:py-on32: medians 5.4231 / 5.4239 -0.0%; per round median -0.1% quartiles -0.5% +0.2%; slower in 5 of 12; larger iqr 0.8%; within the spread
+budget 00535462:py-on32 / de88d9b9:py-on32: medians 0.4929 / 0.4952 -0.5%; per round median -0.2% quartiles -0.6% +0.2%; slower in 5 of 12; larger iqr 1.1%; within the spread
+wiring 00535462:py-on32 / de88d9b9:py-on32: medians 3.0392 / 3.0307 +0.3%; per round median +0.2% quartiles -0.8% +0.4%; slower in 8 of 12; larger iqr 0.8%; within the spread
+E the sum over dev fuzz budget wiring per round:
+  sum 00535462:rust-nat / de88d9b9:rust-nat: medians 8.2886 / 8.5057 -2.6%; per round median -2.3% quartiles -2.7% -2.1%; slower in 0 of 12; larger iqr 0.7%; BEYOND THE SPREAD: faster
+  sum 00535462:rust-on32 / de88d9b9:rust-on32: medians 9.0421 / 9.2241 -2.0%; per round median -2.0% quartiles -2.3% -1.5%; slower in 0 of 12; larger iqr 0.9%; BEYOND THE SPREAD: faster
+  sum 00535462:rust-off / de88d9b9:rust-off: medians 9.8569 / 10.0504 -1.9%; per round median -2.0% quartiles -2.4% -1.5%; slower in 0 of 12; larger iqr 0.5%; BEYOND THE SPREAD: faster
+  sum 00535462:py-off / de88d9b9:py-off: medians 11.8200 / 11.8321 -0.1%; per round median -0.3% quartiles -0.7% +0.4%; slower in 4 of 12; larger iqr 0.6%; within the spread
+  sum 00535462:py-on32 / de88d9b9:py-on32: medians 9.4755 / 9.4696 +0.1%; per round median -0.0% quartiles -0.4% +0.2%; slower in 6 of 12; larger iqr 0.5%; within the spread
+wn359.py, one pass per workload and arm: wl arm walk certified queries digest so cv
+  dev de88d9b9:py-off - 0 883 31cd0945c07f02a6 None 
+  dev 00535462:py-off - 0 883 31cd0945c07f02a6 None 
+  dev de88d9b9:py-on32 - 173 883 31cd0945c07f02a6 None 
+  dev 00535462:py-on32 - 173 883 31cd0945c07f02a6 None 
+  dev de88d9b9:rust-off enc,klass,term_row,walk,enc_int 0 883 31cd0945c07f02a6 0b6f073f5c5a600b 
+  dev 00535462:rust-off enc,klass,term_row,walk,enc_int,klass_calls,power_rows,read, 0 883 31cd0945c07f02a6 8b8041d3fe6223c2 cv:entry=1221 cv:formula=2418 cv:read=692
+  dev de88d9b9:rust-on32 enc,klass,term_row,walk,enc_int 173 883 31cd0945c07f02a6 0b6f073f5c5a600b 
+  dev 00535462:rust-on32 enc,klass,term_row,walk,enc_int,klass_calls,power_rows,read, 173 883 31cd0945c07f02a6 8b8041d3fe6223c2 cv:entry=1221 cv:formula=2418 cv:read=618
+  dev de88d9b9:rust-nat enc,klass,term_row,walk,enc_int 173 883 31cd0945c07f02a6 0b6f073f5c5a600b 
+  dev 00535462:rust-nat enc,klass,term_row,walk,enc_int,klass_calls,power_rows,read, 173 883 31cd0945c07f02a6 8b8041d3fe6223c2 cv:entry=1221 cv:formula=2418 cv:read=1318
+  fuzz de88d9b9:py-off - 0 3031 173502b6ef285ad6 None 
+  fuzz 00535462:py-off - 0 3031 173502b6ef285ad6 None 
+  fuzz de88d9b9:py-on32 - 1284 3031 173502b6ef285ad6 None 
+  fuzz 00535462:py-on32 - 1284 3031 173502b6ef285ad6 None 
+  fuzz de88d9b9:rust-off enc,klass,term_row,walk,enc_int 0 3031 173502b6ef285ad6 0b6f073f5c5a600b 
+  fuzz 00535462:rust-off enc,klass,term_row,walk,enc_int,klass_calls,power_rows,read, 0 3031 173502b6ef285ad6 8b8041d3fe6223c2 cv:entry=2998 cv:formula=5996 cv:read=17185
+  fuzz de88d9b9:rust-on32 enc,klass,term_row,walk,enc_int 1284 3031 173502b6ef285ad6 0b6f073f5c5a600b 
+  fuzz 00535462:rust-on32 enc,klass,term_row,walk,enc_int,klass_calls,power_rows,read, 1284 3031 173502b6ef285ad6 8b8041d3fe6223c2 cv:entry=2998 cv:formula=5996 cv:read=11143
+  fuzz de88d9b9:rust-nat enc,klass,term_row,walk,enc_int 1284 3031 173502b6ef285ad6 0b6f073f5c5a600b 
+  fuzz 00535462:rust-nat enc,klass,term_row,walk,enc_int,klass_calls,power_rows,read, 1284 3031 173502b6ef285ad6 8b8041d3fe6223c2 cv:entry=2998 cv:formula=5996 cv:read=16147
+  budget de88d9b9:py-off - 0 26 35bc2c4a937bebc0 None 
+  budget 00535462:py-off - 0 26 35bc2c4a937bebc0 None 
+  budget de88d9b9:py-on32 - 0 26 35bc2c4a937bebc0 None 
+  budget 00535462:py-on32 - 0 26 35bc2c4a937bebc0 None 
+  budget de88d9b9:rust-off enc,klass,term_row,walk,enc_int 0 26 35bc2c4a937bebc0 0b6f073f5c5a600b 
+  budget 00535462:rust-off enc,klass,term_row,walk,enc_int,klass_calls,power_rows,read, 0 26 35bc2c4a937bebc0 8b8041d3fe6223c2 cv:entry=28 cv:formula=47 cv:read=2382
+  budget de88d9b9:rust-on32 enc,klass,term_row,walk,enc_int 0 26 35bc2c4a937bebc0 0b6f073f5c5a600b 
+  budget 00535462:rust-on32 enc,klass,term_row,walk,enc_int,klass_calls,power_rows,read, 0 26 35bc2c4a937bebc0 8b8041d3fe6223c2 cv:entry=28 cv:formula=47 cv:read=2382
+  budget de88d9b9:rust-nat enc,klass,term_row,walk,enc_int 0 26 35bc2c4a937bebc0 0b6f073f5c5a600b 
+  budget 00535462:rust-nat enc,klass,term_row,walk,enc_int,klass_calls,power_rows,read, 0 26 35bc2c4a937bebc0 8b8041d3fe6223c2 cv:entry=28 cv:formula=47 cv:read=6336
+  wiring de88d9b9:py-off - 0 5628 a0df9fd43e5180c1 None 
+  wiring 00535462:py-off - 0 5628 a0df9fd43e5180c1 None 
+  wiring de88d9b9:py-on32 - 215 5628 a0df9fd43e5180c1 None 
+  wiring 00535462:py-on32 - 215 5628 a0df9fd43e5180c1 None 
+  wiring de88d9b9:rust-off enc,klass,term_row,walk,enc_int 0 5628 a0df9fd43e5180c1 0b6f073f5c5a600b 
+  wiring 00535462:rust-off enc,klass,term_row,walk,enc_int,klass_calls,power_rows,read, 0 5628 a0df9fd43e5180c1 8b8041d3fe6223c2 cv:entry=6512 cv:formula=12210 cv:read=126
+  wiring de88d9b9:rust-on32 enc,klass,term_row,walk,enc_int 215 5628 a0df9fd43e5180c1 0b6f073f5c5a600b 
+  wiring 00535462:rust-on32 enc,klass,term_row,walk,enc_int,klass_calls,power_rows,read, 215 5628 a0df9fd43e5180c1 8b8041d3fe6223c2 cv:entry=6512 cv:formula=12210 cv:read=126
+  wiring de88d9b9:rust-nat enc,klass,term_row,walk,enc_int 215 5628 a0df9fd43e5180c1 0b6f073f5c5a600b 
+  wiring 00535462:rust-nat enc,klass,term_row,walk,enc_int,klass_calls,power_rows,read, 215 5628 a0df9fd43e5180c1 8b8041d3fe6223c2 cv:entry=6512 cv:formula=12210 cv:read=12192

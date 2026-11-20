@@ -1,0 +1,6 @@
+{"files": 27, "inputs": 69476, "differences": 1, "terms": 1782308, "reads": 14258356, "slow": 2, "reread": 0, "reread_by_dir": {}, "outcomes": {"Converted": 66742, "args-eq-not-is": 10, "non-default-registry": 190, "out-of-scope": 2492, "sum-product-integral": 42}}
+DIFF [["reads stopped 72 [('end', {'pow_base_not_input': 0, 'opaque': 0, 'read_term_missing': 0, 'read_raised': 16, 'read:key': 9, 'read:finite': 9, 'read:complex': 9, 'read:power': 9, 'read:commutative': 9, 'read:symbol': 9, 'read:constant': 9, 'read:own_base': 9})] | 21 []"], 'Q.commutative(Trace(M*N))', 'True']
+SLOW ['suite', "complex 3 [('end', {'pow_base_not_input': 0, 'opaque': 0, 'read_term_missing': 0, 'read_raised': 16, 'read:key': 9, 'read:finite': 9, 'read:complex': 9, 'read:power': 9, 'read:commutative': 9, 'read:symbol': 9, 'read:constant': 9, 'read:own_base': 9})]", 'Q.commutative(Trace(M*N))', 'True']
+SLOW ['suite', 'complex 3 []', 'Q.lt(x, sin(exp(exp(exp(5)))))', 'Q.positive(x)']
+exit 1
+workloads 20; answer rows 60, MATCH 60

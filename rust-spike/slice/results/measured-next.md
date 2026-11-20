@@ -1,4 +1,4 @@
-# The next port chosen by measured time (issue 323) — (1) the profile, (2) the target, (3) the port
+# The next port chosen by measured time (issue 323) — (1) the profile, (2) the target, (3) the port, (4) the gate, (5) S1
 
 Planner's ruling for sa-port-356, items 1 and 2. No source of the package, the slice or the crate is changed by these
 two items: Python stays the default and the reference, no switch is added yet, the probe count stays 21 of 32.
@@ -166,8 +166,11 @@ read, after one read, and after every read (`diff`). They are equal; nothing had
 
 ### Replaced definitions (P1)
 `WalkEntry` compares `_Walk`'s methods and the module's ported functions with `convert._ORIGINAL` per query; a replaced
-one turns its item off for that query (`term`, `s`, `__init__`: every item). Under the instrument lazy_reads.py, which
-replaces `_Walk.read`, the `read` item is therefore off for every query (746 counts each).
+one turns its item off for that query (`term`, `s`, `__init__`: every item). The instrument lazy_reads.py
+replaces `_Walk.read`, but as a script it never turns Rust's walker on (it does not call `convert.from_env()`), so 746
+does not count there and its rows are byte-equal under `SLICE_CONVERT=py`, `=rust` and plant 773 (sa-port-359's
+correction, tools359/lazyrun359.py). Only when something turns the walker on first is the `read` item off for every
+query under it (746 = 150 of 150 on dev's first 150, rows equal to Python's).
 sa-port-358 found the guard incomplete on its first run and fixed it:
 - an item that is off was called through the function captured when the context was made, so a replaced `term_row`
   (or `enc`, `enc_int`, `walk`, `klass`, `power_rows`) was skipped; they are now called by name on the walker
@@ -231,3 +234,127 @@ Python's `formula` code. It reads no plugin name and no environment, and it is r
 names OWED [157] and the repro. The id runs and passes wherever no such tool is registered (plain pytest: the bar's
 tests phase, row in (4)); under run_suite.sh it reports SKIPPED. The per-job deselect and `timeout` are gone from
 tools358/passes.sh.
+
+## (4) The gate, sa-port-359 and sa-port-360: read; ONE row of the differential differs (a question, not landed)
+
+Tested SHA 00535462 (source b580119 plus the ruled skipif). .so: x86-64 venv build 0f78ac2962f34b3a (gate, suite, iv,
+differential; pareto0), x86-64 bench build 8b8041d3fe6223c2 (S1; pareto1), aarch64 4d8921d9c510e99f (orion). Base
+de88d9b9: venv 37b7560e245df518, bench 0b6f073f5c5a600b, aarch64 e0365239348de148. Python's walker is the default and
+the reference; the port is opt-in under `SLICE_CONVERT=rust` (no new switch, no separate off-switch for the new items).
+Output: ~/sa-rust-ids-work/sa-port-359 (the jobs) and sa-port-360 (this step's checks); summaries in tools359 and
+tools360. No bar has run, nothing is landed.
+
+| check | result |
+|---|---|
+| per query, Python's walker against `SLICE_CONVERT=rust`, 20 workloads and fuzz seeds 0/1/2/42 (tools359/gate-perquery.txt) | 24 of 24 EQUAL: 42,753 queries, 41,354 conversions, 78,743 reads; 0 rows differ in answer, Engine.stats, last_budget_limited, counts (keys, order, numbers), raised, number of terms |
+| moved ids, livecmp per workload, `SLICE_CONVERT=py` against `=rust` on the Rust backend (gate/livecmp-WL.txt) | MATCH 20 of 20: answers, sessions, Engine.stats, moved rows, their order, _SPLIT/_CACHE points (dev: 1,985 queries, 918 sessions, 198 moved rows, 80 engine points, every diff 0) |
+| answers, three arms (Python backend; Rust backend with Python's walker; with Rust's) | 60 of 60 rows MATCH |
+| the differential, every input converted by both walkers and every lazy read compared (convdiff/total.txt; tools360/convdiff-total-00535462.txt) | **69,476 inputs, 1 difference**, 14,258,356 reads compared, slow 2, reread 0. See below |
+| suite by id on the Rust backend, 6,317 ids, cells rust, py, nat, off, base (tools360/byid-00535462.txt) | rust against py: 0 ids in one only, 0 outcomes differ. The same for nat against rust, rust against base, off against base, rust against off. Every cell: 6,149 passed, 127 failed, 23 skipped, 18 xfailed |
+| iv, 64 runs with Python's walker and 64 with Rust's | 0 runs differ in failing ids or counts. Rust backend: tests/test_transfer.py::test_models_respect_transfer and ::test_protocol_on_fuzz fail in 16 of 32 runs under both walkers alike (the second is the known 46-stub row) |
+| the six kept files under the suite plugins, orion (sa-port-359/k-py, k-rust, k-base) | py and rust: 10 failed, 5 errors, the same 15 ids; 0 ids only on rust. Base's Rust walker: 18 failed, 5 errors |
+| R5, term_discard.py on dev, lra, fuzz with every Rust switch on (sa-port-359/disc, tools352/disctab352.py) | rollbacks checked 1,985 / 1,957 / 3,000, clean all, left-something 0 (only the exempt _CACHE rows); plain against discard: 0 answers, 0 digests differ; the no-rollback plant: 300 of 300 left-something |
+| quiet handlers (engine.py's and sympy_api.py's `except Exception`) | 0 handler rows and 0 queries with `caught` on the 20 workloads, in each of the three arms (30,773 queries each); suite: 49 catches in every cell, base included. The counter fires: `SLICE_PLANT_HANDLER=complete_check` gives 661 rows on dev and 166 on scope, `=verdict` 46 on dev, with Rust's walker on (sa-port-360/hplant; aarch64) |
+
+Fallbacks per workload under `SLICE_CONVERT=rust` (gate-perquery.txt; each counter fires in a kept test on the same
+build, gate/kept.log, 34 passed, `[700-too-deep]` PASSED in plain pytest): 743 depth 0, 744 name 0, 746 patched 0 on
+every workload; 745 own_base (Python's `Mul(2, t)`, the reference's own construction) 12, all on lra. Suite cells:
+745 = 19, the others 0.
+
+The suite's 127 failures are the Rust backend's standing rows (126 since 5c10b, results/port-6g.md, plus the
+planted-history test, which failed in all five cells here, base and Python's walker included; [137e]'s keep-alive
+check has not been run on it in this step: the bar's to do).
+
+**The 15 ids that fail alike on py, rust and base under `-p rust_plugin -p handler_count`** (OWED [157](b), not this
+step's): test_knowledge_lazy.py::test_a_baseexception_comes_through_as_itself, ::test_a_query_counts_the_reads_it_asked_for,
+::test_a_read_that_raises_is_a_refusal_and_counts, ::test_a_root_is_converted_and_asked_with_no_complex_call,
+::test_the_template_reads_once_per_table (5 errors); test_term_ids.py::test_a_key_plant_answers_on_python,
+::test_a_plan_plant_changes_the_trace, ::test_a_scaffold_plant_answers_on_python, ::test_a_termwise_plant_moves_an_answer,
+::test_the_consumer_runs_and_decides (KeyError 'term:rust:_eq_links'), ::test_undo_restores_python;
+test_term_live.py::test_a_discard_leaves_nothing_inside_a_nested_memo,
+::test_a_refusal_goes_past_the_handler[lra.py:461], [relations.py:1989], [relations.py:2018].
+
+**The 8 ids of test_lazy_reads.py that base's Rust walker fails and the head passes**, with the cause read from
+k-base/pytest.log: test_other_kinds_are_lazy_and_their_plant_is_caught[commutative], [finite], [power];
+test_plant_restoring_the_eager_read_is_caught[complex], [key]; test_stock_term_plant_is_caught[finite-stock_finite],
+[power-stock_power] (all seven: "this plant restores an eager read and the count did not see it", `assert 0 > 0`);
+test_without_the_nan_line_nan_refuses_with_a_miss ("DID NOT RAISE TermRefuse"). Each plants by replacing a method of
+Python's `_Walk` (`term_row` at test_lazy_reads.py:115-121, `term` at :314-319). de88d9b9's Rust walker runs
+`term_row` and `term` natively and never looks at `_Walk`, so the plant does not run and the test's count stays 0. The
+head looks, per query, for replaced definitions and calls them by name (P1, section (3)), so the plant runs.
+
+### The one difference of the differential: OWED [157]'s hang, at a different call depth for each walker
+
+Input (the suite's, tests/test_noncommutative.py:546): `Q.commutative(Trace(M*N))`, assumptions True. Python's child
+answered all 72 reads (read_raised 16); Rust's child was killed at the 22nd, `complex` of term 3 (`M*N`, a MatMul),
+at the read's CPU limit (30 s). The differential's suite pass runs under `-p handler_count` (p1/convert_diff.sh:21), which registers a
+sys.monitoring EXCEPTION_HANDLED tool.
+
+Read (tools360/depth360.py, no pytest; each walker's reads in the differential's order up to that one, in a forked
+child, called D frames deeper; tools360/depth360-aarch64.txt):
+- `is_complex` of `M*N` recurses to the recursion limit in SymPy: under both walkers the read gives None and records
+  ('complex', 3, 'RecursionError'). With no monitoring tool that takes 0.007-0.026 s and is equal under both walkers at
+  every depth tried (D 0-5).
+- With an EXCEPTION_HANDLED tool registered, the read returns at every third depth and otherwise never does (killed at
+  8 s): Python's walker returns at D = 2, 5 and hangs at 0, 1, 3, 4; Rust's returns at D = 1, 4 and hangs at 0, 2, 3, 5.
+  When it returns, the value and the raised entry are the same as without the tool.
+- So it is [157]'s interpreter behaviour (a RecursionError at the limit under an EXCEPTION_HANDLED callback), and which
+  depths hang follows the number of Python frames under the read: Rust's `read` item calls the SymPy property with one
+  Python frame fewer than `_Walk.read`, which is the port. On orion, the same test with the differential on and the
+  plugin loaded stops BOTH walkers at `complex 3` (slow 1, differences 0); without the plugin: 528 reads, differences 0,
+  slow 0. On pareto0 under xdist the depth happened to be one where Python's returns and Rust's does not.
+- de88d9b9 could not show it: there the `read` item did not exist, both walkers read through `_Walk.read` at the same
+  depth (convert step: 0 of 69,256).
+
+The same suite pass without the plugin, nothing else changed (tools360/nohandler360.sh; pareto0, the staged tree of
+00535462, .so 0f78ac2962f34b3a, `-p rust_plugin -p plant_count -n 6`; tools360/nohandler-00535462.txt): 40,163 inputs,
+**0 differences**, 10,781,055 reads compared, reread 0, slow 1 (`Q.lt(x, sin(exp(exp(exp(5)))))`, where both children
+stop at the same read: the known slow input of 359's pass too), exit 0. The pass's own pytest line is 132 failed
+against 134 with the plugin; those two were not compared by id. depth360.py on that x86-64 build gives the same table
+as on aarch64 (tools360/depth360-x86.txt: Python's returns at D = 2, 5, Rust's at D = 1, 4, plain equal at every depth).
+
+It is a difference this step cannot remove without either adding a frame to the native read or changing a shared bar
+file (p1/convert_diff.sh), and the bar's convdiff phase runs the same pass, so it would exit 1 there: Status: question.
+
+### The planner's check on 359's base row: `term_live.current()` never gives a stale `_Query`
+
+359's base row: the last query's `_Query`, TermTable and walker stay referenced until the next conversion, under
+Python's walker and on de88d9b9 alike. The question was whether a query-time reader can reach it.
+- By the source: `sympy_api._engine_ask` has three callers, all in `sympy_api._ask` (sympy_api.py:570, :598, :602).
+  term_live wraps `_ask`; `current()` (term_live.py:160) reads only the thread's stack, which that wrapper pushes
+  before the call and pops in its `finally` (:1101-:1111, and the second run after a refusal :1126-:1133). A query that
+  is not converted still gets its own entry: a `_Query` whose `kept` is the reason, or a `_Refused`.
+- By a trace on the head (tools360/current360.py; scope, dev, cls, lra, opaque, rootof, value, twin; 15,203 queries;
+  both walkers, tools360/current360-nat.txt and -py.txt, identical counts): at every `_engine_ask` call, `current()`
+  was this ask's own `_Query` (13,606 with a table; 31 kept: out-of-scope 25, args-eq-not-is 6) or a `_Refused` (478,
+  the second run of a discarded query); STALE 0, anything else 0. After each top-level ask it was None, and at a
+  direct call of `_engine_ask` outside any ask, right after a workload's last converted query, it was None (8 of 8).
+So no query-time reader starting from `current()` can reach the earlier query's `_Query`: a memory-only base row, to
+be OWED. No source changed for it. The holder is still not named.
+
+## (5) S1, sa-port-359's run read by sa-port-360: the landing rule is met
+
+Quiet lease f700c9b2 on pareto1 (24 minutes), bench-container, pinned, 10 arms alternating inside one invocation, 12
+rounds; 1-minute load 0.99-1.07 for the whole lease (the pinned run itself; timing-s1/load.txt, timing-bw/load.txt).
+All ten arms give one answers digest per workload. tools360/s1-med-00535462.txt (tools359/med359.py).
+
+Rust at the head against Rust at de88d9b9, S1's configuration (`rust-nat`: SLICE_CONVERT=rust SLICE_TERM_FRAMES=rust
+SLICE_WITNESS=1 cap 32 SLICE_WITNESS_RUST=1), median wall seconds:
+
+| workload | head | de88d9b9 | change | per-round quartiles | slower in | larger iqr | |
+|---|---|---|---|---|---|---|---|
+| dev | 0.5992 | 0.6190 | -3.2% | -3.8% .. -2.8% | 0 of 12 | 1.2% | faster beyond the spread |
+| fuzz | 4.0875 | 4.1570 | -1.7% | -2.2% .. -1.1% | 0 of 12 | 0.6% | faster beyond the spread |
+| budget | 0.3272 | 0.3302 | -0.9% | -1.2% .. -0.8% | 1 of 12 | 0.5% | faster beyond the spread |
+| wiring | 3.2701 | 3.3885 | -3.5% | -3.9% .. -2.7% | 0 of 12 | 0.9% | faster beyond the spread |
+
+The other two Rust pairs agree (rust-on32: -2.3%, -1.5%, -1.1%, -2.5%; rust-off: -2.4%, -1.6%, -1.0%, -3.1%). The Python rows, head against base, are within the spread on all four workloads in both arms (py-off: -0.2%,
+-0.1%, -0.1%, -0.1%; py-on32: -0.3%, -0.0%, -0.5%, +0.3%). Rule: faster beyond the spread on at least two of four and no
+worse on any, Python rows within the spread: met (four of four). Against (2)'s expectation of 2-4% on dev and wiring:
+3.2% and 3.5%.
+
+## (6) The bar: not run
+
+Not run: one row of it is known to differ (the differential above), which is a question by the ruling. Still owed for
+the landing: the bar with tools358/rows358.sh's rows, [137e]'s check when the planted-history test shows, the probe
+count against 21 of 32.

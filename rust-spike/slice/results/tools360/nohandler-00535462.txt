@@ -1,0 +1,8 @@
+00535462
+0f78ac2962f34b3a450ca349d6f6f42016d87daec72f1ea695f078447e5b57ea  /home/tilo/sp19/sa-rust-ids-work/sa-port-359/s1/bench-00535462/tree/rust-spike/slice/sa_solver.so
+/home/tilo/sp19/sa-rust-ids-work/sa-port-359/s1/bench-00535462/tree/satassume/__init__.py /home/tilo/sp19/sa-rust-ids-work/sa-port-359/s1/bench-00535462/tree/rust-spike/slice/convert.py /home/tilo/sp1
+1 132 failed, 6144 passed, 23 skipped, 18 xfailed, 6 warnings in 790.53s (0:13:10)
+{"files": 7, "inputs": 40163, "differences": 0, "terms": 1347639, "reads": 10781055, "slow": 1, "reread": 0, "reread_by_dir": {}, "outcomes": {"Converted": 37463, "non-default-registry": 190, "out-of-scope": 2468, "sum-product-integral": 42}}
+SLOW ['suite', 'complex 3 []', 'Q.lt(x, sin(exp(exp(exp(5)))))', 'Q.positive(x)']
+exit 0
+END 2026-11-20T12:56:51Z load 1.01 1.89 3.07

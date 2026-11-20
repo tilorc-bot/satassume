@@ -1,0 +1,17 @@
+suite rust: 6317 ids {'passed': 6149, 'skipped': 23, 'failed': 127, 'xfailed': 18}; quiet catches 49; planted-history failed; exit 1 127 failed, 6149 passed, 23 skipped, 18 xfailed, 3 warnings in 337.10s (0:05:3; cv ({'cv:entry': 40166, 'cv:formula': 75956, 'cv:read': 148867, 'cv:py:own_base': 19}, ['rust:9 items']); tree /home/tilo/sp19/sa-rust-ids-work/sa-port-359/s1/bench-00535462/tree/satassume/__init__.py
+suite py: 6317 ids {'passed': 6149, 'skipped': 23, 'xfailed': 18, 'failed': 127}; quiet catches 49; planted-history failed; exit 1 127 failed, 6149 passed, 23 skipped, 18 xfailed, 3 warnings in 345.08s (0:05:4; cv ({}, ['py']); tree /home/tilo/sp19/sa-rust-ids-work/sa-port-359/s1/bench-00535462/tree/satassume/__init__.py
+suite nat: 6317 ids {'passed': 6149, 'skipped': 23, 'xfailed': 18, 'failed': 127}; quiet catches 49; planted-history failed; exit 1 127 failed, 6149 passed, 23 skipped, 18 xfailed, 3 warnings in 333.54s (0:05:3; cv ({'cv:entry': 40166, 'cv:formula': 75956, 'cv:read': 418348, 'cv:py:own_base': 19}, ['rust:9 items']); tree /home/tilo/sp19/sa-rust-ids-work/sa-port-359/s1/bench-00535462/tree/satassume/__init__.py
+suite off: 6317 ids {'passed': 6149, 'skipped': 23, 'failed': 127, 'xfailed': 18}; quiet catches 49; planted-history failed; exit 1 127 failed, 6149 passed, 23 skipped, 18 xfailed, 3 warnings in 340.15s (0:05:4; cv ({}, ['py']); tree /home/tilo/sp19/sa-rust-ids-work/sa-port-359/s1/bench-00535462/tree/satassume/__init__.py
+suite base: 6317 ids {'passed': 6149, 'skipped': 23, 'xfailed': 18, 'failed': 127}; quiet catches 49; planted-history failed; exit 1 127 failed, 6149 passed, 23 skipped, 18 xfailed, 3 warnings in 342.55s (0:05:4; cv ({}, ['rust:5 items']); tree /home/tilo/sp19/sa-rust-ids-work/sa-port-359/s1/bench-de88d9b9/tree/satassume/__init__.py
+  rust against py: ids in one only 0 []; outcome differs 0; recorded state differs, ids by field {'session': 452, 'lra': 2, 'rust_made': 1}
+  nat against rust: ids in one only 0 []; outcome differs 0; recorded state differs, ids by field {'session': 675, 'lra': 1}
+  rust against base: ids in one only 0 []; outcome differs 0; recorded state differs, ids by field {'session': 325, 'lra': 2, 'rust_made': 2}
+  off against base: ids in one only 0 []; outcome differs 0; recorded state differs, ids by field {'session': 1271, 'rust_made': 132, 'lra': 80}
+  rust against off: ids in one only 0 []; outcome differs 0; recorded state differs, ids by field {'session': 1222, 'rust_made': 130, 'lra': 78}
+iv runs 64 py + 64 rust; runs whose failing ids or pass/fail counts differ: 0
+iv exit codes (backend, switch, rc): runs {('python', 'py', '0'): 32, ('python', 'rust', '0'): 32, ('rust', 'py', '0'): 16, ('rust', 'py', '1'): 16, ('rust', 'rust', '0'): 16, ('rust', 'rust', '1'): 16}
+iv walker counters summed, py: {} rust: {'cv:entry': 15360, 'cv:formula': 30224, 'cv:read': 47368}
+  rust py tests/test_transfer.py::test_models_respect_transfer: fails in 16 runs
+  rust py tests/test_transfer.py::test_protocol_on_fuzz: fails in 16 runs
+  rust rust tests/test_transfer.py::test_models_respect_transfer: fails in 16 runs
+  rust rust tests/test_transfer.py::test_protocol_on_fuzz: fails in 16 runs

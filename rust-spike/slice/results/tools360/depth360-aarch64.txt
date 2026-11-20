@@ -1,0 +1,14 @@
+answer True limit 1000
+terms 9 term 3 M*N MatMul
+plain D 0 | py ('None', 0.023, 0, [('complex', 3, 'RecursionError')]) | rust ('None', 0.006, 0, [('complex', 3, 'RecursionError')])
+plain D 1 | py ('None', 0.023, 0, [('complex', 3, 'RecursionError')]) | rust ('None', 0.026, 0, [('complex', 3, 'RecursionError')])
+plain D 2 | py ('None', 0.026, 0, [('complex', 3, 'RecursionError')]) | rust ('None', 0.007, 0, [('complex', 3, 'RecursionError')])
+plain D 3 | py ('None', 0.023, 0, [('complex', 3, 'RecursionError')]) | rust ('None', 0.023, 0, [('complex', 3, 'RecursionError')])
+plain D 4 | py ('None', 0.023, 0, [('complex', 3, 'RecursionError')]) | rust ('None', 0.023, 0, [('complex', 3, 'RecursionError')])
+plain D 5 | py ('None', 0.007, 0, [('complex', 3, 'RecursionError')]) | rust ('None', 0.026, 0, [('complex', 3, 'RecursionError')])
+tool D 0 | py KILLED | rust KILLED
+tool D 1 | py KILLED | rust ('None', 0.008, 68, [('complex', 3, 'RecursionError')])
+tool D 2 | py ('None', 0.027, 72, [('complex', 3, 'RecursionError')]) | rust KILLED
+tool D 3 | py KILLED | rust KILLED
+tool D 4 | py KILLED | rust ('None', 0.007, 68, [('complex', 3, 'RecursionError')])
+tool D 5 | py ('None', 0.023, 72, [('complex', 3, 'RecursionError')]) | rust KILLED
