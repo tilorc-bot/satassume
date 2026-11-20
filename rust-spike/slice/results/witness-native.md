@@ -1,7 +1,7 @@
-# The witness check in Rust (issue 323) — (1) the profile, (2) the port, (3) the same behaviour, (4) the plant rows, (5) S1; items 6-7 open
+# The witness check in Rust (issue 323) — (1) the profile, (2) the port, (3) the same behaviour, (4) the plant rows, (5) S1, (6) the count rule; item 7 open
 
 Planner's ruling for sa-port-350 (20 Nov, on sa-port-349 52bdf2d), items 1-7. This file takes them in order. State:
-items 1 to 5 done (items 1 to 3 measured on b79f6657, item 5 on b7302f83, on rust-slice 6ee354f9); no bar read and nothing landed. SLICE_WITNESS stays off
+items 1 to 6 done (items 1 to 3 measured on b79f6657, items 5 and 6 on b7302f83, on rust-slice 6ee354f9); no bar read and nothing landed. SLICE_WITNESS stays off
 by default, Python's witness.py the default and the reference, the unchanged path the default.
 
 ## (1) Profile before building, sa-port-350: 6ee354f9, quiet leases on pareto1
@@ -303,10 +303,67 @@ each of those four arms.
 
 With the native check the switch turns from a cost into a gain on Rust dev, keeps and widens fuzz's gain, and still
 costs on budget and wiring: wiring's cost falls from +10.1% to +4.0%, budget's is nearly unchanged (+5.3% to +4.5%;
-budget makes 19 calls of the check, each compiling about 200 symbols, and certifies none). So the check is not free
+budget makes 19 calls of the check, each reading the assumptions of about 200 symbols ((6)), and certifies none). So the check is not free
 on the two workloads where it certifies little or nothing, with or without the port. Native against Python's check
 in the head's own tree (rust nat / rust on32): dev -6.6%, fuzz -10.2%, budget -0.7%, wiring -5.6%, each beyond the
 spread.
 
-Not done: items 6 and 7 (the count rule, the bar and the landing). S1 above was taken on b7302f83, the commit of item
-4; the commits after it add results and tools only.
+## (6) The count rule, sa-port-354: b7302f83, 20 workloads
+
+Probe: tools354/pc354.sh with pcby354.py (sys.monitoring PY_START per code object; nothing of witness.py is wrapped
+or replaced, so `_replaced` sees witness.py's own objects), pareto0, shared lease 0239cde5, 04:53Z to 04:55Z 20 Nov;
+the staged trees of b7302f83 (.so 37b7560e245df518) and 6ee354f9 (.so cad764d46471b1c6); 20 workloads, 30,753
+queries; 80 of 80 rows ref 0 run 0 cmp 0 (the answers equal Python's under the same SLICE_WITNESS). Cells: **d0**
+every switch unset (the default), **w1** SLICE_WITNESS=1 SLICE_CONVERT=rust SLICE_TERM_FRAMES=rust (Python's
+witness.py on the path the native check needs), **nat** w1 plus SLICE_WITNESS_RUST=1. Table by tools354/pctab354.py
+(kept as tools354/pc-tab.txt; launched by gopc354.sh). The hook is `witness_live.native` in all 20 nat rows and None in every
+w1 and d0 row; `wn:compile` is 11,415 over the 20; certified is equal per workload in w1 and nat (1,828 in all).
+
+**witness.py's Python calls do not drop to 0; they drop by 97.7%.** Calls of witness.py's own code:
+
+| | w1 (Python's check) | nat (the native check) | per call of the check, w1 / nat |
+|---|---|---|---|
+| the 20 workloads | 5,441,984 (50 functions) | 127,039 (48 functions) | 447.6 / 10.4 |
+| dev | 288,516 | 2,281 | 371.8 / 2.94 |
+| fuzz | 2,919,751 | 85,572 | 1,053.3 / 30.9 |
+| budget | 63,349 | 78 | 3,334.2 / 4.11 |
+| wiring | 1,456,700 | 11,367 | 302.6 / 2.36 |
+
+What remains on a native query is 2 to 4 calls of witness.py per call of the check, by ruling (the guards stay
+Python, P1): `independent` 1, `witnesses` 1, `_patched` 1 when the query compiles to a handle (dev 535 of 776,
+wiring 1,503 of 4,814, budget 19 of 19) and `_users_knowledge` 1 when a pair is found (dev 173, wiring 215). On dev
+that is 776 + 776 + 535 + 173 = 2,260, plus 21 calls a process at import. Fuzz and lra keep more because their
+fallback queries run witness.py whole: fuzz's 75 of 2,772 (`wn:fallback:miss`) make 75,951 of its 85,572 calls, lra's
+334 of 1,115 (`wn:fallback:off`, no table) 19,194 of its 21,471. Those four functions are called exactly as often in
+nat as in w1 on dev, fuzz, budget, wiring and lra. witness.py does not count as a 0-call module.
+
+The hook's own Python (witness_live.py): `native`, `_replaced` and `_classes`, one call each per call of the check
+(34,679 over the 20: 11,749 + 11,415 + 11,415, plus 5 a process at import). On loop and scope the check returns at
+its extensions test before the hook (244 and 166 calls, 0 native), as it does without the hook.
+
+**Boundary reads**, not witness.py calls:
+- `wn:lookup`, the reads of `q.ids` by hash and `==`: 65,881 over the 20; dev 3,032, fuzz 19,501, budget 171,
+  wiring 34,626.
+- `_replaced`'s dictionary reads, 23 per call (`len(_OWN)` is 23): 11,415 calls, 262,545 reads; dev 17,848, fuzz
+  63,756, budget 437, wiring 110,722. These are inside S1's times in (5).
+- The table's symbol reads, which the earlier sections named but did not count: `symbol_facts` reads a symbol's
+  `assumptions0` through convert.py (the input layer) once per query and symbol, where witness.py's `_own` read it
+  itself. Against w1 that is 22,351 more `_Walk._read_symbol` reads and 156,457 more convert.py calls over the 20 (7
+  Python calls a read: `_Walk.read`, `_read_symbol`, one lambda of `rust_walk` and four of `_RustWalk`); wiring
+  84,462, fuzz 35,028, budget 27,678, dev 4,900. No other probed file differs between w1 and nat. It is the input
+  being read, so it stays Python, but 7 calls a read is the walker's dispatch and a cheap reduction for a later step.
+
+**The `_replaced` fallback is 0 on every workload** (the planner asked for the split): `_replaced` runs only past
+the no-table and plant tests, and a False from it is followed by `witness_compile`. Its calls equal `wn:compile` in
+all 20 rows (11,415 in total), so it never returned True, and `wn:fallback:off` (334, all on lra) equals the native
+calls that never reached it (1,115 - 781: no table). The other fallbacks are as in (3): cls 15 of 21 (`type`), fuzz
+75 of 2,772 (`miss`), dev, wiring and budget 0.
+
+**The probe count stays 21 of 32.** In d0 every probed file has the same count on b7302f83 as on 6ee354f9, per
+workload and function (13 files, 30,753 queries; witness.py 420 in both, 21 a process at import). The one
+difference is witness_live.py's 5 calls a process at install (`<module>`, a generator, `from_env`, `install`,
+`plant`), none per query. With the switch off nothing of this step runs per query. With SLICE_WITNESS on, witness.py
+remains a per-query Python module outside the 32, with 2 to 4 calls per call of the check in place of 300 to 3,300.
+
+Not done: item 7 (the bar and the landing). S1 and the count probe were taken on b7302f83, the commit of item 4; the
+commits after it add results and tools only, so the bar's tested SHA is b7302f83.

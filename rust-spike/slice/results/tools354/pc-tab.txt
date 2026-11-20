@@ -1,0 +1,115 @@
+1 calls per file over the workloads; cells d0 w1 nat of NEW
+  workloads {'d0': 20, 'w1': 20, 'nat': 20} queries {'d0': 30753, 'w1': 30753, 'nat': 30753}
+  __init__.py 20 20 20
+  compile.py 142 142 142
+  convert.py 14559922 2272599 2429056
+  engine.py 255617 265569 265569
+  formula.py 183111 169270 169270
+  knowledge_common_live.py 60 60 60
+  knowledge_core_live.py 32857 32857 32857
+  knowledge_live.py 7646 7646 7646
+  lra_adapter.py 289052 246881 246881
+  session_live.py 764616 705699 705699
+  sympy_api.py 650746 650746 650746
+  term_live.py 8497075 1131832 1131832
+  wiring.py 612852 612852 612852
+  witness.py 420 5441984 127039
+  witness_live.py 100 100 34679
+2 NEW d0 against BASE d0
+  __init__.py base 20 new 20 equal
+  compile.py base 142 new 142 equal
+  convert.py base 14559922 new 14559922 equal
+  engine.py base 255617 new 255617 equal
+  formula.py base 183111 new 183111 equal
+  knowledge_common_live.py base 60 new 60 equal
+  knowledge_core_live.py base 32857 new 32857 equal
+  knowledge_live.py base 7646 new 7646 equal
+  lra_adapter.py base 289052 new 289052 equal
+  session_live.py base 764616 new 764616 equal
+  sympy_api.py base 650746 new 650746 equal
+  term_live.py base 8497075 new 8497075 equal
+  wiring.py base 612852 new 612852 equal
+  witness.py base 420 new 420 equal
+  witness_live.py base 0 new 100 DIFFER
+  per workload and function, rows that differ: 100 [('budget', 'witness_live.py:from_env'), ('budget', 'witness_live.py:<genexpr>'), ('budget', 'witness_live.py:<module>'), ('budget', 'witness_live.py:install'), ('budget', 'witness_live.py:plant'), ('cert', 'witness_live.py:from_env'), ('cert', 'witness_live.py:<genexpr>'), ('cert', 'witness_live.py:<module>'), ('cert', 'witness_live.py:install'), ('cert', 'witness_live.py:plant'), ('cls', 'witness_live.py:from_env'), ('cls', 'witness_live.py:<genexpr>'), ('cls', 'witness_live.py:<module>'), ('cls', 'witness_live.py:install'), ('cls', 'witness_live.py:plant'), ('core', 'witness_live.py:from_env'), ('core', 'witness_live.py:<genexpr>'), ('core', 'witness_live.py:<module>'), ('core', 'witness_live.py:install'), ('core', 'witness_live.py:plant')]
+  queries base 30753 new 30753 hook in d0 ['None']
+3 witness.py and witness_live.py by function: w1 / nat
+  the 20: witness.py 5441984 / 127039; witness_live.py 100 / 34679; functions of witness.py called 50 / 48
+    witness.py:_term.<locals>.<lambda> 1782266 / 22754
+    witness.py:<lambda> 1026414 / 19893
+    witness.py:witnesses 12159 / 12159
+    witness.py:independent 12159 / 12159
+    witness_live.py:native 0 / 11749
+    witness_live.py:_classes 0 / 11415
+    witness_live.py:_replaced 0 / 11415
+    witness.py:_formula.<locals>.<lambda> 525175 / 10363
+    witness.py:_own.<locals>.<lambda> 410564 / 8090
+    witness.py:_term.<locals>.mul 224641 / 6043
+    witness.py:_term 144733 / 5732
+    witness.py:_patched 5259 / 5259
+  dev: witness.py 288516 / 2281; witness_live.py 5 / 2333; functions of witness.py called 49 / 15
+    witness_live.py:native 0 / 776
+    witness_live.py:_classes 0 / 776
+    witness.py:witnesses 776 / 776
+    witness.py:independent 776 / 776
+    witness_live.py:_replaced 0 / 776
+    witness.py:_patched 535 / 535
+    witness.py:_users_knowledge 173 / 173
+    witness.py:accept.<locals>.<genexpr> 9 / 9
+  fuzz: witness.py 2919751 / 85572; witness_live.py 5 / 8321; functions of witness.py called 46 / 46
+    witness.py:_term.<locals>.<lambda> 843944 / 22266
+    witness.py:<lambda> 477925 / 12401
+    witness.py:_formula.<locals>.<lambda> 397269 / 10241
+    witness.py:_own.<locals>.<lambda> 267008 / 7358
+    witness.py:_term.<locals>.mul 194905 / 5879
+    witness.py:_term.<locals>.add 144451 / 3602
+    witness.py:_Query.spend 131026 / 3368
+    witness_live.py:native 0 / 2772
+  budget: witness.py 63349 / 78; witness_live.py 5 / 62; functions of witness.py called 24 / 14
+    witness_live.py:native 0 / 19
+    witness.py:witnesses 19 / 19
+    witness.py:independent 19 / 19
+    witness.py:_patched 19 / 19
+    witness_live.py:_classes 0 / 19
+    witness_live.py:_replaced 0 / 19
+    witness.py:accept.<locals>.<genexpr> 9 / 9
+    witness.py:accept 3 / 3
+  wiring: witness.py 1456700 / 11367; witness_live.py 5 / 14447; functions of witness.py called 37 / 15
+    witness_live.py:native 0 / 4814
+    witness.py:witnesses 4814 / 4814
+    witness.py:independent 4814 / 4814
+    witness_live.py:_classes 0 / 4814
+    witness_live.py:_replaced 0 / 4814
+    witness.py:_patched 1503 / 1503
+    witness.py:_users_knowledge 215 / 215
+    witness.py:accept.<locals>.<genexpr> 9 / 9
+4 nat per workload: wl queries checks native(calls of witness_live.native) witness.py-calls per-check per-query | counters | fallback share | lookups | _replaced reads | hook
+  budget 28 19 19 78 4.11 2.79 | wn:compile=19 wn:lookup=171 wn:search=19 | 0 of 19 0.0% | 171 | 19 x 23 = 437 | witness_live.native certified 0
+  cert 61 61 61 205 3.36 3.36 | wn:compile=61 wn:found=1 wn:lookup=636 wn:search=61 | 0 of 61 0.0% | 636 | 61 x 23 = 1403 | witness_live.native certified 1
+  cls 72 21 21 132 6.29 1.83 | wn:compile=21 wn:fallback:type=15 wn:lookup=36 | 15 of 21 71.4% | 36 | 21 x 23 = 483 | witness_live.native certified 0
+  core 1636 299 299 900 3.01 0.55 | wn:compile=299 wn:found=95 wn:lookup=566 wn:search=186 | 0 of 299 0.0% | 566 | 299 x 23 = 6877 | witness_live.native certified 95
+  dev 1985 776 776 2281 2.94 1.15 | wn:compile=776 wn:found=173 wn:lookup=3032 wn:search=535 | 0 of 776 0.0% | 3032 | 776 x 23 = 17848 | witness_live.native certified 173
+  f6 2902 4 4 29 7.25 0.01 | wn:compile=4 wn:lookup=8 | 0 of 4 0.0% | 8 | 4 x 23 = 92 | witness_live.native certified 0
+  fuzz 3000 2772 2772 85572 30.87 28.52 | wn:compile=2772 wn:fallback:miss=75 wn:found=1246 wn:lookup=19501 wn:search=2657 | 75 of 2772 2.7% | 19501 | 2772 x 23 = 63756 | witness_live.native certified 1284
+  ground 18 14 14 67 4.79 3.72 | wn:compile=14 wn:found=4 wn:lookup=80 wn:search=14 | 0 of 14 0.0% | 80 | 14 x 23 = 322 | witness_live.native certified 4
+  loop 420 244 0 509 2.09 1.21 |  | 0 of 0 0.0% | 0 | 0 x 23 = 0 | witness_live.native certified 0
+  lra 1500 1115 1115 21471 19.26 14.31 | wn:compile=781 wn:fallback:off=334 wn:found=1 wn:lookup=1999 wn:search=16 | 334 of 1115 30.0% | 1999 | 781 x 23 = 17963 | witness_live.native certified 1
+  opaque 2546 30 30 81 2.70 0.03 | wn:compile=30 wn:lookup=60 | 0 of 30 0.0% | 60 | 30 x 23 = 690 | witness_live.native certified 0
+  port 19 19 19 78 4.11 4.11 | wn:compile=19 wn:lookup=94 wn:search=19 | 0 of 19 0.0% | 94 | 19 x 23 = 437 | witness_live.native certified 0
+  rootof 5187 368 368 757 2.06 0.15 | wn:compile=368 wn:lookup=736 | 0 of 368 0.0% | 736 | 368 x 23 = 8464 | witness_live.native certified 0
+  scope 169 166 0 353 2.13 2.09 |  | 0 of 0 0.0% | 0 | 0 x 23 = 0 | witness_live.native certified 0
+  transfer2340 40 40 40 108 2.70 2.70 | wn:compile=40 wn:found=1 wn:lookup=144 wn:search=6 | 0 of 40 0.0% | 144 | 40 x 23 = 920 | witness_live.native certified 1
+  transfer760 60 60 60 157 2.62 2.62 | wn:compile=60 wn:found=2 wn:lookup=190 wn:search=14 | 0 of 60 0.0% | 190 | 60 x 23 = 1380 | witness_live.native certified 2
+  twin 2 2 2 25 12.50 12.50 | wn:compile=2 wn:lookup=4 | 0 of 2 0.0% | 4 | 2 x 23 = 46 | witness_live.native certified 0
+  value 3742 636 636 1293 2.03 0.35 | wn:compile=636 wn:lookup=1590 | 0 of 636 0.0% | 1590 | 636 x 23 = 14628 | witness_live.native certified 0
+  wiring 6512 4814 4814 11367 2.36 1.75 | wn:compile=4814 wn:found=215 wn:lookup=34626 wn:search=1503 | 0 of 4814 0.0% | 34626 | 4814 x 23 = 110722 | witness_live.native certified 215
+  zero 854 699 699 1576 2.25 1.85 | wn:compile=699 wn:found=52 wn:lookup=2408 wn:search=100 | 0 of 699 0.0% | 2408 | 699 x 23 = 16077 | witness_live.native certified 52
+  total {'queries': 30753, 'chk': 12159, 'nat': 11749, 'wp': 127039, 'fall': 424, 'rep': 11415, 'lookup': 65881, 'compile': 11415, 'replaced': 0, 'notable': 334, 'off': 334} witness.py per check 10.45 per query 4.13
+  w1 total {'queries': 30753, 'chk': 12159, 'wp': 5441984} witness.py per check 447.57 per query 176.96 hook ['None']
+5 the other probed files, functions whose count differs between w1 and nat (over the 20): function w1 nat
+  convert.py:rust_walk.<locals>._RustWalk.<lambda> 263354 352758 +89404
+  convert.py:_Walk._read_symbol 569 22920 +22351
+  convert.py:_Walk.read 36503 58854 +22351
+  convert.py:rust_walk.<locals>.<lambda> 838516 860867 +22351
+  per workload, nat minus w1: {'budget': 27678, 'cert': 476, 'core': 1834, 'dev': 4900, 'fuzz': 35028, 'ground': 147, 'lra': 434, 'port': 154, 'transfer2340': 112, 'transfer760': 182, 'wiring': 84462, 'zero': 1050} sum 156457
+  certified per workload w1 == nat: True sum 1828
