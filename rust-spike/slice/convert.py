@@ -80,7 +80,7 @@ _OPS = ('__neg__', '__add__', '__radd__', '__sub__', '__rsub__', '__mul__', '__r
 # Rust can build these with none in the input, so their rows are always sent, first.
 _PREFIX = (Add, Mul, Pow, Integer, Rational, type(S.Zero), type(S.One), type(S.NegativeOne), type(S.Half))
 _KEPT_CLASSES = (Sum, Product, Integral)
-# The formula's skeleton carries no term facts: section 9 has them in the formula table, not the term rows.
+# The formula's skeleton (predicates, connectives) carries no term facts: its nodes get rows without them.
 _SKELETON = (AppliedPredicate, Predicate, BooleanFunction, BooleanAtom)
 
 
@@ -461,10 +461,11 @@ def use_rust(items=RUST_ITEMS):
 
 #: Test plants of the Rust walker, one per item: `SLICE_CONVERT_PLANT`, sa_solver.walk_plant's numbers. (6 to 8 were
 #: plants 746-748 in `term_row`'s F_MAYBE_NAN bit, retired with the bit.) 9 to 14 are plants 768-773, of the items past
-#: `enc_int` and of the entry's look for replaced definitions.
+#: `enc_int` and of the entry's look for replaced definitions. (13 was plant 772, an `and` tagged `or` in the converted
+#: formula table, retired with the table.)
 WALK_PLANTS = {'enc-true-as-false': 1, 'klass-no-is-expr': 2, 'term-row-no-number': 3, 'walk-args-unreversed': 4,
                'enc-int-no-sign': 5, 'calls-structural-not': 9, 'power-rows-drop-last': 10, 'read-commutative-not': 11,
-               'entry-no-assumptions': 12, 'formula-and-as-or': 13, 'entry-skip-replaced': 14}
+               'entry-no-assumptions': 12, 'entry-skip-replaced': 14}
 
 
 def from_env():
@@ -513,29 +514,28 @@ def _rel(parts, rel):
     name, lhs, rhs = parts
     if not rel or not (A._is_scalar(lhs) and A._is_scalar(rhs)):
         raise A.Unsupported('relation', 'relation')
-    return ('rel', name, lhs, rhs)
 
 
-_CONNECTIVE = ((A._SAnd, 'and'), (A._SOr, 'or'), (A._SNot, 'not'), (A._SImplies, 'implies'),
-               (A._SEquivalent, 'equivalent'), (A._SXor, 'xor'), (A._SITE, 'ite'))
+_CONNECTIVE = (A._SAnd, A._SOr, A._SNot, A._SImplies, A._SEquivalent, A._SXor, A._SITE)
 
 
 def formula(e, rel, opq=False):
-    """Mirrors sympy_api.to_formula, reads only, and raises Unsupported where it does. Relation atoms stay (name, lhs,
-    rhs): relation_atom builds terms and is component 4. `out_of_scope` is NOT this: it's a diagnostic, and it names a
-    category for relation queries the engine answers (sa-port-10's first run kept those by mistake)."""
+    """The scope check: mirrors sympy_api.to_formula, reads only, and raises Unsupported where it does. It builds
+    nothing: the tables hold no formula (the engine's own comes from to_formula). `out_of_scope` is NOT this: it's a
+    diagnostic, and it names a category for relation queries the engine answers (sa-port-10's first run kept those by
+    mistake)."""
     if e is True or isinstance(e, A._BTrue):
-        return ('true',)
+        return
     if e is False or isinstance(e, A._BFalse):
-        return ('false',)
+        return
     if isinstance(e, A._Applied):
         name = str(e.function.name)
         if name == 'is_true' and len(e.arguments) == 1:
             a = e.arguments[0]
             if a is True or isinstance(a, A._BTrue):
-                return ('true',)
+                return
             if a is False or isinstance(a, A._BFalse):
-                return ('false',)
+                return
         if name in A.RELATION_PREDICATES or name == 'is_true':
             parts = A.relation_parts(e)
             if parts is not None:
@@ -543,12 +543,14 @@ def formula(e, rel, opq=False):
         c = A._applied_category(e)
         if c is not None:
             if opq and c in A.OPAQUE_CATEGORIES:
-                return ('opaque', e)
+                return
             raise A.Unsupported(c, c)
-        return ('atom', name) + tuple(e.arguments)
-    for cls, tag in _CONNECTIVE:
-        if isinstance(e, cls):
-            return (tag,) + tuple(formula(a, rel, opq) for a in e.args)
+        return
+    if isinstance(e, _CONNECTIVE):
+        # A generator expression under a builtin, as when this built the skeleton's tuple: the frames per level of
+        # nesting decide where RecursionError, and so 'too-deep', comes.
+        any(formula(a, rel, opq) for a in e.args)
+        return
     if isinstance(e, A._Relational):
         return _rel(A.relation_parts(e), rel)
     raise A.Unsupported('other', 'other')
@@ -570,8 +572,9 @@ def convert(proposition, assumptions, eng, walk=None):
             return Kept('non-default-registry')
         rel = bool(eng.relation_specs)
         try:
-            fp = formula(proposition, rel)
-            fa = None if assumptions is True else formula(assumptions, rel, True)
+            formula(proposition, rel)
+            if assumptions is not True:
+                formula(assumptions, rel, True)
         except A.Unsupported:
             return Kept('out-of-scope')
         w = (walk or _Walk)()
@@ -581,8 +584,6 @@ def convert(proposition, assumptions, eng, walk=None):
             if x is True or x is False:
                 continue
             w.walk(x)
-        form = []
-        w.enc((fp, fa), form)
         rows = []
         i = 0
         while i < len(w.objects):       # grows if a content or free_symbols holds a term `.args` doesn't reach
@@ -595,7 +596,7 @@ def convert(proposition, assumptions, eng, walk=None):
         return Kept('too-deep')
     sets = []
     w.enc(settings, sets)
-    tables = dict(strings=w.strings, classes=w.class_rows, terms=rows, powers=powers, settings=sets, formula=form,
+    tables = dict(strings=w.strings, classes=w.class_rows, terms=rows, powers=powers, settings=sets,
                   n_classes=len(w.classes), n_terms=len(w.objects), n_opaque=len(w.opaque), reads=w.read)
     return Converted(tables, w.ids, w.objects, w.counts, w.classes, w.raised)
 

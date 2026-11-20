@@ -37,8 +37,7 @@ f, g = Function('f'), Function('g')
 ALL_PLANTS = {670: ('enc-true-as-false', 'enc'), 671: ('klass-no-is-expr', 'klass'), 672: ('term-row-no-number', 'term_row'),
           673: ('walk-args-unreversed', 'walk'), 674: ('enc-int-no-sign', 'enc_int'),
           768: ('calls-structural-not', 'klass,klass_calls'), 769: ('power-rows-drop-last', 'power_rows'),
-          770: ('read-commutative-not', 'read'), 771: ('entry-no-assumptions', 'entry'),
-          772: ('formula-and-as-or', 'entry')}
+          770: ('read-commutative-not', 'read'), 771: ('entry-no-assumptions', 'entry')}
 # An item's plant, once it's ported. `klass_calls` acts inside Rust's `klass`, so its plant runs with both.
 PLANTS = {k: v for k, v in ALL_PLANTS.items() if all(i in convert.RUST_ITEMS for i in v[1].split(','))}
 

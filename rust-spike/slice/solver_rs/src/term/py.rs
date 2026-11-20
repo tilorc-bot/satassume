@@ -289,7 +289,6 @@ impl PyTermTable {
         let terms: Vec<i64> = req(tables, "terms")?;
         let powers: Vec<i64> = req(tables, "powers")?;
         let settings: Vec<i64> = req(tables, "settings")?;
-        let formula: Vec<i64> = req(tables, "formula")?;
         let reads: Py<PyAny> = req(tables, "reads")?;
         TermTable::from_tokens(
             req(tables, "strings")?,
@@ -297,18 +296,12 @@ impl PyTermTable {
             &terms,
             &powers,
             &settings,
-            &formula,
             req(tables, "n_classes")?,
             req(tables, "n_terms")?,
             Box::new(PyReads(reads)),
         )
         .map(|t| PyTermTable(t, HashMap::new(), HashMap::new(), TABLE_SERIAL.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1))
         .map_err(|e| PyValueError::new_err(format!("tables refused: {e}")))
-    }
-
-    /// (proposition, assumptions or None), as nested tuples.
-    fn formula<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        value(py, &self.0, &self.0.formula)
     }
 
     fn __len__(&self) -> usize {

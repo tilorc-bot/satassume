@@ -47,7 +47,7 @@ const DEPTH: u32 = 100;
 /// Counters 740-745 (`sa_solver.walk_counts()`), per thread like the witness check's.
 const NAMES: [&str; 7] = [
     "cv:entry",          // 740: conversions entered natively (`convert`'s body here)
-    "cv:formula",        // 741: `formula` calls answered natively
+    "cv:formula",        // 741: `formula` calls (the scope check) answered natively
     "cv:read",           // 742: lazy reads dispatched natively
     "cv:fallback:depth", // 743: to Python's `formula`: nesting past DEPTH
     "cv:fallback:name",  // 744: to Python's `_template_name`: a template whose class has a metaclass of its own
@@ -121,8 +121,8 @@ const PLANT_ENC_INT: u8 = 5; // 674: a negative int loses its sign
 const PLANT_STRUCTURAL: u8 = 9; // 768: `_structural_class` says the opposite
 const PLANT_POWER_ROWS: u8 = 10; // 769: the last power row is dropped
 const PLANT_READ: u8 = 11; // 770: the `commutative` read says the opposite
-const PLANT_ENTRY: u8 = 12; // 771: the assumptions' formula is left out (as if they were True)
-const PLANT_FORMULA: u8 = 13; // 772: an `and` is tagged `or`
+const PLANT_ENTRY: u8 = 12; // 771: the assumptions aren't scope-checked (as if they were True)
+// 13 was plant 772 (an `and` tagged `or` in the converted formula table), retired with the table.
 const PLANT_REPLACED: u8 = 14; // 773: a replaced definition isn't looked for, so Rust's item answers in its place
 
 fn planted(p: u8) -> bool {
@@ -188,7 +188,7 @@ pub struct WalkCtx {
     b_false: Py<PyAny>,
     applied: Py<PyAny>,
     relational: Py<PyAny>,
-    connective: Vec<(Py<PyAny>, Py<PyAny>)>,
+    connective: Vec<Py<PyAny>>,
     relation_predicates: Py<PyAny>,
     opaque_categories: Py<PyAny>,
     unsupported: Py<PyAny>,
@@ -290,7 +290,7 @@ impl WalkCtx {
             b_false: a.getattr("_BFalse")?.unbind(),
             applied: a.getattr("_Applied")?.unbind(),
             relational: a.getattr("_Relational")?.unbind(),
-            connective: m.getattr("_CONNECTIVE")?.try_iter()?.map(|x| x?.extract::<(Py<PyAny>, Py<PyAny>)>()).collect::<PyResult<_>>()?,
+            connective: m.getattr("_CONNECTIVE")?.try_iter()?.map(|x| Ok(x?.unbind())).collect::<PyResult<_>>()?,
             relation_predicates: a.getattr("RELATION_PREDICATES")?.unbind(),
             opaque_categories: a.getattr("OPAQUE_CATEGORIES")?.unbind(),
             unsupported: a.getattr("Unsupported")?.unbind(),
@@ -1073,22 +1073,22 @@ impl<'py> W<'py> {
 
 //@begin entry
 /// `_rel`.
-fn rel_parts<'py>(cx: &Bound<'py, WalkCtx>, parts: &Bound<'py, PyAny>, rel: bool) -> PyResult<Bound<'py, PyAny>> {
+fn rel_parts<'py>(cx: &Bound<'py, WalkCtx>, parts: &Bound<'py, PyAny>, rel: bool) -> PyResult<()> {
     let py = cx.py();
     let cxb = cx;
     let cx = cxb.get();
-    let (name, lhs, rhs) = parts.extract::<(Bound<'py, PyAny>, Bound<'py, PyAny>, Bound<'py, PyAny>)>()?;
+    let (_name, lhs, rhs) = parts.extract::<(Bound<'py, PyAny>, Bound<'py, PyAny>, Bound<'py, PyAny>)>()?;
     let scalar = |x: &Bound<'py, PyAny>| -> PyResult<bool> {
         cx.a.bind(py).getattr(intern!(py, "_is_scalar"))?.call1((x,))?.is_truthy()
     };
     if !rel || !(scalar(&lhs)? && scalar(&rhs)?) {
         return Err(PyErr::from_value(cx.unsupported.bind(py).call1(("relation", "relation"))?));
     }
-    Ok((intern!(py, "rel"), name, lhs, rhs).into_pyobject(py)?.into_any())
+    Ok(())
 }
 
-/// `formula`. `deep` is set, and an error returned, when the nesting passes DEPTH: the caller asks Python's.
-fn formula<'py>(cx: &Bound<'py, WalkCtx>, e: &Bound<'py, PyAny>, rel: bool, opq: bool, level: u32, deep: &Cell<bool>) -> PyResult<Bound<'py, PyAny>> {
+/// `formula`, the scope check: it raises where Python's does and builds nothing. `deep` is set, and an error returned, when the nesting passes DEPTH: the caller asks Python's.
+fn formula<'py>(cx: &Bound<'py, WalkCtx>, e: &Bound<'py, PyAny>, rel: bool, opq: bool, level: u32, deep: &Cell<bool>) -> PyResult<()> {
     let py = cx.py();
     let cxb = cx;
     let cx = cxb.get();
@@ -1100,12 +1100,8 @@ fn formula<'py>(cx: &Bound<'py, WalkCtx>, e: &Bound<'py, PyAny>, rel: bool, opq:
     let no = PyBool::new(py, false).to_owned();
     let is_true = |x: &Bound<'py, PyAny>| -> PyResult<bool> { Ok(x.is(&yes) || x.is_instance(cx.b_true.bind(py))?) };
     let is_false = |x: &Bound<'py, PyAny>| -> PyResult<bool> { Ok(x.is(&no) || x.is_instance(cx.b_false.bind(py))?) };
-    let one = |s: &Bound<'py, PyString>| -> PyResult<Bound<'py, PyAny>> { Ok(PyTuple::new(py, [s])?.into_any()) };
-    if is_true(e)? {
-        return one(intern!(py, "true"));
-    }
-    if is_false(e)? {
-        return one(intern!(py, "false"));
+    if is_true(e)? || is_false(e)? {
+        return Ok(());
     }
     let a = cx.a.bind(py);
     if e.is_instance(cx.applied.bind(py))? {
@@ -1120,11 +1116,8 @@ fn formula<'py>(cx: &Bound<'py, WalkCtx>, e: &Bound<'py, PyAny>, rel: bool, opq:
         let truth = named("is_true")?;
         if truth && e.getattr(arguments)?.len()? == 1 {
             let x = e.getattr(arguments)?.get_item(0)?;
-            if is_true(&x)? {
-                return one(intern!(py, "true"));
-            }
-            if is_false(&x)? {
-                return one(intern!(py, "false"));
+            if is_true(&x)? || is_false(&x)? {
+                return Ok(());
             }
         }
         if cx.relation_predicates.bind(py).contains(&name)? || named("is_true")? {
@@ -1136,26 +1129,18 @@ fn formula<'py>(cx: &Bound<'py, WalkCtx>, e: &Bound<'py, PyAny>, rel: bool, opq:
         let c = a.getattr(intern!(py, "_applied_category"))?.call1((e,))?;
         if !c.is_none() {
             if opq && cx.opaque_categories.bind(py).contains(&c)? {
-                return Ok((intern!(py, "opaque"), e).into_pyobject(py)?.into_any());
+                return Ok(());
             }
             return Err(PyErr::from_value(cx.unsupported.bind(py).call1((&c, &c))?));
         }
-        let mut v = vec![intern!(py, "atom").clone().into_any(), name.into_any()];
-        for x in e.getattr(arguments)?.try_iter()? {
-            v.push(x?);
-        }
-        return Ok(PyTuple::new(py, v)?.into_any());
+        return Ok(());
     }
-    for (cls, tag) in &cx.connective {
+    for cls in &cx.connective {
         if e.is_instance(cls.bind(py))? {
-            let mut v = vec![tag.bind(py).clone()];
-            if planted(PLANT_FORMULA) && tag.bind(py).eq("and")? {
-                v[0] = intern!(py, "or").clone().into_any();
-            }
             for x in e.getattr(intern!(py, "args"))?.try_iter()? {
-                v.push(formula(cxb, &x?, rel, opq, level + 1, deep)?);
+                formula(cxb, &x?, rel, opq, level + 1, deep)?;
             }
-            return Ok(PyTuple::new(py, v)?.into_any());
+            return Ok(());
         }
     }
     if e.is_instance(cx.relational.bind(py))? {
@@ -1183,13 +1168,14 @@ fn replaced(cx: &Bound<'_, WalkCtx>) -> PyResult<u16> {
     Ok(off)
 }
 
-fn formula_top<'py>(cx: &Bound<'py, WalkCtx>, e: &Bound<'py, PyAny>, rel: bool, opq: bool) -> PyResult<Bound<'py, PyAny>> {
+fn formula_top<'py>(cx: &Bound<'py, WalkCtx>, e: &Bound<'py, PyAny>, rel: bool, opq: bool) -> PyResult<()> {
     let py = cx.py();
     let deep = Cell::new(false);
     match formula(cx, e, rel, opq, 0, &deep) {
         Err(_) if deep.get() => {
             count(C_DEPTH);
-            cx.get().py_formula.bind(py).call1((e, rel, opq))
+            cx.get().py_formula.bind(py).call1((e, rel, opq))?;
+            Ok(())
         }
         r => {
             count(C_FORMULA);
@@ -1261,27 +1247,25 @@ impl WalkEntry {
         let yes = PyBool::new(py, true).to_owned();
         let no = PyBool::new(py, false).to_owned();
         let kept = |args: Bound<'py, PyTuple>| c.kept.bind(py).call1(args);
-        type Built<'py> = (Bound<'py, PyAny>, Bound<'py, Walk>, Option<Bound<'py, PyAny>>, Bound<'py, PyList>, Bound<'py, PyList>, Bound<'py, PyAny>);
+        type Built<'py> = (Bound<'py, PyAny>, Bound<'py, Walk>, Option<Bound<'py, PyAny>>, Bound<'py, PyList>, Bound<'py, PyAny>);
         let body = || -> PyResult<Result<Built<'py>, Bound<'py, PyAny>>> {
             let settings = match engine_settings(cx, eng)? {
                 Some(s) => s,
                 None => return Ok(Err(kept(PyTuple::new(py, ["non-default-registry"])?)?)),
             };
             let rel = eng.getattr(intern!(py, "relation_specs"))?.is_truthy()?;
-            let formulas = (|| -> PyResult<(Bound<'py, PyAny>, Bound<'py, PyAny>)> {
-                let fp = formula_top(cx, proposition, rel, false)?;
-                let fa = if assumptions.is(&yes) || planted(PLANT_ENTRY) {
-                    py.None().into_bound(py)
-                } else {
-                    formula_top(cx, assumptions, rel, true)?
-                };
-                Ok((fp, fa))
+            let in_scope = (|| -> PyResult<()> {
+                formula_top(cx, proposition, rel, false)?;
+                if !(assumptions.is(&yes) || planted(PLANT_ENTRY)) {
+                    formula_top(cx, assumptions, rel, true)?;
+                }
+                Ok(())
             })();
-            let (fp, fa) = match formulas {
-                Ok(x) => x,
+            match in_scope {
+                Ok(()) => {}
                 Err(e) if e.is_instance(py, c.unsupported.bind(py)) => return Ok(Err(kept(PyTuple::new(py, ["out-of-scope"])?)?)),
                 Err(e) => return Err(e),
-            };
+            }
             let (slf, o) = match &owner {
                 Some(cls) => {
                     let o = cls.call0()?;
@@ -1299,8 +1283,6 @@ impl WalkEntry {
                 }
                 w.walk(x)?;
             }
-            let form = PyList::empty(py);
-            w.enc((fp, fa).into_pyobject(py)?.as_any(), &form, false)?;
             let rows = PyList::empty(py);
             let mut i = 0;
             while i < w.objects.len() {
@@ -1308,9 +1290,9 @@ impl WalkEntry {
                 i += 1;
             }
             let powers = w.power_rows(w.objects.len())?;
-            Ok(Ok((settings, slf, o, form, rows, powers)))
+            Ok(Ok((settings, slf, o, rows, powers)))
         };
-        let (settings, slf, o, form, rows, powers) = match body() {
+        let (settings, slf, o, rows, powers) = match body() {
             Ok(Ok(x)) => x,
             Ok(Err(k)) => return Ok(k),
             Err(e) if e.is_instance(py, c.keep.bind(py)) => {
@@ -1334,7 +1316,6 @@ impl WalkEntry {
         tables.set_item(intern!(py, "terms"), rows)?;
         tables.set_item(intern!(py, "powers"), powers)?;
         tables.set_item(intern!(py, "settings"), sets)?;
-        tables.set_item(intern!(py, "formula"), form)?;
         tables.set_item(intern!(py, "n_classes"), w.classes.len())?;
         tables.set_item(intern!(py, "n_terms"), w.objects.len())?;
         tables.set_item(intern!(py, "n_opaque"), w.opaque.len())?;

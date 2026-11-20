@@ -150,8 +150,6 @@ pub struct TermTable {
     pub classes: Vec<ClassRow>,
     pub terms: Vec<TermRow>,
     pub settings: V,
-    /// (proposition, assumptions or None): nested tuples headed by a tag string; relation atoms stay (name, lhs, rhs).
-    pub formula: V,
     /// Rows from conversion; the ones after these are derived.
     pub n_input: usize,
     index: HashMap<(ClassId, Arc<[V]>), TermId>,
@@ -278,7 +276,6 @@ impl TermTable {
         terms: &[i64],
         powers: &[i64],
         settings: &[i64],
-        formula: &[i64],
         n_classes: usize,
         n_terms: usize,
         reads: Box<dyn Reads>,
@@ -343,13 +340,11 @@ impl TermTable {
             rows.get_mut(*t as usize).ok_or("power row: bad term")?.has_power = true;
         }
         let settings = Reader { t: settings, i: 0, local: false }.value(&strings)?;
-        let formula = Reader { t: formula, i: 0, local: false }.value(&strings)?;
         Ok(TermTable {
             strings,
             classes: class_rows,
             terms: rows,
             settings,
-            formula,
             n_input: n_terms,
             index,
             reads,

@@ -246,29 +246,6 @@ def check_order(c, table):
                     bad('key-compare', a, b, got, real)
 
 
-def rebuild(v, objs):
-    """The real formula from Rust's dump, with the real constructors and relation_atom."""
-    tag = v[0]
-    if tag == 'true':
-        return F.TRUE
-    if tag == 'false':
-        return F.FALSE
-    if tag == 'atom':
-        args = [objs[a[1]] for a in v[2:]]
-        return F.P(v[1], args[0] if len(args) == 1 else Args(args))
-    if tag == 'rel':
-        return R.relation_atom(v[1], objs[v[2][1]], objs[v[3][1]])
-    if tag == 'opaque':
-        return F.P(sympy_api.OPAQUE, objs[v[1][1]])
-    kids = [rebuild(x, objs) for x in v[1:]]
-    if tag == 'xor':
-        f = kids[0]
-        for a in kids[1:]:
-            f = F.Not(F.Equivalent(f, a))
-        return f
-    return {'and': F.And, 'or': F.Or, 'not': F.Not, 'implies': F.Implies, 'equivalent': F.Equivalent, 'ite': F.ITE}[tag](*kids)
-
-
 # ---- the algebra: Rust's derived terms against what SymPy builds
 
 def _here(frame):
@@ -610,21 +587,24 @@ def synthetic(c, table):
             one('__mul__', [a, b], lambda: a * b)
 
 
-def _outcome(f, *a):
+def _out_of_scope(*a):
     try:
-        return f(*a)
-    except CHECK_FAILS as e:
-        return type(e).__name__
+        sympy_api.to_formula(*a)
+    except sympy_api.Unsupported:
+        return True
+    except CHECK_FAILS:
+        pass
+    return False
 
 
-def check_formula(c, table, proposition, assumptions, eng):
-    """Runs relation_atom, which builds terms: the keys it asks for here are the shadow's, since CUR isn't set yet."""
+def check_scope(proposition, assumptions, eng):
+    """A converted query is one to_formula has a formula for (`convert.formula` is its scope check). to_formula runs
+    relation_atom, which builds terms: the keys it asks for here are the shadow's, since CUR isn't set yet."""
     rel = bool(eng.relation_specs)
-    fp, fa = table.formula()
     COUNTS['formula'] += 1
-    if _outcome(rebuild, fp, c.objects) != _outcome(sympy_api.to_formula, proposition, rel):
+    if _out_of_scope(proposition, rel):
         bad('formula', proposition)
-    if fa is not None and _outcome(rebuild, fa, c.objects) != _outcome(sympy_api.to_formula, assumptions, rel, True):
+    if assumptions is not True and _out_of_scope(assumptions, rel, True):
         bad('formula-assumptions', assumptions)
 
 
@@ -679,7 +659,7 @@ def top_level(proposition, assumptions, eng):
         try:
             check_table(c, table)
             check_order(c, table)
-            check_formula(c, table, proposition, assumptions, eng)
+            check_scope(proposition, assumptions, eng)
         except CHECK_FAILS as e:
             bad('check-raised', type(e).__name__, e, proposition)
         if SYNTHETIC[0]:
