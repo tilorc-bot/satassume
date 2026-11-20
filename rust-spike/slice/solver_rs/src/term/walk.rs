@@ -162,13 +162,7 @@ pub struct WalkCtx {
     not_in_table: Py<PyAny>,
     templates_for: Py<PyAny>,
     registry: Py<PyAny>,
-    template_name: Py<PyAny>,
-    structural_class: Py<PyAny>,
     constructed_nc: Py<PyAny>,
-    py_enc: Py<PyAny>,
-    py_enc_int: Py<PyAny>,
-    py_walk: Py<PyAny>,
-    py_klass: Py<PyAny>,
     getattr: Py<PyAny>,
     reversed: Py<PyAny>,
     int_t: Py<PyAny>,
@@ -181,8 +175,6 @@ pub struct WalkCtx {
     py_template_name: Py<PyAny>,
     format: Py<PyAny>,
     // ---- power_rows, read
-    py_term_row: Py<PyAny>,
-    py_power_rows: Py<PyAny>,
     py_read_own_base: Py<PyAny>,
     reads: Py<PyTuple>,
     default_sort_key: Py<PyAny>,
@@ -276,13 +268,7 @@ impl WalkCtx {
             not_in_table: g("_NotInTable")?,
             templates_for: g("TEMPLATES_FOR")?,
             registry: g("registry")?,
-            template_name: g("_template_name")?,
-            structural_class: g("_structural_class")?,
             constructed_nc: g("constructed_noncommutative")?,
-            py_enc: walk.getattr("enc")?.unbind(),
-            py_enc_int: walk.getattr("enc_int")?.unbind(),
-            py_walk: walk.getattr("walk")?.unbind(),
-            py_klass: walk.getattr("klass")?.unbind(),
             getattr: builtins.getattr("getattr")?.unbind(),
             reversed: builtins.getattr("reversed")?.unbind(),
             int_t: builtins.getattr("int")?.unbind(),
@@ -293,8 +279,6 @@ impl WalkCtx {
             euf_basic: m.getattr("_inherits_from_basic")?.getattr("__globals__")?.get_item("Basic")?.unbind(),
             py_template_name: g("_template_name")?,
             format: builtins.getattr("format")?.unbind(),
-            py_term_row: walk.getattr("term_row")?.unbind(),
-            py_power_rows: walk.getattr("power_rows")?.unbind(),
             py_read_own_base: walk.getattr("_read_own_base")?.unbind(),
             reads: m.getattr("READS")?.cast_into::<PyTuple>()?.unbind(),
             default_sort_key: g("default_sort_key")?,
@@ -326,7 +310,8 @@ impl WalkCtx {
 
 /// One `_Walk`'s Rust half. `strings`, `string_ids` and `reading` live here because `_Walk.read` replaces them: the
 /// Python object's attributes of those names are properties onto these.
-#[pyclass(name = "Walk")]
+// `weakref`: a kept test holds the walk behind `tables['reads']` weakly to see that it dies with its table (H2).
+#[pyclass(name = "Walk", weakref)]
 pub struct Walk {
     ctx: Py<WalkCtx>,
     mask: u16,
@@ -465,35 +450,37 @@ impl<'py> W<'py> {
     }
 
     // ---- the items: Rust's if the mask says so, else Python's method on the owner
+    // The owner's method is called by name: an item that is off is `_Walk`'s method as it is now, so a replaced one (P1,
+    // `replaced`) is the one that runs, as under Python's walker.
 
     fn enc(&self, v: &Bound<'py, PyAny>, out: &Bound<'py, PyList>, key: bool) -> PyResult<()> {
         if self.mask & ENC != 0 { return self.enc_native(v, out, key); } //@call enc
-        self.cx.get().py_enc.bind(self.py).call1((self.owner()?, v, out, key)).map(drop)
+        self.owner()?.call_method1(intern!(self.py, "enc"), (v, out, key)).map(drop)
     }
 
     fn enc_int(&self, n: &Bound<'py, PyAny>, out: &Bound<'py, PyList>) -> PyResult<()> {
         if self.mask & ENC_INT != 0 { return self.enc_int_native(n, out); } //@call enc_int
-        self.cx.get().py_enc_int.bind(self.py).call1((self.owner()?, n, out)).map(drop)
+        self.owner()?.call_method1(intern!(self.py, "enc_int"), (n, out)).map(drop)
     }
 
     fn walk(&self, root: &Bound<'py, PyAny>) -> PyResult<()> {
         if self.mask & WALK != 0 { return self.walk_native(root); } //@call walk
-        self.cx.get().py_walk.bind(self.py).call1((self.owner()?, root)).map(drop)
+        self.owner()?.call_method1(intern!(self.py, "walk"), (root,)).map(drop)
     }
 
     fn klass(&self, cls: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
         if self.mask & KLASS != 0 { return self.klass_native(cls); } //@call klass
-        self.cx.get().py_klass.bind(self.py).call1((self.owner()?, cls))
+        self.owner()?.call_method1(intern!(self.py, "klass"), (cls,))
     }
 
     fn term_row(&self, t: &Bound<'py, PyAny>, out: &Bound<'py, PyList>) -> PyResult<()> {
         if self.mask & TERM_ROW != 0 { return self.term_row_native(t, out); } //@call term_row
-        self.cx.get().py_term_row.bind(self.py).call1((self.owner()?, t, out)).map(drop)
+        self.owner()?.call_method1(intern!(self.py, "term_row"), (t, out)).map(drop)
     }
 
     fn power_rows(&self, n: usize) -> PyResult<Bound<'py, PyAny>> {
         if self.mask & POWER_ROWS != 0 { return self.power_rows_native(n); } //@call power_rows
-        self.cx.get().py_power_rows.bind(self.py).call1((self.owner()?, n))
+        self.owner()?.call_method1(intern!(self.py, "power_rows"), (n,))
     }
 
     //@begin enc
@@ -891,7 +878,7 @@ impl<'py> W<'py> {
         let py = self.py;
         let cx = self.cx.get();
         if self.mask & KLASS_CALLS == 0 {
-            return cx.template_name.bind(py).call1((f,));
+            return cx.module.bind(py).getattr(intern!(py, "_template_name"))?.call1((f,)); // by name: a replaced one runs (P1)
         }
         let ty = f.get_type();
         if !ty.get_type().is(&py.get_type::<PyType>()) {
@@ -933,7 +920,7 @@ impl<'py> W<'py> {
         let py = self.py;
         let cx = self.cx.get();
         if self.mask & KLASS_CALLS == 0 {
-            return cx.structural_class.bind(py).call1((cls,));
+            return cx.module.bind(py).getattr(intern!(py, "_structural_class"))?.call1((cls,)); // by name, as above
         }
         let v = is_subclass(cls, &cx.structural)?
             && !is_subclass(cls, &cx.integral_transform)?
@@ -1389,6 +1376,13 @@ impl Walk {
     fn term_row<'py>(slf: &Bound<'py, Self>, o: &Bound<'py, PyAny>, t: &Bound<'py, PyAny>, out: &Bound<'py, PyList>) -> PyResult<()> { W::new(slf, Some(o))?.term_row_native(t, out) } //@call term_row
     fn power_rows<'py>(slf: &Bound<'py, Self>, o: &Bound<'py, PyAny>, n: usize) -> PyResult<Bound<'py, PyAny>> { W::new(slf, Some(o))?.power_rows_native(n) } //@call power_rows
     fn read<'py>(slf: &Bound<'py, Self>, o: &Bound<'py, PyAny>, kind: &Bound<'py, PyAny>, i: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> { W::read_native(slf, Some(o), kind, i) } //@call read
+    /// `_Walk.raised`: with every item on this object is `tables['reads'].__self__`, where kept tests and term_shadow.py
+    /// read what the reads raised.
+    #[getter]
+    fn raised(&self, py: Python<'_>) -> PyResult<Py<PyList>> {
+        self.raised.as_ref().map(|r| r.clone_ref(py)).ok_or_else(unbound)
+    }
+
     /// `read` of a walk with every item on: `tables['reads']` itself, so no Python runs between the table and here.
     fn read_own<'py>(slf: &Bound<'py, Self>, kind: &Bound<'py, PyAny>, i: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> { W::read_native(slf, None, kind, i) } //@call read
 }

@@ -1,0 +1,35 @@
+py: 1 10 failed, 308 passed, 6 skipped, 5 errors in 41.89s | deep: py deep rc=124 (124: killed by the timeout) | .so 4d8921d9c510e99f tree 7c376cc0
+rust: 1 10 failed, 308 passed, 6 skipped, 5 errors in 41.80s | deep: rust deep rc=124 (124: killed by the timeout) | .so 4d8921d9c510e99f tree 7c376cc0
+base: 1 18 failed, 283 passed, 6 skipped, 5 errors in 25.63s | deep: base deep rc=0 (124: killed by the timeout) | .so e0365239348de148 tree de88d9b9
+only on rust against py: 0; only on py: 0
+only on rust against base: 0; only on base's Rust walker:
+  rust-spike/slice/test_lazy_reads.py::test_other_kinds_are_lazy_and_their_plant_is_caught[commutative]
+  rust-spike/slice/test_lazy_reads.py::test_other_kinds_are_lazy_and_their_plant_is_caught[finite]
+  rust-spike/slice/test_lazy_reads.py::test_other_kinds_are_lazy_and_their_plant_is_caught[power]
+  rust-spike/slice/test_lazy_reads.py::test_plant_restoring_the_eager_read_is_caught[complex]
+  rust-spike/slice/test_lazy_reads.py::test_plant_restoring_the_eager_read_is_caught[key]
+  rust-spike/slice/test_lazy_reads.py::test_stock_term_plant_is_caught[finite-stock_finite]
+  rust-spike/slice/test_lazy_reads.py::test_stock_term_plant_is_caught[power-stock_power]
+  rust-spike/slice/test_lazy_reads.py::test_without_the_nan_line_nan_refuses_with_a_miss
+failing on py, rust and base alike:
+  rust-spike/slice/test_knowledge_lazy.py::test_a_baseexception_comes_through_as_itself
+  rust-spike/slice/test_knowledge_lazy.py::test_a_query_counts_the_reads_it_asked_for
+  rust-spike/slice/test_knowledge_lazy.py::test_a_read_that_raises_is_a_refusal_and_counts
+  rust-spike/slice/test_knowledge_lazy.py::test_a_root_is_converted_and_asked_with_no_complex_call
+  rust-spike/slice/test_knowledge_lazy.py::test_the_template_reads_once_per_table
+  rust-spike/slice/test_term_ids.py::test_a_key_plant_answers_on_python
+  rust-spike/slice/test_term_ids.py::test_a_plan_plant_changes_the_trace
+  rust-spike/slice/test_term_ids.py::test_a_scaffold_plant_answers_on_python
+  rust-spike/slice/test_term_ids.py::test_a_termwise_plant_moves_an_answer
+  rust-spike/slice/test_term_ids.py::test_the_consumer_runs_and_decides
+  rust-spike/slice/test_term_ids.py::test_undo_restores_python
+  rust-spike/slice/test_term_live.py::test_a_discard_leaves_nothing_inside_a_nested_memo
+  rust-spike/slice/test_term_live.py::test_a_refusal_goes_past_the_handler[lra.py:461]
+  rust-spike/slice/test_term_live.py::test_a_refusal_goes_past_the_handler[relations.py:1989]
+  rust-spike/slice/test_term_live.py::test_a_refusal_goes_past_the_handler[relations.py:2018]
+convert:calls-structural-not: 20 failed, 298 passed, 6 skipped, 5 errors in 33.34s; failing only under the plant: 10; passing only under it: 
+convert:entry-no-assumptions: 21 failed, 297 passed, 6 skipped, 5 errors in 39.30s; failing only under the plant: 11; passing only under it: 
+convert:entry-skip-replaced: 21 failed, 297 passed, 6 skipped, 5 errors in 38.38s; failing only under the plant: 11; passing only under it: 
+convert:formula-and-as-or: 14 failed, 304 passed, 6 skipped, 5 errors in 38.21s; failing only under the plant: 4; passing only under it: 
+convert:power-rows-drop-last: 13 failed, 305 passed, 6 skipped, 5 errors in 42.00s; failing only under the plant: 3; passing only under it: 
+convert:read-commutative-not: 48 failed, 270 passed, 6 skipped, 5 errors in 40.73s; failing only under the plant: 39; passing only under it: rust-spike/slice/test_term_live.py::test_a_discard_leaves_nothing_inside_a_nested_memo 

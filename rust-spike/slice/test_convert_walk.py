@@ -211,12 +211,12 @@ def test_a_read_past_its_time_stops_both_children_alike(monkeypatch):
 
 
 def nested(levels):
-    """A formula of `levels` connectives, one inside the other."""
-    from sympy import And, Or
+    """A formula of `levels` connectives, one inside the other (an odd one: a Not round the rest)."""
+    from sympy import And, Not, Or
     e = Q.positive(x)
     for _ in range(levels // 2):
         e = Or(And(e, Q.positive(y), evaluate=False), Q.real(z), evaluate=False)
-    return e
+    return Not(e, evaluate=False) if levels % 2 else e
 
 
 def counted(walk, pr, asm):
@@ -260,17 +260,24 @@ def typed_read(c, kind, i):
     return None if got is None else (list(got[0]), [type(v) for v in got[0]], list(got[1]))
 
 
-@pytest.mark.parametrize('levels,kept', [(90, None), (130, None), (700, 'too-deep')])
+@pytest.mark.parametrize('levels,kept', [(90, None), (100, None), (101, None), (130, None), (700, 'too-deep')])
 def test_a_deep_formula_is_pythons(levels, kept):
     """Counter 743: `formula` nested past the native bound (100) is answered by Python's, so its recursion limit is the
-    one that says 'too-deep'; the outcome is Python's either way."""
+    one that says 'too-deep'; the outcome is Python's either way. 101 is the first depth that falls back: the formula
+    is then read twice (Rust's try, then Python's from the top), and `counts` and `raised` are still Python's, key for
+    key in the same order, before any read and (by `diff`) after every read."""
     rust = convert.rust_walk(convert.RUST_ITEMS)
     for pr, asm in ((nested(levels), Q.positive(x)), (Q.positive(x), nested(levels))):
         py = outcome(None, pr, asm)
         c, n = counted(rust, pr, asm)
-        assert diff(py, c) == []
         assert (py.reason if isinstance(py, convert.Kept) else None) == kept
         assert n.get('cv:fallback:depth', 0) == (levels > 100)
+        if kept is None:
+            assert n == dict({'cv:entry': 1, 'cv:formula': 2 - (levels > 100)}, **({'cv:fallback:depth': 1} if levels > 100 else {}))
+            assert list(c.counts.items()) == list(py.counts.items()) and c.raised == py.raised == []
+            assert typed_read(c, 0, 0) == typed_read(py, 0, 0)
+            assert list(c.counts.items()) == list(py.counts.items()) and c.raised == py.raised
+        assert diff(py, c) == []
 
 
 def test_template_names_are_pythons(monkeypatch):
@@ -320,6 +327,10 @@ def test_a_replaced_definition_is_called(monkeypatch):
     """P1, counter 746 (plant 773 fails this): a `_Walk` method or a function of convert.py that a test or an
     instrument replaced is called by name under the Rust walker too. Its item is off for that query and the rest stays
     Rust's; `term`, which every item stands on, gives the query to Python's walker."""
+    replaced_checks(monkeypatch)
+
+
+def replaced_checks(monkeypatch):
     rust = convert.rust_walk(convert.RUST_ITEMS)
     pr, asm = Q.positive(x + y), Q.positive(x)
     calls = []
@@ -345,6 +356,17 @@ def test_a_replaced_definition_is_called(monkeypatch):
     assert n == {'cv:patched': 1, 'cv:entry': 1, 'cv:formula': 2} and [a[1] for _, a in calls] == c.objects
     monkeypatch.undo()
 
+    for name in ('_structural_class', '_template_name'):    # the module's functions that Rust's `klass` calls per class
+        del calls[:]
+        spy(convert, name)
+        outcome(None, pr, asm)
+        seen = [a[0] for _, a in calls]
+        del calls[:]
+        c, n = counted(rust, pr, asm)
+        assert n == {'cv:patched': 1, 'cv:entry': 1, 'cv:formula': 2}
+        assert len(seen) > 0 and len(calls) == len(seen) and all(a[0] is s for (_, a), s in zip(calls, seen)), name
+        monkeypatch.undo()
+
     del calls[:]
     spy(convert, 'formula')
     c, n = counted(rust, pr, asm)
@@ -362,9 +384,12 @@ def test_a_replaced_definition_is_called(monkeypatch):
     assert n == {'cv:entry': 1, 'cv:formula': 2} and diff(outcome(None, pr, asm), c) == []
 
 
-def run(plant=None, items=None):
+def run(plant=None, items=None, check=None):
     env = dict(os.environ, PYTHONPATH=os.pathsep.join(sys.path))
     env.pop('SLICE_CONVERT_PLANT', None)
+    env.pop('SLICE_CONVERT_CHECK', None)
+    if check:
+        env['SLICE_CONVERT_CHECK'] = check
     if plant:
         env['SLICE_CONVERT_PLANT'] = plant
     if items:
@@ -383,11 +408,27 @@ def test_plant_is_caught(number):
     assert run(name, item)['differences'] > 0
 
 
+def test_plant_773_is_caught():
+    """Plant 773 (entry-skip-replaced: the entry doesn't look for replaced definitions): the checks of
+    `test_a_replaced_definition_is_called` hold without it and fail under it. They read the replacement's own calls,
+    nothing of the plant."""
+    assert run(check='replaced') == {'replaced': 'held'}
+    assert run('entry-skip-replaced', check='replaced')['replaced'].startswith('failed')
+
+
 if __name__ == '__main__':
     plant = os.environ.get('SLICE_CONVERT_PLANT')
     if plant:
         import sa_solver
         sa_solver.walk_plant(convert.WALK_PLANTS[plant])
+    if os.environ.get('SLICE_CONVERT_CHECK') == 'replaced':
+        try:
+            with pytest.MonkeyPatch.context() as patch:
+                replaced_checks(patch)
+            print(json.dumps(dict(replaced='held')))
+        except AssertionError as e:
+            print(json.dumps(dict(replaced='failed ' + str(e)[:200])))
+        sys.exit(0)
     its = tuple(os.environ.get('SLICE_CONVERT_ITEMS', ','.join(convert.RUST_ITEMS)).split(','))
     n, found = differences(its)
     for k, d in found[:10]:

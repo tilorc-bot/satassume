@@ -1,0 +1,26 @@
+== /home/tilo/sa-rust-ids-work/sa-port-356/wt 7c376cc
+700 plain 0.002 Kept too-deep callbacks 0
+  [700 plain] rc=0
+  [700 count] rc=124
+400 count 0.033 Converted None callbacks 553
+  [400 count] rc=0
+480 count 0.005 Kept too-deep callbacks 541
+  [480 count] rc=0
+490 count 0.002 Kept too-deep callbacks 511
+  [490 count] rc=0
+  [500 count] rc=124
+  [520 count] rc=124
+  [700 handlers] rc=124
+== /home/tilo/sa-rust-ids-work/sa-port-357/base de88d9b
+700 plain 0.002 Kept too-deep callbacks 0
+  [700 plain] rc=0
+  [700 count] rc=124
+400 count 0.103 Converted None callbacks 558
+  [400 count] rc=0
+480 count 0.004 Kept too-deep callbacks 541
+  [480 count] rc=0
+490 count 0.002 Kept too-deep callbacks 511
+  [490 count] rc=0
+  [500 count] rc=124
+  [520 count] rc=124
+  [700 handlers] rc=124

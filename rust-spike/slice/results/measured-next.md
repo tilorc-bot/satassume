@@ -1,4 +1,4 @@
-# The next port chosen by measured time (issue 323) — (1) the profile, (2) the target
+# The next port chosen by measured time (issue 323) — (1) the profile, (2) the target, (3) the port
 
 Planner's ruling for sa-port-356, items 1 and 2. No source of the package, the slice or the crate is changed by these
 two items: Python stays the default and the reference, no switch is added yet, the probe count stays 21 of 32.
@@ -113,3 +113,115 @@ of four) is reachable on dev and wiring and not certain.
 The second file by own time, satassume/knowledge/domain.py (11.38 points summed; `constructed_noncommutative` alone is
 1.2% of dev and 3.0% of wiring), is reached from the converter too: `term_row` calls it once per term (convert.py:305,
 walk.rs:166). It is a separate file and stays out of this target; it is the measured candidate after convert.py.
+
+## (3) The port of convert.py, sa-port-357 and sa-port-358: written and tested on orion, NOT gated
+
+Item 3 of the planner's ruling. Items 4 (the per-query gate), 5 (S1) and 6 (bar, landing) are not started, so nothing
+here says the port is equal to Python on the workloads or faster: no workload ran, nothing ran on a pareto or on a
+lease, and no x86-64 .so of this tree exists. The correction to (2): `counts` and `raised` are read by kept tests as
+well as by `_note_query` (the planner's trace: test_lazy_reads.py:74, :90, :342-343, :379-381), so they are ported, not
+removed.
+
+- Tree: the commit that adds this section (parent 7c376cc, from rust-slice de88d9b9). The .so the runs below used:
+  aarch64 4d8921d9c510e99f (orion, built from this source, untracked). Base for comparison: de88d9b9, .so e0365239348de148.
+- Switch: `SLICE_CONVERT=rust`, the converter's existing switch; no new switch, and no separate off-switch for the new
+  items (an item can still be named alone, `SLICE_CONVERT=read,entry`, as before). Python's `_Walk` and the body of
+  `convert` stay the default and the reference.
+
+### What moved
+Four new items of `convert.RUST_ITEMS` (solver_rs/src/term/walk.rs), after the five that landed with the convert step:
+
+| item | what it answers in Rust |
+|---|---|
+| `klass_calls` | `_template_name` and `_structural_class`, per class, inside Rust's `klass` |
+| `power_rows` | `_Walk.power_rows` |
+| `read` | `_Walk.read` and the `_read_*` it dispatches to |
+| `entry` | `convert`'s body, `default_engine_settings`, `formula`, `_rel`, and the state `_Walk.__init__` makes (`sa_solver.WalkEntry`) |
+
+With every item on, no Python walker object exists for the query: Rust makes the state, and `tables['reads']` is the
+bound method `Walk.read_own`. `counts` and `raised` are the same dict and list, filled by Rust.
+
+### What of convert.py still runs as Python under SLICE_CONVERT=rust
+- `convert`'s first lines: the dispatch on `WALK[0]` (kept because tests and tools replace `convert.convert` and `WALK[0]`).
+- `_read_own_base`'s `Mul(2, t)`: the reference's existing construction left where it is, not new construction at
+  query time by the native path (counter 745).
+- `Kept.__init__` and `Converted.__init__`, called as classes.
+- The fallbacks below, and any definition a test or an instrument replaced.
+
+### Fallbacks and counters (740-746, `sa_solver.walk_counts()`)
+| counter | meaning | fired by (kept test, test_convert_walk.py) |
+|---|---|---|
+| 740 cv:entry, 741 cv:formula, 742 cv:read | native conversions, `formula` calls, reads | test_the_entry_runs_in_rust_and_its_counters_fire |
+| 743 cv:fallback:depth | `formula` nested past 100 connectives goes to Python's `formula` from the top | test_a_deep_formula_is_pythons[101], [130], [700] |
+| 744 cv:fallback:name | a template whose class has its own metaclass goes to Python's `_template_name` | test_template_names_are_pythons |
+| 745 cv:py:own_base | an `own_base` read (the Python construction above) | test_the_entry_runs_in_rust_and_its_counters_fire |
+| 746 cv:patched | a conversion with an item off because its Python definition was replaced (P1) | test_a_replaced_definition_is_called |
+
+Each fires on its planted case. Their per-workload values are item 4's; no zero is reported here.
+
+The depth fallback reads the formula twice (Rust's try up to the bound, then Python's from the top). `formula` only
+reads, and `counts`/`raised` belong to the walker made after it, so they stay Python's: the kept test compares them at
+100 connectives (the last native depth) and 101 (the first that falls back), key for key in the same order, before any
+read, after one read, and after every read (`diff`). They are equal; nothing had to be reset.
+
+### Replaced definitions (P1)
+`WalkEntry` compares `_Walk`'s methods and the module's ported functions with `convert._ORIGINAL` per query; a replaced
+one turns its item off for that query (`term`, `s`, `__init__`: every item). Under the instrument lazy_reads.py, which
+replaces `_Walk.read`, the `read` item is therefore off for every query (746 counts each).
+sa-port-358 found the guard incomplete on its first run and fixed it:
+- an item that is off was called through the function captured when the context was made, so a replaced `term_row`
+  (or `enc`, `enc_int`, `walk`, `klass`, `power_rows`) was skipped; they are now called by name on the walker
+  (walk.rs:452-482), and `_template_name` / `_structural_class` by name on the module (walk.rs:877, :919);
+- two kept tests read the walker behind the reads (`c.tables['reads'].__self__`: `.raised`, and a weak reference to
+  see it die with its table); Rust's `Walk` now has `raised` and takes weak references (walk.rs:315, :1382).
+Effect, by test id under the suite plugin: de88d9b9's Rust walker fails 8 ids of test_lazy_reads.py that Python's
+walker passes; at the head the Rust walker fails none that Python's passes (below).
+
+### Plants 768-773 (`SLICE_CONVERT_PLANT`; bar rows `convert:NAME`, tools358/rows358.sh)
+Rows over the six kept files with the suite plugin (`SLICE_CONVERT=rust SLICE_CONVERT_PLANT=NAME`, what p1/bar.sh's
+penv sets for `convert:NAME`); "only under the plant" counts ids that fail there and pass without the plant.
+
+| plant | row | ids failing only under the plant | also caught by |
+|---|---|---|---|
+| 768 calls-structural-not | convert:calls-structural-not | 10 | test_plant_is_caught[768] (the differential) |
+| 769 power-rows-drop-last | convert:power-rows-drop-last | 3 | test_plant_is_caught[769] |
+| 770 read-commutative-not | convert:read-commutative-not | 39 (1 id passes only under it: test_term_live.py::test_a_discard_leaves_nothing_inside_a_nested_memo, a row that fails without the plant on every tree) | test_plant_is_caught[770] |
+| 771 entry-no-assumptions | convert:entry-no-assumptions | 11 | test_plant_is_caught[771] |
+| 772 formula-and-as-or | convert:formula-and-as-or | 4 | test_plant_is_caught[772] |
+| 773 entry-skip-replaced | convert:entry-skip-replaced | 11: test_a_replaced_definition_is_called, the 8 ids de88d9b9's Rust walker fails, and test_read_raised_reaches_the_top and test_read_term_missing_reaches_the_top | test_plant_773_is_caught |
+
+773 is a kept-test catch: no workload replaces a definition of convert.py (kept tests and lazy_reads.py do), so the
+differential over workloads cannot see it. The whole-suite and workload rows of these plants are the bar's (item 6).
+
+### What was run (orion, aarch64, .so 4d8921d9c510e99f; output ~/sa-rust-ids-work/sa-port-358, summary tools358/rows358.txt)
+- test_convert_walk.py standalone: 34 passed (each new item alone and all together against Python's walker, counts and
+  raised included; the plants; the deep formulas; template names; the replaced definitions).
+- The six kept files (test_lazy_reads, test_convert_once, test_term_live, test_term_ids, test_knowledge_lazy,
+  test_convert_walk) under run_suite.sh, `-n 4`, `SLICE_TERM_FRAMES=rust`, one id deselected (next section):
+
+| pass | result | failing ids only on this pass |
+|---|---|---|
+| head, SLICE_CONVERT=py | 10 failed, 308 passed, 6 skipped, 5 errors | 0 against rust |
+| head, SLICE_CONVERT=rust | 10 failed, 308 passed, 6 skipped, 5 errors | 0 against py, 0 against base |
+| de88d9b9, SLICE_CONVERT=rust | 18 failed, 283 passed, 6 skipped, 5 errors | 8 against the head's rust (test_lazy_reads.py: test_other_kinds_are_lazy_and_their_plant_is_caught[commutative], [finite], [power]; test_plant_restoring_the_eager_read_is_caught[complex], [key]; test_stock_term_plant_is_caught[finite-stock_finite], [power-stock_power]; test_without_the_nan_line_nan_refuses_with_a_miss) |
+
+  The 15 ids that fail on all three passes alike (by id in tools358/rows358.txt: 5 errors in test_knowledge_lazy.py, 6
+  failures in test_term_ids.py, 4 in test_term_live.py) also fail file by file. They are rows of this invocation (these
+  kept files under `-p rust_plugin -p handler_count`; the bar runs them plain, p1/one_test.sh) and were not diagnosed.
+- Quiet handlers (engine.py's `except Exception` round the complete check, `_consistent`): 0 rows in the three passes.
+  The counter was not shown to fire in this step, so that zero is not evidence; TermFault in the logs: 0.
+
+### The test that never returns under handler_count: not a regression of the default path
+`rust-spike/slice/test_convert_walk.py::test_a_deep_formula_is_pythons[700-too-deep]` (new with the port) span for 41
+minutes in sa-port-357's job, in the pass with Python's walker. Cause: CPython 3.12.14, not this tree. With any
+`sys.monitoring` EXCEPTION_HANDLED callback registered (handler_count.py registers one), a RecursionError raised by a
+call made from a generator-expression frame at the recursion limit never comes out: the interpreter stays in the frame
+at 100% CPU. tools358/repro.py shows it in 14 lines with no satassume and no SymPy (limits 91 and 93 do not return within 10 s, 92
+returns at once; without the callback all return). `convert.formula` recurses through a generator expression and is unchanged from
+de88d9b9; the same conversion with Python's walker never returns on de88d9b9 either (tools358/deep.py, deep-first.txt:
+700, 520 and 500 levels do not return within 40 s under the callback on both trees; 400, 480 and 490 levels, and 700
+without the callback, answer in milliseconds). So: the test passes standalone and in the bar's tests phase (plain pytest), and must be
+deselected, or run by itself under `timeout`, wherever test_convert_walk.py runs with `-p handler_count`
+(tools358/passes.sh does both; the id ends with rc 124 in the py and rust passes). The test was not edited.
+No in-process timeout can stop it (the loop is inside the interpreter), so it is a kill from outside.
+
