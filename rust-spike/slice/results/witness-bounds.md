@@ -1,6 +1,9 @@
-# Witness bounds: the engine's exits first, and a bound on the check's work (issue 323) — IN PROGRESS, NOTHING LANDED
+# Witness bounds: the engine's exits first, and a bound on the check's work (issue 323) — the bar read and clean; lands with the commit of section (6)
 
-**State, sa-port-348, 22:55Z 19 Nov: NOT LANDED; the bar is running.** The planner ruled B on sa-port-347's question:
+**State, sa-port-349, 00:25Z 20 Nov: the bar on 82d4ddf is read and clean (section (6)); the step lands with that
+section's commit by `bar.sh land 82d4ddf` onto rust-slice 2030cdc6.** No source or test changed after 82d4ddf.
+
+State as sa-port-348 left it, 22:55Z 19 Nov: not landed, the bar running. The planner ruled B on sa-port-347's question:
 the budget half of item (1) is out, the bound stays 2500. Tested source **82d4ddf** (section (5b)): its gate is
 read and clean, and its bar was started at 22:48Z and is not read. The gate of 180e501 (both halves of item (1)) is
 section (4). Sections (1) and (3) describe 180e501; where they speak of the budget test, (5b) supersedes them.
@@ -344,19 +347,125 @@ test_public_incremental.py, whose planted-history test fails on Python in 1 or 2
 read. skip-patched reads 10 as on 01e8ca74, against 7 on 180e501; not traced (likely the three tests of a replaced
 `_within_budget`, which 180e501's budget test still called under the plant).
 
-**The bar (6): started, not read.** On the frozen branch origin/bar/witness-bounds-82d4ddf, pareto0, shared lease
-9d4bce81, started 22:48Z 19 Nov, detached from orion (`tools348/gobar348.sh 82d4ddf cad764d46471b1c6`, job348bar.sh);
-rows witness:on, witness:check-first, witness:skip-work as workload and suite rows; BASE sa-port-344's bar suite. End
-marker ~/sa-rust-ids-work/sa-port-348/gobar-end.txt on orion, written by gobar348.sh:20. Nothing is landed.
+## (6) The bar on 82d4ddf, read by sa-port-349
+
+pareto0, shared lease 9d4bce81 (1 h 16 m, exit 0), 22:48Z 19 Nov to 00:05Z 20 Nov, started by sa-port-348
+(tools348/gobar348.sh, job348bar.sh): `p1/bar.sh` of 82d4ddf on the frozen branch origin/bar/witness-bounds-82d4ddf,
+N=6, phases tests, suite, live, plants, extra, suiteplants, fmrows, sum. Rows: pareto0
+~/sp19/sa-rust-ids-work/sa-port-348/bar; the small files on orion ~/sa-rust-ids-work/sa-port-348/bar; the reads below
+on orion in ~/sa-rust-ids-work/sa-port-349 (suite-by-id.txt by tools349/byid349.py, wall.txt by tools336/wall336.py,
+rep/). BASE is the last landing's bar suite (sa-port-344's, on bfceccc9). Read as witness-reasons.md (7) read
+bfceccc9's.
+
+The bar is valid: gobar-end.txt `END 0 END 0 2026-11-20T00:05:26Z cad764d4 82d4ddf3`; source.txt 82d4ddf3; build.txt
+and so-loaded.txt have .so cad764d46471b1c6 in all seven phases; the eight phases exit 0; 72 test files exit 0;
+direct.txt ends `exit 0`; "suite: no rows" is absent; the 123 error files of the workload runs are empty. The launcher
+had no SLICE_ variable. env-summary.txt (the /proc watcher on the suite rows' processes): the plain suite none,
+`witness:on` SLICE_WITNESS=1, the two plant rows SLICE_WITNESS=1 and their SLICE_WITNESS_PLANT.
+
+**Plain suite (Rust, switch off: the default path).** 6316 ids: 127 failed, 6148 passed, 23 skipped, 18 xfailed.
+Against BASE (6309 ids): new 7, all tests/test_witness.py and all passed
+(`test_a_query_over_the_budget_still_answers_none[0]`, `[1]`, `[2]`,
+`test_a_set_the_engine_knows_inconsistent_tries_no_point`,
+`test_past_the_work_bound_the_check_falls_through_and_the_engine_answers`,
+`test_the_default_work_bound_leaves_a_long_sum_to_the_engine`, `test_the_work_is_the_terms_evaluated`); gone 0;
+changed outcome 0. The 127 are BASE's 127 by id, the known base rows of (4): test_lra_fuzz.py 43,
+test_solver_incremental.py 36, test_solver.py 14, test_theory_hooks.py 10, test_euf.py 7, test_euf_fuzz.py 4,
+test_solver_real_theories.py 3, test_writeback_provenance.py 3, test_transfer.py 2, and one each in
+test_public_incremental.py, test_relations.py, test_lra_exhaustion.py, test_verify_integration.py and
+test_template_tables.py. The three ids ruling B removed,
+`test_a_query_over_the_budget_is_the_engines_as_with_the_switch_off[0]`, `[1]`, `[2]`, were never on rust-slice, so
+they are not in BASE and do not read as gone. Handler rows 39 in 2 tests, the same multiset as BASE, and 0 ids whose caught rows differ from BASE, in each of the four suite
+rows; the rows' catch counters are `rv:consistent_caught` 45 and `ctx:caught` 1 in all four and in BASE; TermFault 0.
+The per-id count of quiet catches (Rust 49 in 9 ids, Python 10 in 7) is the gate's, (5b): the bar's copy on orion
+holds no per-id rows.
+
+**Workloads, switch off.** dev and fuzz MATCH py against py, py against rust and both end-state rows (answers
+31cd0945c07f02a6 and 173502b6ef285ad6); the 15 extra workloads: 30 rows MATCH. Kept and refused shares equal BASE's
+on all 17. Handler files of the workload runs: 0 rows each. fm rows: 20 workloads, 0 differ; the two fm plants are
+caught (4 and 3 differ, exit 1).
+
+**`witness:on`** (Rust with the switch on). Against Python with the switch on: MATCH on all 17 workloads, and every
+difference count of the 17 comparisons is 0 (answers, messages, sessions, end states, stream, stats, moved state,
+cache keys and values, native stores). Against Python with the switch off: answer_diff 0 and msg_diff 0 on all 17;
+sessions differ where the check certified (fuzz 1273, wiring 215, dev 178, core 92, zero 52, transfer:7:60 2,
+transfer2:3:40 1, cert 1, the other nine 0). That the switch was on in these rows: queries that made a solver, off ->
+on, are dev 867 -> 697, fuzz 2937 -> 1756, wiring 5628 -> 5413, core 1634 -> 1542, zero 654 -> 611, the same number
+on the Python reference and on the Rust row. Against 345's bar the only change is wiring, 5397 -> 5413: the 16
+certifications the work bound gives up (231 -> 215, section (2)). budget: 17 and 17, nothing certified. Suite row: 127
+failed, the plain suite's 127 by id, 0 ids change.
+
+**The step's plants**, each with the switch on. Workload rows against Python with the switch on; suite rows against
+this bar's plain suite. Fired is counter 740 (`witness.FIRED`), which reads 0 in the plain and `witness:on` rows.
+
+| plant | fired on workloads | workload rows | fired in the suite | suite row |
+|---|---|---|---|---|
+| 758 check-first | fuzz 2772, wiring 1503, dev 535, core 186, zero 105, cert 61, budget 19, transfer:7:60 14, transfer2:3:40 6; 0 on the other 8 | MATCH on all 17 | 16929 | 128 failed; 1 id `passed -> failed`: `tests/test_witness.py::test_a_set_the_engine_knows_inconsistent_tries_no_point` |
+| 759 skip-work | budget 48681, wiring 47834, fuzz 2; 0 on the other 14 | DIFFER on wiring (answers 0, messages 0; 16 sessions, 322 stats rows, 16 moved: `witness_certified` 231 against 215, 5397 queries make a solver against 5413); MATCH on the other 16 | 70002 | 128 failed; 2 ids `passed -> failed`: `tests/test_witness.py::test_past_the_work_bound_the_check_falls_through_and_the_engine_answers` and `::test_the_default_work_bound_leaves_a_long_sum_to_the_engine`; 1 id `failed -> passed`: the planted-history test, below |
+
+Both plants fire and both are caught by a check that does not read the plant's flag (P2): the kept tests count the
+points tried (a patched `witness._holds`), read `Engine.stats` and set `witness.WORK` themselves. check-first changes
+no workload row, as (3) and the handoff expected: it is reached by nine workloads, but a set the engine knows
+INCONSISTENT has no point that satisfies it, so with the points tried first nothing is certified and the engine
+raises as before; only the points tried differ, which the kept test asserts and no workload row records. It is caught
+by its kept test only. skip-work changes no answer (answers a0df9fd43e5180c1 on wiring, off and under the plant); it
+is caught on wiring by the state comparison and in the suite by the two kept tests. On budget it fires 48681 times
+and the row MATCHes: none of budget's over-budget queries is certified with or without the bound.
+
+**The planted-history test** (`test_public_incremental.py::test_public_comparison_catches_a_planted_history_dependence`,
+the known id()-reuse failure, not edited): failed in BASE and at :204 in three of this bar's four suite rows (plain
+`assert 1 == 2`, `witness:on` `assert 0 == 2`, check-first `assert 1 == 2`) and PASSED in the skip-work row: the one
+outcome of the bar that is not a plant's catch. Because it showed, a28c548's method was run for that row
+(tools349/rep349.sh, gorep349.sh; pareto0, shared lease c6f4e865, 00:09Z 20 Nov; sa-port-348's frozen tree of 82d4ddf,
+.so cad764d46471b1c6, witness.py 49d02b0abb2ba388; Rust, switch on, one fresh process a run, 20 runs a cell, the plant
+read back as set in its 40 runs):
+
+| Rust, switch on | under skip-work | no plant, side by side |
+|---|---|---|
+| the test | 0 of 20 pass (17x `assert 0 == 2`, 3x `assert 1 == 2`) | 0 of 20 (14x, 6x) |
+| keep-alive | 20 of 20 | 20 of 20 |
+
+The signature of [137e], as (5b) read it on this source without a plant (Rust 0 of 20 off and on, keep-alive 20 of
+20; Python 18 and 19 of 20): the test fails at :204 with N < 2, the keep-alive variant is clean, and the plant makes
+no difference to it. Run alone the test did not pass once on Rust in these cells; the pass is a draw of the suite row
+under xdist, as the gate of 180e501 had one in its on-row (section (4)). It is a footnote on the skip-work row, which
+stays caught by its two kept tests; it is not counted as a catch.
+
+**State differences with the switch on, explained (not in the answer gate).** (a) Queries the check certifies make
+no session: the session counts above. (b) The planner's word on sa-port-348's handoff: with the switch on, an
+over-budget query that two points certify reports `last_budget_limited` False and counts as `witness_certified`, not
+as `budget_limited`; a certified None is undecided, not cut off (kept test
+`test_a_query_over_the_budget_still_answers_none`). No workload of the bar has such a query: budget's rows are equal
+on against off in (5b). (c) The owed look at `Engine._ends_without_session` filling `_kids`, `_cones` and `_qcones`
+is settled by ruling B: the function is gone at 82d4ddf, `_known_inconsistent` reads `_verdict` after the
+version check and sets no flag and no counter, and the `witness:on` rows' end states and moved state equal Python's on all 17.
+
+**Wall times** (tools336/wall336.py; one machine, shared lease, rows of a phase side by side). Total 76 m 36 s:
+tests 2 m 27 s, suite 1 m 52 s, live 14 m 33 s, plants 8 m 24 s, extra 42 m 53 s, suite plants 5 m 29 s, fmrows
+0 m 58 s. Suite rows: plain 1 m 53 s, `witness:on` 1 m 49 s, check-first 1 m 50 s, skip-work 1 m 50 s. Workload rows,
+seconds:
+
+| row | sum of 17 | fuzz | budget | rootof | wiring | value | dev | f6 | zero | core | the other 8 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| witness:on | 1549 | 428 | 321 | 280 | 248 | 67 | 57 | 48 | 36 | 24 | 40 |
+| witness:check-first | 1541 | 431 | 321 | 281 | 248 | 67 | 46 | 48 | 36 | 24 | 39 |
+| witness:skip-work | 1536 | 430 | 321 | 281 | 246 | 67 | 44 | 48 | 36 | 24 | 39 |
+
+The other 8: transfer2:3:40 11, transfer:7:60 9, opaque 8, loop 6, scope 3 (2 under the plants), cert 2, cls 1, twin
+0. 345's bar read 1699 for its `witness:on` row (fuzz 470, budget 356, rootof 302, wiring 271, dev 61). These are not
+the speed measure and are not compared as one: S1 is section (5), and there is none on 82d4ddf, by the ruling.
+
+**Landing.** Nothing in the bar is new against BASE or against sections (4), (5) and (5b), and no source or test
+changed after 82d4ddf (`git diff --name-only 82d4ddf HEAD` outside results/ and the HANDOFF files is empty). The step
+lands with this commit by `bar.sh land 82d4ddf`, whose guard compares satassume/ and rust-spike/slice/ outside
+results/ between 82d4ddf and the landing commit.
 
 ## Owed, named here
 
-- (6) the bar on 82d4ddf read, then `bar.sh land 82d4ddf`, guard, PUSH=1.
 - A cheaper budget test for the check is not a step (the planner's ruling B). Its trigger, for
   OWED-satassume-rust.md: a workload with an over-budget query that the check certifies slowly. None of the 20
   workloads has one today (budget's 15 over-budget queries are not certified, and cost at most 2500 evaluations each).
 - With the switch on, an over-budget query that two points certify is counted as certified and not as budget
   limited (kept test `test_a_query_over_the_budget_still_answers_none`).
-- `Engine._ends_without_session` fills `_kids`, `_cones` and `_qcones` for a certified query: witness.py's docstring
-  says so; whether the state comparison of the bar's `witness:on` row reads it has to be checked there.
+- 758 check-first changes no workload row of the bar (section (6)): caught by its kept test only.
 - harness/state.py (shared) changed: `WORK` classified.
