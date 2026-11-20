@@ -1,8 +1,8 @@
-# The witness check in Rust (issue 323) — (1) the profile, read: GO for the port; the port is not started
+# The witness check in Rust (issue 323) — (1) the profile, (2) the port, (3) the same behaviour; items 4-7 open
 
 Planner's ruling for sa-port-350 (20 Nov, on sa-port-349 52bdf2d), items 1-7. This file takes them in order. State:
-item 1 done; nothing ported, nothing landed. SLICE_WITNESS stays off by default, Python's witness.py the default and
-the reference, the unchanged path the default.
+items 1 to 3 done (source b79f6657 on rust-slice 6ee354f9); no bar, no S1 and nothing landed. SLICE_WITNESS stays off
+by default, Python's witness.py the default and the reference, the unchanged path the default.
 
 ## (1) Profile before building, sa-port-350: 6ee354f9, quiet leases on pareto1
 
@@ -73,4 +73,145 @@ What the reading of the code adds (not measured): under the slice the query's na
 the check runs (`term_live._ask` converts before it calls `sympy_api._ask`), so a native check needs no walk of its
 own; and the table is there under either walker. HANDOFF-sa-port-350.md has the design notes and the file:line map.
 
-Not done: items 2 to 7. No source change: the tested SHA is 6ee354f9.
+## (2) The port, sa-port-351 (338e6a30) and sa-port-352 (6746bfe3): SLICE_WITNESS_RUST=1
+
+`solver_rs/src/witness.rs` (1036 lines after 352's pass for lines the reference does not need) behind the hook
+`satassume.witness.NATIVE`, set by the slice's `witness_live.py`. The switch acts only with SLICE_WITNESS=1 and
+SLICE_CONVERT=rust, as ruled; the code does not need the tie (test_witness_native.py passes under the Python walker
+too), so a later step can drop it with a gate of its own. No new crate: one Rat over BigInt (`term/rat.rs` gained sub,
+div, pow, bit lengths and sign) and the Q[pi] enclosure as exact rational bounds. No float in any decision, and no
+SymPy construction or evaluation at query time. "Exact" rests on 325's 14-predicate table and 2030cdc6's Q[pi]
+arguments (issue 247: SymPy's evaluation is not ground truth), which the native table mirrors
+(test_the_native_table_is_pythons, test_the_native_definitions_are_the_rules).
+
+- Native: the compile on the query's own term ids (choice B: the `P` formula is read once and each atom side is one
+  lookup in the query's `ids`), the pools, the search, and the second decision on the two points. Nothing is kept
+  across queries: the compiled query dies with the call (test_nothing_native_outlives_the_call). The enclosure's
+  powers are a `OnceLock` static and `witness_live._CLASSES` and `_OWN` are module constants: none is query state.
+- Python, by design (P1): `witness._patched`, `Engine._known_inconsistent` and `witness._users_knowledge`, each at
+  the place witness.py calls it.
+- **B's lookup is `==` plus an exact type check.** `ids` matches by hash and `==`, so a Python `int` or `bool` side
+  finds an Integer's row (`{Integer(3): 1}.get(3)` is 1), while witness.py leaves such a side undecided. The found
+  row's object must have the side's own type; otherwise the whole query goes to witness.py (`wn:fallback:type`).
+  Plant 763 removes the comparison.
+- To witness.py, each counted: `wn:fallback:miss` (a side not in the table), `:type` (above), `:shape` (a formula
+  shape that is not mirrored), `:off` (no table, a witness.py plant set, or a replaced function of witness.py: (3)).
+- `_roots` visits a probe's symbols in index order where Python follows its set's order; the charges within a probe
+  are equal per symbol, and the per-call work comparison below confirms it. A certified query makes one table read per
+  symbol (`symbol_facts`, memoized) where witness.py read `assumptions0`, so SLICE_TERM_COUNTS read counts can differ
+  from a run under the Python check; Engine.stats does not.
+
+## (3) The same behaviour, sa-port-352 and sa-port-353: source b79f6657
+
+.so: orion e0365239348de148, pareto venv 37b7560e245df518, bench 0b6f073f5c5a600b (the crate is unchanged since
+6746bfe3 and both pareto builds of b79f6657 reproduce 352's hashes). Tools: tools352 (run with S=sa-port-353), rows
+under ~/sa-rust-ids-work/sa-port-353.
+
+**Two failures by id came with the port, and both are fixed in b79f6657.**
+- `tests/test_history.py::test_module_state_inventory_is_classified` (every cell: `witness.NATIVE` unclassified).
+  NATIVE is now in harness/state.py's MODULE_CONFIG, next to the check's switch: one slot that holds None or a
+  backend's entry function, set at install from the environment, written by no query.
+  `tests/test_history.py::test_the_witness_checks_native_hook_is_configuration` asserts that across a certified and a
+  fall-through query.
+- `tests/test_witness.py::test_a_set_the_engine_knows_inconsistent_tries_no_point` (`assert 0 > 0`), the one id the
+  native cell failed beyond the Python check's cell on 6746bfe3. It is a native-path failure: the test counts points
+  through a wrapper it puts in place of `witness._holds`, which the native path never calls. The hook now compares
+  witness.py's own functions and classes (23 names: all but the two entry points and the guards, which witness.py
+  calls by name anyway) with what they were at import, by identity, before its compile. One replaced sends the query
+  to witness.py (`wn:fallback:off`): what a test or an instrument put there is called, as P1 has it for a user's
+  method. Plant 764 `wn-skip-own` passes the comparison over and fails
+  test_a_replaced_function_of_witness_py_is_called. The cost is 23 dictionary reads per call of the check; they are
+  reads of witness.py's module dictionary, not calls. The new rule also showed that
+  test_the_work_bound_trips_on_the_same_evaluation would have compared witness.py with itself (it kept a subclass in
+  place of `witness._Query`; plant 761 was no longer caught): the test now restores `_Query` first and asserts that
+  the native search ran. An instrument of ours that must keep the native path on re-reads `_OWN` after installing
+  (diff352.py does).
+
+**Per query, the 20 workloads and fuzz seeds 0/1/2/42** (job352a.sh on b79f6657, orion; the table is identical to
+352's on 6746bfe3). Arm diff runs every call of `witnesses` natively and then by witness.py and compares the result,
+the two points, the points tried, and where the native side compiled the size, pi and the work charged: 0 mismatches
+in 23,156 calls. Arms native against python (cmp352.py), per query: the answer, Engine.stats (witness_certified among
+them), last_budget_limited and every `witnesses` result (the certified set with its points): 0 queries differ on all
+24; the three arms' answer digests are equal.
+
+| workload | queries | calls | certified | diff: mismatches | compiled | searched | lookups | fallback miss/type/shape/off | share | digests equal | per query differ |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| lra | 1500 | 1115 | 1 | 0 | 21 | 16 | 1999 | 0/0/0/334 | 30.0% | True | 0 |
+| f6 | 2902 | 4 | 0 | 0 | 0 | 0 | 8 | 0/0/0/0 | 0.0% | True | 0 |
+| wiring | 6512 | 4814 | 215 | 0 | 1503 | 1503 | 34626 | 0/0/0/0 | 0.0% | True | 0 |
+| scope | 169 | 166 | 0 | 0 | 0 | 0 | 0 | 0/0/0/0 | 0.0% | True | 0 |
+| dev | 1985 | 776 | 173 | 0 | 535 | 535 | 3032 | 0/0/0/0 | 0.0% | True | 0 |
+| fuzz | 3000 | 2772 | 1284 | 0 | 2697 | 2657 | 19501 | 75/0/0/0 | 2.7% | True | 0 |
+| ground | 18 | 14 | 4 | 0 | 14 | 14 | 80 | 0/0/0/0 | 0.0% | True | 0 |
+| port | 19 | 19 | 0 | 0 | 19 | 19 | 94 | 0/0/0/0 | 0.0% | True | 0 |
+| loop | 420 | 244 | 0 | 0 | 0 | 0 | 0 | 0/0/0/0 | 0.0% | True | 0 |
+| zero | 854 | 699 | 52 | 0 | 105 | 100 | 2408 | 0/0/0/0 | 0.0% | True | 0 |
+| cert | 61 | 61 | 1 | 0 | 61 | 61 | 636 | 0/0/0/0 | 0.0% | True | 0 |
+| budget | 28 | 19 | 0 | 0 | 19 | 19 | 171 | 0/0/0/0 | 0.0% | True | 0 |
+| core | 1636 | 299 | 95 | 0 | 186 | 186 | 566 | 0/0/0/0 | 0.0% | True | 0 |
+| opaque | 2546 | 30 | 0 | 0 | 0 | 0 | 60 | 0/0/0/0 | 0.0% | True | 0 |
+| rootof | 5187 | 368 | 0 | 0 | 0 | 0 | 736 | 0/0/0/0 | 0.0% | True | 0 |
+| value | 3742 | 636 | 0 | 0 | 0 | 0 | 1590 | 0/0/0/0 | 0.0% | True | 0 |
+| twin | 2 | 2 | 0 | 0 | 0 | 0 | 4 | 0/0/0/0 | 0.0% | True | 0 |
+| transfer:7:60 | 60 | 60 | 2 | 0 | 14 | 14 | 190 | 0/0/0/0 | 0.0% | True | 0 |
+| transfer2:3:40 | 40 | 40 | 1 | 0 | 6 | 6 | 144 | 0/0/0/0 | 0.0% | True | 0 |
+| cls | 72 | 21 | 0 | 0 | 0 | 0 | 36 | 0/15/0/0 | 71.4% | True | 0 |
+| fuzz0 | 3000 | 2753 | 1320 | 0 | 2696 | 2661 | 19284 | 57/0/0/0 | 2.1% | True | 0 |
+| fuzz1 | 3000 | 2752 | 1322 | 0 | 2694 | 2659 | 19294 | 58/0/0/0 | 2.1% | True | 0 |
+| fuzz2 | 3000 | 2750 | 1316 | 0 | 2688 | 2654 | 19322 | 62/0/0/0 | 2.3% | True | 0 |
+| fuzz42 | 3000 | 2742 | 1283 | 0 | 2686 | 2659 | 19139 | 56/0/0/0 | 2.0% | True | 0 |
+
+totals: calls 23156, fallbacks 657, diff mismatches 0, queries that differ 0; .so ['e0365239348de148']
+
+**Fallbacks to witness.py, and why.** dev, wiring and budget: 0, so the bar the planner set (dev and wiring) holds.
+- fuzz 2.7% (75 of 2772), seeds 2.0% to 2.3%: all `miss`, a side that is not in the query's table (a derived or
+  scaffolded form).
+- lra 30.0% (334 of 1115): all `off`, and all are the second run of a query the slice refused. On lra the slice
+  refuses 456 queries mid-run (scaffold: rebuilt form differs from Rust 187, mul: factors share a base 188, mul: a
+  coefficient beside a numeric-base power 35, algebra: holds an infinity, nan or Float 42, termwise 3, lra callback 1),
+  rolls each back and runs it again on Python as `_Refused`, which has no table by design ("a consumer stays on
+  Python"). 334 of those second runs reach the check, which then has nothing to look sides up in. The first, discarded
+  run did use the native check. So on lra the native check saves nothing on a refused query.
+- cls 71.4% (15 of 21): all `type`, and none is an int or a bool. Each is a side `f(a)`, `g(a)` or `h(a)` whose
+  class is another `Function('f')` object than the row's: same name, `==`, not the same object (5 calls per name;
+  ~/sa-rust-ids-work/sa-port-353/why_type.py). witness.py does nothing different with such a side (it returns None on
+  all 15: an applied undefined function is not evaluated); it is only that the exact type test cannot tell an equal
+  class with another identity from the int against Integer case. **cls gets no gain from this port**; it certifies
+  nothing on cls either way (0 of 21).
+- every other workload: 0.
+
+**R5, a discarded run** (disc352.sh on b79f6657; fresh.py --term terms --lra --full --discard with the native check
+on; identical to 352's table): dev 1985 rollbacks checked, 1985 clean; lra 1957 of 1957; fuzz 3000 of 3000; only the
+exempt _CACHE is left; answers and session digests equal a plain run's on all three. The discarded runs held native
+work (discard minus plain: dev 727 compiles and 521 searches, fuzz 1209 and 1175, lra 622 and 11). The plant
+--no-rollback: 300 checked, 0 clean. term_discard.py wraps Engine.verdict, which the P1 guard takes for a user's
+method, so **fresh.py (a shared harness file) changed**: with SLICE_WITNESS_RUST=1 only, it reads the convert and
+native switches and accepts that wrapper as an instrument (`witness.accept`); otherwise it is untouched.
+
+**The suite by id** (pareto0, shared lease 49c6c9c8, suite352.sh; cells nat, wit, off on b79f6657 and base on
+6ee354f9, Rust backend, 6317 ids, 6316 on base):
+
+| cell | switches | failed | passed | quiet catches (engine.py:1906) |
+|---|---|---|---|---|
+| nat | SLICE_WITNESS=1 SLICE_CONVERT=rust SLICE_TERM_FRAMES=rust SLICE_WITNESS_RUST=1 | 127 | 6149 | 49 |
+| wit | the same without SLICE_WITNESS_RUST | 127 | 6149 | 49 |
+| off | none | 127 | 6149 | 49 |
+| base | none, 6ee354f9 | 127 | 6148 | 49 |
+
+The failed ids are the same 127 in all four cells: this invocation's base rows (test_lra_fuzz 43,
+test_solver_incremental 36, test_solver 14, test_theory_hooks 10, test_euf 7, test_euf_fuzz 4,
+test_solver_real_theories 3, test_writeback_provenance 3, test_transfer 2, and one each in test_template_tables,
+test_relations, test_verify_integration, test_public_incremental and test_lra_exhaustion). The only id not on base is
+the new test, which passes. The planted-history test
+(`tests/test_public_incremental.py::test_public_comparison_catches_a_planted_history_dependence`, :204,
+`assert N == 2` with N < 2: the known id()-reuse failure, [137e]) fails in all four cells, base among them, so no
+row flips and a28c548's repeat method was not run here. The nat cell ran the native check (34,199 compiles, 16,364
+searches, 5,292 found; fallbacks miss 4, off 451); wit, off and base show no native counter.
+
+**iv** (iv352.sh on b79f6657, 64 runs with the Python check and 64 with the native one): 0 runs differ in failing ids
+or pass/fail counts. The Rust-backend runs that fail (16 per switch) fail the same two base ids in both
+(tests/test_transfer.py::test_models_respect_transfer and ::test_protocol_on_fuzz); the Python-backend runs all exit
+0. nat runs made 14,368 native compiles and 5,792 searches (fallbacks type 252, off 48); wit runs none.
+
+Not done: items 4 to 7 (plant rows in the bar, S1, the count rule, the bar and the landing). The tested SHA for items
+1 to 3 is b79f6657.
