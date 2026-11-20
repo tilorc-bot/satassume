@@ -159,10 +159,6 @@ fn mul(a: &Val, b: &Val) -> E<Val> {
     })
 }
 
-fn bit_length(n: usize) -> u64 {
-    (usize::BITS - n.leading_zeros()) as u64
-}
-
 /// `_term`'s `power` and `_pi_power`: an integer power of a rational; of a non-rational value, a power by n >= 0.
 fn power(b: &Val, n: &Val) -> E<Val> {
     let n = match n {
@@ -175,8 +171,8 @@ fn power(b: &Val, n: &Val) -> E<Val> {
                 return Err(Und);
             }
             let n = n.to_u64().ok_or(Und)?;
-            // `_PiPoly.__pow__`
-            let bits = c.iter().map(Rat::bits).max().unwrap_or(0) + bit_length(c.len());
+            // `_PiPoly.__pow__`; the second term is `len(c).bit_length()`
+            let bits = c.iter().map(Rat::bits).max().unwrap_or(0) + (usize::BITS - c.len().leading_zeros()) as u64;
             if (c.len() as u64 - 1) * n > MAX_DEG as u64 || bits * n > MAX_BITS {
                 return Err(Und);
             }
@@ -246,7 +242,7 @@ fn sign(v: &Val) -> E<i32> {
 }
 
 /// rules.BASIS, in its order.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum B {
     Algebraic, Complex, Composite, Even, ExtNeg, ExtPos, ExtReal, Finite, Imaginary, Integer, Polar, Prime, Rational,
     Zero,
@@ -336,23 +332,13 @@ fn basis_q(b: B, v: &Rat) -> E<bool> {
         B::Composite => integer(v) && v.n > BigInt::one() && !is_prime(&v.n)?,
         B::Prime => integer(v) && v.n > BigInt::one() && is_prime(&v.n)?,
         // Python's `int(v) % 2 == 0`
-        B::Even => integer(v) && (&v.n / &v.d).is_zero_mod2(),
+        B::Even => integer(v) && num_integer::Integer::is_even(&(&v.n / &v.d)),
         B::ExtNeg => v.sign() < 0,
         B::ExtPos => v.sign() > 0,
         B::Integer => integer(v),
         B::Zero => v.is_zero(),
         B::Polar => return Err(Und),
     })
-}
-
-trait Mod2 {
-    fn is_zero_mod2(&self) -> bool;
-}
-
-impl Mod2 for BigInt {
-    fn is_zero_mod2(&self) -> bool {
-        num_integer::Integer::is_even(self)
-    }
 }
 
 /// witness.py `PI_TABLE` at a value that is not rational.
@@ -598,9 +584,6 @@ impl<'py> Cx<'_, 'py> {
                 return Err(Stop::Fall(F_TYPE));
             }
         }
-        if id as usize >= self.table.len() {
-            return Err(Stop::Fall(F_MISS));
-        }
         self.term(TermId(id), used, 0)
     }
 
@@ -833,7 +816,7 @@ impl WitnessQuery {
         let mut stopped = false;
         let total: usize = sizes.iter().map(|m| m - 1).sum();
         let mut idx = vec![0usize; sizes.len()];
-        'sums: for tot in 0..=total {
+        for tot in 0..=total {
             // `_compositions(sizes, 0, tot)`: true when the caller is done (found both, or fell through)
             let done = compositions(&sizes, 0, tot, &mut idx, &mut |idx| {
                 if tried >= cap || tried >= limit || self.spend(self.size, bound) {
@@ -850,7 +833,7 @@ impl WitnessQuery {
                 yes.is_some() && no.is_some()
             });
             if done {
-                break 'sums;
+                break;
             }
         }
         if stopped {
@@ -963,14 +946,10 @@ fn compile_once<'py>(
 #[pyfunction]
 fn witness_compile<'py>(
     table: &Bound<'py, PyTermTable>, ids: &Bound<'py, PyDict>, objects: &Bound<'py, PyAny>,
-    assumptions: &Bound<'py, PyAny>, proposition: &Bound<'py, PyAny>, classes: &Bound<'py, PyTuple>,
+    assumptions: &Bound<'py, PyAny>, proposition: &Bound<'py, PyAny>, classes: [Bound<'py, PyAny>; 9],
 ) -> PyResult<Bound<'py, PyAny>> {
     let p = table.py();
     tick(COMPILE);
-    if classes.len() != 9 {
-        return Err(PyValueError::new_err("witness_compile: nine classes"));
-    }
-    let classes: Vec<Bound<'py, PyAny>> = classes.iter().collect();
     let table = table.borrow();
     let table = table.witness_table();
     let mut r = compile_once(table, ids, objects, &classes, assumptions, proposition, false);
@@ -1012,11 +991,6 @@ fn witness_plant(name: Option<&str>) -> PyResult<()> {
     Ok(())
 }
 
-#[pyfunction]
-fn witness_plants() -> Vec<&'static str> {
-    PLANTS.to_vec()
-}
-
 fn coeffs(c: Vec<(BigInt, BigInt)>) -> PyResult<Val> {
     if c.is_empty() || c.iter().any(|(_, d)| d.is_zero()) {
         return Err(PyValueError::new_err("witness_pred: coefficients p/q with q != 0"));
@@ -1055,7 +1029,6 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(witness_compile, m)?)?;
     m.add_function(wrap_pyfunction!(witness_counts, m)?)?;
     m.add_function(wrap_pyfunction!(witness_plant, m)?)?;
-    m.add_function(wrap_pyfunction!(witness_plants, m)?)?;
     m.add_function(wrap_pyfunction!(witness_pred, m)?)?;
     m.add_function(wrap_pyfunction!(witness_rel, m)?)?;
     m.add_function(wrap_pyfunction!(witness_definitions, m)?)?;
