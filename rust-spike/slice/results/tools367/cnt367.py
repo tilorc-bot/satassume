@@ -15,8 +15,18 @@ What is counted, per query index and over the pass:
              site). Generators are counted as calls only.
   fields     every attribute a class defined in a FILE stores (its __slots__, `self.X = ...` in its methods, annotated
              class fields; found by ast) gets a counting data descriptor on the class, in front of the slot or the
-             instance dict. Per (class, field): writes ("computed"), reads, `read_writes` (writes followed by at least
-             one read of that object's field before its next write: the read count of the ruling, per compute), the
+             instance dict. A write is `trivial` when the value stored is None, a bool, a number or an empty
+             str/tuple/list/dict/set/frozenset (an initial value, not a computation). A read is one of three kinds,
+             decided from the reader's source by the position of its instruction (ast): `mut` = the field's
+             container is filled or changed in place and nothing is taken from it (`self.f[k] = v`, `del self.f[k]`,
+             `self.f[k] += v`, `self.f.append(v)` and add/extend/update/insert/clear/discard/remove/appendleft/
+             setdefault as a statement, through any chain of subscripts); `aug` = `self.f += v`, the field read
+             only to be rewritten; `use` = every other read, and every read that does not come from a LOAD_ATTR
+             of that name (getattr(), a native reader). Computes = non-trivial writes + mut + aug. Per object the
+             field is `dirty` from a compute until its next `use`: `epochs` counts clean-to-dirty changes (results
+             computed), `epochs_read` the uses that found it dirty (results read: the read count of the ruling,
+             per compute). Also: writes, trivial writes, reads by kind, `read_writes` (writes of any kind followed
+             by a use before the next write), the
              queries with a write and with a read, the writers (the line that stores it) and the readers (code and instruction; `via` marks a read that did
              not come from a LOAD_ATTR of that name at the reader's instruction: getattr(), a native reader, a C slot).
              Reads made inside the class's own __repr__/__eq__/__hash__ are readers like any other and show as such.
@@ -146,11 +156,13 @@ _MISSING = object()
 
 class Field:
     """A counting data descriptor in front of a slot (`orig` is the member descriptor) or of the instance dict."""
-    __slots__ = ("cls", "name", "orig", "default", "writes", "reads", "read_writes", "wq", "rq", "readers", "writers", "unread", "last", "key")
+    __slots__ = ("cls", "name", "orig", "default", "writes", "reads", "read_writes", "wq", "rq", "readers", "writers", "unread", "last", "key",
+                 "trivial", "mut", "aug", "use", "dirty", "epochs", "epochs_read")
 
     def __init__(self, cls, name, orig, default):
         self.cls, self.name, self.orig, self.default = cls, name, orig, default
-        self.writes = self.reads = self.read_writes = 0
+        self.writes = self.reads = self.read_writes = self.trivial = self.mut = self.aug = self.use = self.epochs = self.epochs_read = 0
+        self.dirty = set()
         self.wq, self.rq, self.readers, self.unread, self.last = set(), set(), collections.Counter(), set(), None
         self.writers = collections.Counter()
 
@@ -170,13 +182,28 @@ class Field:
                 v = self.default
         if ON[0]:
             self.reads += 1
-            self.rq.add(Q[0])
-            i = id(obj)
-            if i in self.unread:
-                self.unread.discard(i)
-                self.read_writes += 1
             fr = sys._getframe(1)
-            self.readers[fr.f_code, fr.f_lasti] += 1
+            k = (fr.f_code, fr.f_lasti)
+            self.readers[k] += 1
+            kind = _kind.get((k, self.name)) or read_kind(k, self.name)
+            i = id(obj)
+            if kind == "use":
+                self.use += 1
+                self.rq.add(Q[0])
+                if i in self.unread:
+                    self.unread.discard(i)
+                    self.read_writes += 1
+                if i in self.dirty:
+                    self.dirty.discard(i)
+                    self.epochs_read += 1
+            else:
+                if kind == "mut":
+                    self.mut += 1
+                else:
+                    self.aug += 1
+                if i not in self.dirty:
+                    self.dirty.add(i)
+                    self.epochs += 1
         return v
 
     def __set__(self, obj, v):
@@ -187,8 +214,14 @@ class Field:
         if ON[0]:
             self.writes += 1
             self.wq.add(Q[0])
-            self.unread.add(id(obj))
+            i = id(obj)
+            self.unread.add(i)
             self.last = obj
+            if v is None or v is True or v is False or type(v) in _NUM or (type(v) in _EMPTY and not v):
+                self.trivial += 1
+            elif i not in self.dirty:
+                self.dirty.add(i)
+                self.epochs += 1
             fr = sys._getframe(1)
             self.writers[fr.f_code, fr.f_lasti] += 1
 
@@ -200,6 +233,72 @@ class Field:
                 del obj.__dict__[self.name]
             except KeyError:
                 raise AttributeError(self.name) from None
+
+
+_NUM = (int, float)
+_EMPTY = (str, tuple, list, dict, set, frozenset)
+_MUT = {"append", "add", "extend", "update", "insert", "clear", "discard", "remove", "appendleft", "setdefault"}
+_kind = {}
+_attrs = {}
+
+
+def attr_kinds(fn):
+    """{(lineno, col, end_lineno, end_col): kind} for every Attribute node of the file (see the module docstring)."""
+    r = _attrs.get(fn)
+    if r is not None:
+        return r
+    r = _attrs[fn] = {}
+    try:
+        tree = ast.parse(open(fn).read())
+    except (OSError, SyntaxError, ValueError):
+        return r
+    par = {}
+    for n in ast.walk(tree):
+        for c in ast.iter_child_nodes(n):
+            par[c] = n
+    for n in ast.walk(tree):
+        if not isinstance(n, ast.Attribute):
+            continue
+        kind = "use"
+        p = par.get(n)
+        if isinstance(n.ctx, ast.Store) and isinstance(p, ast.AugAssign) and p.target is n:
+            kind = "aug"
+        else:
+            cur = n
+            while True:
+                p = par.get(cur)
+                if isinstance(p, ast.Subscript) and p.value is cur:
+                    if not isinstance(p.ctx, ast.Load):
+                        kind = "mut"
+                        break
+                    cur = p
+                    continue
+                if isinstance(p, ast.Attribute) and p.value is cur and p.attr in _MUT:
+                    c = par.get(p)
+                    if isinstance(c, ast.Call) and c.func is p:
+                        if isinstance(par.get(c), ast.Expr):
+                            kind = "mut"
+                            break
+                        if p.attr == "setdefault":
+                            cur = c
+                            continue
+                break
+        r[n.lineno, n.col_offset, n.end_lineno, n.end_col_offset] = kind
+    return r
+
+
+def read_kind(k, name):
+    code, lasti = k
+    kind = "use"
+    try:
+        op = code.co_code[lasti]
+        if dis.opname[op] == "LOAD_ATTR" and code.co_names[code.co_code[lasti + 1] >> 1] == name:
+            pos = next(x for j, x in enumerate(code.co_positions()) if j == lasti // 2)
+            kind = attr_kinds(code.co_filename).get((pos[0], pos[2], pos[1], pos[3]), "use")
+    except Exception:
+        kind = "use"
+    _kind[k, name] = kind
+    return kind
 
 
 def class_fields(path):
@@ -340,8 +439,9 @@ fields = {}
 for d in FIELDS:
     rd = collections.Counter()
     for k, v in d.readers.items():
-        rd[site(k) + (" (via)" if via(k, d.name) else "")] += v
+        rd[site(k) + (" (via)" if via(k, d.name) else "") + {"use": "", "mut": " [mut]", "aug": " [aug]"}[_kind.get((k, d.name), "use")]] += v
     fields[d.key] = dict(writes=d.writes, reads=d.reads, read_writes=d.read_writes, wq=len(d.wq), rq=len(d.rq),
+                         trivial=d.trivial, mut=d.mut, aug=d.aug, use=d.use, epochs=d.epochs, epochs_read=d.epochs_read,
                          slot=d.orig is not None, readers=rd.most_common(40), writers=top(d.writers, 12))
 
 # ---- the plants: every counter shown to fire, outside the counted window -----------------------------------------------
@@ -367,7 +467,7 @@ for d in FIELDS:
     g = operator.attrgetter(d.name)
     try:
         ON[0] = True
-        r0 = d.reads
+        r0, u0 = d.reads, d.use
         exec(compile(f"o.{d.name}", "<plant367>", "exec"), {"o": o})
         r1 = d.reads
         g(o)
@@ -376,11 +476,35 @@ for d in FIELDS:
         r1 = r2 = -1
     finally:
         ON[0] = False
-    if (r1 - r0, r2 - r1) == (1, 1):
+    if (r1 - r0, r2 - r1) == (1, 1) and d.use - u0 == 2:
         plant["fields_ok"] += 1
     else:
         plant["failed"].append(("field counter", d.key, (r1 - r0, r2 - r1)))
 M.set_events(TOOL, 0)
+# the read kinds on a planted class: one use, one mut by subscript, one mut by method, one aug, a chain, a trivial write
+_src = ("class _P367:\n    def __init__(self):\n        self.f = {}\n        self.n = 0\n        self.g = (1,)\n"
+        "def _kinds367(o):\n    o.f[1] = 2\n    o.f.setdefault(3, []).append(4)\n    o.n += 1\n    x = o.f\n    y = o.f[1]\n    return o.g\n")
+_pp = next(iter(PATHS)) + ".plant367.py"
+open(_pp, "w").write(_src)
+try:
+    ns = {}
+    exec(compile(_src, _pp, "exec"), ns)
+    P = ns["_P367"]
+    pf = {n: Field(P, n, None, _MISSING) for n in ("f", "n", "g")}
+    for n, d in pf.items():
+        setattr(P, n, d)
+    ON[0] = True
+    o = P()
+    ns["_kinds367"](o)
+    ON[0] = False
+finally:
+    os.unlink(_pp)
+got = dict(f=(pf["f"].writes, pf["f"].trivial, pf["f"].mut, pf["f"].use, pf["f"].epochs, pf["f"].epochs_read),
+           n=(pf["n"].writes, pf["n"].trivial, pf["n"].aug, pf["n"].use, pf["n"].epochs, pf["n"].epochs_read),
+           g=(pf["g"].writes, pf["g"].trivial, pf["g"].use, pf["g"].epochs, pf["g"].epochs_read))
+plant["kinds"] = got
+if got != dict(f=(1, 1, 2, 2, 1, 1), n=(2, 2, 1, 0, 1, 0), g=(1, 0, 1, 1, 1)):
+    plant["failed"].append(("read kinds", got))
 row = dict(wl=wl, mode=mode, n=len(pairs), digest=digest, so=so, files=FILES,
            env={k: v for k, v in os.environ.items() if k.startswith("SLICE_") and k != "SLICE_DIR"},
            nfuncs=len(funcs), nfields=len(fields), skipped=SKIPPED, plant=plant)

@@ -5,8 +5,11 @@ PROFDIR/time/time.jsonl (pys367.sh's timed rows), PROFDIR/ana-WL-MODE.json (ana3
 (A) own and inclusive share per Python file, ranked by own summed over the four workloads; the files that together
     carry SHARE (default 80%) of the repository files' own time are marked *.
 (B) per function of the marked files: own and inclusive share, calls, returns dropped at the call site, call sites.
-(C) per stored field of the classes of the marked files: writes (computed), writes that were read, reads, the queries
-    with a write and with a read, writers, readers.
+(C) per stored field of the classes of the marked files, cnt367.py's counts: computes (non-trivial writes + in-place
+    fills + self-updates), epochs (results computed: per object, clean to dirty), epochs read (a use that found the
+    result unread), uses; the queries with a write and with a use; writers; readers ([mut] = fills in place, [aug] =
+    self-update, ~ = not a LOAD_ATTR at that line: getattr() or a native reader). A field whose every write is
+    trivial and that is never filled is `init only`: no result is computed into it on these workloads.
 Classes: `read 0` (computed, never read: a removal candidate), `minority` (read on fewer than half of the computes: a
 compute-on-first-read candidate), `read` (a port candidate), `-` (not computed on these workloads), `no value` (a
 function without a returned value: its results are the fields it stores).
@@ -72,12 +75,23 @@ def fcls(d):
 
 
 def dcls(d):
-    if d is None or not d["writes"]:
+    if d is None or not d["writes"] + d["reads"]:
         return "-"
-    return "read 0" if d["read_writes"] == 0 else ("minority" if 2 * d["read_writes"] < d["writes"] else "read")
+    if not d["epochs"]:
+        return "init only"
+    return "read 0" if d["epochs_read"] == 0 else ("minority" if 2 * d["epochs_read"] < d["epochs"] else "read")
 
 
-worst = lambda cs: next((c for c in ("read 0", "minority", "read", "no value") if c in cs), "-")
+worst = lambda cs: next((c for c in ("read 0", "minority", "read", "no value", "init only") if c in cs), "-")
+
+
+def fworst(ds):
+    """A field's class over the four workloads: by the summed epochs, so one workload's zero does not decide it."""
+    e = sum(d["epochs"] for d in ds.values() if d)
+    r = sum(d["epochs_read"] for d in ds.values() if d)
+    if not e:
+        return "init only" if any(d and d["writes"] + d["reads"] for d in ds.values()) else "-"
+    return "read 0" if r == 0 else ("minority" if 2 * r < e else "read")
 classtime = collections.defaultdict(lambda: collections.Counter())
 print("\n## (B) %s: functions of the marked files (own%% / incl%% / SymPy+stdlib under it%% ; calls / dropped returns)\n" % path)
 for k in marked:
@@ -108,25 +122,25 @@ for k in marked:
                                pct(wl, A[wl]["underf"].get(k + ":" + q, 0))) for wl in WLS)
             cc = " | ".join("%d/%d" % (ds[wl]["calls"], ds[wl]["discarded"]) if wl in ds else "0" for wl in WLS)
             first = next((ds[wl] for wl in WLS if wl in ds), None)
-            st = "; ".join("%s x%d" % (s.rsplit(" ", 1)[0], n) for s, n in (first["sites"][:3] if first else []))
+            st = "; ".join("%s x%d" % (s.split(" ")[0], n) for s, n in (first["sites"][:3] if first else []))
             print("| %s:%s%s | %s | %s | %s | %s |" % (q, line, " (%d defs share the samples)" % len(ls) if len(ls) > 1 else "", cl, cells, cc, st))
             for wl in WLS:
                 classtime[cl][wl] += share1 * S[wl] * A[wl]["ownf"].get(k + ":" + q, 0) / A[wl]["N"]
     print()
-print("## (C) %s: stored fields of the marked files' classes (writes / writes read / reads ; queries with a write / with a read)\n" % path)
+print("## (C) %s: stored fields of the marked files' classes (computes / epochs / epochs read / uses ; queries with a write / with a use)\n" % path)
 flag = []
 for k in marked:
     names = sorted({key for wl in WLS for key in C[wl]["fields"] if key.startswith(k + ":")})
     if not names:
         continue
-    print("### %s\n\n| class.field | class | %s | writers | readers (top 4) |\n|---|---|%s" % (k, " | ".join(w + " w/wr/r ; wq/rq" for w in WLS), "---|" * (len(WLS) + 2)))
+    print("### %s\n\n| class.field | class | %s | writers | readers (top 4) |\n|---|---|%s" % (k, " | ".join(w + " c/e/er/u ; wq/rq" for w in WLS), "---|" * (len(WLS) + 2)))
     for key in names:
         ds = {wl: C[wl]["fields"].get(key) for wl in WLS}
-        cl = worst({dcls(ds[wl]) for wl in WLS})
-        cells = " | ".join("%d/%d/%d ; %d/%d" % (d["writes"], d["read_writes"], d["reads"], d["wq"], d["rq"]) if d else "0" for d in ds.values())
+        cl = fworst(ds)
+        cells = " | ".join("%d/%d/%d/%d ; %d/%d" % (d["writes"] - d["trivial"] + d["mut"] + d["aug"], d["epochs"], d["epochs_read"], d["use"], d["wq"], d["rq"]) if d else "0" for d in ds.values())
         first = next((d for d in ds.values() if d and d["writes"]), None) or next((d for d in ds.values() if d), None)
-        wr = "; ".join("%s x%d" % (s.rsplit(" ", 1)[0], n) for s, n in (first.get("writers", [])[:3] if first else []))
-        rd = "; ".join("%s x%d" % (s.replace(" (via)", "~").rsplit(" ", 1)[0] + ("~" if s.endswith("(via)") else ""), n) for s, n in (first["readers"][:4] if first else []))
+        wr = "; ".join("%s x%d" % (s.split(" ")[0], n) for s, n in (first.get("writers", [])[:3] if first else []))
+        rd = "; ".join("%s%s x%d" % (s.split(" ")[0], "~" * ("(via)" in s) + "".join(t for t in (" [mut]", " [aug]") if t in s), n) for s, n in (first["readers"][:4] if first else []))
         print("| %s | %s | %s | %s | %s |" % (key[len(k) + 1:], cl, cells, wr, rd))
         if cl in ("read 0", "minority"):
             flag.append((k, key[len(k) + 1:], cl))
