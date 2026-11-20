@@ -19,7 +19,7 @@ file:line map.
 - origin/bar/skeleton-removal-f5c1f3f4 pushed (= f5c1f3f4): the frozen branch the bar tests.
 - The bar started 22:59Z 20 Nov on pareto0 (shared lease), detached under setsid; checked at its start: tree HEAD
   f5c1f3f4, .so loaded a653fd4179da9161, no SLICE_ variable in the launcher, base rows sa-port-361/bar/suite.
-- The probe count started on pareto1 (gopc363.sh f5c1f3f4 966268c), detached; see "The probe count" below.
+- The probe count run and read (gopc363.sh f5c1f3f4 966268c, pareto1, END 0): stays 21 of 32; see below.
 
 ## The bar's end marker and the [137d] check
 - ONE end marker: orion ~/sa-rust-ids-work/sa-port-370/gobar-end.txt, **written by gobar363.sh:19**, its last line.
@@ -45,19 +45,16 @@ file:line map.
    differential and their kept tests; 771 by test_plant_is_caught[771] with (8)'s one line; 773 by
    test_plant_773_is_caught), R5 from the tests phase's term_discard rows, R1/H2 (the kept tests
    test_native_results_hold_the_querys_own_rows and plant 608's), the quiet-catch count with its planted proof
-   (SLICE_PLANT_HANDLER=complete_check; measured-next.md (4) has the method and :441 the sentence), the probe count.
+   (SLICE_PLANT_HANDLER=complete_check; measured-next.md (4) has the method and :441 the sentence).
 3. `git log origin/rust-slice` (966268c when this was written). In the worktree: `bash rust-spike/slice/p1/bar.sh
    land f5c1f3f4`, read the incoming diff and the guard's output, then `PUSH=1 bash rust-spike/slice/p1/bar.sh land
    f5c1f3f4`. Rule [91]: no landing while another session's full bar runs (sa-port-366's waits for this one). Tell
    the architect the landed SHA; sa-port-366 rebases on it.
 4. Any bar row that DIFFERs, or a plant not caught by an independent check: Status: question, nothing landed.
 
-## The probe count
-gopc363.sh f5c1f3f4 966268c on pareto1 (shared lease). End marker: orion ~/sa-rust-ids-work/sa-port-370/gopc-end.txt,
-written by gopc363.sh:10 (`fin`, called at :23). Then, on orion:
-`python3 ~/sa-rust-ids-work/sa-port-370/tools/pctab361.py ~/sa-rust-ids-work/sa-port-370/pc-f5c1f3f4
-~/sa-rust-ids-work/sa-port-370/pc-966268c > ~/sa-rust-ids-work/sa-port-370/pc-tab.txt`; part 2 (`NEW d0 against BASE
-d0`, rows that differ) is the count against 21 of 32: 0 rows means it stays 21 of 32.
+## The probe count: read, stays 21 of 32
+skeleton-removal.md (8), tools363/pc-tab.txt. Default path: convert.py 14,559,922 -> 13,903,394 Python calls, in
+`_Walk.enc`, `_Walk.s` and `_Walk.term` on each of the 20 workloads and nowhere else; w1 and nat equal to base.
 
 ## File:line map
 - tools363/job363bar.sh: paths :23, CPP363 :44, CONVERT_PLANTS :46, BASE :47, the bar's call :54, the kept loop :59,

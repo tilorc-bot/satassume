@@ -1,0 +1,62 @@
+1 calls per file over the workloads: d0 base new | w1 base new | nat base new
+  base: workloads {'d0': 20, 'w1': 20, 'nat': 20} queries {'d0': 30753, 'w1': 30753, 'nat': 30753}
+  new: workloads {'d0': 20, 'w1': 20, 'nat': 20} queries {'d0': 30753, 'w1': 30753, 'nat': 30753}
+  __init__.py | 20 20 | 20 20 | 20 20
+  compile.py | 142 142 | 142 142 | 142 142
+  convert.py | 14559922 13903394 * | 58980 58980 | 58980 58980
+  engine.py | 255617 255617 | 265569 265569 | 265569 265569
+  formula.py | 183111 183111 | 169270 169270 | 169270 169270
+  knowledge_common_live.py | 60 60 | 60 60 | 60 60
+  knowledge_core_live.py | 32857 32857 | 32857 32857 | 32857 32857
+  knowledge_live.py | 7646 7646 | 7646 7646 | 7646 7646
+  lra_adapter.py | 289052 289052 | 246881 246881 | 246881 246881
+  session_live.py | 764616 764616 | 705699 705699 | 705699 705699
+  sympy_api.py | 650746 650746 | 650746 650746 | 650746 650746
+  term_live.py | 8497075 8497075 | 1131832 1131832 | 1131832 1131832
+  wiring.py | 612852 612852 | 612852 612852 | 612852 612852
+  witness.py | 420 420 | 5441984 5441984 | 127039 127039
+  witness_live.py | 100 100 | 100 100 | 34679 34679
+2 NEW d0 against BASE d0, per workload and function
+  rows that differ: 60 [('budget', 'convert.py:_Walk.enc'), ('budget', 'convert.py:_Walk.s'), ('budget', 'convert.py:_Walk.term'), ('cert', 'convert.py:_Walk.enc'), ('cert', 'convert.py:_Walk.s'), ('cert', 'convert.py:_Walk.term'), ('cls', 'convert.py:_Walk.enc'), ('cls', 'convert.py:_Walk.s'), ('cls', 'convert.py:_Walk.term'), ('core', 'convert.py:_Walk.enc'), ('core', 'convert.py:_Walk.s'), ('core', 'convert.py:_Walk.term')]
+3 convert.py under SLICE_CONVERT=rust (cell w1): calls per workload, base new, per query
+  budget queries 28 base 68 new 68 per query 2.4 -> 2.4
+  cert queries 61 base 134 new 134 per query 2.2 -> 2.2
+  cls queries 72 base 84 new 84 per query 1.2 -> 1.2
+  core queries 1636 base 3280 new 3280 per query 2.0 -> 2.0
+  dev queries 1985 base 2454 new 2454 per query 1.2 -> 1.2
+  f6 queries 2902 base 5816 new 5816 per query 2.0 -> 2.0
+  fuzz queries 3000 base 6008 new 6008 per query 2.0 -> 2.0
+  ground queries 18 base 48 new 48 per query 2.7 -> 2.7
+  loop queries 420 base 780 new 780 per query 1.9 -> 1.9
+  lra queries 1500 base 3010 new 3010 per query 2.0 -> 2.0
+  opaque queries 2546 base 5104 new 5104 per query 2.0 -> 2.0
+  port queries 19 base 50 new 50 per query 2.6 -> 2.6
+  rootof queries 5187 base 9580 new 9580 per query 1.8 -> 1.8
+  scope queries 169 base 350 new 350 per query 2.1 -> 2.1
+  transfer2340 queries 40 base 92 new 92 per query 2.3 -> 2.3
+  transfer760 queries 60 base 132 new 132 per query 2.2 -> 2.2
+  twin queries 2 base 16 new 16 per query 8.0 -> 8.0
+  value queries 3742 base 7446 new 7446 per query 2.0 -> 2.0
+  wiring queries 6512 base 13036 new 13036 per query 2.0 -> 2.0
+  zero queries 854 base 1492 new 1492 per query 1.7 -> 1.7
+  by function over the 20 (base new), the 25 largest of either:
+    convert.py:convert 29361 29361
+    convert.py:Converted.__init__ 29331 29331
+    convert.py:rust_walk.<locals>.<genexpr> 40 40
+    convert.py:Kept.__init__ 30 30
+    convert.py:_NotInTable 20 20
+    convert.py:Converted 20 20
+    convert.py:_Walk 20 20
+    convert.py:use_rust 20 20
+    convert.py:from_env 20 20
+    convert.py:_Keep 20 20
+    convert.py:rust_walk 20 20
+    convert.py:rust_walk.<locals>._RustWalk 20 20
+    convert.py:Kept 20 20
+    convert.py:<module> 20 20
+    convert.py:_Walk._read_own_base 12 12
+    convert.py:_Keep.__init__ 6 6
+  functions of convert.py called: base 16 new 16; no longer called: []
+4 other probed files, functions whose count differs base/new
+  w1: 0 []
+  nat: 0 []

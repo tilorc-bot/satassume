@@ -211,10 +211,20 @@ base rows sa-port-361/bar/suite.
 <time>`). gobar363.sh:8 and :9 write the same file only when the bar is not started (branch head or staged .so
 wrong; neither happened). On pareto0 the job's own marker is sa-port-370/bar-end.txt (job363bar.sh:64).
 
+**The probe count stays 21 of 32** (gopc363.sh f5c1f3f4 966268c: tools354/pc354.sh on pareto1 under a shared lease,
+the frozen trees with their venv .so a653fd4179da9161 and 0f78ac2962f34b3a, cells d0, w1 and nat, 20 workloads, 30,753
+queries, 60 of 60 rows `ref 0 run 0 cmp 0` on each tree; pctab361.py unchanged, tools363/pc-tab.txt). No probed file
+starts or stops being called in any cell.
+- d0, every switch unset (the default): convert.py **14,559,922 -> 13,903,394** Python calls (656,528 fewer, 4.5%),
+  in three functions on each of the 20 workloads and in no other: `_Walk.enc` -395,702, `_Walk.s` -170,019,
+  `_Walk.term` -90,807. That is the skeleton's walk no longer converting what it walks. Every other probed file is
+  equal to base.
+- w1 and nat (SLICE_CONVERT=rust): convert.py 58,980 calls on both trees, the same 16 functions; 0 functions of the
+  other probed files differ.
+
 ## Not done
 
 - Reading the bar (the rows of measured-next.md (7) are the template: phases, which .so loaded, tests, suite by id
   against base, quiet handlers with the planted proof, live, extra, wnative:on, fm rows, the differential, kept.txt
   with 6 lines of 33 passed, the plant table for 768, 769, 770, 771, 773, R5 from term_discard, R1/H2), the
-  planted-history repeat check if the test shows ([137e]), the probe count against 21 of 32 (gopc363.sh, running on
-  pareto1 when this was written), bar.sh land, the guard, PUSH=1, rule [91].
+  planted-history repeat check if the test shows ([137e]), bar.sh land, the guard, PUSH=1, rule [91].
