@@ -10,15 +10,19 @@ the two points (`WitnessQuery.search`). Python, by design (formula ruling P1: a 
 what a user registered is read off the engine): `witness._patched`, `Engine._known_inconsistent`,
 `witness._users_knowledge`, each at the place witness.py calls it.
 
-To Python's witness.py, counted: no table (outside a slice query, a kept or refused one) or a witness.py plant set
-(SLICE_WITNESS_PLANT: those rows keep testing the reference): `wn:fallback:off`, counter 713, here; a side that is not
+To Python's witness.py, counted: no table (outside a slice query, a kept or refused one), a witness.py plant set
+(SLICE_WITNESS_PLANT: those rows keep testing the reference), or one of witness.py's own functions or classes replaced
+since this module was imported (a test's wrapper, an instrument: what was put there is the reference's to call, and
+only witness.py calls it): `wn:fallback:off`, counter 713, here; a side that is not
 in the table, of another type, or a shape that is not mirrored: `wn:fallback:miss`, `:type`, `:shape`, in witness.rs.
 Nothing is kept across queries: the compiled query dies with the call.
 
 Plants (SLICE_WITNESS_RUST_PLANT; each acts only with the native path on): 760 `wn-integer-half`, 761 `wn-work-one`,
-763 `wn-int-side` in witness.rs; 762 `wn-skip-patched` here (a user's method on the engine is passed over).
+763 `wn-int-side` in witness.rs; here 762 `wn-skip-patched` (a user's method on the engine is passed over) and 764
+`wn-skip-own` (a replaced function of witness.py is passed over).
 """
 import os
+import types
 
 import sa_solver
 from satassume import witness
@@ -28,9 +32,15 @@ import term_live
 #: counter 713: queries left to witness.py before the native compile (no table, or a witness.py plant)
 COUNTS = {'wn:fallback:off': 0}
 PLANT = [None]
-#: how often 762's site read its plant as set
+#: how often 762's or 764's site read its plant as set
 FIRED = [0]
+_HERE = ('wn-skip-patched', 'wn-skip-own')
 _CLASSES = [()]
+#: what witness.py calls by name with the hook set as without it: its two entry points and the guards
+_BY_NAME = ('independent', 'witnesses', 'accept', '_patched', '_users_knowledge')
+#: witness.py's other functions and classes as imported, the code this hook stands in for: a constant
+_OWN = tuple((n, f) for n, f in vars(witness).items()
+             if isinstance(f, (types.FunctionType, type)) and f.__module__ == witness.__name__ and n not in _BY_NAME)
 
 
 def _classes():
@@ -41,10 +51,22 @@ def _classes():
     return c
 
 
+def _replaced():
+    """True if a name of `_OWN` no longer holds witness.py's own object."""
+    if PLANT[0] == 'wn-skip-own':
+        FIRED[0] += 1
+        return False
+    d = witness.__dict__
+    for n, f in _OWN:
+        if d.get(n) is not f:
+            return True
+    return False
+
+
 def native(proposition, assumptions, eng):
     """`witness.NATIVE`'s function: `witnesses` after its extensions test."""
     q = term_live.current()
-    if q is None or q.table is None or witness.PLANT[0]:
+    if q is None or q.table is None or witness.PLANT[0] or _replaced():
         COUNTS['wn:fallback:off'] += 1
         return NotImplemented
     h = sa_solver.witness_compile(q.table, q.ids, q.objects, assumptions, proposition, _classes())
@@ -81,8 +103,8 @@ def install(on=True):
 
 def plant(name):
     """A native plant by name, or None."""
-    PLANT[0] = name if name == 'wn-skip-patched' else None
-    sa_solver.witness_plant(None if name == 'wn-skip-patched' else name)
+    PLANT[0] = name if name in _HERE else None
+    sa_solver.witness_plant(None if name in _HERE else name)
 
 
 def from_env():

@@ -293,6 +293,10 @@ MODULE_CONFIG: frozenset = frozenset({
     # the plants' fired counter (counter 740): written only where SLICE_WITNESS_PLANT set a plant, read by the bar,
     # never by the check
     ("satassume.witness", "FIRED"),
+    # the native check's hook: one slot that holds None or a backend's entry function, set at install from the
+    # environment (the slice's witness_live.py, SLICE_WITNESS_RUST=1); no query writes it
+    # (tests/test_history.py::test_the_witness_checks_native_hook_is_configuration)
+    ("satassume.witness", "NATIVE"),
 })
 
 

@@ -1,10 +1,11 @@
 """The native witness check (solver_rs/src/witness.rs behind witness_live.py, SLICE_WITNESS_RUST=1; sa-port-351, issue
 323) against Python's satassume/witness.py, the reference. No test reads a plant's flag: each compares the native side
-with what witness.py gives for the same input. Plants 760-763 (SLICE_WITNESS_RUST_PLANT) and the test that catches each:
+with what witness.py gives for the same input. Plants 760-764 (SLICE_WITNESS_RUST_PLANT) and the test that catches each:
 760 wn-integer-half   test_the_native_table_is_pythons
 761 wn-work-one       test_the_work_bound_trips_on_the_same_evaluation
 762 wn-skip-patched   test_a_users_method_on_the_engine_is_left_to_the_engine
 763 wn-int-side       test_a_python_int_side_goes_to_python
+764 wn-skip-own       test_a_replaced_function_of_witness_py_is_called
 The module needs the slice's .so and no installed backend: a query's table is pushed as term_live._ask pushes it.
 """
 import os
@@ -130,17 +131,20 @@ def test_the_work_bound_trips_on_the_same_evaluation():
             super().__init__(pi)
             seen.append(self)
     old, bound = W._Query, W.WORK[0]
-    W._Query = Rec
+    W._Query = Rec          # Python's count only: with a class of witness.py replaced, both calls are witness.py's
     try:
-        rn, rp = both(prop, assum)
+        rp = both(prop, assum)[1]
         work = seen[-1].work
-        assert rp is not None and rn == rp and work > 0
-        for w, certified in ((work, True), (work - 1, False), (0, True)):
-            W.WORK[0] = w
-            rn, rp = both(prop, assum)
-            assert (rp is not None) is certified and rn == rp, w
+        assert rp is not None and work > 0
     finally:
-        W._Query, W.WORK[0] = old, bound
+        W._Query = old
+    try:
+        for w, certified in ((bound, True), (work, True), (work - 1, False), (0, True)):
+            W.WORK[0] = w
+            (rn, rp), c = moved(lambda: both(prop, assum))
+            assert (rp is not None) is certified and rn == rp and c.get('wn:search') == 1, (w, c)
+    finally:
+        W.WORK[0] = bound
 
 
 def test_the_cap_trips_on_the_same_point():
@@ -213,6 +217,28 @@ def test_what_is_not_mirrored_goes_to_python_and_is_counted():
             if plant:
                 s.pop()
     W.NATIVE[0] = None
+
+
+def test_a_replaced_function_of_witness_py_is_called(monkeypatch):
+    """What a test or an instrument puts in place of one of witness.py's own functions is called: the query goes to
+    witness.py before the native compile, and the wrapper sees the reference's points both times (sa-port-353:
+    tests/test_witness.py::test_a_set_the_engine_knows_inconsistent_tries_no_point counts points through `_holds`).
+    A wrapper around an entry point or a guard, which witness.py calls by name anyway, keeps the native path."""
+    seen = []
+    real = W._holds
+
+    def holds(pt, *rest):
+        seen.append(list(pt))
+        return real(pt, *rest)
+    monkeypatch.setattr(W, '_holds', holds)
+    (rn, rp), c = moved(lambda: both(Q.positive(x), Q.real(x)))
+    half = len(seen) // 2
+    assert rn == rp and rn is not None and c == {'wn:fallback:off': 1}, c
+    assert half and seen[:half] == seen[half:]
+    monkeypatch.undo()
+    monkeypatch.setattr(W, '_patched', lambda eng, real=W._patched: real(eng))
+    (rn, rp), c = moved(lambda: both(Q.positive(x), Q.real(x)))
+    assert rn == rp and c.get('wn:found') == 1 and 'wn:fallback:off' not in c, c
 
 
 def test_nothing_native_outlives_the_call():

@@ -121,6 +121,23 @@ def test_module_state_inventory_is_classified():
     reset_module_state()
 
 
+def test_the_witness_checks_native_hook_is_configuration():
+    """``witness.NATIVE`` is classified as configuration (``MODULE_CONFIG``): one slot that holds None or a
+    backend's entry function, and a query with the check on, certified or not, leaves the slot as it was."""
+    from satassume import sympy_api, witness
+    x = Symbol("x")
+    hook = witness.NATIVE[0]
+    assert len(witness.NATIVE) == 1 and (hook is None or callable(hook))
+    old, witness.ENABLED[0] = witness.ENABLED[0], True
+    try:
+        eng = sympy_api.Engine()
+        assert sympy_api.ask(Q.positive(x), Q.real(x), eng) is None and eng.stats["witness_certified"] == 1
+        assert sympy_api.ask(Q.real(x), Q.positive(x), eng) is True
+    finally:
+        witness.ENABLED[0] = old
+    assert len(witness.NATIVE) == 1 and witness.NATIVE[0] is hook
+
+
 # -- the documented repros still reproduce (strict xfail: a fix is an XPASS) ---
 
 #: family of a repro file whose name does not start with it; issue filed
