@@ -260,7 +260,33 @@ def typed_read(c, kind, i):
     return None if got is None else (list(got[0]), [type(v) for v in got[0]], list(got[1]))
 
 
-@pytest.mark.parametrize('levels,kept', [(90, None), (100, None), (101, None), (130, None), (700, 'too-deep')])
+def exception_handled_tool():
+    """True when some `sys.monitoring` tool has EXCEPTION_HANDLED on: globally, or locally on the code of Python's
+    `formula` (its generator expression included). Nothing else is looked at: no plugin name, no environment."""
+    mon = getattr(sys, 'monitoring', None)
+    if mon is None:
+        return False
+    handled = mon.events.EXCEPTION_HANDLED
+    code = convert._ORIGINAL['formula'].__code__
+    codes = [code] + [k for k in code.co_consts if isinstance(k, type(code))]
+    for tool in range(6):
+        if mon.get_events(tool) & handled:
+            return True
+        if mon.get_tool(tool) is not None and any(mon.get_local_events(tool, k) & handled for k in codes):
+            return True
+    return False
+
+
+#: OWED [157]: with an EXCEPTION_HANDLED callback registered, CPython (3.12.14, 3.13.15 and 3.14.7 alike) never returns
+#: from a RecursionError raised by a call made from a generator-expression frame at the recursion limit, which is how
+#: Python's `formula` says 'too-deep'. The condition is read at the test's setup, so a plain pytest run runs the case.
+TOO_DEEP = pytest.param(700, 'too-deep', marks=pytest.mark.skipif(
+    'exception_handled_tool()',
+    reason='OWED [157]: a sys.monitoring tool has EXCEPTION_HANDLED on, and CPython then never returns from the '
+           'RecursionError at the limit (repro: rust-spike/slice/results/tools358/repro.py 2 91 m)'))
+
+
+@pytest.mark.parametrize('levels,kept', [(90, None), (100, None), (101, None), (130, None), TOO_DEEP])
 def test_a_deep_formula_is_pythons(levels, kept):
     """Counter 743: `formula` nested past the native bound (100) is answered by Python's, so its recursion limit is the
     one that says 'too-deep'; the outcome is Python's either way. 101 is the first depth that falls back: the formula

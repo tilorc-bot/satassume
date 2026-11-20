@@ -213,15 +213,21 @@ differential over workloads cannot see it. The whole-suite and workload rows of 
 
 ### The test that never returns under handler_count: not a regression of the default path
 `rust-spike/slice/test_convert_walk.py::test_a_deep_formula_is_pythons[700-too-deep]` (new with the port) span for 41
-minutes in sa-port-357's job, in the pass with Python's walker. Cause: CPython 3.12.14, not this tree. With any
-`sys.monitoring` EXCEPTION_HANDLED callback registered (handler_count.py registers one), a RecursionError raised by a
-call made from a generator-expression frame at the recursion limit never comes out: the interpreter stays in the frame
-at 100% CPU. tools358/repro.py shows it in 14 lines with no satassume and no SymPy (limits 91 and 93 do not return within 10 s, 92
-returns at once; without the callback all return). `convert.formula` recurses through a generator expression and is unchanged from
-de88d9b9; the same conversion with Python's walker never returns on de88d9b9 either (tools358/deep.py, deep-first.txt:
-700, 520 and 500 levels do not return within 40 s under the callback on both trees; 400, 480 and 490 levels, and 700
-without the callback, answer in milliseconds). So: the test passes standalone and in the bar's tests phase (plain pytest), and must be
-deselected, or run by itself under `timeout`, wherever test_convert_walk.py runs with `-p handler_count`
-(tools358/passes.sh does both; the id ends with rc 124 in the py and rust passes). The test was not edited.
-No in-process timeout can stop it (the loop is inside the interpreter), so it is a kill from outside.
+minutes in sa-port-357's job, in the pass with Python's walker. Cause: an interpreter behaviour that our own instrument
+handler_count triggers, not this tree. With any `sys.monitoring` EXCEPTION_HANDLED callback registered (handler_count.py
+registers one), a RecursionError raised by a call made from a generator-expression frame at the recursion limit never
+comes out: the interpreter stays in the frame at 100% CPU. It is not specific to one CPython: tools358/repro.py shows it
+in 14 lines with no satassume and no SymPy on 3.12.14 (limits 91 and 93 do not return within 10 s, 92 returns at once;
+without the callback all return), and the planner's own run of `repro.py 2 91 m` hangs on 3.13.15 and 3.14.7 as well
+(rc 124 on both). `convert.formula` recurses through a generator expression and is unchanged from de88d9b9; the same
+conversion with Python's walker never returns on de88d9b9 either (tools358/deep.py, deep-first.txt: 700, 520 and 500
+levels do not return within 40 s under the callback on both trees; 400, 480 and 490 levels, and 700 without the
+callback, answer in milliseconds). No in-process timeout can stop it (the loop is inside the interpreter). Logged as
+OWED [157]; nothing is filed with CPython (Tilo's call).
 
+Ruled for sa-port-359 and done there: the case carries a `skipif` whose condition is exact, `exception_handled_tool()`
+(test_convert_walk.py): some `sys.monitoring` tool id has EXCEPTION_HANDLED in `get_events`, or in the local events of
+Python's `formula` code. It reads no plugin name and no environment, and it is read at the test's setup. The reason
+names OWED [157] and the repro. The id runs and passes wherever no such tool is registered (plain pytest: the bar's
+tests phase, row in (4)); under run_suite.sh it reports SKIPPED. The per-job deselect and `timeout` are gone from
+tools358/passes.sh.
