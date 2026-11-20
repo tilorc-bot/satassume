@@ -1,0 +1,595 @@
+## default: wall time, 5 rounds pinned
+
+| workload | median s | min | max | iqr/median | digest | .so |
+|---|---|---|---|---|---|---|
+| dev | 0.5275 | 0.5267 | 0.5370 | 1.7% | 31cd0945c07f02a6 | None |
+| fuzz | 8.0545 | 8.0064 | 8.1626 | 1.6% | 173502b6ef285ad6 | None |
+| budget | 0.4754 | 0.4648 | 0.4836 | 3.0% | 35bc2c4a937bebc0 | None |
+| wiring | 2.7374 | 2.6961 | 2.7693 | 1.8% | a0df9fd43e5180c1 | None |
+
+sampler: dev N 16118, 30 runs, digests ['31cd0945c07f02a6'], cats python 99.8, unattributed 0.2; fuzz N 48828, 6 runs, digests ['173502b6ef285ad6'], cats python 99.8, unattributed 0.2; budget N 14247, 30 runs, digests ['35bc2c4a937bebc0'], cats python 99.7, unattributed 0.3; wiring N 22033, 8 runs, digests ['a0df9fd43e5180c1'], cats python 99.8, unattributed 0.2
+counts: dev digest 31cd0945c07f02a6 .so None env {}, plants failed 0, fields shown to fire 245 (no live object 29); fuzz digest 173502b6ef285ad6 .so None env {}, plants failed 0, fields shown to fire 242 (no live object 32); budget digest 35bc2c4a937bebc0 .so None env {}, plants failed 0, fields shown to fire 170 (no live object 104); wiring digest a0df9fd43e5180c1 .so None env {}, plants failed 0, fields shown to fire 184 (no live object 90)
+
+## (A) default: own / inclusive share per file (% of in-loop samples); * = in the 80% set
+
+| file | dev own / incl | fuzz own / incl | budget own / incl | wiring own / incl | own summed | cumulative of repository files | SymPy and stdlib under it, summed |
+|---|---|---|---|---|---|---|---|
+| (sympy: not a file to port) | 7.15 / 7.3 | 8.36 / 8.5 | 8.82 / 9.3 | 3.14 / 3.1 | 27.47 | | |
+| (stdlib: not a file to port) | 3.65 / 4.3 | 5.96 / 6.9 | 1.29 / 1.5 | 0.10 / 0.1 | 10.99 | | |
+| * sa/sat/solver.py | 38.52 / 51.0 | 38.70 / 58.5 | 38.09 / 38.2 | 61.17 / 61.2 | 176.48 | 50.7% | 0.00 |
+| * sa/engine.py | 14.23 / 92.7 | 9.40 / 96.6 | 9.73 / 96.9 | 17.77 / 93.8 | 51.14 | 65.4% | 3.77 |
+| * sa/knowledge/compile.py | 1.27 / 4.3 | 0.76 / 1.7 | 12.04 / 32.2 | 5.08 / 18.7 | 19.15 | 70.9% | 0.80 |
+| * sa/relations.py | 6.45 / 37.8 | 10.82 / 52.6 | 0.28 / 30.0 | 0.89 / 4.0 | 18.43 | 76.2% | 11.58 |
+| * sa/knowledge/templates/_common.py | 3.31 / 6.7 | 0.13 / 0.3 | 10.87 / 19.4 | 1.36 / 2.6 | 15.66 | 80.7% | 0.40 |
+| sa/theories/lra/lra.py | 5.65 / 11.4 | 9.77 / 16.6 | 0.01 / 0.0 | 0.00 / 0.0 | 15.43 | 85.1% | 8.18 |
+| sa/sympy_api.py | 4.47 / 99.6 | 2.00 / 99.8 | 1.54 / 99.9 | 4.24 / 99.6 | 12.26 | 88.7% | 3.74 |
+| sa/knowledge/rules.py | 1.46 / 1.5 | 0.07 / 0.1 | 6.86 / 6.9 | 0.53 / 0.5 | 8.91 | 91.2% | 0.00 |
+| sa/sat/formula.py | 0.84 / 1.4 | 0.64 / 1.0 | 2.94 / 5.0 | 1.67 / 3.1 | 6.09 | 93.0% | 0.80 |
+| sa/theories/lra/lra_adapter.py | 1.19 / 6.8 | 2.01 / 10.4 | 0.99 / 4.5 | 0.00 / 0.0 | 4.18 | 94.2% | 5.72 |
+| sa/theories/euf/euf.py | 1.22 / 1.2 | 2.96 / 3.0 | 0.00 / 0.0 | 0.00 / 0.0 | 4.18 | 95.4% | 0.02 |
+| sa/knowledge/templates/wiring.py | 1.78 / 6.6 | 0.10 / 0.3 | 1.61 / 19.2 | 0.66 / 2.7 | 4.15 | 96.6% | 0.04 |
+| sa/theories/lra/constfield.py | 1.84 / 2.6 | 0.47 / 0.6 | 0.00 / 0.0 | 0.00 / 0.0 | 2.31 | 97.2% | 0.73 |
+| sa/theories/euf/euf_adapter.py | 0.78 / 2.1 | 1.47 / 3.8 | 0.01 / 0.0 | 0.00 / 0.0 | 2.26 | 97.9% | 1.26 |
+| sa/theories/transfer.py | 0.42 / 0.4 | 1.55 / 1.7 | 0.00 / 0.0 | 0.00 / 0.0 | 1.97 | 98.5% | 0.06 |
+| sa/scope.py | 0.62 / 1.6 | 0.38 / 1.0 | 0.00 / 0.0 | 0.57 / 1.1 | 1.57 | 98.9% | 0.07 |
+| sa/knowledge/domain.py | 0.53 / 1.1 | 0.06 / 0.1 | 0.72 / 1.2 | 0.11 / 0.2 | 1.41 | 99.3% | 0.55 |
+| sa/sat/theory.py | 0.28 / 0.5 | 0.41 / 0.7 | 0.00 / 0.0 | 0.00 / 0.0 | 0.69 | 99.5% | 0.29 |
+| sa/knowledge/templates/registry.py | 0.23 / 7.8 | 0.03 / 0.4 | 0.15 / 21.1 | 0.21 / 2.9 | 0.61 | 99.7% | 0.15 |
+| sa/theories/lra/lra_cert.py | 0.33 / 0.4 | 0.08 / 0.1 | 0.00 / 0.0 | 0.00 / 0.0 | 0.40 | 99.8% | 0.03 |
+| sa/_compat.py | 0.08 / 0.3 | 0.15 / 0.2 | 0.00 / 0.2 | 0.00 / 0.0 | 0.23 | 99.9% | 0.00 |
+| sa/knowledge/templates/core.py | 0.14 / 0.6 | 0.01 / 0.1 | 0.06 / 0.1 | 0.02 / 0.0 | 0.22 | 99.9% | 0.12 |
+| sa/knowledge/templates/_rows_runtime.py | 0.09 / 0.1 | 0.00 / 0.0 | 0.02 / 0.0 | 0.02 / 0.0 | 0.13 | 100.0% | 0.08 |
+
+repository files' own time summed over the four workloads: 347.98 points; per workload: dev 85.76% = 0.4524 s, fuzz 81.97% = 6.6021 s, budget 85.94% = 0.4086 s, wiring 94.31% = 2.5818 s
+marked: sa/sat/solver.py sa/engine.py sa/knowledge/compile.py sa/relations.py sa/knowledge/templates/_common.py
+
+## (B) default: functions of the marked files (own% / incl% / SymPy+stdlib under it% ; calls / dropped returns)
+
+### sa/sat/solver.py
+
+| function:line | class | dev own/incl/under | fuzz own/incl/under | budget own/incl/under | wiring own/incl/under | dev calls/dropped | fuzz calls/dropped | budget calls/dropped | wiring calls/dropped | call sites (dev, else the first workload with calls) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Solver._propagate:1600 | read | 7.42/7.88/0.00 | 7.41/7.53/0.00 | 6.91/6.97/0.00 | 14.49/14.70/0.00 | 15266/0 | 177641/0 | 21589/0 | 234105/0 | sa/sat/solver.py:2362 x5557; sa/sat/solver.py:1944 x5189; sa/sat/solver.py:1403 x928 |
+| Solver._add_lits:694 | read | 4.18/5.70/0.00 | 3.79/4.65/0.00 | 7.73/9.49/0.00 | 6.28/9.65/0.00 | 33612/0 | 390382/0 | 41223/0 | 254690/0 | sa/sat/solver.py:950 x19735; sa/sat/solver.py:692 x13877 |
+| Solver._grow:547 | no value | 2.98/2.98/0.00 | 3.11/3.11/0.00 | 5.14/5.14/0.00 | 6.21/6.21/0.00 | 7279/7279 | 116150/116150 | 16249/16249 | 56838/56838 | sa/sat/solver.py:915 x4624; sa/sat/solver.py:1122 x1574; sa/sat/solver.py:590 x1081 |
+| Solver._internal_lits:579 | read | 2.51/2.95/0.00 | 3.06/3.24/0.00 | 4.79/9.09/0.00 | 2.77/3.63/0.00 | 20880/0 | 346913/0 | 37281/0 | 151220/0 | sa/sat/solver.py:689 x13877; sa/sat/solver.py:1504 x2999; sa/sat/solver.py:1393 x2148 |
+| Solver.add_internal:917 | read 0 | 2.46/7.88/0.00 | 1.76/4.50/0.00 | 2.22/6.53/0.00 | 2.39/13.95/0.00 | 3298/3298 | 33176/33176 | 290/290 | 15126/15126 | sa/engine.py:661 x3298 |
+| Solver.register_block:1080 | read 0 | 1.71/2.97/0.00 | 0.86/1.52/0.00 | 0.93/1.14/0.00 | 4.36/9.93/0.00 | 2418/2418 | 16493/16493 | 1961/1961 | 48945/48945 | sa/engine.py:599 x2418 |
+| Solver._search:2348 | read | 1.04/17.04/0.00 | 1.06/25.84/0.00 | 1.88/9.75/0.00 | 2.65/15.56/0.00 | 1795/0 | 8223/0 | 26/0 | 13524/0 | sa/sat/solver.py:2490 x1795 |
+| Solver._mention:1243 | no value | 1.48/2.14/0.00 | 1.37/1.72/0.00 | 1.64/1.95/0.00 | 1.87/3.97/0.00 | 22428/22428 | 404285/404285 | 37277/37277 | 146608/146608 | sa/sat/solver.py:691 x13537; sa/sat/solver.py:1505 x2999; sa/sat/solver.py:1899 x2567 |
+| Solver._rb_mentioned:1321 | no value | 0.95/1.68/0.00 | 0.70/1.05/0.00 | 0.56/0.62/0.00 | 3.54/5.40/0.00 | 5628/5628 | 54161/54161 | 3782/3782 | 126332/126332 | sa/sat/solver.py:1268 x3166; sa/sat/solver.py:1319 x2462 |
+| Solver._attach_held:758 | no value | 0.99/1.33/0.00 | 0.43/0.67/0.00 | 1.75/1.75/0.00 | 2.37/3.37/0.00 | 15541/15541 | 98334/98334 | 34779/34779 | 166844/166844 | sa/sat/solver.py:751 x15541 |
+| Solver._backtrack:1805 | no value | 1.08/1.94/0.00 | 1.43/3.82/0.00 | 1.05/1.07/0.00 | 1.94/1.98/0.00 | 2500/2500 | 21887/21887 | 27/27 | 15538/15538 | sa/sat/solver.py:2509 x1713; sa/sat/solver.py:2116 x257; sa/sat/solver.py:947 x237 |
+| Solver.add_clause:680 | read 0 | 0.99/7.27/0.00 | 1.35/8.96/0.00 | 1.78/18.77/0.00 | 0.97/10.61/0.00 | 13877/13877 | 316135/316135 | 37174/37174 | 106564/106564 | sa/engine.py:543 x13877 |
+| Solver._pick_branch:2265 | read | 0.58/0.97/0.00 | 0.69/1.80/0.00 | 0.97/0.97/0.00 | 2.40/2.41/0.00 | 7735/0 | 105266/0 | 21418/0 | 155594/0 | sa/sat/solver.py:2394 x7735 |
+| Solver._theory_sync:1953 | read | 1.00/5.99/0.00 | 2.13/11.31/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 5080/0 | 165299/0 | 0 | 0 | sa/sat/solver.py:1947 x5080 |
+| Solver.mention_blocks:1280 | no value | 0.66/1.74/0.00 | 0.56/1.27/0.00 | 0.46/0.79/0.00 | 1.19/4.58/0.00 | 3298/3298 | 33176/33176 | 290/290 | 15126/15126 | sa/sat/solver.py:928 x3298 |
+| Solver._solve:2432 | read | 0.97/20.05/0.00 | 0.38/29.07/0.00 | 0.04/10.86/0.00 | 1.22/19.24/0.00 | 1930/0 | 8249/0 | 26/0 | 13524/0 | sa/sat/solver.py:2430 x833; sa/sat/solver.py:2711 x271; sa/sat/solver.py:2715 x267 |
+| Solver.register_atom:1876 | read 0 | 0.87/4.59/0.00 | 1.58/7.84/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 3285/3285 | 94780/94780 | 0 | 0 | sa/theories/lra/lra_adapter.py:486 x1495; sa/relations.py:1852 x678; sa/theories/euf/euf_adapter.py:153 x526 |
+| Solver._rb_room:1270 | no value | 0.40/0.40/0.00 | 0.20/0.20/0.00 | 0.07/0.07/0.00 | 1.10/1.10/0.00 | 2387/2387 | 16516/16516 | 311/311 | 40811/40811 | sa/sat/solver.py:1135 x2128; sa/sat/solver.py:1302 x259 |
+| Solver.implied:1429 | read | 0.39/3.80/0.00 | 0.22/2.75/0.00 | 0.01/0.06/0.00 | 0.84/4.02/0.00 | 2524/0 | 11681/0 | 49/0 | 14704/0 | sa/engine.py:882 x910; sa/engine.py:2015 x833; sa/engine.py:916 x606 |
+| Solver.__init__:402 | no value | 0.55/0.55/0.00 | 0.20/0.20/0.00 | 0.01/0.01/0.00 | 0.66/0.66/0.00 | 918/0 | 3133/0 | 17/0 | 5818/0 | sa/engine.py:311 x918 |
+| _BlockClosure.flags:237 | read | 0.28/0.36/0.00 | 0.17/0.17/0.00 | 0.05/0.05/0.00 | 0.56/0.59/0.00 | 8046/0 | 70654/0 | 5743/0 | 175277/0 | sa/sat/solver.py:1328 x5628; sa/sat/solver.py:1157 x2418 |
+| Solver._rb_late:1350 | no value | 0.19/0.39/0.00 | 0.06/0.19/0.00 | 0.00/0.04/0.00 | 0.79/1.39/0.00 | 759/759 | 4745/4745 | 99/99 | 24553/24553 | sa/sat/solver.py:1348 x759 |
+| Solver._tpropagate:1938 | read | 0.32/10.10/0.00 | 0.65/19.26/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 5050/0 | 157225/0 | 0 | 0 | sa/sat/solver.py:2362 x3431; sa/sat/solver.py:1590 x666; sa/sat/solver.py:1403 x389 |
+| Solver._assume:1457 | read | 0.37/3.46/0.00 | 0.22/2.57/0.00 | 0.01/0.05/0.00 | 0.37/3.29/0.00 | 2999/0 | 14286/0 | 53/0 | 17709/0 | sa/sat/solver.py:1440 x2524; sa/sat/solver.py:2696 x271; sa/sat/solver.py:2730 x204 |
+| Solver._heap_down:623 | no value | 0.20/0.20/0.00 | 0.65/0.65/0.00 | 0.00/0.00/0.00 | 0.01/0.01/0.00 | 8751/8751 | 441469/441469 | 0 | 1841/1841 | sa/sat/solver.py:655 x8751 |
+| Solver._analyze:2144 | read | 0.29/0.52/0.00 | 0.48/0.82/0.00 | 0.00/0.00/0.00 | 0.04/0.07/0.00 | 257/0 | 7797/0 | 0 | 133/0 | sa/sat/solver.py:2115 x257 |
+| Solver._heap_up:606 | no value | 0.21/0.21/0.00 | 0.57/0.57/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 7082/7082 | 402633/402633 | 0 | 2055/2055 | sa/sat/solver.py:604 x5536; sa/sat/solver.py:667 x1546 |
+| _BlockClosure.closure:279 | read | 0.38/0.38/0.00 | 0.11/0.11/0.00 | 0.04/0.04/0.00 | 0.20/0.20/0.00 | 2258/0 | 10745/0 | 127/0 | 28548/0 | sa/sat/solver.py:1654 x1499; sa/sat/solver.py:1367 x759 |
+| Solver._ring_hit:2553 | read | 0.36/0.40/0.00 | 0.05/0.05/0.00 | 0.00/0.00/0.00 | 0.31/0.43/0.00 | 1054/0 | 5235/0 | 9/0 | 7823/0 | sa/sat/solver.py:2456 x1054 |
+| Solver._heap_pop:646 | read | 0.19/0.40/0.00 | 0.45/1.11/0.00 | 0.00/0.00/0.00 | 0.00/0.01/0.00 | 8893/0 | 446284/0 | 0 | 1866/0 | sa/sat/solver.py:2291 x8893 |
+| Solver._theory_imply:2025 | read | 0.12/0.18/0.00 | 0.45/0.69/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 271/0 | 24689/0 | 0 | 0 | sa/sat/solver.py:1977 x271 |
+| Solver.register_atom.<locals>.<genexpr>:1891 | no value | 0.19/0.19/0.00 | 0.36/0.37/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 3285/0 | 94780/0 | 0 | 0 | sa/sat/solver.py:1891 x3285 |
+| Solver._assume_propagate:1548 | read | 0.20/2.74/0.00 | 0.14/2.13/0.00 | 0.00/0.03/0.00 | 0.17/2.66/0.00 | 1266/0 | 8367/0 | 17/0 | 6885/0 | sa/sat/solver.py:1533 x1266 |
+| Solver._heap_insert:597 | no value | 0.10/0.24/0.00 | 0.38/0.83/0.00 | 0.00/0.00/0.00 | 0.01/0.01/0.00 | 5536/5536 | 363614/363614 | 0 | 900/900 | sa/sat/solver.py:1823 x5320; sa/sat/solver.py:1336 x216 |
+| Solver._theory_clause:1982 | read | 0.07/0.07/0.00 | 0.29/0.29/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 401/0 | 30321/0 | 0 | 0 | sa/sat/solver.py:2027 x271; sa/sat/solver.py:1999 x130 |
+| _common:87 | read | 0.12/0.12/0.00 | 0.07/0.07/0.00 | 0.00/0.00/0.00 | 0.16/0.16/0.00 | 1778/0 | 10455/0 | 24/0 | 12136/0 | sa/sat/solver.py:2467 x1713; sa/sat/solver.py:1512 x65 |
+| Solver.ensure_vars:912 | no value | 0.12/1.84/0.00 | 0.17/2.67/0.00 | 0.02/0.74/0.00 | 0.02/1.08/0.00 | 7324/7324 | 128990/128990 | 291/291 | 15126/15126 | sa/engine.py:660 x3298; sa/relations.py:1004 x2994; sa/engine.py:456 x886 |
+| _BlockClosure.lits_of:250 | read | 0.15/0.15/0.00 | 0.02/0.02/0.00 | 0.00/0.00/0.00 | 0.15/0.15/0.00 | 2695/0 | 15145/0 | 308/0 | 74264/0 | sa/sat/solver.py:1344 x871; sa/sat/solver.py:1364 x759; sa/sat/solver.py:1375 x752 |
+| Solver.entails_all:2719 | read | 0.07/3.96/0.00 | 0.01/1.61/0.00 | 0.00/0.00/0.00 | 0.22/10.59/0.00 | 204/0 | 334/0 | 0 | 1506/0 | sa/engine.py:932 x204 |
+| Solver._learn:2105 | read | 0.11/0.92/0.00 | 0.17/1.69/0.00 | 0.00/0.00/0.00 | 0.02/0.10/0.00 | 257/0 | 7797/0 | 0 | 133/0 | sa/sat/solver.py:2365 x230; sa/sat/solver.py:2402 x27 |
+| Solver.entails:2677 | read | 0.04/9.38/0.00 | 0.09/20.53/0.00 | 0.01/2.94/0.00 | 0.10/4.85/0.00 | 271/0 | 2271/0 | 4/0 | 1499/0 | sa/engine.py:901 x271 |
+| Solver.solve:2419 | read | 0.10/5.92/0.00 | 0.04/6.87/0.00 | 0.01/7.43/0.00 | 0.08/1.53/0.00 | 833/0 | 2859/0 | 16/0 | 5004/0 | sa/engine.py:2026 x833 |
+| Solver.mention:1388 | no value | 0.09/0.48/0.00 | 0.03/0.14/0.00 | 0.00/0.01/0.00 | 0.10/0.52/0.00 | 2148/2148 | 10579/10579 | 25/25 | 14929/14929 | sa/engine.py:869 x1006; sa/engine.py:913 x667; sa/sat/solver.py:2694 x271 |
+| Solver.propagate:1395 | read | 0.10/0.74/0.00 | 0.02/0.34/0.00 | 0.00/0.01/0.00 | 0.08/0.36/0.00 | 2681/0 | 12003/0 | 52/0 | 16928/0 | sa/engine.py:865 x1006; sa/engine.py:2015 x833; sa/engine.py:911 x667 |
+| Solver._theory_conflict:1994 | read | 0.06/0.08/0.00 | 0.12/0.25/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 130/0 | 5632/0 | 0 | 0 | sa/sat/solver.py:1973 x103; sa/sat/solver.py:2099 x27 |
+| _luby:102 | read | 0.07/0.07/0.00 | 0.03/0.03/0.00 | 0.00/0.00/0.00 | 0.07/0.07/0.00 | 1795/0 | 8223/0 | 26/0 | 13524/0 | sa/sat/solver.py:2489 x1795 |
+| _rule_tables:362 | read | 0.05/0.08/0.00 | 0.03/0.03/0.00 | 0.01/0.02/0.00 | 0.08/0.09/0.00 | 918/0 | 3133/0 | 17/0 | 5818/0 | sa/sat/solver.py:1071 x918 |
+| Solver._bump_var:658 | no value | 0.07/0.14/0.00 | 0.08/0.21/0.00 | 0.00/0.00/0.00 | 0.00/0.01/0.00 | 1731/1731 | 48857/48857 | 0 | 1189/1189 | sa/sat/solver.py:2169 x1731 |
+| Solver.attach_theory:1851 | no value | 0.07/0.09/0.00 | 0.08/0.08/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 431/431 | 6940/6940 | 0 | 0 | sa/theories/lra/lra_adapter.py:495 x198; sa/theories/euf/euf_adapter.py:164 x198; sa/relations.py:1697 x35 |
+| _BlockClosure.explain:314 | read | 0.07/0.09/0.00 | 0.04/0.05/0.00 | 0.00/0.00/0.00 | 0.02/0.02/0.00 | 250/0 | 4652/0 | 0 | 630/0 | sa/sat/solver.py:1235 x235; sa/sat/solver.py:1657 x15 |
+| Solver._fill:2516 | read | 0.04/0.04/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.10/0.12/0.00 | 109/0 | 3/0 | 0 | 3325/0 | sa/sat/solver.py:2582 x71; sa/sat/solver.py:2603 x38 |
+| Solver.set_rule_block:1032 | no value | 0.05/0.13/0.00 | 0.01/0.04/0.00 | 0.00/0.02/0.00 | 0.07/0.15/0.00 | 918/918 | 3133/3133 | 17/17 | 5818/5818 | sa/engine.py:317 x918 |
+| Solver.theories:1872 | read | 0.06/0.06/0.00 | 0.02/0.02/0.00 | 0.00/0.00/0.00 | 0.05/0.05/0.00 | 3671/0 | 16868/0 | 60/0 | 19826/0 | sa/engine.py:2319 x2442; sa/engine.py:2328 x833; sa/theories/lra/lra_adapter.py:494 x198 |
+| _BlockClosure.flags.<locals>.<genexpr>:243 (2 defs share the samples) | no value | 0.08/0.08/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.03/0.03/0.00 | 209/0 | 99/0 | 11/0 | 281/0 | sa/sat/solver.py:243 x209 |
+| _BlockClosure.flags.<locals>.<genexpr>:244 (2 defs share the samples) | no value | 0.08/0.08/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.03/0.03/0.00 | 209/0 | 99/0 | 11/0 | 281/0 | sa/sat/solver.py:244 x209 |
+| Solver._theory_check:2091 | read | 0.04/3.72/0.00 | 0.06/4.34/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 433/0 | 8296/0 | 0 | 0 | sa/sat/solver.py:2399 x433 |
+| Solver.set_inert:2296 | no value | 0.03/0.03/0.00 | 0.04/0.04/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 1156/1156 | 28709/28709 | 0 | 0 | sa/relations.py:1006 x1124; sa/engine.py:1140 x32 |
+| Solver._analyze_final:2227 | no value | 0.06/0.07/0.00 | 0.01/0.02/0.00 | 0.00/0.00/0.00 | 0.00/0.01/0.00 | 66/66 | 401/401 | 0 | 78/78 | sa/sat/solver.py:2387 x66 |
+| Solver._rb_reason:1225 | read | 0.02/0.10/0.00 | 0.03/0.07/0.00 | 0.00/0.00/0.00 | 0.01/0.03/0.00 | 235/0 | 4012/0 | 0 | 618/0 | sa/sat/solver.py:2186 x201; sa/sat/solver.py:2201 x18; sa/sat/solver.py:2252 x16 |
+| Solver._bump_clause:669 | no value | 0.01/0.01/0.00 | 0.06/0.06/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 438/438 | 14464/14464 | 0 | 163/163 | sa/sat/solver.py:2127 x256; sa/sat/solver.py:2160 x182 |
+| Solver.release:1445 | no value | 0.02/0.04/0.00 | 0.01/0.15/0.00 | 0.00/0.00/0.00 | 0.02/0.02/0.00 | 1080/1080 | 5044/5044 | 17/17 | 7389/7389 | sa/engine.py:2274 x776; sa/engine.py:2282 x304 |
+| Solver.consistent:2665 | read | 0.03/1.27/0.00 | 0.00/0.29/0.00 | 0.00/0.51/0.00 | 0.02/2.96/0.00 | 344/0 | 115/0 | 9/0 | 2503/0 | sa/engine.py:891 x212; sa/engine.py:921 x132 |
+| _is_learnt:98 | read | 0.01/0.01/0.00 | 0.03/0.03/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 983/0 | 25350/0 | 0 | 596/0 | sa/sat/solver.py:2159 x983 |
+| Solver._theory_decide:2063 | read | 0.01/0.02/0.00 | 0.02/0.08/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 81/0 | 2724/0 | 0 | 0 | sa/sat/solver.py:2396 x81 |
+| Solver.value:1412 | read | 0.01/0.01/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.01/0.01/0.00 | 226/0 | 488/0 | 3/0 | 3952/0 | sa/engine.py:924 x130; sa/engine.py:895 x96 |
+| Solver._theory_imply.<locals>.<lambda>:2048 | read 0 | 0.00/0.00/0.00 | 0.02/0.02/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 452/452 | 50632/50632 | 0 | 0 | sa/sat/solver.py:2048 x452 |
+| _BlockClosure.values_of:265 | read | 0.01/0.01/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.02/0.02/0.00 | 109/0 | 3/0 | 0 | 3325/0 | sa/sat/solver.py:2536 x109 |
+| _block_models.<locals>.up:146 | read | 0.01/0.01/0.00 | 0.00/0.00/0.00 | 0.01/0.01/0.00 | 0.00/0.00/0.00 | 86/0 | 86/0 | 86/0 | 86/0 | sa/sat/solver.py:177 x86 |
+| Solver._theory_conflict.<locals>.<lambda>:2008 | read 0 | 0.00/0.00/0.00 | 0.02/0.02/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 388/388 | 17224/17224 | 0 | 0 | sa/sat/solver.py:2008 x388 |
+| Solver.attach_theory.<locals>.<genexpr>:1858 | no value | 0.01/0.01/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 431/0 | 6940/0 | 0 | 0 | sa/sat/solver.py:1858 x431 |
+| _BlockClosure.explain.<locals>.<genexpr>:350 | no value | 0.01/0.01/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 52/0 | 353/0 | 0 | 48/0 | sa/sat/solver.py:350 x52 |
+| Solver._rb_settle:1176 | read | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.01/0.01/0.00 | 8/0 | 4/0 | 0 | 350/0 | sa/sat/solver.py:1174 x8 |
+| _block_models.<locals>.rec:172 | no value | 0.01/0.02/0.00 | 0.00/0.00/0.00 | 0.00/0.01/0.00 | 0.00/0.00/0.00 | 87/87 | 87/87 | 87/87 | 87/87 | sa/sat/solver.py:179 x86; sa/sat/solver.py:196 x1 |
+| Solver._witness_satisfies:2649 | read | 0.01/0.01/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 344/0 | 115/0 | 9/0 | 2503/0 | sa/sat/solver.py:2675 x344 |
+| _BlockClosure.__init__:213 | no value | 0.00/0.03/0.00 | 0.00/0.00/0.00 | 0.01/0.01/0.00 | 0.00/0.00/0.00 | 1/0 | 1/0 | 1/0 | 1/0 | sa/sat/solver.py:381 x1 |
+| Solver.register_block.<locals>.<genexpr>:1131 | no value | 0.01/0.01/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 8/0 | 4/0 | 0 | 323/0 | sa/sat/solver.py:1131 x8 |
+| _BlockClosure.__init__.<locals>.<genexpr>:224 | no value | 0.01/0.01/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 1/0 | 1/0 | 1/0 | 1/0 | sa/sat/solver.py:224 x1 |
+| _rule_tables.<locals>.<genexpr>:371 (2 defs share the samples) | no value | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 1/0 | 1/0 | 1/0 | 1/0 | sa/sat/solver.py:371 x1 |
+| _rule_tables.<locals>.<genexpr>:372 (2 defs share the samples) | no value | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 1/0 | 1/0 | 1/0 | 1/0 | sa/sat/solver.py:372 x1 |
+| _block_models.<locals>.<lambda>:169 | read | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 14/0 | 14/0 | 14/0 | 14/0 | sa/sat/solver.py:169 x14 |
+| _BlockClosure.model_of:307 | read | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 21/0 | 3/0 | 0 | 8/0 | sa/sat/solver.py:270 x21 |
+| _block_models:122 | read | 0.00/0.02/0.00 | 0.00/0.00/0.00 | 0.00/0.01/0.00 | 0.00/0.00/0.00 | 1/0 | 1/0 | 1/0 | 1/0 | sa/sat/solver.py:216 x1 |
+
+### sa/engine.py
+
+| function:line | class | dev own/incl/under | fuzz own/incl/under | budget own/incl/under | wiring own/incl/under | dev calls/dropped | fuzz calls/dropped | budget calls/dropped | wiring calls/dropped | call sites (dev, else the first workload with calls) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Session._emit_pattern:654 | no value | 2.31/11.18/0.00 | 1.24/6.17/0.00 | 3.63/11.57/0.00 | 2.35/17.86/0.00 | 3298/3298 | 33176/33176 | 290/290 | 15126/15126 | sa/engine.py:640 x1860; sa/engine.py:828 x1154; sa/engine.py:744 x284 |
+| Session._compile_patterns:614 | no value | 0.99/7.20/0.12 | 0.50/3.48/0.04 | 0.61/2.17/0.04 | 2.00/13.27/0.16 | 2461/2461 | 16537/16537 | 1961/1961 | 48841/48841 | sa/engine.py:605 x2461 |
+| _split:2358 | read | 1.49/1.49/0.00 | 0.41/0.41/0.00 | 0.83/0.83/0.00 | 1.33/1.33/0.00 | 8127/0 | 79164/0 | 4212/0 | 106893/0 | sa/engine.py:636 x3153; sa/engine.py:596 x3089; sa/engine.py:658 x1154 |
+| Session._visit:572 | no value | 0.68/11.96/0.00 | 0.32/5.66/0.00 | 0.32/10.68/0.00 | 1.52/31.58/0.00 | 2482/2482 | 16537/16537 | 1961/1961 | 48945/48945 | sa/engine.py:567 x2482 |
+| Session.ensure:772 | no value | 0.80/13.89/0.09 | 1.03/9.06/0.12 | 0.04/11.10/0.00 | 0.76/33.13/0.08 | 5222/5222 | 84724/84724 | 175/175 | 35631/35631 | sa/engine.py:1207 x1325; sa/engine.py:531 x734; sa/relations.py:1026 x701 |
+| Session._discover:799 | no value | 0.47/13.10/0.04 | 0.52/8.09/0.04 | 0.13/11.07/0.03 | 0.80/32.33/0.10 | 5472/5472 | 86360/86360 | 173/173 | 40550/40550 | sa/engine.py:797 x3259; sa/engine.py:788 x2213 |
+| Session.node:545 | minority | 0.45/13.67/0.07 | 0.36/7.73/0.10 | 0.15/10.91/0.04 | 0.89/33.39/0.15 | 7950/3079 | 170237/34596 | 1968/1961 | 54573/48945 | sa/engine.py:805 x2980; sa/engine.py:392 x2338; sa/engine.py:452 x1694 |
+| Session._compile:664 | no value | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 1.16/33.82/0.77 | 0.29/6.53/0.17 | 0 | 0 | 171/171 | 500/500 | sa/engine.py:832 x145; sa/engine.py:770 x26 |
+| want_of:2387 | read | 0.30/0.30/0.00 | 0.22/0.22/0.00 | 0.18/0.18/0.00 | 0.67/0.67/0.00 | 5257/0 | 51089/0 | 4067/0 | 95691/0 | sa/engine.py:624 x2362; sa/engine.py:593 x2298; sa/engine.py:737 x597 |
+| Session._link:481 | no value | 0.32/0.32/0.00 | 0.05/0.05/0.00 | 0.00/0.00/0.00 | 0.99/1.03/0.04 | 2299/2299 | 5525/5525 | 197/197 | 70807/70807 | sa/engine.py:430 x2299 |
+| Session.emit:539 | no value | 0.19/7.46/0.00 | 0.34/9.30/0.00 | 0.40/19.17/0.00 | 0.27/10.87/0.00 | 13877/13877 | 316135/316135 | 37174/37174 | 106564/106564 | sa/engine.py:954 x2568; sa/engine.py:469 x1802; sa/relations.py:1093 x969 |
+| Session._dvar:449 | read | 0.37/1.82/0.01 | 0.65/2.63/0.03 | 0.00/0.01/0.00 | 0.00/0.00/0.00 | 1694/0 | 65376/0 | 1/0 | 0 | sa/engine.py:394 x1694 |
+| Session.query_literal:852 | read | 0.36/18.08/0.00 | 0.14/24.77/0.00 | 0.01/3.47/0.00 | 0.41/21.73/0.00 | 1673/0 | 7974/0 | 21/0 | 11924/0 | sa/engine.py:2279 x776; sa/engine.py:2287 x432; sa/engine.py:2284 x304 |
+| _noncommutative:140 | read | 0.27/0.48/0.00 | 0.08/0.13/0.00 | 0.01/0.04/0.00 | 0.52/0.77/0.00 | 2499/0 | 6621/0 | 206/0 | 36178/0 | sa/engine.py:173 x2066; sa/engine.py:2043 x431; sa/engine.py:2083 x2 |
+| Engine._query_cone:1757 | read | 0.29/11.75/0.00 | 0.27/7.55/0.03 | 0.05/27.97/0.00 | 0.21/0.70/0.03 | 3232/0 | 11798/0 | 111/0 | 19638/0 | sa/engine.py:1826 x840; sa/engine.py:1842 x840; sa/engine.py:1829 x776 |
+| Session._compile_pending:734 | no value | 0.10/0.91/0.01 | 0.20/1.49/0.02 | 0.35/4.18/0.38 | 0.09/4.39/0.15 | 597/597 | 18059/18059 | 145/145 | 487/487 | sa/engine.py:558 x597 |
+| Engine._cone_info:1707 | read | 0.17/9.15/0.04 | 0.20/5.46/0.08 | 0.34/23.95/0.06 | 0.02/2.82/0.00 | 900/0 | 24181/0 | 1469/0 | 1430/0 | sa/engine.py:1799 x881; sa/engine.py:2050 x17; sa/engine.py:2203 x2 |
+| Session.dvar:414 | read | 0.12/0.66/0.00 | 0.05/0.19/0.00 | 0.01/0.04/0.00 | 0.50/1.90/0.00 | 2620/0 | 11986/0 | 197/0 | 70807/0 | sa/knowledge/compile.py:182 x2127; sa/knowledge/compile.py:205 x441; sa/knowledge/compile.py:391 x47 |
+| Engine._struct:1640 | read | 0.08/8.92/0.02 | 0.09/5.18/0.03 | 0.50/23.63/0.11 | 0.02/2.80/0.00 | 936/0 | 33036/0 | 6024/0 | 795/0 | sa/engine.py:1727 x690; sa/engine.py:1808 x153; sa/engine.py:1742 x93 |
+| Engine._ask:2267 | read | 0.26/40.09/0.00 | 0.12/52.68/0.00 | 0.00/9.36/0.00 | 0.28/46.06/0.00 | 776/0 | 2605/0 | 13/0 | 4814/0 | sa/engine.py:2265 x776 |
+| Engine._union:1790 | read | 0.09/8.92/0.01 | 0.23/5.71/0.00 | 0.29/18.96/0.00 | 0.03/0.04/0.00 | 615/0 | 8621/0 | 38/0 | 948/0 | sa/engine.py:1784 x615 |
+| Engine._within_budget:1814 | read | 0.25/12.21/0.01 | 0.06/7.62/0.00 | 0.01/28.03/0.00 | 0.26/1.08/0.00 | 840/0 | 3127/0 | 37/0 | 5005/0 | sa/engine.py:2241 x776; sa/engine.py:1991 x64 |
+| Session.var:385 | read | 0.17/2.05/0.00 | 0.38/3.12/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 4032/0 | 134774/0 | 0 | 0 | sa/relations.py:1449 x1016; sa/relations.py:1502 x750; sa/relations.py:1121 x588 |
+| Session.assume_formula:936 | read | 0.25/22.56/0.00 | 0.08/23.76/0.00 | 0.02/10.47/0.00 | 0.18/24.38/0.00 | 833/0 | 2952/0 | 16/0 | 5004/0 | sa/engine.py:1948 x833 |
+| Session.__init__:305 | no value | 0.22/1.10/0.00 | 0.08/0.58/0.00 | 0.00/0.04/0.00 | 0.20/1.08/0.00 | 918/0 | 3133/0 | 17/0 | 5818/0 | sa/engine.py:1417 x918 |
+| Session._query_all:906 | read | 0.09/4.83/0.00 | 0.02/1.88/0.00 | 0.00/0.00/0.00 | 0.36/14.41/0.00 | 667/0 | 1037/0 | 1/0 | 6075/0 | sa/engine.py:861 x667 |
+| Session.assume_formula.<locals>.emit:953 | no value | 0.10/2.33/0.00 | 0.02/0.56/0.00 | 0.01/0.11/0.00 | 0.32/7.34/0.00 | 2568/2568 | 8820/8820 | 159/159 | 70807/70807 | sa/knowledge/compile.py:182 x2127; sa/knowledge/compile.py:205 x441 |
+| Engine._build_context:1925 | read | 0.22/37.30/0.00 | 0.06/34.70/0.00 | 0.01/53.82/0.00 | 0.16/30.90/0.00 | 833/0 | 2952/0 | 16/0 | 5004/0 | sa/engine.py:1913 x833 |
+| Session.assumption_lits:982 | read | 0.22/1.12/0.01 | 0.15/1.22/0.00 | 0.00/0.00/0.00 | 0.06/0.06/0.00 | 1611/0 | 5602/0 | 29/0 | 9818/0 | sa/engine.py:1950 x833; sa/engine.py:2278 x776; sa/engine.py:2214 x2 |
+| Engine.ask:2219 | read | 0.18/89.79/0.00 | 0.06/92.91/0.00 | 0.01/91.53/0.00 | 0.18/79.78/0.00 | 776/0 | 2812/0 | 26/0 | 4814/0 | sa/sympy_api.py:1145 x776 |
+| Session._flush:687 | no value | 0.15/0.22/0.00 | 0.24/0.32/0.00 | 0.02/0.02/0.00 | 0.01/0.01/0.00 | 3259/3259 | 58720/58720 | 194/194 | 5504/5504 | sa/engine.py:796 x3259 |
+| Session.escalate:813 | no value | 0.11/6.07/0.00 | 0.10/2.49/0.00 | 0.06/40.77/0.00 | 0.11/11.95/0.00 | 490/490 | 3622/3622 | 19/19 | 3291/3291 | sa/engine.py:2283 x304; sa/engine.py:2018 x175; sa/engine.py:2159 x11 |
+| _noncommutative_atoms.<locals>.<genexpr>:173 | no value | 0.14/0.73/0.00 | 0.04/0.28/0.00 | 0.01/0.07/0.00 | 0.19/1.36/0.00 | 840/0 | 3127/0 | 30/0 | 5005/0 | sa/engine.py:173 x840 |
+| Engine._complete_check:1998 | read | 0.12/9.49/0.00 | 0.06/8.89/0.00 | 0.01/43.29/0.00 | 0.15/4.12/0.00 | 833/0 | 2952/0 | 16/0 | 5004/0 | sa/engine.py:1950 x833 |
+| Session._glue_of:1182 | read | 0.14/0.36/0.00 | 0.06/0.10/0.00 | 0.00/0.00/0.00 | 0.12/0.31/0.00 | 2201/0 | 13797/0 | 29/0 | 9818/0 | sa/engine.py:1216 x1611; sa/engine.py:1180 x393; sa/engine.py:1013 x197 |
+| Engine.verdict:1969 | read | 0.04/1.25/0.00 | 0.05/2.67/0.00 | 0.22/10.42/0.00 | 0.01/0.45/0.00 | 64/0 | 315/0 | 4/0 | 191/0 | sa/sympy_api.py:1113 x64 |
+| Session._ensure_atoms:1198 | no value | 0.06/3.93/0.00 | 0.05/2.45/0.00 | 0.02/10.73/0.00 | 0.18/11.95/0.00 | 877/877 | 4909/4909 | 23/23 | 5004/5004 | sa/engine.py:944 x833; sa/engine.py:1159 x44 |
+| AnswerMemo.put:287 | no value | 0.16/0.25/0.09 | 0.04/0.08/0.04 | 0.01/0.01/0.00 | 0.10/0.15/0.05 | 1818/1818 | 5743/5743 | 27/27 | 8965/8965 | sa/sympy_api.py:489 x1221; sa/sympy_api.py:600 x452; sa/sympy_api.py:953 x83 |
+| Session._set_glue:1072 | read | 0.12/0.60/0.01 | 0.17/0.76/0.02 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 327/0 | 5451/0 | 0 | 0 | sa/engine.py:1049 x327 |
+| Engine._build_context_memoized:1901 | read | 0.12/37.61/0.00 | 0.02/34.80/0.00 | 0.00/53.83/0.00 | 0.11/31.31/0.00 | 833/0 | 2952/0 | 16/0 | 5004/0 | sa/engine.py:1896 x776; sa/engine.py:1996 x57 |
+| _gave_up:2317 | read | 0.11/0.15/0.00 | 0.05/0.06/0.00 | 0.01/0.01/0.00 | 0.09/0.12/0.00 | 2442/0 | 8081/0 | 44/0 | 14822/0 | sa/engine.py:2028 x833; sa/engine.py:1961 x833; sa/engine.py:2288 x776 |
+| Session.assume_formula.<locals>.<genexpr>:951 | no value | 0.07/0.07/0.00 | 0.02/0.02/0.00 | 0.00/0.00/0.00 | 0.15/0.15/0.00 | 833/0 | 2952/0 | 16/0 | 5004/0 | sa/engine.py:951 x833 |
+| Session.query_lit:506 | read | 0.08/0.16/0.00 | 0.02/0.02/0.00 | 0.01/0.01/0.00 | 0.12/0.23/0.00 | 839/0 | 867/0 | 6/0 | 5628/0 | sa/engine.py:536 x734; sa/engine.py:2069 x81; sa/engine.py:2134 x24 |
+| Session.incomplete:808 | read | 0.09/0.09/0.00 | 0.03/0.03/0.00 | 0.01/0.01/0.00 | 0.07/0.07/0.00 | 2157/0 | 8208/0 | 36/0 | 13403/0 | sa/engine.py:2017 x833; sa/engine.py:2028 x823; sa/engine.py:2280 x458 |
+| Session.discover:790 | no value | 0.06/0.39/0.00 | 0.11/0.61/0.00 | 0.00/0.01/0.00 | 0.01/0.07/0.00 | 3259/3259 | 58720/58720 | 23/23 | 5004/5004 | sa/relations.py:935 x2382; sa/engine.py:956 x833; sa/engine.py:1161 x44 |
+| Session._glue_of.<locals>.<genexpr>:1191 | no value | 0.07/0.07/0.00 | 0.02/0.02/0.00 | 0.00/0.00/0.00 | 0.08/0.08/0.00 | 2026/0 | 13676/0 | 29/0 | 8570/0 | sa/engine.py:1191 x2026 |
+| Engine._context_session:1882 | read | 0.11/36.73/0.00 | 0.01/32.44/0.00 | 0.00/43.62/0.00 | 0.05/31.08/0.00 | 776/0 | 2772/0 | 12/0 | 4814/0 | sa/engine.py:2262 x776 |
+| Engine._fresh_session:1415 | read | 0.06/1.16/0.00 | 0.02/0.59/0.00 | 0.00/0.04/0.00 | 0.07/1.15/0.00 | 918/0 | 3133/0 | 17/0 | 5818/0 | sa/engine.py:1947 x833; sa/engine.py:2067 x81; sa/engine.py:2129 x2 |
+| Session.prepare_query:521 | read | 0.04/16.96/0.00 | 0.02/25.70/0.00 | 0.00/0.91/0.00 | 0.09/18.49/0.00 | 776/0 | 2605/0 | 13/0 | 4814/0 | sa/engine.py:2275 x776 |
+| Engine._struct.<locals>.<genexpr>:1700 (2 defs share the samples) | no value | 0.02/0.02/0.00 | 0.00/0.00/0.00 | 0.11/0.21/0.00 | 0.01/0.01/0.00 | 309/0 | 309/0 | 488/0 | 158/0 | sa/engine.py:1700 x309 |
+| Engine._struct.<locals>.<genexpr>:1702 (2 defs share the samples) | no value | 0.02/0.02/0.00 | 0.00/0.00/0.00 | 0.11/0.21/0.00 | 0.01/0.01/0.00 | 0 | 0 | 158/0 | 28/0 | sa/engine.py:1702 x158 |
+| Engine.is_:2033 | read | 0.05/1.48/0.00 | 0.02/0.90/0.00 | 0.01/5.36/0.00 | 0.07/13.43/0.01 | 433/0 | 783/0 | 2/0 | 1360/0 | sa/sympy_api.py:1144 x275; sa/relations.py:1403 x158 |
+| Session._ensure_twins:1210 | minority | 0.06/0.32/0.00 | 0.01/0.07/0.00 | 0.01/0.01/0.00 | 0.05/0.35/0.00 | 1611/877 | 5602/4909 | 29/23 | 9818/5004 | sa/engine.py:1208 x877; sa/engine.py:532 x734 |
+| _noncommutative_atoms:170 | read | 0.04/0.78/0.00 | 0.02/0.31/0.00 | 0.00/0.07/0.00 | 0.06/1.43/0.00 | 840/0 | 3127/0 | 30/0 | 5005/0 | sa/engine.py:2238 x776; sa/engine.py:1989 x64 |
+| _kid:177 | read | 0.01/0.01/0.00 | 0.01/0.01/0.00 | 0.10/0.10/0.00 | 0.00/0.00/0.00 | 791/0 | 19795/0 | 25625/0 | 2290/0 | sa/engine.py:1775 x791 |
+| Session._custom:707 | no value | 0.06/0.07/0.00 | 0.06/0.08/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 1507/1507 | 36397/36397 | 0 | 0 | sa/engine.py:696 x1507 |
+| Session._relations:1168 | no value | 0.05/25.23/0.00 | 0.04/44.77/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 393/393 | 5564/5564 | 0 | 0 | sa/engine.py:964 x164; sa/engine.py:535 x153; sa/engine.py:1163 x44 |
+| _exhausted:2325 | read | 0.03/0.04/0.00 | 0.02/0.02/0.00 | 0.00/0.00/0.00 | 0.02/0.03/0.00 | 833/0 | 2758/0 | 16/0 | 5004/0 | sa/engine.py:2028 x833 |
+| Session._set_glue.<locals>.<genexpr>:1111 | no value | 0.05/0.14/0.00 | 0.02/0.14/0.01 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 278/0 | 5435/0 | 0 | 0 | sa/engine.py:1111 x278 |
+| Engine._query_cone.<locals>.<genexpr>:1781 | no value | 0.02/0.07/0.05 | 0.03/0.05/0.02 | 0.01/0.19/0.18 | 0.01/0.01/0.00 | 615/0 | 8621/0 | 38/0 | 948/0 | sa/engine.py:1781 x615 |
+| Session.query_lit.<locals>.<genexpr>:516 | no value | 0.01/0.01/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.05/0.05/0.00 | 387/0 | 385/0 | 1/0 | 2952/0 | sa/engine.py:516 x387 |
+| Engine._decide:2138 | read | 0.00/0.44/0.00 | 0.01/0.33/0.00 | 0.00/0.00/0.00 | 0.05/6.58/0.00 | 107/0 | 219/0 | 0 | 814/0 | sa/engine.py:2069 x81; sa/engine.py:2134 x24; sa/engine.py:2214 x2 |
+| Engine._union.<locals>.<genexpr>:1808 | no value | 0.00/0.01/0.00 | 0.04/0.09/0.00 | 0.01/0.07/0.00 | 0.00/0.00/0.00 | 88/0 | 7236/0 | 69/0 | 0 | sa/engine.py:1808 x88 |
+| Engine._record_relevant:1426 | no value | 0.02/0.02/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.02/0.02/0.00 | 583/583 | 1203/1203 | 0 | 2586/2586 | sa/sympy_api.py:590 x583 |
+| Session.assumption_lits.<locals>.<genexpr>:1007 (2 defs share the samples) | no value | 0.02/0.02/0.00 | 0.02/0.02/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 198/0 | 3018/0 | 0 | 0 | sa/engine.py:1007 x198 |
+| Session.assumption_lits.<locals>.<genexpr>:1065 (2 defs share the samples) | no value | 0.02/0.02/0.00 | 0.02/0.02/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 197/0 | 2631/0 | 0 | 0 | sa/engine.py:1065 x197 |
+| DictCache.facts:262 | read | 0.04/0.04/0.01 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 435/0 | 789/0 | 0 | 1360/0 | sa/engine.py:2053 x431; sa/engine.py:2103 x2; sa/engine.py:2205 x2 |
+| Engine._clear_budget_flag:1441 | no value | 0.02/0.02/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.01/0.01/0.00 | 3206/3206 | 5998/5998 | 56/56 | 13024/13024 | sa/sympy_api.py:476 x1985; sa/sympy_api.py:1121 x1090; sa/sympy_api.py:596 x131 |
+| Engine._note_budget:2293 | no value | 0.01/0.01/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.01/0.01/0.00 | 776/776 | 2605/2605 | 13/13 | 4814/4814 | sa/engine.py:2290 x776 |
+| Session.literal_of:1155 | read | 0.00/2.12/0.00 | 0.03/22.16/0.00 | 0.00/0.49/0.00 | 0.00/0.00/0.00 | 44/0 | 1957/0 | 7/0 | 0 | sa/engine.py:537 x42; sa/engine.py:2212 x2 |
+| Engine._within_budget.<locals>.<genexpr>:1858 | no value | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.02/0.05/0.00 | 0.00/0.00/0.00 | 0 | 0 | 6/0 | 0 | sa/engine.py:1858 x6 |
+| Session.link_set:972 | no value | 0.00/2.07/0.00 | 0.01/0.03/0.00 | 0.00/0.00/0.00 | 0.01/0.01/0.00 | 833/833 | 2758/2758 | 16/16 | 5004/5004 | sa/engine.py:1966 x833 |
+| Engine._record_consistency_check:1435 | no value | 0.02/0.02/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 64/64 | 315/315 | 0 | 191/191 | sa/sympy_api.py:1106 x64 |
+| Engine.relevance:1532 | read | 0.01/0.01/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 989/0 | 2938/0 | 28/0 | 5888/0 | sa/sympy_api.py:585 x989 |
+| Session._group_sel:1119 | read | 0.01/0.07/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 32/0 | 14/0 | 0 | 0 | sa/engine.py:1058 x32 |
+| Engine._record_cache_hit:1423 | no value | 0.01/0.01/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 895/895 | 19/19 | 0 | 338/338 | sa/sympy_api.py:485 x764; sa/sympy_api.py:595 x131 |
+| Engine._over_budget:1876 | no value | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.01/0.01/0.00 | 0.00/0.00/0.00 | 0 | 0 | 15/0 | 0 | sa/engine.py:2251 x13; sa/engine.py:2052 x2 |
+| Engine.uninterpreted:1503 | read | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 393/0 | 5564/0 | 0 | 0 | sa/relations.py:970 x393 |
+| Engine._is_custom:2199 | read | 0.00/0.22/0.00 | 0.00/0.69/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 2/0 | 45/0 | 0 | 0 | sa/engine.py:2042 x2 |
+| Engine.relation_specs:1461 | read | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 1212/0 | 3296/0 | 28/0 | 6377/0 | sa/sympy_api.py:1122 x1090; sa/sympy_api.py:1108 x64; sa/sympy_api.py:988 x58 |
+| engine_memos:107 | read | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 1/0 | 1/0 | 1/0 | 1/0 | sa/engine.py:1396 x1 |
+| Engine._drop_cones:1634 | no value | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 1/1 | 1/1 | 1/1 | 1/1 | sa/engine.py:1606 x1 |
+| DictCache.__init__:241 | no value | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 2/0 | 2/0 | 2/0 | 2/0 | sa/engine.py:1349 x1; sa/engine.py:1350 x1 |
+| Engine.extensions:1448 | read | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 989/0 | 2938/0 | 19/0 | 5152/0 | sa/sympy_api.py:956 x989 |
+| DictCache.sync:250 | no value | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 2/2 | 2/2 | 2/2 | 2/2 | sa/engine.py:1610 x1; sa/engine.py:1611 x1 |
+| _check_uninterpreted:1239 | read | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 1/0 | 1/0 | 1/0 | 1/0 | sa/engine.py:1356 x1 |
+| Engine._check_version:1587 | no value | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 1/1 | 1/1 | 1/1 | 1/1 | sa/sympy_api.py:482 x1 |
+| Engine._settings_fingerprint:1613 | read | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 1/0 | 1/0 | 1/0 | 1/0 | sa/engine.py:1399 x1 |
+| Engine._put_result:2166 | no value | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 107/107 | 219/219 | 0 | 814/814 | sa/engine.py:2070 x81; sa/engine.py:2135 x24; sa/engine.py:2215 x2 |
+| Engine.is_many:2073 | read | 0.00/0.02/0.00 | 0.00/0.01/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 2/0 | 6/0 | 0 | 0 | sa/relations.py:732 x2 |
+| Engine.__init__:1313 | no value | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 1/0 | 1/0 | 1/0 | 1/0 | sa/sympy_api.py:216 x1 |
+| Engine.__init__.<locals>.<genexpr>:1338 | no value | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 1/0 | 1/0 | 1/0 | 1/0 | sa/engine.py:1338 x1 |
+| DictCache.put:269 | no value | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 65/65 | 102/102 | 0 | 123/123 | sa/engine.py:2197 x64; sa/engine.py:2064 x1 |
+| AnswerMemo.__init__:283 | no value | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 2/0 | 2/0 | 2/0 | 2/0 | sa/engine.py:1360 x1; sa/engine.py:1364 x1 |
+| Engine.transfer:1491 | read | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 35/0 | 911/0 | 0 | 0 | sa/relations.py:1682 x35 |
+| _check_writeback:1230 | read | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 1/0 | 1/0 | 1/0 | 1/0 | sa/engine.py:1357 x1 |
+
+### sa/knowledge/compile.py
+
+| function:line | class | dev own/incl/under | fuzz own/incl/under | budget own/incl/under | wiring own/incl/under | dev calls/dropped | fuzz calls/dropped | budget calls/dropped | wiring calls/dropped | call sites (dev, else the first workload with calls) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| _or_cnf:271 | read | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 6.46/28.06/0.27 | 0.89/5.12/0.05 | 0 | 0 | 497/0 | 722/0 | sa/knowledge/compile.py:212 x497 |
+| compile_formula:151 | no value | 0.25/3.49/0.00 | 0.09/0.79/0.00 | 1.31/32.02/0.00 | 1.33/17.59/0.00 | 4540/4540 | 13696/13696 | 1221/1221 | 131491/131491 | sa/knowledge/compile.py:209 x3004; sa/engine.py:955 x833; sa/knowledge/compile.py:180 x703 |
+| VarTable.node_base:98 | read | 0.41/0.47/0.06 | 0.16/0.18/0.02 | 0.66/0.84/0.18 | 1.11/1.28/0.15 | 5662/0 | 29018/0 | 40260/0 | 182225/0 | sa/engine.py:561 x2482; sa/knowledge/compile.py:120 x2299; sa/engine.py:633 x881 |
+| _or_cnf.<locals>.cost:328 | read | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 1.30/1.92/0.00 | 0.22/0.35/0.00 | 0 | 0 | 19140/0 | 14520/0 | sa/knowledge/compile.py:352 x15660; sa/knowledge/compile.py:348 x3480 |
+| VarTable.var:107 | read | 0.19/0.37/0.01 | 0.22/0.39/0.05 | 0.20/0.54/0.00 | 0.22/0.50/0.00 | 3883/0 | 42718/0 | 15800/0 | 101118/0 | sa/engine.py:427 x2620; sa/relations.py:1496 x1263 |
+| basis_formula:17 | read | 0.15/0.25/0.00 | 0.00/0.00/0.00 | 0.01/0.01/0.00 | 0.65/1.18/0.00 | 703/0 | 396/0 | 28/0 | 28375/0 | sa/knowledge/compile.py:180 x703 |
+| _def:31 | read | 0.00/0.00/0.00 | 0.02/0.02/0.00 | 0.62/0.62/0.00 | 0.12/0.12/0.00 | 4/0 | 643/0 | 31688/0 | 37744/0 | sa/knowledge/compile.py:435 x4 |
+| _or_cnf.<locals>.cost.<locals>.<genexpr>:332 | no value | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.59/0.60/0.00 | 0.13/0.13/0.00 | 0 | 0 | 19140/0 | 14520/0 | sa/knowledge/compile.py:332 x19140 |
+| VarTable.aux:122 | read | 0.20/0.20/0.00 | 0.21/0.21/0.00 | 0.22/0.22/0.00 | 0.09/0.09/0.00 | 4749/0 | 97442/0 | 15955/0 | 17186/0 | sa/relations.py:1003 x2994; sa/engine.py:455 x886; sa/engine.py:945 x833 |
+| _literal:384 | read | 0.01/0.02/0.00 | 0.04/0.21/0.00 | 0.36/2.62/0.00 | 0.15/1.03/0.00 | 56/0 | 3809/0 | 15769/0 | 30814/0 | sa/knowledge/compile.py:381 x44; sa/knowledge/compile.py:438 x12 |
+| _or_cnf.<locals>.<genexpr>:326 | no value | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.24/0.25/0.00 | 0.08/0.08/0.00 | 0 | 0 | 15873/0 | 11880/0 | sa/knowledge/compile.py:326 x15873 |
+| VarTable.__init__:85 | no value | 0.03/0.03/0.00 | 0.01/0.01/0.00 | 0.00/0.00/0.00 | 0.06/0.06/0.00 | 918/0 | 3133/0 | 17/0 | 5818/0 | sa/engine.py:318 x918 |
+| _or_cnf.<locals>.<lambda>:340 | read | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.08/0.08/0.00 | 0.00/0.00/0.00 | 0 | 0 | 15873/0 | 11880/0 | /home/tilo/.local/share/uv/python/cpython-3.12.14-linux-aarch64-gnu/lib/python3.12/heapq.py:515 x12393; /home/tilo/.local/share/uv/python/cpython-3.12.14-linux-aarch64-gnu/lib/python3.12/heapq.py:507 x3480 |
+| VarTable.__len__:142 | read | 0.02/0.02/0.00 | 0.02/0.02/0.00 | 0.01/0.01/0.00 | 0.03/0.03/0.00 | 3298/0 | 33176/0 | 290/0 | 15126/0 | sa/engine.py:660 x3298 |
+| formula_literal:378 | read | 0.00/0.02/0.00 | 0.00/0.21/0.00 | 0.00/0.04/0.00 | 0.00/0.00/0.00 | 44/0 | 1957/0 | 7/0 | 0 | sa/engine.py:1160 x44 |
+
+### sa/relations.py
+
+| function:line | class | dev own/incl/under | fuzz own/incl/under | budget own/incl/under | wiring own/incl/under | dev calls/dropped | fuzz calls/dropped | budget calls/dropped | wiring calls/dropped | call sites (dev, else the first workload with calls) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Relations._interpret:1016 | read | 1.00/15.39/0.09 | 1.63/27.10/0.12 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 1501/0 | 36397/0 | 0 | 0 | sa/relations.py:938 x1501 |
+| Relations._order_infinite:1423 | no value | 0.32/2.18/0.08 | 1.01/5.06/0.14 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 427/427 | 16651/16651 | 0 | 0 | sa/relations.py:1073 x427 |
+| _relation_atom_py:526 | read | 0.33/1.53/0.00 | 0.73/2.93/0.01 | 0.00/4.06/0.00 | 0.00/0.00/0.00 | 1869/0 | 63570/0 | 36/0 | 0 | sa/relations.py:523 x1869 |
+| Relations.process:893 | no value | 0.38/24.98/0.04 | 0.58/44.59/0.05 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 393/393 | 5564/5564 | 0 | 0 | sa/engine.py:1180 x393 |
+| Relations._link:1498 | no value | 0.35/5.53/0.04 | 0.59/9.36/0.06 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 375/375 | 9405/9405 | 0 | 0 | sa/relations.py:959 x375 |
+| _is_number:578 | read | 0.35/1.36/1.01 | 0.53/2.32/1.79 | 0.00/0.00/0.00 | 0.04/0.09/0.05 | 9360/0 | 216752/0 | 36/0 | 2846/0 | sa/relations.py:530 x1430; sa/scope.py:160 x1172; sa/relations.py:1675 x872 |
+| Relations._apply_role:1237 | no value | 0.29/1.36/0.01 | 0.40/2.08/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 1298/1298 | 31620/31620 | 0 | 0 | sa/relations.py:1097 x1227; sa/relations.py:1235 x71 |
+| Relations._tsource:1282 | no value | 0.16/0.22/0.05 | 0.35/0.54/0.08 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 3466/3466 | 103099/103099 | 0 | 0 | sa/relations.py:1268 x1303; sa/relations.py:1266 x1206; sa/relations.py:1274 x375 |
+| closed_units:395 | read | 0.14/0.38/0.07 | 0.05/0.07/0.02 | 0.07/0.08/0.01 | 0.24/0.32/0.05 | 2704/0 | 16727/0 | 2449/0 | 49080/0 | sa/relations.py:428 x2704 |
+| Relations._trichotomy:1172 | no value | 0.22/0.47/0.03 | 0.25/0.68/0.06 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 975/975 | 23664/23664 | 0 | 0 | sa/relations.py:1030 x975 |
+| link_objects:1988 | read | 0.11/2.51/0.00 | 0.30/2.89/0.01 | 0.04/8.72/0.01 | 0.00/0.00/0.00 | 191/0 | 9388/0 | 12/0 | 0 | sa/engine.py:1780 x138; sa/relations.py:2020 x53 |
+| with_closed_units.<locals>.clauses:426 | read | 0.10/8.29/0.00 | 0.05/0.52/0.00 | 0.06/21.24/0.00 | 0.24/3.50/0.00 | 2704/0 | 16727/0 | 2449/0 | 49080/0 | sa/engine.py:578 x2482; sa/engine.py:1689 x222 |
+| sympy_atom:565 | read | 0.15/0.35/0.11 | 0.25/0.68/0.19 | 0.02/0.03/0.00 | 0.00/0.00/0.00 | 2093/0 | 66365/0 | 36/0 | 0 | sa/relations.py:1041 x1501; sa/relations.py:2006 x549; sa/relations.py:2033 x43 |
+| Relations.sync_transfer:1768 | no value | 0.08/0.55/0.02 | 0.32/1.93/0.04 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 173/173 | 5441/5441 | 0 | 0 | sa/relations.py:969 x67; sa/engine.py:864 x54; sa/engine.py:2014 x33 |
+| Relations._guard:1100 | read | 0.16/1.09/0.02 | 0.24/1.06/0.02 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 1870/0 | 45802/0 | 0 | 0 | sa/relations.py:1084 x1495; sa/relations.py:1140 x375 |
+| _structural_subterms:1966 | read | 0.07/0.15/0.01 | 0.28/0.53/0.02 | 0.04/0.06/0.01 | 0.00/0.00/0.00 | 183/0 | 9142/0 | 12/0 | 0 | sa/relations.py:1996 x183 |
+| zero_args:610 | read | 0.16/0.24/0.00 | 0.08/0.09/0.00 | 0.01/0.01/0.00 | 0.13/0.22/0.00 | 5645/0 | 47118/0 | 164/0 | 19502/0 | sa/relations.py:657 x2295; sa/relations.py:653 x1902; sa/engine.py:941 x833 |
+| Relations._fresh:998 | read | 0.12/1.34/0.00 | 0.21/2.29/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 2994/0 | 74497/0 | 0 | 0 | sa/relations.py:1080 x1495; sa/relations.py:1320 x592; sa/relations.py:1513 x375 |
+| Relations._tvar:1300 | read | 0.10/0.56/0.01 | 0.20/1.38/0.02 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 732/0 | 17466/0 | 0 | 0 | sa/relations.py:1623 x552; sa/relations.py:1870 x180 |
+| zero_twins:645 | read | 0.13/0.43/0.00 | 0.06/0.13/0.00 | 0.01/0.01/0.00 | 0.09/0.27/0.00 | 2295/0 | 17936/0 | 55/0 | 7586/0 | sa/relations.py:681 x2295 |
+| Relations._link_integer:1124 | no value | 0.13/2.06/0.00 | 0.15/3.43/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 375/375 | 9405/9405 | 0 | 0 | sa/relations.py:1531 x375 |
+| Relations._transfer_terms:1709 | read | 0.08/0.19/0.00 | 0.17/0.27/0.02 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 67/0 | 1722/0 | 0 | 0 | sa/relations.py:965 x67 |
+| Relations._adapter:1010 | read | 0.12/0.20/0.00 | 0.12/0.20/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 3412/0 | 83110/0 | 0 | 0 | sa/relations.py:1046 x3002; sa/relations.py:1529 x375; sa/relations.py:1687 x35 |
+| Relations._eq_infinity:1145 | no value | 0.10/0.15/0.00 | 0.14/0.18/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 526/526 | 12733/12733 | 0 | 0 | sa/relations.py:1040 x526 |
+| _terms_of:1953 | read | 0.04/1.26/0.00 | 0.17/2.38/0.02 | 0.02/3.87/0.00 | 0.00/0.00/0.00 | 592/0 | 29968/0 | 36/0 | 0 | sa/relations.py:2006 x549; sa/relations.py:2035 x43 |
+| Relations.selectors_of:1545 | read | 0.09/0.12/0.00 | 0.13/0.21/0.02 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 400/0 | 6217/0 | 0 | 0 | sa/engine.py:1065 x197; sa/engine.py:1093 x171; sa/engine.py:1132 x32 |
+| Relations._add_role:1215 | no value | 0.09/0.22/0.02 | 0.13/0.32/0.05 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 1298/1298 | 31620/31620 | 0 | 0 | sa/relations.py:1518 x1125; sa/relations.py:1615 x138; sa/relations.py:933 x35 |
+| _own_term:776 | read | 0.08/0.09/0.01 | 0.13/0.14/0.02 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 701/0 | 18118/0 | 0 | 0 | sa/relations.py:1066 x701 |
+| Relations.__init__:796 | no value | 0.11/0.17/0.00 | 0.09/0.25/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 198/0 | 3018/0 | 0 | 0 | sa/engine.py:381 x198 |
+| glue_atoms:674 | read | 0.09/0.52/0.00 | 0.02/0.15/0.00 | 0.01/0.02/0.00 | 0.05/0.33/0.00 | 2295/0 | 17936/0 | 55/0 | 7586/0 | sa/scope.py:169 x1089; sa/engine.py:1775 x615; sa/engine.py:1196 x393 |
+| Relations._note_sides:1672 | no value | 0.06/0.17/0.01 | 0.11/0.58/0.01 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 436/436 | 11212/11212 | 0 | 0 | sa/relations.py:1061 x372; sa/relations.py:924 x38; sa/relations.py:1059 x26 |
+| relation_atom:518 | read | 0.06/1.59/0.00 | 0.09/3.02/0.00 | 0.01/4.07/0.00 | 0.00/0.00/0.00 | 1869/0 | 63570/0 | 36/0 | 0 | sa/relations.py:1504 x750; sa/relations.py:1508 x375; sa/relations.py:2004 x366 |
+| _key:465 | read | 0.04/0.82/0.75 | 0.12/1.08/0.89 | 0.00/4.05/3.97 | 0.00/0.00/0.00 | 1430/0 | 43994/0 | 24/0 | 0 | sa/relations.py:539 x1430 |
+| Relations._order_sides:1405 | read | 0.06/0.83/0.00 | 0.10/2.13/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 274/0 | 5546/0 | 0 | 0 | sa/relations.py:1027 x274 |
+| _under_apps:586 | read | 0.07/0.19/0.10 | 0.01/0.02/0.01 | 0.00/0.00/0.00 | 0.07/0.10/0.03 | 2715/0 | 2095/0 | 0 | 17015/0 | sa/relations.py:627 x2715 |
+| Relations._share:1602 | read | 0.02/1.24/0.00 | 0.11/1.99/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 506/0 | 8009/0 | 0 | 0 | sa/relations.py:961 x506 |
+| Relations._congruent:1642 | read | 0.01/0.01/0.00 | 0.10/0.22/0.11 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 210/0 | 8291/0 | 0 | 0 | sa/relations.py:1838 x210 |
+| _termwise:688 | read | 0.02/0.11/0.01 | 0.09/0.55/0.31 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 42/0 | 2904/0 | 0 | 0 | sa/relations.py:1386 x30; sa/relations.py:2027 x12 |
+| Relations._share.<locals>.<genexpr>:1605 | no value | 0.03/0.07/0.00 | 0.06/0.11/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 506/0 | 8009/0 | 0 | 0 | sa/sat/theory.py:211 x506 |
+| Relations._congruence_pairs:1873 | no value | 0.01/0.01/0.00 | 0.08/0.14/0.02 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 114/114 | 3430/3430 | 0 | 0 | sa/relations.py:1864 x114 |
+| Relations._closed_extended_real:1393 | read | 0.06/0.24/0.00 | 0.03/0.13/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 548/0 | 11092/0 | 0 | 0 | sa/relations.py:1412 x548 |
+| Relations._link_later:993 | no value | 0.04/0.19/0.01 | 0.05/0.24/0.01 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 914/914 | 17762/17762 | 0 | 0 | sa/relations.py:946 x600; sa/relations.py:957 x284; sa/relations.py:908 x30 |
+| under_of:622 | read | 0.06/0.24/0.00 | 0.00/0.02/0.00 | 0.00/0.00/0.00 | 0.02/0.13/0.00 | 1725/0 | 1253/0 | 0 | 6742/0 | sa/relations.py:662 x741; sa/engine.py:1836 x418; sa/relations.py:661 x348 |
+| _affine_strip:479 | read | 0.02/0.04/0.02 | 0.06/0.15/0.08 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 147/0 | 3281/0 | 0 | 0 | sa/relations.py:533 x147 |
+| glue_objects:2012 | read | 0.01/0.84/0.11 | 0.07/4.68/0.45 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 43/0 | 2542/0 | 0 | 0 | sa/engine.py:1663 x43 |
+| _guarded_adapters:1940 | read | 0.02/0.02/0.00 | 0.04/0.04/0.00 | 0.00/0.01/0.00 | 0.00/0.00/0.00 | 226/0 | 11684/0 | 12/0 | 0 | sa/relations.py:1999 x183; sa/relations.py:2034 x43 |
+| Relations.note_formula:887 | no value | 0.02/0.04/0.01 | 0.03/0.04/0.01 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 393/393 | 5564/5564 | 0 | 0 | sa/engine.py:1176 x393 |
+| Relations._eq_links:1343 | no value | 0.02/0.85/0.06 | 0.03/2.47/0.09 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 35/35 | 888/888 | 0 | 0 | sa/relations.py:932 x35 |
+| _termwise.<locals>.terms:699 | read | 0.01/0.08/0.00 | 0.04/0.13/0.01 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 126/0 | 8712/0 | 0 | 0 | sa/relations.py:704 x126 |
+| Relations.selectors_of.<locals>.<genexpr>:1563 | no value | 0.02/0.02/0.00 | 0.02/0.03/0.01 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 322/0 | 7392/0 | 0 | 0 | sa/relations.py:1563 x322 |
+| Relations._share_guard:1618 | read | 0.01/0.47/0.00 | 0.03/0.83/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 276/0 | 4890/0 | 0 | 0 | sa/relations.py:1615 x276 |
+| Relations._mention_number:976 | no value | 0.04/0.12/0.00 | 0.01/0.02/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 112/112 | 342/342 | 0 | 0 | sa/relations.py:955 x112 |
+| Relations._atom_var:1493 | read | 0.01/0.16/0.00 | 0.03/0.33/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 1263/138 | 30732/2445 | 0 | 0 | sa/relations.py:1506 x375; sa/relations.py:1507 x375; sa/relations.py:1512 x375 |
+| Relations.enqueue:884 | no value | 0.02/0.02/0.00 | 0.02/0.02/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 1501/1501 | 36397/36397 | 0 | 0 | sa/engine.py:726 x1501 |
+| Relations._xswitch:1866 | no value | 0.01/0.16/0.00 | 0.03/0.76/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 90/90 | 3513/3513 | 0 | 0 | sa/relations.py:1855 x50; sa/relations.py:1861 x40 |
+| _ext_atoms:470 | read | 0.01/0.01/0.00 | 0.03/0.03/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 15/0 | 2339/0 | 0 | 0 | sa/relations.py:552 x15 |
+| Relations._engage_transfer:1680 | no value | 0.01/0.06/0.00 | 0.03/0.16/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 35/35 | 911/911 | 0 | 0 | sa/relations.py:881 x35 |
+| _number_basis:713 | read | 0.01/0.06/0.00 | 0.01/0.01/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 46/0 | 992/0 | 0 | 0 | sa/relations.py:770 x46 |
+| Relations._eq_links.<locals>.emit:1378 | no value | 0.01/0.05/0.00 | 0.00/0.04/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 90/90 | 1778/1778 | 0 | 0 | sa/relations.py:1383 x30; sa/relations.py:1389 x30; sa/relations.py:1390 x30 |
+| Relations._atom_selector:1335 | read | 0.01/0.02/0.00 | 0.01/0.05/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 50/0 | 1827/0 | 0 | 0 | sa/relations.py:933 x35; sa/relations.py:1376 x15 |
+| Relations.wants_transfer:1534 | read | 0.00/0.07/0.00 | 0.02/0.11/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 352/0 | 6088/0 | 0 | 0 | sa/engine.py:1021 x327; sa/engine.py:1067 x25 |
+| _number_basis.<locals>.<genexpr>:762 | no value | 0.01/0.01/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 2/0 | 6/0 | 0 | 0 | sa/relations.py:762 x2 |
+| _constant_term:707 | read | 0.00/0.03/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 276/0 | 4890/0 | 0 | 0 | sa/relations.py:1609 x276 |
+| _number_facts:767 | read | 0.00/0.06/0.00 | 0.00/0.02/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 46/0 | 992/0 | 0 | 0 | sa/relations.py:1734 x46 |
+| closed_units.<locals>.<lambda>:416 | read | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 2/0 | 1/0 | 0 | 1/0 | sa/knowledge/templates/_common.py:352 x2 |
+| default_specs:435 | read | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 1/0 | 1/0 | 1/0 | 1/0 | sa/engine.py:1337 x1 |
+| with_closed_units:423 | read | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 1/0 | 1/0 | 1/0 | 1/0 | sa/engine.py:1341 x1 |
+| _number_basis.<locals>.closes:739 | read | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 14/0 | 41/0 | 0 | 0 | sa/relations.py:757 x12; sa/relations.py:759 x2 |
+
+### sa/knowledge/templates/_common.py
+
+| function:line | class | dev own/incl/under | fuzz own/incl/under | budget own/incl/under | wiring own/incl/under | dev calls/dropped | fuzz calls/dropped | budget calls/dropped | wiring calls/dropped | call sites (dev, else the first workload with calls) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| _unsubsumed:185 | read | 1.02/1.20/0.00 | 0.05/0.06/0.00 | 5.43/6.11/0.00 | 0.50/0.55/0.00 | 98/0 | 68/0 | 11/0 | 99/0 | sa/knowledge/templates/_common.py:267 x98 |
+| Pattern.__init__:236 | no value | 0.85/3.59/0.00 | 0.02/0.15/0.00 | 1.95/15.92/0.00 | 0.25/1.55/0.00 | 98/0 | 68/0 | 11/0 | 99/0 | sa/knowledge/templates/_common.py:332 x81; sa/knowledge/templates/_common.py:386 x17 |
+| Pattern.__init__.<locals>.<genexpr>:266 (3 defs share the samples) | no value | 0.22/0.22/0.00 | 0.01/0.01/0.00 | 0.97/0.98/0.00 | 0.25/0.25/0.00 | 2656/0 | 1771/0 | 374/0 | 3753/0 | sa/knowledge/templates/_common.py:266 x2656 |
+| Pattern.__init__.<locals>.<genexpr>:268 (3 defs share the samples) | no value | 0.22/0.22/0.00 | 0.01/0.01/0.00 | 0.97/0.98/0.00 | 0.25/0.25/0.00 | 2037/0 | 1296/0 | 364/0 | 3009/0 | sa/knowledge/templates/_common.py:268 x2037 |
+| Pattern.__init__.<locals>.<genexpr>:270 (3 defs share the samples) | no value | 0.22/0.22/0.00 | 0.01/0.01/0.00 | 0.97/0.98/0.00 | 0.25/0.25/0.00 | 2037/0 | 1296/0 | 364/0 | 3009/0 | sa/knowledge/templates/_common.py:270 x2037 |
+| resolve:121 | read | 0.40/0.85/0.00 | 0.01/0.04/0.00 | 0.61/0.86/0.00 | 0.18/0.30/0.00 | 81/0 | 60/0 | 10/0 | 97/0 | sa/knowledge/templates/_common.py:332 x81 |
+| _unsubsumed.<locals>.<genexpr>:193 (2 defs share the samples) | no value | 0.17/0.17/0.00 | 0.01/0.01/0.00 | 0.67/0.67/0.00 | 0.05/0.06/0.00 | 98/0 | 68/0 | 11/0 | 99/0 | sa/knowledge/templates/_common.py:193 x98 |
+| _unsubsumed.<locals>.<genexpr>:209 (2 defs share the samples) | no value | 0.17/0.17/0.00 | 0.01/0.01/0.00 | 0.67/0.67/0.00 | 0.05/0.06/0.00 | 8260/0 | 4852/0 | 52273/0 | 20920/0 | sa/knowledge/templates/_common.py:209 x8260 |
+| instantiate.<locals>.mk:167 | read | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.66/1.42/0.00 | 0.00/0.00/0.00 | 0 | 0 | 15124/0 | 475/0 | sa/knowledge/templates/_common.py:181 x15010; sa/knowledge/templates/_common.py:175 x114 |
+| facts:325 | read | 0.16/6.33/0.01 | 0.01/0.30/0.00 | 0.12/17.72/0.00 | 0.03/2.58/0.00 | 276/0 | 300/0 | 38/0 | 116/0 | sa/knowledge/templates/wiring.py:609 x168; sa/knowledge/templates/functions.py:73 x35; sa/knowledge/templates/core.py:187 x31 |
+| _resolve_lit:104 | read | 0.10/0.37/0.00 | 0.00/0.03/0.00 | 0.17/0.17/0.00 | 0.04/0.10/0.00 | 11453/0 | 6690/0 | 40544/0 | 25685/0 | sa/knowledge/templates/_common.py:127 x8898; sa/knowledge/templates/_common.py:136 x2555 |
+| const_value:83 | read | 0.19/0.41/0.22 | 0.00/0.02/0.02 | 0.00/0.08/0.08 | 0.02/0.08/0.05 | 5089/0 | 2560/0 | 40/0 | 6919/0 | sa/knowledge/templates/_common.py:107 x4605; sa/knowledge/templates/wiring.py:480 x256; sa/knowledge/templates/atoms.py:58 x228 |
+| resolve.<locals>.<genexpr>:155 | no value | 0.07/0.07/0.00 | 0.00/0.00/0.00 | 0.08/0.08/0.00 | 0.01/0.01/0.00 | 2028/0 | 1355/0 | 384/0 | 3275/0 | sa/knowledge/templates/_common.py:155 x2028 |
+| instantiate:162 | read | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.10/1.52/0.00 | 0.00/0.00/0.00 | 0 | 0 | 38/0 | 3/0 | sa/knowledge/templates/_common.py:302 x38 |
+| units:340 | read | 0.04/0.34/0.00 | 0.00/0.01/0.00 | 0.01/0.04/0.00 | 0.00/0.00/0.00 | 33/0 | 9/0 | 450/0 | 42/0 | sa/knowledge/templates/atoms.py:40 x15; sa/knowledge/templates/atoms.py:62 x12; sa/relations.py:416 x6 |
+| pattern_key:407 | read | 0.03/0.04/0.00 | 0.00/0.00/0.00 | 0.01/0.01/0.00 | 0.00/0.00/0.00 | 168/0 | 182/0 | 38/0 | 74/0 | sa/knowledge/templates/wiring.py:609 x168 |
+| consts_of:399 | read | 0.02/0.02/0.00 | 0.00/0.00/0.00 | 0.02/0.02/0.00 | 0.00/0.00/0.00 | 197/0 | 255/0 | 60/0 | 91/0 | sa/knowledge/templates/wiring.py:607 x168; sa/knowledge/templates/core.py:125 x29 |
+| Compiled.wide_formulas:299 | read | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.04/1.56/0.00 | 0.00/0.00/0.00 | 0 | 0 | 38/0 | 3/0 | sa/knowledge/templates/registry.py:271 x38 |
+| Rules.rule:66 | no value | 0.01/0.01/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.01/0.01/0.00 | 724/724 | 237/237 | 0 | 2113/2113 | sa/knowledge/templates/wiring.py:340 x413; sa/knowledge/templates/_rows_runtime.py:119 x205; sa/knowledge/templates/core.py:179 x86 |
+| Compiled.__init__:292 | no value | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.02/0.02/0.00 | 0.00/0.00/0.00 | 309/0 | 309/0 | 488/0 | 158/0 | sa/knowledge/templates/_common.py:337 x276; sa/knowledge/templates/_common.py:391 x33 |
+| pattern_key.<locals>.<genexpr>:408 | no value | 0.01/0.01/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 168/0 | 182/0 | 38/0 | 74/0 | sa/knowledge/templates/_common.py:408 x168 |
+| _signed:394 | read | 0.01/0.01/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 356/0 | 163/0 | 0 | 2/0 | sa/knowledge/templates/_common.py:355 x235; sa/knowledge/templates/_common.py:370 x81; sa/knowledge/templates/_common.py:371 x40 |
+| units.<locals>.<genexpr>:357 (2 defs share the samples) | no value | 0.01/0.01/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 40/0 | 17/0 | 0 | 0 | sa/knowledge/templates/_common.py:357 x40 |
+| units.<locals>.<genexpr>:371 (2 defs share the samples) | no value | 0.01/0.01/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 40/0 | 17/0 | 0 | 0 | sa/knowledge/templates/_common.py:371 x40 |
+| Rules.__init__:63 | no value | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 43/0 | 32/0 | 0 | 37/0 | sa/knowledge/templates/functions.py:69 x18; sa/knowledge/templates/core.py:171 x11; sa/knowledge/templates/core.py:106 x7 |
+| <module>:1 | no value | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 1/0 | 1/0 | 1/0 | 1/0 | <frozen x1 |
+| lits:55 | read | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 7/0 | 2/0 | 0 | 1/0 | sa/knowledge/templates/core.py:109 x7 |
+| Compiled:287 | no value | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 1/0 | 1/0 | 1/0 | 1/0 | sa/knowledge/templates/_common.py:287 x1 |
+| TemplateKeyError:280 | no value | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 1/0 | 1/0 | 1/0 | 1/0 | sa/knowledge/templates/_common.py:280 x1 |
+| Pattern:224 | no value | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 1/0 | 1/0 | 1/0 | 1/0 | sa/knowledge/templates/_common.py:224 x1 |
+| resolve.<locals>.<lambda>:150 | read 0 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 2028/2028 | 1355/1355 | 384/384 | 3275/3275 | sa/knowledge/templates/_common.py:150 x2028 |
+| const_key:50 | read | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 18/0 | 6/0 | 0 | 28/0 | sa/knowledge/templates/atoms.py:62 x12; sa/knowledge/templates/wiring.py:325 x5; sa/knowledge/templates/wiring.py:324 x1 |
+| Rules:59 | no value | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 1/0 | 1/0 | 1/0 | 1/0 | sa/knowledge/templates/_common.py:59 x1 |
+
+## (C) default: stored fields of the marked files' classes (computes / epochs / epochs read / uses ; queries with a write / with a use)
+
+### sa/sat/solver.py
+
+| class.field | class | dev c/e/er/u ; wq/rq | fuzz c/e/er/u ; wq/rq | budget c/e/er/u ; wq/rq | wiring c/e/er/u ; wq/rq | writers | readers (top 4) |
+|---|---|---|---|---|---|---|---|
+| BlockOwner.base | - | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 |  |  |
+| Solver._acache | read | 1184/1184/540/1201 ; 867/831 | 5484/5484/2892/5981 ; 2937/2912 | 17/17/3/17 ; 17/17 | 6885/6885/3382/6885 ; 5628/5508 | sa/sat/solver.py:1545 x1184; sa/sat/solver.py:442 x918 | sa/sat/solver.py:1530 x1201 |
+| Solver._act | read | 8197/802/211/17564 ; 867/133 | 119283/7334/6760/892959 ; 2937/2492 | 16266/14/0/0 ; 17/0 | 62656/3589/86/5085 ; 5628/86 | sa/sat/solver.py:411 x918 | sa/sat/solver.py:626 x8751; sa/sat/solver.py:557 [mut] x7279; sa/sat/solver.py:609 x7082; sa/sat/solver.py:659 x1731 |
+| Solver._assumptions | read | 1795/1795/1795/1795 ; 867/831 | 8223/8223/8223/8223 ; 2937/2819 | 26/26/26/26 ; 17/17 | 13521/13521/13521/13524 ; 5628/5508 | sa/sat/solver.py:2482 x1795; sa/sat/solver.py:2513 x1795; sa/sat/solver.py:426 x918 | sa/sat/solver.py:2355 x1795 |
+| Solver._cante | init only | 0/0/0/0 ; 867/0 | 0/0/0/0 ; 2937/0 | 0/0/0/0 ; 17/0 | 0/0/0/0 ; 5628/0 | sa/sat/solver.py:516 x918 |  |
+| Solver._cla_inc | read | 257/257/148/438 ; 867/132 | 7797/7794/5414/14464 ; 2937/2492 | 0/0/0/0 ; 17/0 | 133/133/53/163 ; 5628/83 | sa/sat/solver.py:424 x918; sa/sat/solver.py:2137 x257 | sa/sat/solver.py:670 x438; sa/sat/solver.py:2137 [aug] x257 |
+| Solver._clauses | read | 29261/2213/2213/7876 ; 867/867 | 367713/22067/21978/54456 ; 2937/2901 | 41223/142/142/351 ; 17/17 | 247049/14701/14694/49919 ; 5628/5627 | sa/sat/solver.py:419 x918 | sa/sat/solver.py:745 [mut] x29261; sa/sat/solver.py:942 x3298; sa/sat/solver.py:2484 x1795; sa/sat/solver.py:2501 x1729 |
+| Solver._conflict | read 0 | 66/53/0/0 ; 867/0 | 401/393/0/0 ; 2937/0 | 0/0/0/0 ; 17/0 | 78/64/0/0 ; 5628/0 | sa/sat/solver.py:2454 x1930; sa/sat/solver.py:446 x918; sa/sat/solver.py:2259 x66 |  |
+| Solver._cowner | init only | 0/0/0/0 ; 867/0 | 0/0/0/0 ; 2937/0 | 0/0/0/0 ; 17/0 | 0/0/0/0 ; 5628/0 | sa/sat/solver.py:514 x918 |  |
+| Solver._heap | init only | 0/0/0/38232 ; 867/867 | 0/0/0/1806277 ; 2937/2937 | 0/0/0/16249 ; 17/17 | 0/0/0/63649 ; 5628/5628 | sa/sat/solver.py:415 x918 | sa/sat/solver.py:647 x8893; sa/sat/solver.py:624 x8751; sa/sat/solver.py:565 x7279; sa/sat/solver.py:607 x7082 |
+| Solver._held | read | 3012/3012/2550/29152 ; 867/867 | 18559/18559/15993/171502 ; 2937/2937 | 40/40/32/35179 ; 17/17 | 18327/18327/15284/256683 ; 5628/5628 | sa/sat/solver.py:2479 x1795; sa/sat/solver.py:1810 x1751; sa/sat/solver.py:2510 x1713 | sa/sat/solver.py:700 x16693; sa/sat/solver.py:1507 x2999; sa/sat/solver.py:1399 x2681; sa/sat/solver.py:925 x2114 |
+| Solver._hpos | read | 8197/2697/2651/40918 ; 867/827 | 119283/38886/38850/1817373 ; 2937/2912 | 16266/1860/1860/3807 ; 17/17 | 62656/13125/13047/144388 ; 5628/5547 | sa/sat/solver.py:413 x918 | sa/sat/solver.py:648 x8893; sa/sat/solver.py:625 x8751; sa/sat/solver.py:567 [mut] x7279; sa/sat/solver.py:608 x7082 |
+| Solver._lazy | read | 17399/1466/1376/7735 ; 867/831 | 218646/5657/5550/105266 ; 2937/2819 | 22009/22/22/21418 ; 17/17 | 237933/10569/10512/155594 ; 5628/5508 | sa/sat/solver.py:492 x918 | sa/sat/solver.py:2278 x7735; sa/sat/solver.py:562 [mut] x7279; sa/sat/solver.py:1329 [mut] x5628; sa/sat/solver.py:1158 [mut] x2418 |
+| Solver._learnts | read | 657/331/331/8758 ; 867/831 | 37724/15017/14973/111899 ; 2937/2819 | 0/0/0/21426 ; 17/17 | 130/97/97/162694 ; 5628/5508 | sa/sat/solver.py:420 x918 | sa/sat/solver.py:2371 x8758; sa/sat/solver.py:2053 [mut] x271; sa/sat/solver.py:2128 [mut] x256; sa/sat/solver.py:2020 [mut] x130 |
+| Solver._level | read | 11455/6291/6291/56520 ; 867/867 | 138189/114502/114502/642828 ; 2937/2937 | 16266/15956/15956/62965 ; 17/17 | 65963/24075/24075/586967 ; 5628/5628 | sa/sat/solver.py:407 x918 | sa/sat/solver.py:710 x33612; sa/sat/solver.py:1613 x15266; sa/sat/solver.py:555 [mut] x7279; sa/sat/solver.py:788 x3090 |
+| Solver._max_learnts | init only | 0/0/0/10553 ; 867/831 | 0/0/0/120122 ; 2937/2819 | 0/0/0/21452 ; 17/17 | 0/0/0/176218 ; 5628/5508 | sa/sat/solver.py:2483 x1795; sa/sat/solver.py:425 x918 | sa/sat/solver.py:2371 x8758; sa/sat/solver.py:2483 x1795 |
+| Solver._mdict | init only | 0/0/0/0 ; 867/0 | 0/0/0/0 ; 2937/0 | 0/0/0/0 ; 17/0 | 0/0/0/0 ; 5628/0 | sa/sat/solver.py:2452 x1930; sa/sat/solver.py:430 x918 |  |
+| Solver._ment | read | 13825/10860/10860/24846 ; 867/867 | 173444/142988/142988/420778 ; 2937/2937 | 20048/18042/18042/39238 ; 17/17 | 188988/136221/136221/195553 ; 5628/5628 | sa/sat/solver.py:488 x918 | sa/sat/solver.py:1251 x22428; sa/sat/solver.py:561 [mut] x7279; sa/sat/solver.py:1330 [mut] x5628; sa/sat/solver.py:1136 x2418 |
+| Solver._mvals | read 0 | 1864/656/0/0 ; 867/0 | 7848/2654/0/0 ; 2937/0 | 26/14/0/0 ; 17/0 | 13446/3503/0/0 ; 5628/0 | sa/sat/solver.py:2452 x1930; sa/sat/solver.py:2499 x1729; sa/sat/solver.py:429 x918 |  |
+| Solver._n_conflicts | read 0 | 257/109/0/0 ; 867/0 | 7797/2380/0/0 ; 2937/0 | 0/0/0/0 ; 17/0 | 133/80/0/0 ; 5628/0 | sa/sat/solver.py:449 x918; sa/sat/solver.py:2110 x257 | sa/sat/solver.py:2110 [aug] x257 |
+| Solver._n_decisions | read 0 | 7735/656/0/0 ; 867/0 | 105266/2741/0/0 ; 2937/0 | 21418/14/0/0 ; 17/0 | 155594/3503/0/0 ; 5628/0 | sa/sat/solver.py:2393 x7735; sa/sat/solver.py:450 x918 | sa/sat/solver.py:2393 [aug] x7735 |
+| Solver._n_late | read 0 | 7/7/0/0 ; 867/0 | 7/7/0/0 ; 2937/0 | 0/0/0/0 ; 17/0 | 0/0/0/0 ; 5628/0 | sa/sat/solver.py:517 x918; sa/sat/solver.py:1368 x7 | sa/sat/solver.py:1368 [aug] x7 |
+| Solver._n_late_written | read 0 | 752/385/0/0 ; 867/0 | 4738/2154/0/0 ; 2937/0 | 99/12/0/0 ; 17/0 | 24553/2671/0/0 ; 5628/0 | sa/sat/solver.py:518 x918; sa/sat/solver.py:1383 x752 | sa/sat/solver.py:1383 [aug] x752 |
+| Solver._n_learned | read 0 | 257/109/0/0 ; 867/0 | 7797/2380/0/0 ; 2937/0 | 0/0/0/0 ; 17/0 | 133/80/0/0 ; 5628/0 | sa/sat/solver.py:451 x918; sa/sat/solver.py:2117 x257 | sa/sat/solver.py:2117 [aug] x257 |
+| Solver._n_props | read 0 | 15266/679/0/0 ; 867/0 | 177641/2837/0/0 ; 2937/0 | 21589/14/0/0 ; 17/0 | 234105/3553/0/0 ; 5628/0 | sa/sat/solver.py:1731 x15266; sa/sat/solver.py:448 x918 | sa/sat/solver.py:1731 [aug] x15266 |
+| Solver._n_reductions | init only | 0/0/0/3508 ; 867/831 | 0/0/0/16191 ; 2937/2819 | 0/0/0/50 ; 17/17 | 0/0/0/25660 ; 5628/5508 | sa/sat/solver.py:453 x918 | sa/sat/solver.py:2480 x1795; sa/sat/solver.py:2508 x1713 |
+| Solver._n_registered | read | 3285/308/308/2783 ; 867/831 | 94780/5508/5325/13057 ; 2937/2718 | 0/0/0/35 ; 17/17 | 0/0/0/21269 ; 5628/5508 | sa/sat/solver.py:1902 x3285; sa/sat/solver.py:532 x918 | sa/sat/solver.py:1902 [aug] x3285; sa/sat/solver.py:2503 x1729; sa/sat/solver.py:2570 x1054 |
+| Solver._n_restarts | read 0 | 1795/656/0/0 ; 867/0 | 8223/2741/0/0 ; 2937/0 | 26/14/0/0 ; 17/0 | 13524/3503/0/0 ; 5628/0 | sa/sat/solver.py:2492 x1795; sa/sat/solver.py:452 x918 | sa/sat/solver.py:2492 [aug] x1795 |
+| Solver._n_ring_hits | read 0 | 135/115/0/0 ; 867/0 | 26/26/0/0 ; 2937/0 | 0/0/0/0 ; 17/0 | 0/0/0/0 ; 5628/0 | sa/sat/solver.py:528 x918; sa/sat/solver.py:2464 x135 | sa/sat/solver.py:2464 [aug] x135 |
+| Solver._n_tdecisions | read 0 | 1/1/0/0 ; 867/0 | 34/31/0/0 ; 2937/0 | 0/0/0/0 ; 17/0 | 0/0/0/0 ; 5628/0 | sa/sat/solver.py:529 x918; sa/sat/solver.py:2079 x1 | sa/sat/solver.py:2079 [aug] x1 |
+| Solver._nvars | init only | 0/0/0/55246 ; 867/867 | 0/0/0/921664 ; 2937/2937 | 0/0/0/77544 ; 17/17 | 0/0/0/487282 ; 5628/5628 | sa/sat/solver.py:569 x7279; sa/sat/solver.py:422 x918 | sa/sat/solver.py:589 x20880; sa/sat/solver.py:914 x7324; sa/sat/solver.py:549 x7279; sa/sat/solver.py:2281 x7044 |
+| Solver._ok | init only | 0/0/0/64487 ; 867/867 | 0/0/0/890775 ; 2937/2937 | 0/0/0/80769 ; 17/17 | 0/0/0/477370 ; 5628/5628 | sa/sat/solver.py:421 x918 | sa/sat/solver.py:698 x33612; sa/sat/solver.py:687 x13877; sa/sat/solver.py:923 x3298; sa/sat/solver.py:1919 x3285 |
+| Solver._polarity | read | 8197/1103/885/7872 ; 867/612 | 119283/8115/8079/122881 ; 2937/2901 | 16266/22/21/21417 ; 17/16 | 62656/5597/5150/151223 ; 5628/4983 | sa/sat/solver.py:412 x918 | sa/sat/solver.py:558 [mut] x7279; sa/sat/solver.py:2287 x5429; sa/sat/solver.py:1813 x1751; sa/sat/solver.py:2289 x691 |
+| Solver._qhead | init only | 0/0/0/20243 ; 867/867 | 0/0/0/337994 ; 2937/2937 | 0/0/0/21589 ; 17/17 | 0/0/0/234105 ; 5628/5628 | sa/sat/solver.py:1730 x15266; sa/sat/solver.py:1838 x1751; sa/sat/solver.py:418 x918 | sa/sat/solver.py:1626 x15266; sa/sat/solver.py:1950 x4977 |
+| Solver._rb_base | read | 8197/7279/7279/44676 ; 867/867 | 119283/116150/116150/660341 ; 2937/2937 | 16266/16249/16249/61117 ; 17/17 | 62656/56838/56838/448109 ; 5628/5628 | sa/sat/solver.py:469 x918 | sa/sat/solver.py:1252 x22428; sa/sat/solver.py:1615 x15266; sa/sat/solver.py:560 [mut] x7279; sa/sat/solver.py:1292 x3298 |
+| Solver._rb_bases | read | 2418/1275/1272/2783 ; 867/831 | 16493/5595/5418/13057 ; 2937/2718 | 1961/20/20/35 ; 17/17 | 48945/10569/10512/21269 ; 5628/5508 | sa/sat/solver.py:523 x918 | sa/sat/solver.py:1163 [mut] x2418; sa/sat/solver.py:2503 x1729; sa/sat/solver.py:2568 x1054 |
+| Solver._rb_blocks | read 0 | 2418/652/0/0 ; 867/0 | 16493/2813/0/0 ; 2937/0 | 1961/14/0/0 ; 17/0 | 48945/3553/0/0 ; 5628/0 | sa/sat/solver.py:1162 x2418; sa/sat/solver.py:521 x918 | sa/sat/solver.py:1162 [aug] x2418 |
+| Solver._rb_cl | read | 5723/1665/1665/19000 ; 867/867 | 36142/7803/7803/212994 ; 2937/2937 | 2289/20/20/25293 ; 17/17 | 95601/13726/13726/289423 ; 5628/5628 | sa/sat/solver.py:484 x918 | sa/sat/solver.py:1623 x15266; sa/sat/solver.py:1161 [mut] x2418; sa/sat/solver.py:1278 [mut] x2387; sa/sat/solver.py:1339 x2143 |
+| Solver._rb_clauses | read | 918/918/887/5754 ; 867/867 | 3133/3133/3104/36119 ; 2937/2937 | 17/17/17/3939 ; 17/17 | 5818/5818/5818/103708 ; 5628/5628 | sa/sat/solver.py:519 x918; sa/sat/solver.py:1076 x918 | sa/sat/solver.py:1110 x2418; sa/sat/solver.py:1164 x2418; sa/sat/solver.py:1072 x918 |
+| Solver._rb_mask | read | 5731/1618/1618/17615 ; 867/867 | 36146/7498/7498/198047 ; 2937/2937 | 2289/20/20/21713 ; 17/17 | 95924/13415/13415/267599 ; 5628/5628 | sa/sat/solver.py:475 x918 | sa/sat/solver.py:1616 x15266; sa/sat/solver.py:1160 [mut] x2418; sa/sat/solver.py:1275 [mut] x2387; sa/sat/solver.py:1828 x1590 |
+| Solver._rb_ment | read | 5723/5723/5723/28953 ; 867/867 | 36142/36142/36142/287281 ; 2937/2937 | 2289/2289/2289/27931 ; 17/17 | 95574/95574/95574/460837 ; 5628/5628 | sa/sat/solver.py:476 x918 | sa/sat/solver.py:1617 x15266; sa/sat/solver.py:1291 x3298; sa/sat/solver.py:1264 x3166; sa/sat/solver.py:1134 x2418 |
+| Solver._rb_n | init only | 0/0/0/26727 ; 867/867 | 0/0/0/281478 ; 2937/2937 | 0/0/0/27622 ; 17/17 | 0/0/0/428183 ; 5628/5628 | sa/sat/solver.py:520 x918; sa/sat/solver.py:1077 x918 | sa/sat/solver.py:1608 x15266; sa/sat/solver.py:1327 x5628; sa/sat/solver.py:1293 x3298; sa/sat/solver.py:1119 x2418 |
+| Solver._rb_nclauses | read | 2418/1275/1272/1795 ; 867/831 | 16493/5604/5519/8223 ; 2937/2819 | 1961/20/20/26 ; 17/17 | 48945/10569/10512/13524 ; 5628/5508 | sa/sat/solver.py:1164 x2418; sa/sat/solver.py:522 x918 | sa/sat/solver.py:1164 [aug] x2418; sa/sat/solver.py:2484 x1795 |
+| Solver._rb_saved | read | 3305/1517/1517/15266 ; 867/867 | 19649/7498/7498/177641 ; 2937/2937 | 328/20/20/21589 ; 17/17 | 46629/12727/12727/234105 ; 5628/5628 | sa/sat/solver.py:483 x918 | sa/sat/solver.py:1621 x15266; sa/sat/solver.py:1277 [mut] x2387 |
+| Solver._rb_ulim | read | 1751/1751/1295/4812 ; 867/831 | 21336/21336/18534/37926 ; 2937/2912 | 25/25/12/68 ; 17/17 | 9050/9050/6023/29459 ; 5628/5508 | sa/sat/solver.py:486 x918 | sa/sat/solver.py:2358 x1795; sa/sat/solver.py:1826 x1751; sa/sat/solver.py:1835 [mut] x1751; sa/sat/solver.py:1562 x1266 |
+| Solver._rb_undo | init only | 0/0/0/20078 ; 867/867 | 0/0/0/215567 ; 2937/2937 | 0/0/0/21657 ; 17/17 | 0/0/0/263564 ; 5628/5628 | sa/sat/solver.py:485 x918 | sa/sat/solver.py:1622 x15266; sa/sat/solver.py:2359 x1795; sa/sat/solver.py:1825 x1751; sa/sat/solver.py:1563 x1266 |
+| Solver._rbc | read | 918/918/918/27704 ; 867/867 | 3133/3133/3133/278617 ; 2937/2937 | 17/17/17/29491 ; 17/17 | 5818/5818/5818/511531 ; 5628/5628 | sa/sat/solver.py:470 x918; sa/sat/solver.py:1078 x918 | sa/sat/solver.py:1618 x15266; sa/sat/solver.py:1328 x5628; sa/sat/solver.py:1157 x2418; sa/sat/solver.py:1167 x2418 |
+| Solver._reason | read | 12621/3076/3076/19402 ; 867/867 | 169004/37543/37543/207066 ; 2937/2937 | 16276/48/48/21731 ; 17/17 | 89618/35264/35264/279299 ; 5628/5628 | sa/sat/solver.py:410 x918 | sa/sat/solver.py:1614 x15266; sa/sat/solver.py:556 [mut] x7279; sa/sat/solver.py:959 [mut] x2546; sa/sat/solver.py:2354 x1795 |
+| Solver._ring | init only | 0/0/0/4713 ; 867/831 | 0/0/0/21306 ; 2937/2819 | 0/0/0/61 ; 17/17 | 0/0/0/34793 ; 5628/5508 | sa/sat/solver.py:527 x918 | sa/sat/solver.py:2455 x1930; sa/sat/solver.py:2500 x1729; sa/sat/solver.py:2571 x1054 |
+| Solver._scan | init only | 0/0/0/7735 ; 867/831 | 0/0/0/105266 ; 2937/2819 | 0/0/0/21418 ; 17/17 | 0/0/0/155594 ; 5628/5508 | sa/sat/solver.py:2286 x5429; sa/sat/solver.py:2481 x1795; sa/sat/solver.py:456 x918 | sa/sat/solver.py:2279 x7735 |
+| Solver._seen | minority | 8197/750/156/323 ; 867/133 | 119283/4506/3813/8097 ; 2937/2492 | 16266/14/0/0 ; 17/0 | 62656/3598/97/209 ; 5628/97 | sa/sat/solver.py:414 x918 | sa/sat/solver.py:559 [mut] x7279; sa/sat/solver.py:2148 x257; sa/sat/solver.py:2235 x66 |
+| Solver._stamp | read | 45434/1748/1283/3668 ; 867/831 | 619475/11330/8864/20329 ; 2937/2912 | 47256/29/17/51 ; 17/17 | 437753/9422/6885/20655 ; 5628/5508 | sa/sat/solver.py:726 x29716; sa/sat/solver.py:1337 x5628; sa/sat/solver.py:971 x3298 | sa/sat/solver.py:726 [aug] x29716; sa/sat/solver.py:1337 [aug] x5628; sa/sat/solver.py:971 [aug] x3298; sa/sat/solver.py:1911 [aug] x3285 |
+| Solver._tdecides | read | 35/35/35/1838 ; 867/831 | 911/909/847/11266 ; 2937/2718 | 0/0/0/26 ; 17/17 | 0/0/0/13446 ; 5628/5508 | sa/sat/solver.py:463 x918 | sa/sat/solver.py:2395 x1757; sa/sat/solver.py:2070 x81; sa/sat/solver.py:1868 [mut] x35 |
+| Solver._thead | init only | 0/0/0/5987 ; 867/198 | 0/0/0/186442 ; 2937/2860 | 0/0/0/0 ; 17/0 | 0/0/0/0 ; 5628/0 | sa/sat/solver.py:1974 x4121; sa/sat/solver.py:461 x918; sa/sat/solver.py:1841 x848 | sa/sat/solver.py:1957 x5080; sa/sat/solver.py:1840 x893; sa/sat/solver.py:1923 x14 |
+| Solver._theories | read | 431/431/431/22693 ; 867/867 | 6940/6940/6940/311872 ; 2937/2937 | 0/0/0/310 ; 17/17 | 0/0/0/135450 ; 5628/5628 | sa/sat/solver.py:459 x918 | sa/sat/solver.py:1874 x3671; sa/sat/solver.py:1891 x3285; sa/sat/solver.py:1843 x3031; sa/sat/solver.py:2356 x1795 |
+| Solver._tmap | read | 3285/3285/3285/7509 ; 867/198 | 94780/94780/94780/246152 ; 2937/2860 | 0/0/0/0 ; 17/0 | 0/0/0/0 ; 5628/0 | sa/sat/solver.py:460 x918 | sa/sat/solver.py:1961 x4224; sa/sat/solver.py:1903 x3285; sa/sat/solver.py:1905 [mut] x3285 |
+| Solver._tmodels | read | 451/430/407/1729 ; 867/831 | 7633/7622/7610/7822 ; 2937/2718 | 0/0/0/26 ; 17/17 | 0/0/0/13446 ; 5628/5508 | sa/sat/solver.py:2453 x1930; sa/sat/solver.py:464 x918; sa/sat/solver.py:2102 x406 | sa/sat/solver.py:2504 x1729 |
+| Solver._tpending | init only | 0/0/0/922 ; 867/198 | 0/0/0/15379 ; 2937/2860 | 0/0/0/0 ; 17/0 | 0/0/0/0 ; 5628/0 | sa/sat/solver.py:1960 x4224; sa/sat/solver.py:1918 x3285; sa/sat/solver.py:465 x918 | sa/sat/solver.py:1958 x922 |
+| Solver._tprops | read | 431/214/214/4121 ; 867/198 | 6940/3022/3022/146557 ; 2937/2860 | 0/0/0/0 ; 17/0 | 0/0/0/0 ; 5628/0 | sa/sat/solver.py:462 x918 | sa/sat/solver.py:1975 x4121; sa/sat/solver.py:1865 [mut] x431 |
+| Solver._trail | read | 4424/1998/1998/36478 ; 867/867 | 49721/33171/33171/579470 ; 2937/2937 | 10/10/10/21835 ; 17/17 | 26962/25050/25050/320766 ; 5628/5628 | sa/sat/solver.py:416 x918 | sa/sat/solver.py:1612 x15266; sa/sat/solver.py:1956 x5080; sa/sat/solver.py:1950 x4977; sa/sat/solver.py:962 [mut] x2546 |
+| Solver._trail_lim | init only | 0/0/0/118827 ; 867/867 | 0/0/0/1321670 ; 2937/2937 | 0/0/0/110413 ; 17/17 | 0/0/0/1101651 ; 5628/5628 | sa/sat/solver.py:417 x918 | sa/sat/solver.py:700 x33612; sa/sat/solver.py:750 x29261; sa/sat/solver.py:1627 x15266; sa/sat/solver.py:1338 x5628 |
+| Solver._uid | read | 10239/9991/9566/15266 ; 867/867 | 141049/138600/136017/177641 ; 2937/2937 | 21441/21441/21428/21589 ; 17/17 | 165654/164411/161398/234105 ; 5628/5628 | sa/sat/solver.py:2408 x6936; sa/sat/solver.py:1836 x1751; sa/sat/solver.py:1580 x1437 | sa/sat/solver.py:1624 x15266; sa/sat/solver.py:2408 [aug] x6936; sa/sat/solver.py:1836 [aug] x1751; sa/sat/solver.py:1580 [aug] x1437 |
+| Solver._uowner | init only | 0/0/0/0 ; 867/0 | 0/0/0/0 ; 2937/0 | 0/0/0/0 ; 17/0 | 0/0/0/0 ; 5628/0 | sa/sat/solver.py:515 x918 |  |
+| Solver._val | read | 8711/7397/7397/90270 ; 867/867 | 134877/120957/120957/1007124 ; 2937/2937 | 16266/16249/16249/121555 ; 17/17 | 62922/56971/56971/972196 ; 5628/5628 | sa/sat/solver.py:404 x918 | sa/sat/solver.py:709 x33612; sa/sat/solver.py:773 x15541; sa/sat/solver.py:1610 x15266; sa/sat/solver.py:2277 x7735 |
+| Solver._var_inc | read | 257/257/148/1731 ; 867/133 | 7797/7797/5417/48857 ; 2937/2492 | 0/0/0/0 ; 17/0 | 133/133/53/1189 ; 5628/86 | sa/sat/solver.py:423 x918; sa/sat/solver.py:2136 x257 | sa/sat/solver.py:660 x1731; sa/sat/solver.py:2136 [aug] x257 |
+| Solver._watches | read | 9511/6000/6000/47825 ; 867/867 | 194731/118243/118201/578530 ; 2937/2937 | 16266/16100/16100/63102 ; 17/17 | 62916/23753/23753/496280 ; 5628/5628 | sa/sat/solver.py:405 x918 | sa/sat/solver.py:774 x15541; sa/sat/solver.py:1611 x15266; sa/sat/solver.py:753 x13720; sa/sat/solver.py:554 [mut] x7279 |
+| Solver._witness | minority | 1864/841/344/344 ; 867/344 | 7848/2765/115/115 ; 2937/115 | 26/18/9/9 ; 17/9 | 13446/6006/2503/2503 ; 5628/2503 | sa/sat/solver.py:725 x29716; sa/sat/solver.py:970 x3298; sa/sat/solver.py:1910 x3285 | sa/sat/solver.py:2651 x344 |
+| Solver.owner | read | 918/912/888/33014 ; 867/838 | 3133/3133/3126/409273 ; 2937/2932 | 17/17/17/41513 ; 17/17 | 5818/5818/5805/262343 ; 5628/5615 | sa/sat/solver.py:513 x918 | sa/sat/solver.py:719 x29716; sa/sat/solver.py:943 x3298 |
+| Solver.track_owners | init only | 0/0/0/0 ; 867/0 | 0/0/0/0 ; 2937/0 | 0/0/0/0 ; 17/0 | 0/0/0/23 ; 5628/18 | sa/sat/solver.py:512 x918; sa/engine.py:314 x918 |  |
+| _BlockClosure.all | init only | 0/0/0/1500 ; 1/278 | 0/0/0/6001 ; 1/936 | 0/0/0/29 ; 1/7 | 0/0/0/3970 ; 1/982 | sa/sat/solver.py:226 x1 | sa/sat/solver.py:284 x1500 |
+| _BlockClosure.bits | read | 400/400/400/18361 ; 1/867 | 645/645/645/193431 ; 1/2937 | 18/18/18/21915 ; 1/17 | 624/624/624/308993 ; 1/5628 | sa/sat/solver.py:235 x1 | sa/sat/solver.py:1625 x15266; sa/sat/solver.py:251 x2695; sa/sat/solver.py:260 x400; sa/sat/solver.py:262 [mut] x400 |
+| _BlockClosure.cls | read | 294/294/294/1500 ; 1/278 | 404/404/404/6001 ; 1/936 | 23/23/22/29 ; 1/7 | 383/383/383/3970 ; 1/982 | sa/sat/solver.py:227 x1 | sa/sat/solver.py:290 x1500; sa/sat/solver.py:300 [mut] x294 |
+| _BlockClosure.expl | init only | 0/0/0/303 ; 1/105 | 0/0/0/4904 ; 1/1788 | 0/0/0/0 ; 1/0 | 0/0/0/707 ; 1/96 | sa/sat/solver.py:229 x1 | sa/sat/solver.py:319 x250; sa/sat/solver.py:355 x53 |
+| _BlockClosure.fmemo | read | 209/209/209/8255 ; 1/828 | 99/99/99/70753 ; 1/2912 | 11/11/11/5754 ; 1/17 | 281/281/281/175558 ; 1/5628 | sa/sat/solver.py:215 x1 | sa/sat/solver.py:240 x8046; sa/sat/solver.py:245 x209; sa/sat/solver.py:247 [mut] x209 |
+| _BlockClosure.memo | init only | 0/0/0/19024 ; 1/867 | 0/0/0/194387 ; 1/2937 | 0/0/0/21745 ; 1/17 | 0/0/0/266623 ; 1/5628 | sa/sat/solver.py:228 x1 | sa/sat/solver.py:1619 x15266; sa/sat/solver.py:280 x2258; sa/sat/solver.py:301 x1500 |
+| _BlockClosure.models | read | 1/1/1/2786 ; 1/828 | 1/1/1/17152 ; 1/2912 | 1/1/1/1984 ; 1/17 | 1/1/1/49413 ; 1/5628 | sa/sat/solver.py:216 x1 | sa/sat/solver.py:1167 x2418; sa/sat/solver.py:294 x294; sa/sat/solver.py:325 x47; sa/sat/solver.py:309 x21 |
+| _BlockClosure.msets | read | 1/1/1/1500 ; 1/278 | 1/1/1/6001 ; 1/936 | 1/1/1/29 ; 1/7 | 1/1/1/3970 ; 1/982 | sa/sat/solver.py:224 x1 | sa/sat/solver.py:283 x1500 |
+| _BlockClosure.n | init only | 0/0/0/215 ; 1/141 | 0/0/0/100 ; 1/48 | 0/0/0/11 ; 1/6 | 0/0/0/284 ; 1/246 | sa/sat/solver.py:214 x1 | sa/sat/solver.py:242 x209; sa/sat/solver.py:273 x6 |
+| _BlockClosure.values | read | 6/6/6/21 ; 1/21 | 1/1/1/3 ; 1/3 | 0/0/0/0 ; 1/0 | 3/3/3/8 ; 1/8 | sa/sat/solver.py:232 x1 | sa/sat/solver.py:271 x21; sa/sat/solver.py:273 [mut] x6 |
+| _BlockClosure.vmemo | read | 21/21/20/130 ; 1/104 | 3/3/2/6 ; 1/3 | 0/0/0/0 ; 1/0 | 8/8/8/3333 ; 1/1121 | sa/sat/solver.py:233 x1 | sa/sat/solver.py:268 x109; sa/sat/solver.py:274 x21; sa/sat/solver.py:276 [mut] x21 |
+
+### sa/engine.py
+
+| class.field | class | dev c/e/er/u ; wq/rq | fuzz c/e/er/u ; wq/rq | budget c/e/er/u ; wq/rq | wiring c/e/er/u ; wq/rq | writers | readers (top 4) |
+|---|---|---|---|---|---|---|---|
+| AnswerMemo.maxsize | init only | 0/0/0/1818 ; 1/1221 | 0/0/0/5743 ; 1/2985 | 0/0/0/27 ; 1/20 | 0/0/0/8965 ; 1/6512 | sa/engine.py:285 x2 | sa/engine.py:288 x1818 |
+| DictCache._epoch | init only | 0/0/0/2 ; 1/1 | 0/0/0/2 ; 1/1 | 0/0/0/2 ; 1/1 | 0/0/0/2 ; 1/1 | sa/engine.py:245 x2; sa/engine.py:259 x2 | sa/engine.py:256 x2 |
+| DictCache._settings | read | 2/2/2/439 ; 1/379 | 2/2/2/836 ; 1/743 | 2/2/1/4 ; 1/2 | 2/2/1/1362 ; 1/1360 | sa/engine.py:248 x2; sa/engine.py:260 x2 | sa/engine.py:2039 x433; sa/engine.py:256 x2; sa/engine.py:2079 x2; sa/engine.py:2200 x2 |
+| DictCache.maxsize | init only | 0/0/0/16 ; 1/16 | 0/0/0/12 ; 1/12 | 0/0/0/0 ; 1/0 | 0/0/0/20 ; 1/20 | sa/engine.py:243 x2 | sa/engine.py:272 x16 |
+| DictCache.store | read | 16/16/16/516 ; 1/378 | 12/12/12/903 ; 1/743 | 0/0/0/0 ; 1/0 | 20/20/20/1503 ; 1/1360 | sa/engine.py:242 x2 | sa/engine.py:263 x435; sa/engine.py:270 x65; sa/engine.py:272 x16; sa/engine.py:274 [mut] x16 |
+| Engine._cones | read | 1/1/1/1333 ; 1/800 | 1/1/1/24925 ; 1/2892 | 1/1/1/1471 ; 1/26 | 1/1/1/2790 ; 1/2118 | sa/engine.py:1375 x1 | sa/engine.py:1714 x900; sa/engine.py:2048 x431; sa/engine.py:2096 x2; sa/engine.py:1636 [mut] x1 |
+| Engine._constructing | init only | 0/0/0/3137 ; 1/1061 | 0/0/0/17471 ; 1/2965 | 0/0/0/2451 ; 1/23 | 0/0/0/50440 ; 1/6174 | sa/engine.py:1368 x1 | sa/engine.py:564 x2482; sa/engine.py:2045 x431; sa/engine.py:1683 x222; sa/engine.py:2094 x2 |
+| Engine._context_sessions | read 0 | 1/1/0/0 ; 1/0 | 1/1/0/0 ; 1/0 | 1/1/0/0 ; 1/0 | 1/1/0/0 ; 1/0 | sa/engine.py:1367 x1 |  |
+| Engine._discovery_budget | init only | 0/0/0/1835 ; 1/803 | 0/0/0/14273 ; 1/2874 | 0/0/0/1023 ; 1/27 | 0/0/0/6006 ; 1/4884 | sa/engine.py:1354 x1 | sa/engine.py:1855 x776; sa/engine.py:1793 x615; sa/engine.py:1718 x222; sa/engine.py:1673 x222 |
+| Engine._epoch | init only | 0/0/0/4040 ; 1/1985 | 0/0/0/9735 ; 1/3000 | 0/0/0/74 ; 1/28 | 0/0/0/17693 ; 1/6512 | sa/engine.py:1394 x1; sa/engine.py:1609 x1 | sa/sympy_api.py:481 x1985; sa/engine.py:2231 x776; sa/engine.py:1890 x776; sa/engine.py:2039 x433 |
+| Engine._extensions | read | 1/1/1/4779 ; 1/1024 | 1/1/1/28177 ; 1/2963 | 1/1/1/2487 ; 1/26 | 1/1/1/59236 ; 1/5966 | sa/engine.py:1347 x1 | sa/engine.py:581 x2482; sa/engine.py:1453 x989; sa/engine.py:1946 x833; sa/engine.py:1658 x271 |
+| Engine._failed | init only | 0/0/0/833 ; 1/791 | 0/0/0/2952 ; 1/2798 | 0/0/0/16 ; 1/16 | 0/0/0/5004 ; 1/4814 | sa/engine.py:1382 x1 | sa/engine.py:1908 x833 |
+| Engine._glue_adapters | read | 1/1/1/181 ; 1/129 | 1/1/1/6849 ; 1/2761 | 1/1/1/7 ; 1/6 | 1/1/0/0 ; 1/0 | sa/engine.py:1379 x1 | sa/engine.py:1777 x138; sa/engine.py:1663 x43; sa/engine.py:1638 [mut] x1 |
+| Engine._kids | read | 1/1/1/936 ; 1/215 | 1/1/1/33036 ; 1/2688 | 1/1/1/6024 ; 1/16 | 1/1/1/795 ; 1/73 | sa/engine.py:1374 x1 | sa/engine.py:1652 x936; sa/engine.py:1635 [mut] x1 |
+| Engine._qcones | read | 1/1/1/3232 ; 1/792 | 1/1/1/11798 ; 1/2854 | 1/1/1/111 ; 1/26 | 1/1/1/19638 ; 1/4814 | sa/engine.py:1376 x1 | sa/engine.py:1767 x3232; sa/engine.py:1637 [mut] x1 |
+| Engine._relation_specs | read | 1/1/1/6608 ; 1/1107 | 1/1/1/72566 ; 1/2986 | 1/1/1/139 ; 1/28 | 1/1/1/23146 ; 1/6174 | sa/engine.py:1342 x1 | sa/engine.py:1214 x1611; sa/engine.py:712 x1501; sa/engine.py:1468 x1212; sa/engine.py:1841 x840 |
+| Engine._relevance | init only | 0/0/0/989 ; 1/989 | 0/0/0/2938 ; 1/2938 | 0/0/0/28 ; 1/28 | 0/0/0/5888 ; 1/5888 | sa/engine.py:1361 x1 | sa/engine.py:1536 x989 |
+| Engine._settings_key | read | 1/1/1/439 ; 1/379 | 1/1/1/836 ; 1/743 | 1/1/1/4 ; 1/2 | 1/1/1/1362 ; 1/1360 | sa/engine.py:1399 x1 | sa/engine.py:2039 x433; sa/engine.py:2079 x2; sa/engine.py:2200 x2; sa/engine.py:1610 x1 |
+| Engine._templates | read | 1/1/1/1 ; 1/1 | 1/1/1/1 ; 1/1 | 1/1/1/1 ; 1/1 | 1/1/1/1 ; 1/1 | sa/engine.py:1343 x1 | sa/engine.py:1618 x1 |
+| Engine._transfer | init only | 0/0/0/36 ; 1/36 | 0/0/0/912 ; 1/909 | 0/0/0/1 ; 1/1 | 0/0/0/1 ; 1/1 | sa/engine.py:1355 x1 | sa/engine.py:1495 x35; sa/engine.py:1618 x1 |
+| Engine._uninterpreted | read | 1/1/1/394 ; 1/199 | 1/1/1/5565 ; 1/2860 | 1/1/1/1 ; 1/1 | 1/1/1/1 ; 1/1 | sa/engine.py:1356 x1 | sa/engine.py:1508 x393; sa/engine.py:1618 x1 |
+| Engine._verdict | init only | 0/0/0/1673 ; 1/792 | 0/0/0/6039 ; 1/2825 | 0/0/0/32 ; 1/16 | 0/0/0/10009 ; 1/4814 | sa/engine.py:1386 x1 | sa/engine.py:1919 x833; sa/engine.py:1892 x776; sa/engine.py:1993 x64 |
+| Engine._writeback | read | 1/1/1/65 ; 1/44 | 1/1/1/102 ; 1/30 | 1/1/0/0 ; 1/0 | 1/1/1/123 ; 1/123 | sa/engine.py:1357 x1 | sa/engine.py:2195 x64; sa/engine.py:2063 x1 |
+| Engine._xbasis | init only | 0/0/0/46 ; 1/35 | 0/0/0/992 ; 1/908 | 0/0/0/0 ; 1/0 | 0/0/0/0 ; 1/0 | sa/engine.py:1391 x1 | sa/relations.py:726 x46 |
+| Engine.answers | read | 1/1/1/2568 ; 1/1985 | 1/1/1/4203 ; 1/3000 | 1/1/1/28 ; 1/28 | 1/1/1/9098 ; 1/6512 | sa/engine.py:1360 x1 | sa/sympy_api.py:480 x1985; sa/sympy_api.py:592 x583 |
+| Engine.cache | read | 1/1/1/953 ; 1/379 | 1/1/1/1630 ; 1/743 | 1/1/1/3 ; 1/2 | 1/1/1/3535 ; 1/1360 | sa/engine.py:1349 x1 | sa/engine.py:2039 x433; sa/engine.py:2053 x431; sa/engine.py:2070 x81; sa/engine.py:2079 x2 |
+| Engine.clause_templates | read | 1/1/1/5408 ; 1/863 | 1/1/1/33454 ; 1/2930 | 1/1/1/4898 ; 1/22 | 1/1/1/98160 ; 1/5628 | sa/engine.py:1346 x1 | sa/engine.py:577 x2482; sa/engine.py:578 x2482; sa/engine.py:1688 x222; sa/engine.py:1689 x222 |
+| Engine.custom_cache | read | 1/1/1/7 ; 1/3 | 1/1/1/136 ; 1/46 | 1/1/1/1 ; 1/1 | 1/1/1/1 ; 1/1 | sa/engine.py:1350 x1 | sa/engine.py:2200 x2; sa/engine.py:2205 x2; sa/engine.py:2215 x2; sa/engine.py:1611 x1 |
+| Engine.last_budget_limited | init only | 0/0/0/1673 ; 1985/1221 | 0/0/0/3977 ; 3000/2791 | 0/0/0/28 ; 28/28 | 0/0/0/8760 ; 6512/6512 | sa/engine.py:1442 x3206; sa/engine.py:2235 x776; sa/engine.py:2296 x776 | sa/sympy_api.py:488 x1221; sa/sympy_api.py:599 x452 |
+| Engine.memos | read 0 | 1/1/0/0 ; 1/0 | 1/1/0/0 ; 1/0 | 1/1/0/0 ; 1/0 | 1/1/0/0 ; 1/0 | sa/engine.py:1396 x1 |  |
+| Engine.splits | read | 1/1/1/1093 ; 1/989 | 1/1/1/2938 ; 1/2938 | 1/1/1/19 ; 1/19 | 1/1/1/5382 ; 1/5152 | sa/engine.py:1364 x1 | sa/sympy_api.py:949 x989; sa/sympy_api.py:1087 x104 |
+| Engine.stats | read 0 | 5298/1/0/0 ; 1/0 | 16374/1/0/0 ; 1/0 | 83/1/0/0 ; 1/0 | 26408/1/0/0 ; 1/0 | sa/engine.py:1405 x1 | sa/engine.py:1416 [mut] x918; sa/engine.py:1424 [mut] x895; sa/engine.py:1940 [mut] x833; sa/engine.py:2233 [mut] x776 |
+| Session._a_all | read | 196/196/195/393 ; 867/198 | 2933/2933/2590/5564 ; 2937/2860 | 0/0/0/0 ; 17/0 | 0/0/0/0 ; 5628/0 | sa/engine.py:353 x918; sa/engine.py:943 x833; sa/engine.py:1006 x198 | sa/engine.py:1001 x393 |
+| Session._a_atoms | read | 164/164/164/393 ; 867/198 | 2919/2919/2919/5564 ; 2937/2860 | 0/0/0/0 ; 17/0 | 0/0/0/0 ; 5628/0 | sa/engine.py:354 x918; sa/engine.py:1007 x198 | sa/engine.py:1008 x393 |
+| Session._a_raw | read | 833/833/833/2082 ; 867/793 | 2952/2952/2952/9022 ; 2937/2866 | 16/16/16/32 ; 17/16 | 5004/5004/5004/11006 ; 5628/4814 | sa/engine.py:339 x918; sa/engine.py:940 x833 | sa/engine.py:941 x833; sa/engine.py:951 x833; sa/engine.py:1195 x218; sa/engine.py:1006 x198 |
+| Session._a_under | init only | 0/0/0/393 ; 867/211 | 0/0/0/327 ; 2937/99 | 0/0/0/0 ; 17/0 | 0/0/0/1622 ; 5628/998 | sa/engine.py:341 x918; sa/engine.py:942 x833; sa/engine.py:1195 x218 | sa/engine.py:1193 x393 |
+| Session._a_zs | read | 80/80/80/2201 ; 867/793 | 29/29/29/13797 ; 2937/2866 | 0/0/0/29 ; 17/17 | 624/624/624/9818 ; 5628/4814 | sa/engine.py:340 x918; sa/engine.py:941 x833 | sa/engine.py:1190 x2201 |
+| Session._dv | read | 886/886/854/1694 ; 867/198 | 19336/19336/19276/65376 ; 2937/2853 | 1/1/0/1 ; 17/1 | 0/0/0/0 ; 5628/0 | sa/engine.py:333 x918 | sa/engine.py:451 x1694; sa/engine.py:457 [mut] x886 |
+| Session._dv_node | init only | 0/0/0/2299 ; 867/755 | 0/0/0/5525 ; 2937/2302 | 0/0/0/197 ; 17/17 | 0/0/0/70807 ; 5628/4814 | sa/engine.py:334 x918 | sa/engine.py:493 x2299 |
+| Session._groups | read | 164/164/163/391 ; 867/196 | 2919/2919/2573/5479 ; 2937/2792 | 0/0/0/0 ; 17/0 | 0/0/0/0 ; 5628/0 | sa/engine.py:350 x918 | sa/engine.py:1083 x327; sa/engine.py:1086 [mut] x164; sa/engine.py:1127 x32; sa/engine.py:1061 x32 |
+| Session._link_pending | init only | 0/0/0/1030 ; 867/793 | 0/0/0/5389 ; 2937/2672 | 0/0/0/16 ; 17/16 | 0/0/0/5004 ; 5628/4814 | sa/engine.py:362 x918; sa/engine.py:969 x32; sa/engine.py:979 x32 | sa/engine.py:978 x833; sa/engine.py:1000 x197 |
+| Session._neg_shared | init only | 0/0/0/0 ; 867/0 | 0/0/0/0 ; 2937/0 | 0/0/0/0 ; 17/0 | 0/0/0/0 ; 5628/0 | sa/engine.py:337 x918; sa/engine.py:951 x833 |  |
+| Session.assumption_formula | minority | 833/559/32/32 ; 867/32 | 2952/2563/14/14 ; 2937/14 | 16/12/0/0 ; 17/0 | 5004/3429/0/0 ; 5628/0 | sa/engine.py:338 x918; sa/engine.py:939 x833 | sa/engine.py:980 x32 |
+| Session.base | read | 2482/2482/2445/16319 ; 867/863 | 16537/16537/16537/293752 ; 2937/2930 | 1961/1961/1955/4104 ; 17/17 | 48945/48945/48408/139149 ; 5628/5628 | sa/engine.py:319 x918 | sa/engine.py:555 x7950; sa/engine.py:783 x5222; sa/engine.py:803 x2980; sa/engine.py:562 [mut] x2482 |
+| Session.deferred | read | 114/40/36/2845 ; 867/831 | 0/0/0/11830 ; 2937/2820 | 0/0/0/55 ; 17/17 | 1898/1052/752/19172 ; 5628/5543 | sa/engine.py:324 x918 | sa/engine.py:811 x1667; sa/engine.py:823 x589; sa/engine.py:844 x490; sa/engine.py:651 [mut] x114 |
+| Session.defvars | init only | 0/0/0/0 ; 867/0 | 0/0/0/0 ; 2937/0 | 0/0/0/0 ; 17/0 | 0/0/0/0 ; 5628/0 | sa/engine.py:329 x918 |  |
+| Session.demand | init only | 0/0/0/10663 ; 867/863 | 0/0/0/135857 ; 2937/2930 | 0/0/0/4268 ; 17/17 | 0/0/0/132678 ; 5628/5628 | sa/engine.py:323 x918 | sa/engine.py:780 x5222; sa/engine.py:805 x2980; sa/engine.py:623 x2461 |
+| Session.engine | read | 918/918/918/8910 ; 867/867 | 3133/3133/3133/86087 ; 2937/2937 | 17/17/17/3951 ; 17/17 | 5818/5818/5818/107708 ; 5628/5628 | sa/engine.py:306 x918 | sa/engine.py:564 x2482; sa/engine.py:574 x2482; sa/engine.py:1214 x1611; sa/engine.py:711 x1507 |
+| Session.frontier | read | 9860/7355/6921/15520 ; 867/867 | 127711/97949/95253/219880 ; 2937/2937 | 2170/352/341/4158 ; 17/17 | 97365/51016/47132/143868 ; 5628/5628 | sa/engine.py:806 x5472; sa/engine.py:787 x2213; sa/engine.py:320 x918 | sa/engine.py:801 x8452; sa/engine.py:784 x3009; sa/engine.py:802 x2980; sa/engine.py:649 [mut] x767 |
+| Session.literals | minority | 44/44/4/44 ; 867/44 | 1957/1957/194/1957 ; 2937/1957 | 7/7/1/7 ; 17/7 | 0/0/0/0 ; 5628/0 | sa/engine.py:328 x918 | sa/engine.py:1156 x44; sa/engine.py:1164 [mut] x44 |
+| Session.n_hold | init only | 0/0/0/1080 ; 867/776 | 0/0/0/5044 ; 2937/2605 | 0/0/0/17 ; 17/13 | 0/0/0/7389 ; 5628/4814 | sa/engine.py:994 x1611; sa/engine.py:346 x918; sa/engine.py:1062 x361 | sa/engine.py:2274 x776; sa/engine.py:2282 x304 |
+| Session.pending | read | 0/0/0/14462 ; 867/867 | 0/0/0/223673 ; 2937/2937 | 290/290/290/997 ; 17/17 | 974/862/753/68056 ; 5628/5628 | sa/engine.py:321 x918 | sa/engine.py:800 x5472; sa/engine.py:783 x3606; sa/engine.py:811 x2157; sa/engine.py:823 x1444 |
+| Session.pending_c | read | 2019/1301/1212/16172 ; 867/867 | 32654/24122/24100/244873 ; 2937/2937 | 290/290/290/833 ; 17/17 | 7539/5955/4361/75223 ; 5628/5628 | sa/engine.py:322 x918 | sa/engine.py:800 x5472; sa/engine.py:783 x3606; sa/engine.py:811 x2157; sa/engine.py:823 x1444 |
+| Session.relations | read | 198/198/198/5475 ; 867/793 | 3018/3018/3018/58630 ; 2937/2866 | 0/0/0/58 ; 17/17 | 0/0/0/19636 ; 5628/4814 | sa/engine.py:358 x918; sa/engine.py:381 x198 | sa/engine.py:995 x1611; sa/engine.py:713 x1501; sa/engine.py:957 x833; sa/engine.py:534 x734 |
+| Session.scope | minority | 918/661/198/198 ; 867/198 | 3133/3119/3018/3018 ; 2937/2860 | 17/13/0/0 ; 17/0 | 5818/3884/0/0 ; 5628/0 | sa/engine.py:310 x918 | sa/relations.py:875 x198 |
+| Session.sel | init only | 0/0/0/3220 ; 867/793 | 0/0/0/11119 ; 2937/2866 | 0/0/0/57 ; 17/17 | 0/0/0/19636 ; 5628/4814 | sa/engine.py:343 x918; sa/engine.py:946 x833 | sa/engine.py:993 x3220 |
+| Session.solver | read | 918/918/918/35537 ; 867/867 | 3133/3133/3133/575135 ; 2937/2937 | 17/17/17/39574 ; 17/17 | 5818/5818/5818/226414 ; 5628/5628 | sa/engine.py:311 x918 | sa/engine.py:543 x13877; sa/engine.py:659 x3298; sa/relations.py:1004 x2994; sa/engine.py:2319 x2442 |
+| Session.table | read | 918/918/918/24753 ; 867/867 | 3133/3133/3133/360518 ; 2937/2937 | 17/17/17/4813 ; 17/17 | 5818/5818/5818/199731 ; 5628/5628 | sa/engine.py:318 x918 | sa/engine.py:660 x3298; sa/engine.py:692 x3259; sa/relations.py:1003 x2994; sa/engine.py:427 x2620 |
+| Session.truncated | init only | 0/0/0/3258 ; 867/867 | 0/0/0/10775 ; 2937/2743 | 0/0/0/55 ; 17/17 | 0/0/0/20260 ; 5628/5628 | sa/engine.py:376 x918 | sa/engine.py:2028 x823; sa/engine.py:2295 x776; sa/engine.py:2296 x776; sa/engine.py:2297 x776 |
+| Session.verdict | read | 833/833/833/1666 ; 867/791 | 2952/2952/2952/5904 ; 2937/2798 | 16/16/16/32 ; 17/16 | 5004/5004/5004/10008 ; 5628/4814 | sa/engine.py:327 x918; sa/engine.py:1965 x833 | sa/engine.py:1922 x833; sa/engine.py:1897 x776; sa/engine.py:1996 x57 |
+| Session.xfer | read | 35/35/35/2787 ; 867/867 | 911/911/911/15722 ; 2937/2937 | 0/0/0/52 ; 17/17 | 0/0/0/16928 ; 5628/5628 | sa/engine.py:365 x918; sa/relations.py:1707 x35 | sa/engine.py:863 x1006; sa/engine.py:2013 x833; sa/engine.py:909 x667; sa/engine.py:2019 x175 |
+
+### sa/knowledge/compile.py
+
+| class.field | class | dev c/e/er/u ; wq/rq | fuzz c/e/er/u ; wq/rq | budget c/e/er/u ; wq/rq | wiring c/e/er/u ; wq/rq | writers | readers (top 4) |
+|---|---|---|---|---|---|---|---|
+| VarTable._npred | init only | 0/0/0/2497 ; 867/863 | 0/0/0/16537 ; 2937/2930 | 0/0/0/1961 ; 17/17 | 0/0/0/49604 ; 5628/5628 | sa/knowledge/compile.py:88 x918 | sa/knowledge/compile.py:103 x2497 |
+| VarTable._pidx | read | 918/899/835/3883 ; 867/793 | 3133/3124/3037/42718 ; 2937/2866 | 17/17/17/15800 ; 17/17 | 5818/5672/5084/101118 ; 5628/4894 | sa/knowledge/compile.py:87 x918 | sa/knowledge/compile.py:110 x3883 |
+| VarTable._preds | read 0 | 918/711/0/0 ; 867/0 | 3133/2866/0/0 ; 2937/0 | 17/17/0/0 ; 17/0 | 5818/3228/0/0 ; 5628/0 | sa/knowledge/compile.py:86 x918 |  |
+| VarTable.base_of | read | 2497/2497/2492/8123 ; 867/863 | 16537/16537/16537/45555 ; 2937/2930 | 1961/1961/1961/42221 ; 17/17 | 49604/49604/49395/231066 ; 5628/5628 | sa/knowledge/compile.py:89 x918 | sa/knowledge/compile.py:99 x5662; sa/knowledge/compile.py:102 [mut] x2497; sa/engine.py:622 x2461 |
+| VarTable.custom | read | 1507/1507/1502/5159 ; 867/202 | 36397/36397/36397/122874 ; 2937/2860 | 0/0/0/0 ; 17/0 | 0/0/0/0 ; 5628/0 | sa/knowledge/compile.py:92 x918 | sa/knowledge/compile.py:114 x1584; sa/knowledge/compile.py:116 [mut] x1507; sa/relations.py:1019 x1501; sa/relations.py:1189 x975 |
+| VarTable.naux | read 0 | 4749/660/0/0 ; 867/0 | 97442/2788/0/0 ; 2937/0 | 15955/17/0/0 ; 17/0 | 17186/2638/0/0 ; 5628/0 | sa/knowledge/compile.py:125 x4749; sa/knowledge/compile.py:94 x918 | sa/knowledge/compile.py:125 [aug] x4749 |
+| VarTable.new_custom | read | 1507/676/676/4611 ; 867/793 | 36397/16750/16750/92220 ; 2937/2866 | 0/0/0/194 ; 17/17 | 0/0/0/5504 ; 5628/4894 | sa/knowledge/compile.py:93 x918; sa/engine.py:694 x676 | sa/engine.py:693 x3935; sa/knowledge/compile.py:118 [mut] x1507; sa/engine.py:694 x676 |
+| VarTable.new_nodes | read | 2497/1281/958/3259 ; 867/793 | 16537/6340/6238/58720 ; 2937/2866 | 1961/42/42/194 ; 17/17 | 49604/8245/5353/5504 ; 5628/4894 | sa/engine.py:705 x3259; sa/engine.py:563 x2482; sa/engine.py:652 x2461 | sa/engine.py:698 x3259; sa/knowledge/compile.py:104 [mut] x2497 |
+| VarTable.slots | read | 9671/9558/9280/12224 ; 867/867 | 153509/153487/153176/188993 ; 2937/2937 | 17933/17933/17916/18206 ; 17/17 | 72608/72404/72085/81916 ; 5628/5628 | sa/knowledge/compile.py:90 x918 | sa/knowledge/compile.py:123 x4749; sa/knowledge/compile.py:124 [mut] x4749; sa/knowledge/compile.py:143 x3298; sa/knowledge/compile.py:101 x2497 |
+| VarTable.true_var | init only | 0/0/0/0 ; 867/0 | 0/0/0/0 ; 2937/0 | 0/0/0/0 ; 17/0 | 0/0/0/0 ; 5628/0 | sa/knowledge/compile.py:96 x918 |  |
+| _Lit.lit | - | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 |  |  |
+
+### sa/relations.py
+
+| class.field | class | dev c/e/er/u ; wq/rq | fuzz c/e/er/u ; wq/rq | budget c/e/er/u ; wq/rq | wiring c/e/er/u ; wq/rq | writers | readers (top 4) |
+|---|---|---|---|---|---|---|---|
+| Relations._aux_eq | read | 500/475/475/526 ; 198/198 | 11848/11848/11848/12733 ; 2860/2853 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/relations.py:851 x198 | sa/relations.py:1052 x526; sa/relations.py:1510 [mut] x372; sa/relations.py:1613 [mut] x128 |
+| Relations._bounded | init only | 0/0/0/0 ; 198/0 | 0/0/0/0 ; 2860/0 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/relations.py:806 x198 |  |
+| Relations._guards | read | 450/450/418/1870 ; 198/198 | 6861/6861/6695/45802 ; 2860/2860 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/relations.py:807 x198 | sa/relations.py:1106 x1870; sa/relations.py:1110 [mut] x450 |
+| Relations._info | read | 1501/610/481/1298 ; 198/198 | 36397/15156/12588/31620 ; 2860/2853 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/relations.py:837 x198 | sa/relations.py:1095 [mut] x1501; sa/relations.py:1233 x1298 |
+| Relations._link_eq | read | 372/372/372/500 ; 198/197 | 9367/9367/9367/11848 ; 2860/2852 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/relations.py:852 x198 | sa/relations.py:1060 x500; sa/relations.py:1511 [mut] x372 |
+| Relations._link_lt | read | 750/375/375/1676 ; 198/198 | 18810/9401/9398/41854 ; 2860/2860 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/relations.py:808 x198 | sa/relations.py:1024 x975; sa/relations.py:1505 [mut] x750; sa/relations.py:1192 x701 |
+| Relations._link_of | read | 1125/375/375/375 ; 198/198 | 28215/9405/9405/9405 ; 2860/2853 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/relations.py:839 x198 | sa/relations.py:1517 [mut] x1125; sa/relations.py:1274 x375 |
+| Relations._pending_links | read | 375/299/299/1256 ; 198/198 | 9405/5516/5516/26819 ; 2860/2860 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/relations.py:812 x198 | sa/relations.py:958 x881; sa/relations.py:996 [mut] x375; sa/relations.py:959 x375 |
+| Relations._roles | read | 1276/1276/1276/2799 ; 198/198 | 31543/31543/31543/68017 ; 2860/2860 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/relations.py:834 x198 | sa/relations.py:1096 x1501; sa/relations.py:1225 x1298; sa/relations.py:1227 [mut] x1276 |
+| Relations._tsrc | read | 2005/2005/2005/4058 ; 198/198 | 46249/46249/46249/119987 ; 2860/2853 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/relations.py:844 x198 | sa/relations.py:1286 x3466; sa/relations.py:1288 [mut] x2005; sa/relations.py:1329 x592 |
+| Relations._tv | read | 252/252/252/3394 ; 198/198 | 7260/7260/7260/95243 ; 2860/2853 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/relations.py:843 x198 | sa/relations.py:1293 x2662; sa/relations.py:1314 x732; sa/relations.py:1316 [mut] x252 |
+| Relations._user_eq | minority | 35/35/4/38 ; 198/35 | 888/888/97/888 ; 2860/843 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/relations.py:831 x198 | sa/relations.py:926 x38; sa/relations.py:931 [mut] x35 |
+| Relations._want_transfer | init only | 0/0/0/393 ; 0/198 | 0/0/0/5564 ; 0/2860 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 |  | sa/relations.py:963 x393 |
+| Relations._xadapter | read | 35/35/35/181 ; 198/35 | 911/911/911/11676 ; 2860/908 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/relations.py:860 x198; sa/relations.py:1705 x35 | sa/relations.py:1829 x114; sa/relations.py:1719 x67 |
+| Relations._xcand | init only | 0/0/0/228 ; 198/35 | 0/0/0/13251 ; 2860/908 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/relations.py:869 x198 | sa/relations.py:1827 x114; sa/relations.py:1883 x114 |
+| Relations._xcounted | init only | 0/0/0/51 ; 198/35 | 0/0/0/1711 ; 2860/908 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/relations.py:867 x198 | sa/relations.py:1746 x51 |
+| Relations._xextra | minority | 87/54/0/67 ; 198/35 | 322/318/99/1722 ; 2860/908 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/relations.py:825 x198 | sa/relations.py:991 [mut] x87; sa/relations.py:1740 x67 |
+| Relations._xheads | init only | 0/0/0/375 ; 198/35 | 0/0/0/13432 ; 2860/908 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/relations.py:866 x198 | sa/relations.py:1650 x210; sa/relations.py:1886 x114; sa/relations.py:1746 x51 |
+| Relations._xhn | read | 0/0/0/173 ; 198/35 | 940/940/940/5441 ; 2860/908 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/relations.py:847 x198 | sa/relations.py:1826 x114; sa/relations.py:1810 x59 |
+| Relations._xhseen | init only | 0/0/0/59 ; 198/27 | 0/0/0/2011 ; 2860/861 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/relations.py:848 x198; sa/relations.py:1826 x114 | sa/relations.py:1810 x59 |
+| Relations._xnsides | init only | 0/0/0/59 ; 198/27 | 0/0/0/2011 ; 2860/861 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/relations.py:863 x198; sa/relations.py:1825 x114 | sa/relations.py:1810 x59 |
+| Relations._xpairs | init only | 0/0/0/114 ; 198/35 | 0/0/0/3430 ; 2860/908 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/relations.py:845 x198 | sa/relations.py:1883 x114 |
+| Relations._xpart | init only | 0/0/0/114 ; 198/35 | 0/0/0/3430 ; 2860/908 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/relations.py:865 x198 | sa/relations.py:1828 x114 |
+| Relations._xpend | init only | 0/0/0/114 ; 198/35 | 0/0/0/3430 ; 2860/908 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/relations.py:868 x198 | sa/relations.py:1814 x114 |
+| Relations._xside | init only | 0/0/0/790 ; 198/198 | 0/0/0/28196 ; 2860/2853 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/relations.py:856 x198 | sa/relations.py:1673 x436; sa/relations.py:1807 x173; sa/relations.py:1883 x114; sa/relations.py:1721 x67 |
+| Relations._xsides_n | minority | 606/174/61/173 ; 198/35 | 12565/3516/1720/5441 ; 2860/908 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/relations.py:1678 x606; sa/relations.py:864 x198 | sa/relations.py:1678 [aug] x606; sa/relations.py:1809 x173 |
+| Relations._xslot | init only | 0/0/0/173 ; 198/35 | 0/0/0/5441 ; 2860/908 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/relations.py:861 x198; sa/relations.py:1824 x114 | sa/relations.py:1808 x173 |
+| Relations._xtcur | read | 51/51/33/67 ; 198/35 | 1711/1711/870/1722 ; 2860/908 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/relations.py:846 x198; sa/relations.py:1742 x51 | sa/relations.py:1739 x67; sa/relations.py:1742 [aug] x51 |
+| Relations._xterm | init only | 0/0/0/118 ; 198/35 | 0/0/0/3438 ; 2860/908 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/relations.py:862 x198; sa/relations.py:1725 x51 | sa/relations.py:1723 x67; sa/relations.py:1724 x51 |
+| Relations.active | init only | 0/0/0/1274 ; 198/198 | 0/0/0/22978 ; 2860/2860 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/relations.py:943 x1501; sa/relations.py:810 x198; sa/relations.py:879 x198 | sa/relations.py:948 x881; sa/engine.py:1177 x393 |
+| Relations.adapters | read | 396/396/396/4424 ; 198/198 | 6036/6036/6036/99128 ; 2860/2860 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/relations.py:802 x198 | sa/relations.py:1011 x3412; sa/relations.py:1603 x506; sa/relations.py:1605 x506; sa/relations.py:1013 [mut] x396 |
+| Relations.atom_sel | read | 35/35/35/971 ; 198/198 | 960/960/960/17063 ; 2860/2860 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/relations.py:819 x198 | sa/relations.py:1551 x400; sa/engine.py:1089 x318; sa/engine.py:1101 x171; sa/relations.py:1338 x50 |
+| Relations.link_sel | read | 375/286/286/767 ; 198/198 | 9405/5504/5504/12722 ; 2860/2860 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/relations.py:815 x198 | sa/relations.py:1549 x400; sa/relations.py:1513 [mut] x375; sa/engine.py:1101 x171; sa/engine.py:1088 x164 |
+| Relations.linked | read | 375/375/303/1434 ; 198/198 | 9405/9405/7731/23285 ; 2860/2860 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/relations.py:805 x198 | sa/relations.py:994 x914; sa/relations.py:890 x520; sa/relations.py:995 [mut] x375 |
+| Relations.num_sel | read | 87/87/87/879 ; 198/198 | 322/322/322/13468 ; 2860/2860 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/relations.py:824 x198 | sa/relations.py:1549 x400; sa/engine.py:1101 x171; sa/engine.py:1088 x164; sa/relations.py:984 x112 |
+| Relations.queue | read | 1501/671/671/3883 ; 198/198 | 36397/16750/16750/90208 ; 2860/2860 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/relations.py:804 x198 | sa/relations.py:936 x2382; sa/relations.py:885 [mut] x1501; sa/relations.py:937 x1501 |
+| Relations.scope | read 0 | 198/145/0/0 ; 198/0 | 3018/2570/0/0 ; 2860/0 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/relations.py:875 x198 |  |
+| Relations.session | read | 198/198/198/12184 ; 198/198 | 3018/3018/3018/301753 ; 2860/2860 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/relations.py:800 x198 | sa/relations.py:1002 x2994; sa/relations.py:1017 x1501; sa/relations.py:1256 x1298; sa/relations.py:1496 x1263 |
+| Relations.sharing | read | 198/198/198/506 ; 198/198 | 3018/3018/3018/8009 ; 2860/2860 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/relations.py:811 x198 | sa/relations.py:1605 x506 |
+| Relations.specs | read | 198/198/198/1911 ; 198/198 | 3018/3018/3018/46713 ; 2860/2860 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/relations.py:801 x198 | sa/relations.py:1045 x1501; sa/relations.py:1527 x375; sa/relations.py:1685 x35 |
+| Relations.status | read | 1501/312/312/886 ; 198/198 | 36397/5531/5531/16223 ; 2860/2860 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/relations.py:803 x198 | sa/relations.py:938 [mut] x1501; sa/relations.py:1549 x400; sa/relations.py:905 x315; sa/engine.py:1101 x171 |
+| Relations.top | read | 701/506/506/1134 ; 198/198 | 8944/6976/6976/20902 ; 2860/2860 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/relations.py:809 x198 | sa/relations.py:948 x881; sa/relations.py:891 [mut] x448; sa/relations.py:951 x253; sa/relations.py:952 [mut] x253 |
+| Relations.xfer | read | 35/35/35/1095 ; 198/198 | 911/911/911/20681 ; 2860/2860 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/relations.py:859 x198; sa/relations.py:1706 x35 | sa/relations.py:965 x393; sa/relations.py:968 x393; sa/relations.py:1830 x114; sa/relations.py:1869 x90 |
+| Relations.xfer_sel | init only | 0/0/0/278 ; 198/198 | 0/0/0/3907 ; 2860/2664 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/relations.py:828 x198; sa/relations.py:1704 x35 | sa/engine.py:1066 x197; sa/engine.py:1129 x32; sa/engine.py:1090 x19; sa/engine.py:1094 x10 |
+
+## (D) default: own time of the marked files' functions by class of the returned value, seconds per pass
+
+| class | dev | fuzz | budget | wiring |
+|---|---|---|---|---|
+| read 0 | 0.0318 (6.03%) | 0.4502 (5.59%) | 0.0234 (4.92%) | 0.2115 (7.72%) |
+| minority | 0.0027 (0.50%) | 0.0304 (0.38%) | 0.0008 (0.16%) | 0.0256 (0.93%) |
+| read | 0.1855 (35.17%) | 2.7023 (33.55%) | 0.2017 (42.43%) | 1.2296 (44.92%) |
+| no value | 0.1164 (22.06%) | 1.6347 (20.30%) | 0.1117 (23.49%) | 0.8949 (32.69%) |
+| - | 0.0000 (0.00%) | 0.0000 (0.00%) | 0.0000 (0.00%) | 0.0000 (0.00%) |
+
+fields classed read 0 or minority (26): sa/sat/solver.py Solver._conflict [read 0]; sa/sat/solver.py Solver._mvals [read 0]; sa/sat/solver.py Solver._n_conflicts [read 0]; sa/sat/solver.py Solver._n_decisions [read 0]; sa/sat/solver.py Solver._n_late [read 0]; sa/sat/solver.py Solver._n_late_written [read 0]; sa/sat/solver.py Solver._n_learned [read 0]; sa/sat/solver.py Solver._n_props [read 0]; sa/sat/solver.py Solver._n_restarts [read 0]; sa/sat/solver.py Solver._n_ring_hits [read 0]; sa/sat/solver.py Solver._n_tdecisions [read 0]; sa/sat/solver.py Solver._rb_blocks [read 0]; sa/sat/solver.py Solver._seen [minority]; sa/sat/solver.py Solver._witness [minority]; sa/engine.py Engine._context_sessions [read 0]; sa/engine.py Engine.memos [read 0]; sa/engine.py Engine.stats [read 0]; sa/engine.py Session.assumption_formula [minority]; sa/engine.py Session.literals [minority]; sa/engine.py Session.scope [minority]; sa/knowledge/compile.py VarTable._preds [read 0]; sa/knowledge/compile.py VarTable.naux [read 0]; sa/relations.py Relations._user_eq [minority]; sa/relations.py Relations._xextra [minority]; sa/relations.py Relations._xsides_n [minority]; sa/relations.py Relations.scope [read 0]

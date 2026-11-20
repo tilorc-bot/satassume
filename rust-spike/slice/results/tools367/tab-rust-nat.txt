@@ -1,0 +1,299 @@
+## rust-nat: wall time, 5 rounds pinned
+
+| workload | median s | min | max | iqr/median | digest | .so |
+|---|---|---|---|---|---|---|
+| dev | 0.6022 | 0.5999 | 0.6076 | 0.7% | 31cd0945c07f02a6 | 8b8041d3fe6223c2 |
+| fuzz | 4.0756 | 4.0651 | 4.1056 | 0.6% | 173502b6ef285ad6 | 8b8041d3fe6223c2 |
+| budget | 0.3267 | 0.3199 | 0.3306 | 2.8% | 35bc2c4a937bebc0 | 8b8041d3fe6223c2 |
+| wiring | 3.2607 | 3.2289 | 3.2758 | 1.3% | a0df9fd43e5180c1 | 8b8041d3fe6223c2 |
+
+sampler: dev N 18473, 30 runs, digests ['31cd0945c07f02a6'], cats capi<-rust 48.4, rust 16.5, callback 14.5, sympy<-rust 10.2, glue 8.7, python 1.4; fuzz N 25039, 6 runs, digests ['173502b6ef285ad6'], cats capi<-rust 43.7, rust 22.4, sympy<-rust 11.9, callback 11.9, glue 9.2, python 0.7; budget N 9878, 30 runs, digests ['35bc2c4a937bebc0'], cats capi<-rust 40.6, sympy<-rust 26.4, rust 18.4, callback 8.1, glue 6.0, unattributed 0.4; wiring N 26682, 8 runs, digests ['a0df9fd43e5180c1'], cats capi<-rust 48.8, rust 16.0, callback 13.5, sympy<-rust 12.8, glue 7.6, python 1.2
+counts: dev digest 31cd0945c07f02a6 .so 4d8921d9c510e99f env {'SLICE_WITNESS_CAP': '32', 'SLICE_WITNESS': '1', 'SLICE_CONVERT': 'rust', 'SLICE_WITNESS_RUST': '1', 'SLICE_TERM_FRAMES': 'rust'}, plants failed 0, fields shown to fire 48 (no live object 18); fuzz digest 173502b6ef285ad6 .so 4d8921d9c510e99f env {'SLICE_WITNESS_CAP': '32', 'SLICE_WITNESS': '1', 'SLICE_CONVERT': 'rust', 'SLICE_WITNESS_RUST': '1', 'SLICE_TERM_FRAMES': 'rust'}, plants failed 0, fields shown to fire 43 (no live object 23); budget digest 35bc2c4a937bebc0 .so 4d8921d9c510e99f env {'SLICE_WITNESS_CAP': '32', 'SLICE_WITNESS': '1', 'SLICE_CONVERT': 'rust', 'SLICE_WITNESS_RUST': '1', 'SLICE_TERM_FRAMES': 'rust'}, plants failed 0, fields shown to fire 43 (no live object 23); wiring digest a0df9fd43e5180c1 .so 4d8921d9c510e99f env {'SLICE_WITNESS_CAP': '32', 'SLICE_WITNESS': '1', 'SLICE_CONVERT': 'rust', 'SLICE_WITNESS_RUST': '1', 'SLICE_TERM_FRAMES': 'rust'}, plants failed 0, fields shown to fire 43 (no live object 23)
+
+## (A) rust-nat: own / inclusive share per file (% of in-loop samples); * = in the 80% set
+
+| file | dev own / incl | fuzz own / incl | budget own / incl | wiring own / incl | own summed | cumulative of repository files | SymPy and stdlib under it, summed |
+|---|---|---|---|---|---|---|---|
+| (sympy: not a file to port) | 9.57 / 9.7 | 11.05 / 11.2 | 24.30 / 25.1 | 11.70 / 11.8 | 56.62 | | |
+| (stdlib: not a file to port) | 0.73 / 0.8 | 1.63 / 1.8 | 1.00 / 1.0 | 0.46 / 0.5 | 3.82 | | |
+| * sa/knowledge/domain.py | 2.26 / 2.4 | 1.52 / 1.5 | 4.39 / 4.6 | 3.80 / 3.8 | 11.97 | 24.3% | 0.13 |
+| * slice/term_live.py | 2.85 / 98.4 | 2.38 / 99.2 | 0.16 / 99.8 | 2.59 / 98.8 | 7.98 | 40.6% | 7.12 |
+| * sa/sympy_api.py | 2.60 / 99.4 | 1.46 / 99.7 | 0.73 / 99.8 | 2.47 / 99.4 | 7.26 | 55.4% | 11.64 |
+| * sa/state/memos.py | 2.48 / 2.8 | 1.02 / 1.1 | 0.12 / 0.1 | 2.48 / 2.8 | 6.10 | 67.8% | 0.00 |
+| * slice/session_live.py | 0.84 / 18.8 | 0.90 / 38.7 | 0.14 / 7.2 | 1.03 / 7.2 | 2.91 | 73.7% | 4.14 |
+| * slice/convert.py | 0.53 / 28.7 | 0.37 / 15.5 | 0.61 / 25.9 | 0.90 / 36.6 | 2.41 | 78.6% | 33.82 |
+| * sa/sat/formula.py | 0.12 / 0.2 | 0.16 / 0.4 | 1.96 / 2.3 | 0.08 / 0.3 | 2.33 | 83.3% | 0.21 |
+| slice/lra_backend.py | 0.75 / 3.4 | 1.40 / 5.4 | 0.00 / 0.0 | 0.00 / 0.0 | 2.15 | 87.7% | 0.21 |
+| sa/witness.py | 0.50 / 4.7 | 0.64 / 8.5 | 0.02 / 3.6 | 0.22 / 4.4 | 1.38 | 90.5% | 0.17 |
+| slice/witness_live.py | 0.43 / 4.6 | 0.23 / 7.8 | 0.02 / 3.6 | 0.33 / 4.3 | 1.01 | 92.6% | 0.32 |
+| sa/engine.py | 0.28 / 0.4 | 0.15 / 0.3 | 0.15 / 0.2 | 0.20 / 0.3 | 0.78 | 94.2% | 0.14 |
+| sa/theories/euf/euf_adapter.py | 0.18 / 0.4 | 0.50 / 1.1 | 0.00 / 0.0 | 0.00 / 0.0 | 0.68 | 95.5% | 0.86 |
+| sa/theories/lra/lra_adapter.py | 0.15 / 0.3 | 0.39 / 0.7 | 0.00 / 0.0 | 0.00 / 0.0 | 0.53 | 96.6% | 0.48 |
+| slice/backend.py | 0.17 / 0.5 | 0.10 / 0.2 | 0.00 / 0.0 | 0.23 / 0.8 | 0.50 | 97.6% | 0.63 |
+| sa/knowledge/templates/registry.py | 0.21 / 0.5 | 0.01 / 0.0 | 0.17 / 0.6 | 0.03 / 0.1 | 0.42 | 98.5% | 0.00 |
+| sa/knowledge/templates/_common.py | 0.29 / 0.5 | 0.02 / 0.0 | 0.00 / 0.2 | 0.04 / 0.1 | 0.35 | 99.2% | 0.39 |
+| slice/knowledge_live.py | 0.02 / 0.4 | 0.00 / 0.0 | 0.13 / 0.7 | 0.01 / 0.0 | 0.17 | 99.5% | 0.08 |
+| sa/knowledge/templates/wiring.py | 0.04 / 0.3 | 0.00 / 0.0 | 0.06 / 0.4 | 0.01 / 0.1 | 0.11 | 99.8% | 0.00 |
+| sa/knowledge/rules.py | 0.03 / 0.0 | 0.00 / 0.0 | 0.00 / 0.0 | 0.02 / 0.0 | 0.05 | 99.9% | 0.00 |
+
+repository files' own time summed over the four workloads: 49.17 points; per workload: dev 14.79% = 0.0891 s, fuzz 11.24% = 0.4580 s, budget 8.69% = 0.0284 s, wiring 14.46% = 0.4714 s
+marked: sa/knowledge/domain.py slice/term_live.py sa/sympy_api.py sa/state/memos.py slice/session_live.py slice/convert.py sa/sat/formula.py
+
+## (B) rust-nat: functions of the marked files (own% / incl% / SymPy+stdlib under it% ; calls / dropped returns)
+
+### sa/knowledge/domain.py
+
+| function:line | class | dev own/incl/under | fuzz own/incl/under | budget own/incl/under | wiring own/incl/under | dev calls/dropped | fuzz calls/dropped | budget calls/dropped | wiring calls/dropped | call sites (dev, else the first workload with calls) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| constructed_noncommutative:58 | read | 1.71/1.91/0.00 | 1.39/1.45/0.00 | 2.55/3.28/0.00 | 3.07/3.66/0.00 | 4624/0 | 28853/0 | 7472/0 | 64640/0 | slice/convert.py:566 x4515; sa/knowledge/domain.py:131 x109 |
+| _fixed_noncommutative:35 | read | 0.32/0.32/0.00 | 0.08/0.08/0.00 | 1.11/1.11/0.00 | 0.60/0.60/0.00 | 2832/0 | 6581/0 | 11172/0 | 45773/0 | sa/knowledge/domain.py:100 x2016; sa/knowledge/domain.py:458 x816 |
+| _noncommutative:431 | read | 0.18/0.51/0.04 | 0.04/0.09/0.00 | 0.50/1.35/0.02 | 0.13/0.18/0.02 | 3895/0 | 3746/0 | 318/0 | 42899/0 | sa/sympy_api.py:282 x3890; slice/session_live.py:616 x3; sa/sympy_api.py:1145 x2 |
+| _is_matrix:402 | read | 0.02/0.02/0.00 | 0.00/0.00/0.00 | 0.12/0.12/0.00 | 0.00/0.00/0.00 | 1633/0 | 1662/0 | 7730/0 | 1774/0 | sa/knowledge/domain.py:452 x816; sa/knowledge/domain.py:410 x652; sa/knowledge/domain.py:445 x164 |
+| _noncommutative.<locals>.<genexpr>:462 | no value | 0.01/0.03/0.00 | 0.01/0.01/0.00 | 0.05/0.15/0.00 | 0.00/0.00/0.00 | 816/0 | 831/0 | 3865/0 | 873/0 | sa/knowledge/domain.py:462 x816 |
+| _holds_matrix:406 | read | 0.01/0.02/0.00 | 0.00/0.00/0.00 | 0.05/0.10/0.00 | 0.00/0.00/0.00 | 652/0 | 683/0 | 3823/0 | 771/0 | sa/knowledge/domain.py:462 x652 |
+| _matrix_to_scalar:418 | read | 0.01/0.14/0.01 | 0.00/0.02/0.00 | 0.01/0.22/0.03 | 0.00/0.01/0.00 | 816/0 | 831/0 | 3865/0 | 873/0 | sa/knowledge/domain.py:461 x816 |
+| _fixed_level:281 | read | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 1/0 | 0 | 0 | 0 | sa/knowledge/domain.py:107 x1 |
+| kept_product:474 | read | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0 | 0 | 0 | 1/0 | sa/knowledge/templates/core.py:342 x1 |
+| _holds_matrix.<locals>.<genexpr>:412 | no value | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0 | 0 | 0 | 10/0 | sa/knowledge/domain.py:412 x10 |
+
+### slice/term_live.py
+
+| function:line | class | dev own/incl/under | fuzz own/incl/under | budget own/incl/under | wiring own/incl/under | dev calls/dropped | fuzz calls/dropped | budget calls/dropped | wiring calls/dropped | call sites (dev, else the first workload with calls) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| _install.<locals>._ask_once:1135 | read | 0.59/98.44/0.00 | 0.21/99.21/0.00 | 0.04/99.78/0.00 | 0.58/98.76/0.00 | 1221/0 | 2998/0 | 28/0 | 6512/0 | sa/sympy_api.py:487 x1221 |
+| _note_query:298 | no value | 0.38/0.38/0.00 | 0.26/0.26/0.00 | 0.04/0.04/0.00 | 0.34/0.34/0.00 | 1221/1221 | 2998/2998 | 28/28 | 6512/6512 | slice/term_live.py:1110 x1221 |
+| _convert:306 | read | 0.37/32.38/0.00 | 0.09/17.03/0.00 | 0.04/27.48/0.00 | 0.38/41.43/0.00 | 1221/0 | 2998/0 | 28/0 | 6512/0 | slice/term_live.py:1102 x1221 |
+| _install.<locals>._ask:1089 | read | 0.26/97.04/0.00 | 0.15/98.76/0.00 | 0.01/99.30/0.00 | 0.35/97.21/0.00 | 1221/0 | 2998/0 | 28/0 | 6512/0 | slice/term_live.py:1140 x1221 |
+| _under_apps.<locals>.run:741 | read | 0.29/0.67/0.01 | 0.01/0.07/0.00 | 0.00/0.00/0.00 | 0.39/0.77/0.02 | 2231/0 | 1560/0 | 0 | 16934/0 | slice/term_live.py:768 x2231 |
+| _relation_atom.<locals>.order:583 | read | 0.13/0.17/0.00 | 0.31/0.46/0.00 | 0.00/0.01/0.00 | 0.00/0.00/0.00 | 1000/0 | 26297/0 | 24/0 | 0 | slice/term_live.py:619 x1000 |
+| _Query.__init__:78 | no value | 0.19/3.28/0.00 | 0.06/1.49/0.00 | 0.00/1.55/0.00 | 0.14/4.43/0.00 | 1221/0 | 2998/0 | 28/0 | 6512/0 | slice/term_live.py:309 x1221 |
+| _relation_atom.<locals>.relation_atom:618 | read | 0.06/1.55/0.04 | 0.26/4.41/0.08 | 0.00/7.07/0.00 | 0.00/0.00/0.00 | 1635/0 | 39540/0 | 36/0 | 0 | slice/session_live.py:616 x1083; sa/sympy_api.py:1145 x447; sa/sympy_api.py:350 x57 |
+| _affine_pair.<locals>.run:700 | read | 0.10/0.22/0.00 | 0.00/0.00/0.00 | 0.01/0.01/0.00 | 0.19/0.50/0.01 | 596/0 | 11/0 | 17/0 | 4801/0 | slice/term_live.py:719 x596 |
+| _relation_atom.<locals>.eq:571 | read | 0.06/0.74/0.27 | 0.20/1.99/0.55 | 0.00/7.02/5.76 | 0.00/0.00/0.00 | 621/0 | 13243/0 | 12/0 | 0 | slice/term_live.py:619 x621 |
+| _interned.<locals>.run:812 | read | 0.05/0.21/0.01 | 0.14/0.66/0.02 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 449/0 | 7269/0 | 0 | 0 | slice/term_live.py:822 x449 |
+| _interned.<locals>.interned:820 | read | 0.02/0.26/0.00 | 0.13/0.80/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 449/0 | 7269/0 | 0 | 0 | slice/session_live.py:616 x449 |
+| _under_apps.<locals>.under_apps:767 | read | 0.05/0.74/0.00 | 0.01/0.08/0.00 | 0.00/0.00/0.00 | 0.07/0.88/0.00 | 2231/0 | 1560/0 | 0 | 16934/0 | sa/sympy_api.py:1145 x2116; sa/sympy_api.py:586 x115 |
+| _under_apps.<locals>.run.<locals>.<genexpr>:744 (2 defs share the samples) | no value | 0.08/0.08/0.00 | 0.01/0.01/0.00 | 0.00/0.00/0.00 | 0.04/0.04/0.00 | 2231/0 | 1560/0 | 0 | 16934/0 | slice/term_live.py:744 x2231 |
+| _under_apps.<locals>.run.<locals>.<genexpr>:756 (2 defs share the samples) | no value | 0.08/0.08/0.00 | 0.01/0.01/0.00 | 0.00/0.00/0.00 | 0.04/0.04/0.00 | 393/0 | 280/0 | 0 | 5403/0 | slice/term_live.py:756 x393 |
+| _obj:646 | read | 0.03/0.04/0.00 | 0.10/0.17/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 1715/0 | 34388/0 | 0 | 0 | slice/term_live.py:817 x1585; slice/term_live.py:842 x130 |
+| _glue_objects.<locals>.glue_objects:907 | read | 0.01/0.29/0.01 | 0.12/2.08/0.27 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 11/0 | 551/0 | 0 | 0 | sa/sympy_api.py:1145 x9; sa/sympy_api.py:1144 x1; sa/sympy_api.py:586 x1 |
+| _affine_pair.<locals>.affine_pair:717 | read | 0.04/0.29/0.00 | 0.00/0.00/0.00 | 0.00/0.01/0.00 | 0.07/0.60/0.00 | 596/0 | 11/0 | 17/0 | 4801/0 | sa/sympy_api.py:1145 x481; sa/sympy_api.py:586 x115 |
+| _structural.<locals>.run:791 | read | 0.02/0.10/0.01 | 0.05/0.20/0.01 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 583/0 | 8743/0 | 0 | 0 | slice/term_live.py:804 x583 |
+| stack:152 | read | 0.03/0.03/0.00 | 0.01/0.01/0.00 | 0.00/0.00/0.00 | 0.03/0.03/0.00 | 2442/0 | 5996/0 | 56/0 | 13024/0 | slice/term_live.py:1138 x1221; slice/term_live.py:1090 x1221 |
+| _is_number.<locals>.is_number:689 | read | 0.01/0.05/0.00 | 0.05/0.16/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 319/0 | 4037/0 | 0 | 0 | sa/sympy_api.py:1145 x236; slice/session_live.py:616 x23; slice/term_live.py:920 x20 |
+| _structural_subterms.<locals>.run:837 | read | 0.02/0.10/0.00 | 0.04/0.20/0.01 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 165/0 | 5522/0 | 12/0 | 0 | slice/term_live.py:846 x165 |
+| _structural.<locals>.structural:803 | read | 0.02/0.12/0.00 | 0.04/0.24/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 583/0 | 8743/0 | 0 | 0 | slice/session_live.py:616 x573; sa/theories/euf/euf_adapter.py:227 x4; sa/sympy_api.py:586 x4 |
+| scaffold:481 | read | 0.01/0.03/0.01 | 0.04/0.08/0.02 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 290/0 | 4805/0 | 0 | 0 | slice/term_live.py:650 x220; slice/term_live.py:505 x40; sa/sympy_api.py:1145 x12 |
+| _structural_subterms.<locals>.subterms:845 | read | 0.01/0.11/0.00 | 0.03/0.27/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 165/0 | 5522/0 | 12/0 | 0 | sa/sympy_api.py:1145 x149; slice/term_live.py:921 x14; sa/relations.py:2020 x2 |
+| _glue_objects.<locals>.diff:889 | read | 0.00/0.04/0.00 | 0.03/0.28/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 8/0 | 994/0 | 0 | 0 | slice/term_live.py:924 x8 |
+| _is_number.<locals>.run:675 | read | 0.00/0.04/0.00 | 0.03/0.10/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 319/0 | 4037/0 | 0 | 0 | slice/term_live.py:692 x319 |
+| same_class:404 | read | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.02/0.02/0.00 | 0.00/0.00/0.00 | 65/0 | 402/0 | 450/0 | 40/0 | slice/term_live.py:511 x40; slice/knowledge_live.py:312 x25 |
+| _key_match.<locals>.key:1054 | read | 0.01/0.02/0.01 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 30/0 | 0 | 0 | 0 | sa/relations.py:539 x12; sa/theories/lra/lra_adapter.py:324 x8; sa/theories/lra/lra_adapter.py:348 x8 |
+| scaffold.<locals>.<genexpr>:511 | no value | 0.01/0.01/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 19/0 | 175/0 | 0 | 0 | slice/term_live.py:511 x19 |
+| _glue_objects.<locals>.<lambda>:887 (2 defs share the samples) | read | 0.00/0.00/0.00 | 0.00/0.02/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 11/0 | 551/0 | 0 | 0 | slice/term_live.py:912 x11 |
+| _glue_objects.<locals>.<lambda>:905 (2 defs share the samples) | read | 0.00/0.00/0.00 | 0.00/0.02/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 10/0 | 551/0 | 0 | 0 | slice/term_live.py:922 x10 |
+| _termwise.<locals>.run:860 | read | 0.00/0.02/0.00 | 0.00/0.22/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 30/0 | 878/0 | 0 | 0 | slice/term_live.py:877 x30 |
+| _Mark.rollback:234 | no value | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0 | 0 | 0 | 1/1 | slice/term_live.py:1123 x1 |
+| _termwise.<locals>.termwise:876 | read | 0.00/0.04/0.00 | 0.00/0.23/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 30/0 | 878/0 | 0 | 0 | slice/session_live.py:616 x28; sa/relations.py:2027 x2 |
+| _Seen._nt_rollback:121 | read | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0 | 0 | 0 | 1/0 | slice/term_live.py:250 x1 |
+| _ext_atoms.<locals>.ext_atoms:657 | read | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0 | 64/0 | 0 | 0 | slice/session_live.py:616 x64 |
+| _key_match.<locals>.ask:1033 | no value | 0.00/0.01/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 30/30 | 0 | 0 | 0 | slice/term_live.py:1057 x30 |
+| _Refused.__init__:103 | no value | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0 | 0 | 0 | 1/0 | slice/term_live.py:1126 x1 |
+| _ext_atoms.<locals>.<lambda>:655 | read | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0 | 64/0 | 0 | 0 | slice/term_live.py:659 x64 |
+
+### sa/sympy_api.py
+
+| function:line | class | dev own/incl/under | fuzz own/incl/under | budget own/incl/under | wiring own/incl/under | dev calls/dropped | fuzz calls/dropped | budget calls/dropped | wiring calls/dropped | call sites (dev, else the first workload with calls) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| _engine_ask:1118 | read | 0.40/52.75/1.20 | 0.28/71.56/1.58 | 0.54/70.97/4.22 | 0.52/45.10/1.16 | 1090/0 | 2981/0 | 28/0 | 6175/0 | sa/sympy_api.py:598 x452; sa/sympy_api.py:602 x406; sa/sympy_api.py:570 x232 |
+| is_constant_proposition:537 | read | 0.44/0.84/0.05 | 0.16/0.41/0.01 | 0.03/0.22/0.00 | 0.44/1.13/0.01 | 1221/0 | 2998/0 | 41/0 | 6513/0 | sa/sympy_api.py:569 x1221 |
+| ask:425 | read | 0.42/99.37/0.22 | 0.14/99.67/0.16 | 0.00/99.84/0.04 | 0.30/99.40/0.15 | 1985/0 | 3000/0 | 28/0 | 6512/0 | slice/results/tools367/cnt367.py:398 x1985 |
+| _applied_category:264 | read | 0.29/1.04/0.06 | 0.10/0.22/0.02 | 0.00/1.38/0.00 | 0.39/0.92/0.15 | 3943/0 | 3674/0 | 318/0 | 42899/0 | slice/convert.py:566 x3270; sa/sympy_api.py:389 x664; sa/sympy_api.py:586 x9 |
+| _formula:503 | read | 0.26/0.81/0.06 | 0.14/1.82/0.02 | 0.02/0.11/0.00 | 0.20/0.40/0.10 | 2004/0 | 6068/0 | 47/0 | 11192/0 | sa/sympy_api.py:1124 x1090; sa/sympy_api.py:1125 x792; sa/sympy_api.py:586 x122 |
+| _ask_general:583 | read | 0.18/55.19/0.51 | 0.12/77.82/0.32 | 0.03/71.27/0.01 | 0.24/46.35/0.27 | 989/0 | 2938/0 | 28/0 | 5888/0 | sa/sympy_api.py:580 x989 |
+| to_formula:361 | read | 0.17/0.48/0.09 | 0.18/1.65/0.01 | 0.05/0.09/0.00 | 0.02/0.09/0.00 | 817/0 | 8762/0 | 138/0 | 1462/0 | sa/sympy_api.py:515 x585; sa/sympy_api.py:397 x228; sa/sympy_api.py:401 x4 |
+| is_constant_proposition.<locals>.<genexpr>:560 (2 defs share the samples) | no value | 0.10/0.35/0.25 | 0.06/0.24/0.18 | 0.03/0.19/0.16 | 0.07/0.68/0.59 | 1192/0 | 2998/0 | 28/0 | 6513/0 | sa/sympy_api.py:560 x1192 |
+| is_constant_proposition.<locals>.<genexpr>:563 (2 defs share the samples) | no value | 0.10/0.35/0.25 | 0.06/0.24/0.18 | 0.03/0.19/0.16 | 0.07/0.68/0.59 | 0 | 0 | 13/0 | 0 | sa/sympy_api.py:563 x13 |
+| _is_matrix_predicate:248 | read | 0.10/0.11/0.00 | 0.03/0.03/0.00 | 0.02/0.02/0.00 | 0.11/0.11/0.00 | 4334/0 | 4361/0 | 395/0 | 43827/0 | sa/sympy_api.py:273 x3943; sa/sympy_api.py:586 x391 |
+| _is_scalar:260 | read | 0.08/0.08/0.00 | 0.07/0.07/0.00 | 0.01/0.01/0.00 | 0.09/0.09/0.00 | 4918/0 | 27990/0 | 318/0 | 42899/0 | sa/sympy_api.py:279 x3906; slice/convert.py:566 x898; sa/sympy_api.py:348 x114 |
+| _ask:567 | read | 0.08/56.79/0.00 | 0.03/78.36/0.00 | 0.00/71.49/0.00 | 0.07/47.95/0.00 | 1221/0 | 2998/0 | 28/0 | 6513/0 | slice/term_live.py:1106 x1221 |
+| relation_parts:323 | read | 0.04/0.04/0.00 | 0.10/0.14/0.04 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 506/0 | 12158/0 | 0 | 0 | slice/convert.py:566 x449; sa/sympy_api.py:386 x57 |
+| _relation_formula:346 | read | 0.01/0.13/0.00 | 0.04/1.30/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 57/0 | 5412/0 | 0 | 0 | sa/sympy_api.py:388 x57 |
+| default_engine:213 | read | 0.02/0.02/0.00 | 0.01/0.01/0.00 | 0.00/0.00/0.00 | 0.01/0.01/0.00 | 1985/0 | 3000/0 | 28/0 | 6512/0 | sa/sympy_api.py:469 x1985 |
+| matrix_predicates.<locals>.<genexpr>:238 | no value | 0.01/0.01/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 1/0 | 0 | 0 | 0 | sa/sympy_api.py:238 x1 |
+| Unsupported.__init__:155 | no value | 0.01/0.01/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 58/0 | 0 | 0 | 0 | slice/convert.py:566 x24; sa/sympy_api.py:522 x23; sa/sympy_api.py:393 x11 |
+| matrix_predicates:232 | read | 0.01/0.01/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 37/0 | 0 | 0 | 0 | sa/sympy_api.py:257 x37 |
+| _Failed.__init__:529 | no value | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 11/0 | 0 | 0 | 0 | sa/sympy_api.py:517 x11 |
+
+### sa/state/memos.py
+
+| function:line | class | dev own/incl/under | fuzz own/incl/under | budget own/incl/under | wiring own/incl/under | dev calls/dropped | fuzz calls/dropped | budget calls/dropped | wiring calls/dropped | call sites (dev, else the first workload with calls) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| _path:173 | read | 1.22/1.45/0.00 | 0.52/0.62/0.00 | 0.06/0.06/0.00 | 1.14/1.39/0.00 | 25218/0 | 56962/0 | 532/0 | 135773/0 | sa/state/memos.py:265 x13431; sa/state/memos.py:191 x11787 |
+| Memos.items:134 | no value | 0.91/2.76/0.00 | 0.34/1.15/0.00 | 0.05/0.12/0.00 | 1.03/2.78/0.00 | 2442/0 | 5996/0 | 56/0 | 13024/0 | slice/term_live.py:1093 x2442 |
+| _module_attr.<locals>.<lambda>:191 | read | 0.24/0.96/0.00 | 0.10/0.40/0.00 | 0.00/0.03/0.00 | 0.19/0.83/0.00 | 11787/0 | 23984/0 | 224/0 | 64141/0 | sa/state/memos.py:141 x11787 |
+| owner_memos.<locals>.getter.<locals>.get:264 | read | 0.10/0.83/0.00 | 0.06/0.38/0.00 | 0.01/0.04/0.00 | 0.12/0.88/0.00 | 13431/0 | 32978/0 | 308/0 | 71632/0 | sa/state/memos.py:141 x13431 |
+| Table.restamp:72 | no value | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 1/1 | 1/1 | 1/1 | 1/1 | sa/sympy_api.py:510 x1 |
+| adopt:235 | no value | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 3/3 | 0 | 0 | 3/3 | sa/theories/lra/lra_bounds.py:33 x1; sa/theories/lra/lra_bounds.py:72 x1; sa/theories/lra/lra_bounds.py:86 x1 |
+| owner_memos:256 | read | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 1/0 | 1/0 | 1/0 | 1/0 | sa/engine.py:111 x1 |
+| owner_memos.<locals>.getter:263 | read | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 11/0 | 11/0 | 11/0 | 11/0 | sa/state/memos.py:269 x11 |
+| Memos.__init__:92 | no value | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 1/0 | 1/0 | 1/0 | 1/0 | sa/state/memos.py:261 x1 |
+| _module_attr:190 | read | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 3/0 | 0 | 0 | 3/0 | sa/state/memos.py:240 x3 |
+| Memos.adopt:113 | no value | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 14/14 | 11/11 | 11/11 | 14/14 | sa/state/memos.py:269 x11; sa/state/memos.py:240 x3 |
+| __getattr__:228 | read | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 1/0 | 0 | 0 | 1/0 | sa/_compat.py:171 x1 |
+
+### slice/session_live.py
+
+| function:line | class | dev own/incl/under | fuzz own/incl/under | budget own/incl/under | wiring own/incl/under | dev calls/dropped | fuzz calls/dropped | budget calls/dropped | wiring calls/dropped | call sites (dev, else the first workload with calls) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| TableView.bind:127 | no value | 0.23/0.40/0.00 | 0.12/0.20/0.00 | 0.01/0.03/0.00 | 0.36/0.60/0.00 | 746/746 | 1897/1897 | 17/17 | 5603/5603 | slice/session_live.py:188 x746 |
+| _rel_process:613 | read | 0.17/14.99/0.74 | 0.42/36.44/3.16 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 331/0 | 3068/0 | 0 | 0 | sa/sympy_api.py:1145 x328; sa/sympy_api.py:1144 x2; sa/sympy_api.py:586 x1 |
+| _compile_formula:1452 | no value | 0.08/0.89/0.01 | 0.02/0.52/0.02 | 0.09/7.08/0.14 | 0.08/3.57/0.04 | 661/0 | 1716/0 | 513/0 | 5612/0 | sa/sympy_api.py:1145 x603; sa/sympy_api.py:586 x58 |
+| _rust_call:1440 | read | 0.06/0.07/0.00 | 0.07/0.09/0.00 | 0.03/0.04/0.00 | 0.11/0.14/0.00 | 692/0 | 2707/0 | 520/0 | 5612/0 | slice/session_live.py:1453 x661; slice/session_live.py:1463 x31 |
+| _ses_incomplete:718 | read | 0.06/0.09/0.00 | 0.04/0.06/0.00 | 0.00/0.00/0.00 | 0.09/0.15/0.00 | 1642/0 | 4456/0 | 36/0 | 12758/0 | sa/sympy_api.py:1145 x1483; sa/sympy_api.py:586 x116; sa/sympy_api.py:1144 x41 |
+| _ses_solver_set:265 | no value | 0.05/0.05/0.00 | 0.03/0.03/0.00 | 0.00/0.00/0.00 | 0.07/0.07/0.00 | 746/0 | 1897/0 | 17/0 | 5603/0 | slice/session_live.py:887 x746 |
+| _table_get:180 | read | 0.02/0.02/0.00 | 0.02/0.02/0.00 | 0.01/0.01/0.00 | 0.06/0.06/0.00 | 1402/0 | 4247/0 | 533/0 | 11025/0 | slice/session_live.py:1445 x692; slice/session_live.py:399 x679; slice/session_live.py:1447 x31 |
+| _table_set:187 | no value | 0.04/0.44/0.00 | 0.03/0.23/0.00 | 0.00/0.03/0.00 | 0.03/0.63/0.00 | 746/0 | 1897/0 | 17/0 | 5603/0 | slice/session_live.py:887 x746 |
+| TableView.__len__:171 | read | 0.02/0.02/0.00 | 0.05/0.08/0.00 | 0.00/0.00/0.00 | 0.03/0.05/0.00 | 2866/0 | 18343/0 | 290/0 | 14215/0 | sa/sympy_api.py:1145 x2453; slice/session_live.py:616 x350; sa/sympy_api.py:1144 x59 |
+| _ses_init:884 | read | 0.02/2.80/0.00 | 0.02/1.55/0.00 | 0.00/0.12/0.00 | 0.06/3.30/0.00 | 746/0 | 1897/0 | 17/0 | 5603/0 | sa/sympy_api.py:1145 x603; sa/sympy_api.py:1144 x77; sa/sympy_api.py:586 x58 |
+| _node:398 | read | 0.02/0.07/0.01 | 0.01/0.02/0.00 | 0.00/0.00/0.00 | 0.05/0.13/0.01 | 679/0 | 549/0 | 6/0 | 5413/0 | sa/sympy_api.py:1145 x574; sa/sympy_api.py:1144 x75; slice/session_live.py:616 x30 |
+| _ses_solver_get:258 | read | 0.02/0.02/0.00 | 0.01/0.01/0.00 | 0.00/0.00/0.00 | 0.03/0.03/0.00 | 746/0 | 1897/0 | 17/0 | 5603/0 | slice/session_live.py:131 x746 |
+| _rel_init:595 | read | 0.01/0.20/0.00 | 0.03/0.42/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 167/0 | 1794/0 | 0 | 0 | slice/session_live.py:887 x167 |
+| _core_rules:35 | read | 0.01/0.01/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.02/0.02/0.00 | 746/0 | 1897/0 | 17/0 | 5603/0 | slice/session_live.py:129 x746 |
+| _base_set:199 | no value | 0.01/0.01/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.02/0.02/0.00 | 746/0 | 1897/0 | 17/0 | 5603/0 | slice/session_live.py:887 x746 |
+| _BaseOf.__init__:69 | no value | 0.02/0.02/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 746/0 | 1897/0 | 17/0 | 5603/0 | slice/session_live.py:132 x746 |
+| _install_procmemos.<locals>.<lambda>:1358 | read | 0.01/0.01/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.01/0.01/0.00 | 3663/0 | 8994/0 | 84/0 | 19536/0 | sa/state/memos.py:141 x3663 |
+| _Custom.__init__:48 | no value | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.01/0.01/0.00 | 746/0 | 1897/0 | 17/0 | 5603/0 | slice/session_live.py:132 x746 |
+| _Custom.__contains__:55 | read | 0.01/0.02/0.00 | 0.00/0.02/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 123/0 | 1337/0 | 0 | 0 | slice/session_live.py:616 x123 |
+| _formula_literal:1462 | read | 0.00/0.00/0.00 | 0.00/0.10/0.01 | 0.00/0.02/0.00 | 0.00/0.00/0.00 | 31/0 | 991/0 | 7/0 | 0 | sa/sympy_api.py:1145 x29; sa/sympy_api.py:1144 x2 |
+| _Custom.get:51 | read | 0.00/0.00/0.00 | 0.00/0.02/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 30/0 | 537/0 | 0 | 0 | slice/session_live.py:616 x30 |
+| _Base.__init__:90 | no value | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 746/0 | 1897/0 | 17/0 | 5603/0 | slice/session_live.py:135 x746 |
+| _Slots.__init__:114 | no value | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 746/0 | 1897/0 | 17/0 | 5603/0 | slice/session_live.py:132 x746 |
+
+### slice/convert.py
+
+| function:line | class | dev own/incl/under | fuzz own/incl/under | budget own/incl/under | wiring own/incl/under | dev calls/dropped | fuzz calls/dropped | budget calls/dropped | wiring calls/dropped | call sites (dev, else the first workload with calls) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| convert:557 | read | 0.51/28.73/5.65 | 0.36/15.45/4.56 | 0.61/25.89/14.51 | 0.89/36.61/9.10 | 1221/0 | 2998/0 | 28/0 | 6512/0 | slice/term_live.py:309 x1221 |
+| Converted.__init__:101 | no value | 0.02/0.02/0.00 | 0.01/0.01/0.00 | 0.00/0.00/0.00 | 0.01/0.01/0.00 | 1197/0 | 2998/0 | 28/0 | 6512/0 | slice/convert.py:566 x1197 |
+| Kept.__init__:91 | no value | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 24/0 | 0 | 0 | 0 | slice/convert.py:566 x24 |
+
+### sa/sat/formula.py
+
+| function:line | class | dev own/incl/under | fuzz own/incl/under | budget own/incl/under | wiring own/incl/under | dev calls/dropped | fuzz calls/dropped | budget calls/dropped | wiring calls/dropped | call sites (dev, else the first workload with calls) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Formula.__init__:38 | no value | 0.01/0.01/0.00 | 0.01/0.01/0.00 | 1.11/1.24/0.00 | 0.00/0.00/0.00 | 128/22 | 6725/2726 | 6385/6167 | 277/237 | sa/sympy_api.py:397 x91; sa/sat/formula.py:73 x22; slice/term_live.py:597 x15 |
+| Not.__init__:72 | no value | 0.00/0.00/0.00 | 0.01/0.02/0.00 | 0.83/1.04/0.00 | 0.00/0.00/0.00 | 22/0 | 2726/0 | 6009/0 | 223/0 | slice/term_live.py:596 x15; sa/sympy_api.py:401 x4; slice/term_live.py:581 x2 |
+| Formula.__hash__:47 | read | 0.12/0.23/0.02 | 0.14/0.38/0.08 | 0.02/0.08/0.03 | 0.08/0.33/0.07 | 3913/0 | 37428/0 | 142/0 | 12207/0 | sa/sat/formula.py:48 x1746; sa/sympy_api.py:1145 x1709; sa/engine.py:1874 x274 |
+| Implies.__init__:77 | no value | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.02/0.00 | 0.00/0.00/0.00 | 0 | 0 | 158/0 | 14/0 | sa/sympy_api.py:1145 x153; sa/sympy_api.py:1144 x5 |
+| Formula.__eq__:44 | read | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 0.00/0.00/0.00 | 2/0 | 102/0 | 8/0 | 0 | sa/sympy_api.py:1145 x2 |
+
+## (C) rust-nat: stored fields of the marked files' classes (computes / epochs / epochs read / uses ; queries with a write / with a use)
+
+### slice/term_live.py
+
+| class.field | class | dev c/e/er/u ; wq/rq | fuzz c/e/er/u ; wq/rq | budget c/e/er/u ; wq/rq | wiring c/e/er/u ; wq/rq | writers | readers (top 4) |
+|---|---|---|---|---|---|---|---|
+| _Mark.cache | init only | 0/0/0/0 ; 1221/0 | 0/0/0/0 ; 2998/0 | 0/0/0/0 ; 28/0 | 0/0/0/1 ; 6512/1 | slice/term_live.py:1093 x1221 |  |
+| _Mark.cache_n | init only | 0/0/0/0 ; 1221/0 | 0/0/0/0 ; 2998/0 | 0/0/0/0 ; 28/0 | 0/0/0/0 ; 6512/0 | slice/term_live.py:1093 x1221 |  |
+| _Mark.engines | init only | 0/0/0/1221 ; 1221/1221 | 0/0/0/2998 ; 2998/2998 | 0/0/0/28 ; 28/28 | 0/0/0/6513 ; 6512/6512 | slice/term_live.py:1093 x1221 | slice/term_live.py:1093~ x1221 |
+| _Mark.facts | init only | 0/0/0/1221 ; 1221/1221 | 0/0/0/2998 ; 2998/2998 | 0/0/0/28 ; 28/28 | 0/0/0/6513 ; 6512/6512 | slice/term_live.py:1093 x1221 | slice/term_live.py:1093~ x1221 |
+| _Mark.natives | init only | 0/0/0/21978 ; 1221/1221 | 0/0/0/53964 ; 2998/2998 | 0/0/0/504 ; 28/28 | 0/0/0/117217 ; 6512/6512 | slice/term_live.py:1093 x1221 | slice/term_live.py:1093~ x21978 |
+| _Mark.tables | init only | 0/0/0/22792 ; 1221/1221 | 0/0/0/50966 ; 2998/2998 | 0/0/0/476 ; 28/28 | 0/0/0/122750 ; 6512/6512 | slice/term_live.py:1093 x1221 | slice/term_live.py:1093~ x22792 |
+| _Query.classes | read 0 | 1197/287/0/0 ; 1221/0 | 2998/395/0/0 ; 2998/0 | 28/19/0/0 ; 28/0 | 6512/319/0/0 ; 6512/0 | slice/term_live.py:87 x1221; slice/term_live.py:92 x1197 |  |
+| _Query.counts | read | 1197/1197/1197/1221 ; 1221/1221 | 2998/2998/2998/2998 ; 2998/2998 | 28/28/28/28 ; 28/28 | 6512/6512/6512/6512 ; 6512/6512 | slice/term_live.py:94 x1197; slice/term_live.py:89 x24 | slice/term_live.py:300 x1221 |
+| _Query.derived | read | 24/24/22/3430 ; 1221/129 | 204/204/197/80344 ; 2998/1428 | 0/0/0/96 ; 28/6 | 0/0/0/28 ; 6512/7 | slice/term_live.py:82 x1221; slice/term_live.py:96 x1197 | slice/session_live.py:616~ x1661; slice/term_live.py:619~ x1005; sa/sympy_api.py:1145~ x451; slice/term_live.py:814~ x220 |
+| _Query.ids | read | 1197/882/806/16016 ; 1221/806 | 2998/2894/2883/227480 ; 2998/2883 | 28/26/24/749 ; 28/24 | 6512/5085/4857/51276 ; 6512/4857 | slice/term_live.py:94 x1197; slice/term_live.py:89 x24 | sa/sympy_api.py:1145~ x3767; slice/term_live.py:619~ x3242; slice/session_live.py:616~ x2866; slice/term_live.py:746~ x2402 |
+| _Query.int_ids | init only | 0/0/0/0 ; 1221/0 | 0/0/0/0 ; 2998/0 | 0/0/0/0 ; 28/0 | 0/0/0/0 ; 6512/0 | slice/term_live.py:83 x1221 |  |
+| _Query.ints | init only | 0/0/0/220 ; 1221/112 | 0/0/0/4187 ; 2998/1284 | 0/0/0/0 ; 28/0 | 0/0/0/0 ; 6512/0 | slice/term_live.py:83 x1221 | slice/term_live.py:649 x220 |
+| _Query.kept | read | 24/24/24/35328 ; 1221/1221 | 0/0/0/529437 ; 2998/2998 | 0/0/0/915 ; 28/28 | 1/1/1/31722 ; 6512/6512 | slice/term_live.py:91 x1197; slice/term_live.py:89 x24 | slice/session_live.py:616~ x17777; sa/sympy_api.py:1145~ x9905; slice/term_live.py:746~ x2231; slice/term_live.py:619~ x1635 |
+| _Query.memo | read | 393/393/393/2231 ; 1221/173 | 280/280/277/1560 ; 2998/64 | 0/0/0/0 ; 28/0 | 5403/5403/5403/16934 ; 6512/986 | slice/term_live.py:85 x1221 | slice/term_live.py:750 x2231; slice/term_live.py:756 [mut] x393 |
+| _Query.objects | read | 1197/882/806/14356 ; 1221/806 | 2998/2894/2883/179090 ; 2998/2883 | 28/26/24/653 ; 28/24 | 6512/5085/4857/51500 ; 6512/4857 | slice/term_live.py:94 x1197; slice/term_live.py:89 x24 | sa/sympy_api.py:1145~ x3387; slice/term_live.py:746~ x2402; slice/term_live.py:619~ x2237; slice/term_live.py:648 x1495 |
+| _Query.raised | init only | 0/0/0/1221 ; 1221/1221 | 0/0/0/2998 ; 2998/2998 | 0/0/0/28 ; 28/28 | 0/0/0/6512 ; 6512/6512 | slice/term_live.py:95 x1197; slice/term_live.py:89 x24 | slice/term_live.py:303 x1221 |
+| _Query.rev | read | 24/12/10/3673 ; 1221/129 | 204/159/152/84533 ; 2998/1428 | 0/0/0/96 ; 28/6 | 0/0/0/34 ; 6512/7 | slice/term_live.py:82 x1221; slice/term_live.py:96 x1197 | slice/session_live.py:616~ x1661; slice/term_live.py:619~ x1005; sa/sympy_api.py:1145~ x452; slice/term_live.py:487 x266 |
+| _Query.table | read | 1197/886/810/22824 ; 1221/810 | 2998/2894/2883/354134 ; 2998/2883 | 28/27/25/691 ; 28/25 | 6512/5085/4857/22880 ; 6512/4857 | slice/term_live.py:93 x1197; slice/term_live.py:89 x24 | slice/session_live.py:616~ x9255; sa/sympy_api.py:1145~ x5672; slice/term_live.py:647 x1715; slice/term_live.py:584 x1000 |
+
+### sa/sympy_api.py
+
+| class.field | class | dev c/e/er/u ; wq/rq | fuzz c/e/er/u ; wq/rq | budget c/e/er/u ; wq/rq | wiring c/e/er/u ; wq/rq | writers | readers (top 4) |
+|---|---|---|---|---|---|---|---|
+| AssumptionSymbolError.symbols | - | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 |  |  |
+| Unsupported.category | read | 58/14/11/11 ; 24/11 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/sympy_api.py:158 x58 | sa/sympy_api.py:517 x11 |
+| _Failed.category | read | 11/11/11/23 ; 11/23 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/sympy_api.py:530 x11 | sa/sympy_api.py:522 x23 |
+| _Failed.message | read | 11/11/11/23 ; 11/23 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | sa/sympy_api.py:530 x11 | sa/sympy_api.py:522 x23 |
+
+### sa/state/memos.py
+
+| class.field | class | dev c/e/er/u ; wq/rq | fuzz c/e/er/u ; wq/rq | budget c/e/er/u ; wq/rq | wiring c/e/er/u ; wq/rq | writers | readers (top 4) |
+|---|---|---|---|---|---|---|---|
+| Memos._adopted | read | 14/2/2/2442 ; 1/1221 | 11/1/1/5996 ; 1/2998 | 11/1/1/56 ; 1/28 | 14/2/2/13024 ; 1/6512 | sa/state/memos.py:97 x1 | sa/state/memos.py:140 x2442; sa/state/memos.py:119 [mut] x14 |
+| Memos._native | init only | 0/0/0/2442 ; 1/1221 | 0/0/0/5996 ; 1/2998 | 0/0/0/56 ; 1/28 | 0/0/0/13024 ; 1/6512 | sa/state/memos.py:101 x1 | sa/state/memos.py:144 x2442 |
+| Memos._tables | init only | 0/0/0/2442 ; 1/1221 | 0/0/0/5996 ; 1/2998 | 0/0/0/56 ; 1/28 | 0/0/0/13024 ; 1/6512 | sa/state/memos.py:94 x1 | sa/state/memos.py:138 x2442 |
+| Memos.owner | read 0 | 1/1/0/0 ; 1/0 | 1/1/0/0 ; 1/0 | 1/1/0/0 ; 1/0 | 1/1/0/0 ; 1/0 | sa/state/memos.py:93 x1 |  |
+| Table.key | init only | 0/0/0/8547 ; 0/1221 | 0/0/0/20986 ; 0/2998 | 0/0/0/196 ; 0/28 | 0/0/0/45584 ; 0/6512 |  | sa/state/memos.py:139 x8547 |
+| Table.name | - | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 |  |  |
+| Table.size | - | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 |  |  |
+| Table.stamp | init only | 0/0/0/11731 ; 1/1221 | 0/0/0/34276 ; 1/2998 | 0/0/0/336 ; 2/28 | 0/0/0/62168 ; 2/6512 | sa/sympy_api.py:586 x2; sa/state/memos.py:75 x1 | slice/term_live.py:1093~ x8547; sa/sympy_api.py:509 x2004; sa/sympy_api.py:586~ x1180 |
+
+### slice/session_live.py
+
+| class.field | class | dev c/e/er/u ; wq/rq | fuzz c/e/er/u ; wq/rq | budget c/e/er/u ; wq/rq | wiring c/e/er/u ; wq/rq | writers | readers (top 4) |
+|---|---|---|---|---|---|---|---|
+| TableView.atom | read 0 | 746/603/0/0 ; 697/0 | 1897/1515/0/0 ; 1756/0 | 17/17/0/0 ; 17/0 | 5603/3263/0/0 ; 5413/0 | slice/session_live.py:134 x746 |  |
+| TableView.aux | read | 746/731/661/682 ; 697/621 | 1897/1856/1716/1718 ; 1756/1625 | 17/17/16/16 ; 17/16 | 5603/5254/4789/4789 ; 5413/4599 | slice/session_live.py:133 x746 | sa/sympy_api.py:1145~ x624; sa/sympy_api.py:586~ x58 |
+| TableView.base_of | read 0 | 746/603/0/0 ; 697/0 | 1897/1515/0/0 ; 1756/0 | 17/17/0/0 ; 17/0 | 5603/3263/0/0 ; 5413/0 | slice/session_live.py:132 x746 |  |
+| TableView.base_view | read 0 | 746/603/0/0 ; 697/0 | 1897/1515/0/0 ; 1756/0 | 17/17/0/0 ; 17/0 | 5603/3263/0/0 ; 5413/0 | slice/session_live.py:135 x746 |  |
+| TableView.core | read | 746/746/746/10477 ; 697/697 | 1897/1897/1897/68045 ; 1756/1756 | 17/17/17/3005 ; 17/17 | 5603/5603/5603/89791 ; 5413/5413 | slice/session_live.py:129 x746 | slice/session_live.py:172 x2866; sa/sympy_api.py:1145~ x2383; slice/session_live.py:616~ x2168; slice/session_live.py:130 x746 |
+| TableView.custom | minority | 746/623/101/153 ; 697/101 | 1897/1776/1401/1874 ; 1756/1387 | 17/17/0/0 ; 17/0 | 5603/3263/0/0 ; 5413/0 | slice/session_live.py:132 x746 | slice/session_live.py:616~ x153 |
+| TableView.node_base | read | 746/656/290/756 ; 697/290 | 1897/1786/1413/3742 ; 1756/1406 | 17/17/16/1811 ; 17/16 | 5603/4521/3068/13752 ; 5413/3068 | slice/session_live.py:133 x746 | sa/sympy_api.py:1145~ x716; slice/session_live.py:616~ x30; sa/sympy_api.py:1144~ x10 |
+| TableView.slots | read 0 | 746/603/0/0 ; 697/0 | 1897/1515/0/0 ; 1756/0 | 17/17/0/0 ; 17/0 | 5603/3263/0/0 ; 5413/0 | slice/session_live.py:132 x746 |  |
+| TableView.var | minority | 746/635/167/1083 ; 697/167 | 1897/1877/1787/17562 ; 1756/1680 | 17/17/0/0 ; 17/0 | 5603/3263/0/0 ; 5413/0 | slice/session_live.py:133 x746 | slice/session_live.py:616~ x1083 |
+| _Base.c | read 0 | 746/604/0/0 ; 697/0 | 1897/1583/0/0 ; 1756/0 | 17/17/0/0 ; 17/0 | 5603/3420/0/0 ; 5413/0 | slice/session_live.py:91 x746 |  |
+| _BaseOf.c | read 0 | 746/602/0/0 ; 697/0 | 1897/1614/0/0 ; 1756/0 | 17/16/0/0 ; 17/0 | 5603/2530/0/0 ; 5413/0 | slice/session_live.py:70 x746 |  |
+| _Custom.c | minority | 746/627/101/153 ; 697/101 | 1897/1819/1401/1874 ; 1756/1387 | 17/16/0/0 ; 17/0 | 5603/2773/0/0 ; 5413/0 | slice/session_live.py:49 x746 | slice/session_live.py:56 x123; slice/session_live.py:52 x30 |
+| _Slots.c | read 0 | 746/578/0/0 ; 697/0 | 1897/1579/0/0 ; 1756/0 | 17/16/0/0 ; 17/0 | 5603/2852/0/0 ; 5413/0 | slice/session_live.py:115 x746 |  |
+
+### slice/convert.py
+
+| class.field | class | dev c/e/er/u ; wq/rq | fuzz c/e/er/u ; wq/rq | budget c/e/er/u ; wq/rq | wiring c/e/er/u ; wq/rq | writers | readers (top 4) |
+|---|---|---|---|---|---|---|---|
+| Converted.classes | read | 1197/1197/1197/1197 ; 1197/1197 | 2998/2998/2998/2998 ; 2998/2998 | 28/28/28/28 ; 28/28 | 6512/6512/6512/6512 ; 6512/6512 | slice/convert.py:106 x1197 | slice/term_live.py:92 x1197 |
+| Converted.counts | read | 1197/1197/1197/1197 ; 1197/1197 | 2998/2998/2998/2998 ; 2998/2998 | 28/28/28/28 ; 28/28 | 6512/6512/6512/6512 ; 6512/6512 | slice/convert.py:105 x1197 | slice/term_live.py:94 x1197 |
+| Converted.ids | read | 1197/1197/1197/1197 ; 1197/1197 | 2998/2998/2998/2998 ; 2998/2998 | 28/28/28/28 ; 28/28 | 6512/6512/6512/6512 ; 6512/6512 | slice/convert.py:103 x1197 | slice/term_live.py:94 x1197 |
+| Converted.objects | read | 1197/1197/1197/1197 ; 1197/1197 | 2998/2998/2998/2998 ; 2998/2998 | 28/28/28/28 ; 28/28 | 6512/6512/6512/6512 ; 6512/6512 | slice/convert.py:104 x1197 | slice/term_live.py:94 x1197 |
+| Converted.raised | init only | 0/0/0/1197 ; 1197/1197 | 0/0/0/2998 ; 2998/2998 | 0/0/0/28 ; 28/28 | 0/0/0/6512 ; 6512/6512 | slice/convert.py:107 x1197 | slice/term_live.py:95 x1197 |
+| Converted.tables | read | 1197/1197/1197/1197 ; 1197/1197 | 2998/2998/2998/2998 ; 2998/2998 | 28/28/28/28 ; 28/28 | 6512/6512/6512/6512 ; 6512/6512 | slice/convert.py:102 x1197 | slice/term_live.py:93 x1197 |
+| Kept.detail | init only | 0/0/0/0 ; 24/0 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | slice/convert.py:94 x24 |  |
+| Kept.reason | read | 24/24/24/24 ; 24/24 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | slice/convert.py:93 x24 | slice/term_live.py:89 x24 |
+| _Keep.detail | - | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 |  |  |
+| _Keep.reason | - | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 |  |  |
+| _Walk.class_rows | - | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 |  |  |
+| _Walk.classes | - | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 |  |  |
+| _Walk.counts | - | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 |  |  |
+| _Walk.ids | - | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 |  |  |
+| _Walk.objects | - | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 |  |  |
+| _Walk.opaque | - | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 |  |  |
+| _Walk.raised | - | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 |  |  |
+| _Walk.reading | - | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 |  |  |
+| _Walk.string_ids | - | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 |  |  |
+| _Walk.strings | - | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 | 0/0/0/0 ; 0/0 |  |  |
+
+### sa/sat/formula.py
+
+| class.field | class | dev c/e/er/u ; wq/rq | fuzz c/e/er/u ; wq/rq | budget c/e/er/u ; wq/rq | wiring c/e/er/u ; wq/rq | writers | readers (top 4) |
+|---|---|---|---|---|---|---|---|
+| Formula.args | read | 128/128/128/5618 ; 68/420 | 6725/6725/6725/51276 ; 2172/2580 | 6385/6385/6385/14889 ; 23/25 | 277/277/277/31318 ; 27/2515 | sa/sat/formula.py:39 x128 | sa/sat/formula.py:48 x3913; slice/witness_live.py:72~ x1000; sa/sympy_api.py:1145~ x620; sa/sympy_api.py:586~ x81 |
+| P.expr | init only | 0/0/0/18599 ; 0/1071 | 0/0/0/123673 ; 0/2986 | 0/0/0/98837 ; 0/28 | 0/0/0/266637 ; 0/6174 |  | sa/sympy_api.py:1145~ x10764; slice/session_live.py:616~ x3009; slice/witness_live.py:72~ x2669; slice/term_live.py:702 x799 |
+| P.pred | init only | 0/0/0/38757 ; 0/1072 | 0/0/0/316852 ; 0/2986 | 0/0/0/64177 ; 0/28 | 0/0/0/426502 ; 0/6174 |  | sa/sympy_api.py:1145~ x27547; slice/session_live.py:616~ x4419; slice/witness_live.py:72~ x2669; sa/sympy_api.py:586~ x1544 |
+
+## (D) rust-nat: own time of the marked files' functions by class of the returned value, seconds per pass
+
+| class | dev | fuzz | budget | wiring |
+|---|---|---|---|---|
+| read 0 | 0.0000 (0.00%) | 0.0000 (0.00%) | 0.0000 (0.00%) | 0.0000 (0.00%) |
+| minority | 0.0000 (0.00%) | 0.0000 (0.00%) | 0.0000 (0.00%) | 0.0000 (0.00%) |
+| read | 0.0575 (9.55%) | 0.2782 (6.83%) | 0.0193 (5.90%) | 0.3632 (11.14%) |
+| no value | 0.0128 (2.13%) | 0.0399 (0.98%) | 0.0072 (2.22%) | 0.0722 (2.21%) |
+| - | 0.0000 (0.00%) | 0.0000 (0.00%) | 0.0000 (0.00%) | 0.0000 (0.00%) |
+
+fields classed read 0 or minority (12): slice/term_live.py _Query.classes [read 0]; sa/state/memos.py Memos.owner [read 0]; slice/session_live.py TableView.atom [read 0]; slice/session_live.py TableView.base_of [read 0]; slice/session_live.py TableView.base_view [read 0]; slice/session_live.py TableView.custom [minority]; slice/session_live.py TableView.slots [read 0]; slice/session_live.py TableView.var [minority]; slice/session_live.py _Base.c [read 0]; slice/session_live.py _BaseOf.c [read 0]; slice/session_live.py _Custom.c [minority]; slice/session_live.py _Slots.c [read 0]
