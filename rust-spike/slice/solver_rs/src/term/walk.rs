@@ -14,21 +14,73 @@
 //!
 //! `term_row` leaves bit 32 of a row's flags 0: it was F_MAYBE_NAN (`templates._may_be_nan` of the term), which no
 //! reader of a row used. The position stays reserved.
-use pyo3::exceptions::{PyException, PyKeyError, PyOverflowError, PyValueError};
+use pyo3::exceptions::{PyException, PyKeyError, PyOverflowError, PyRecursionError, PyTypeError, PyValueError};
 use pyo3::intern;
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyDict, PyInt, PyList, PyString, PyTuple, PyType};
+use pyo3::types::{PyBool, PyComplex, PyDict, PyFunction, PyInt, PyList, PyString, PyTuple, PyType};
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU8, Ordering};
 
 
 // The items, as bits of `Walk.mask`: `convert.RUST_ITEMS`, same order.
-pub const ENC: u8 = 1;
-pub const KLASS: u8 = 2;
-#[allow(dead_code)] // never asked for from here: only `convert` calls term_row
-pub const TERM_ROW: u8 = 4;
-pub const WALK: u8 = 8;
-pub const ENC_INT: u8 = 16;
+pub const ENC: u16 = 1;
+pub const KLASS: u16 = 2;
+pub const TERM_ROW: u16 = 4;
+pub const WALK: u16 = 8;
+pub const ENC_INT: u16 = 16;
+/// `_template_name` and `_structural_class`, the per-class calls of `klass`.
+pub const KLASS_CALLS: u16 = 32;
+pub const POWER_ROWS: u16 = 64;
+/// `_Walk.read` and the `_read_*` it dispatches to. Python decides it: the bit says `read` is this walk's method.
+#[allow(dead_code)]
+pub const READ: u16 = 128;
+/// `convert`, `default_engine_settings`, `formula` and the walk's state (`_Walk.__init__`): `WalkEntry`. Python
+/// decides it (`convert` asks the walker class for its ENTRY).
+#[allow(dead_code)]
+pub const ENTRY: u16 = 256;
+const ALL: u16 = 511;
+
+/// `formula` nested deeper than this is answered by Python's `formula`, whose own limit is the interpreter's.
+const DEPTH: u32 = 100;
+
+/// Counters 740-745 (`sa_solver.walk_counts()`), per thread like the witness check's.
+const NAMES: [&str; 7] = [
+    "cv:entry",          // 740: conversions entered natively (`convert`'s body here)
+    "cv:formula",        // 741: `formula` calls answered natively
+    "cv:read",           // 742: lazy reads dispatched natively
+    "cv:fallback:depth", // 743: to Python's `formula`: nesting past DEPTH
+    "cv:fallback:name",  // 744: to Python's `_template_name`: a template whose class has a metaclass of its own
+    "cv:py:own_base",    // 745: `own_base` reads, whose `Mul(2, t)` stays the Python input layer's (ruling 5)
+    "cv:patched",        // 746: conversions with an item off because its Python definition was replaced (P1)
+];
+const C_ENTRY: usize = 0;
+const C_FORMULA: usize = 1;
+const C_READ: usize = 2;
+const C_DEPTH: usize = 3;
+const C_NAME: usize = 4;
+const C_OWN_BASE: usize = 5;
+const C_PATCHED: usize = 6;
+
+thread_local! {
+    static COUNTS: [Cell<u64>; 7] = const { [const { Cell::new(0) }; 7] };
+}
+
+fn count(i: usize) {
+    COUNTS.with(|c| c[i].set(c[i].get() + 1));
+}
+
+#[pyfunction]
+fn walk_counts<'py>(py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+    let d = PyDict::new(py);
+    COUNTS.with(|c| NAMES.iter().zip(c).try_for_each(|(n, x)| d.set_item(n, x.get())))?;
+    Ok(d)
+}
+
+#[pyfunction]
+fn walk_counts_reset() {
+    COUNTS.with(|c| c.iter().for_each(|x| x.set(0)));
+}
 
 // Tokens: `convert.py`'s `T_*`, and `V` in table.rs.
 const T_NONE: i64 = 0;
@@ -41,6 +93,7 @@ const T_TUPLE: i64 = 6;
 const T_TERM: i64 = 7;
 const T_RAT: i64 = 8;
 const T_OPAQUE: i64 = 9;
+const T_MISS: i64 = 10;
 
 // Term fact bits and class flags past FLAGS: `convert.py`'s `F_*` and `_PLAIN_*`/`_IS_*`.
 const F_NUMBER: i64 = 1;
@@ -65,6 +118,12 @@ const PLANT_KLASS: u8 = 2; // 671: a class row without the IS_EXPR flag
 const PLANT_TERM_ROW: u8 = 3; // 672: a term row without the is_number bit
 const PLANT_WALK: u8 = 4; // 673: args pushed unreversed, so ids aren't by first sight
 const PLANT_ENC_INT: u8 = 5; // 674: a negative int loses its sign
+const PLANT_STRUCTURAL: u8 = 9; // 768: `_structural_class` says the opposite
+const PLANT_POWER_ROWS: u8 = 10; // 769: the last power row is dropped
+const PLANT_READ: u8 = 11; // 770: the `commutative` read says the opposite
+const PLANT_ENTRY: u8 = 12; // 771: the assumptions' formula is left out (as if they were True)
+const PLANT_FORMULA: u8 = 13; // 772: an `and` is tagged `or`
+const PLANT_REPLACED: u8 = 14; // 773: a replaced definition isn't looked for, so Rust's item answers in its place
 
 fn planted(p: u8) -> bool {
     PLANT.load(Ordering::Relaxed) == p
@@ -115,6 +174,42 @@ pub struct WalkCtx {
     int_t: Py<PyAny>,
     i64_lo: Py<PyAny>,
     i64_hi: Py<PyAny>,
+    // ---- the per-class calls
+    structural: Py<PyAny>,
+    integral_transform: Py<PyAny>,
+    euf_basic: Py<PyAny>,
+    py_template_name: Py<PyAny>,
+    format: Py<PyAny>,
+    // ---- power_rows, read
+    py_term_row: Py<PyAny>,
+    py_power_rows: Py<PyAny>,
+    py_read_own_base: Py<PyAny>,
+    reads: Py<PyTuple>,
+    default_sort_key: Py<PyAny>,
+    decompose_power: Py<PyAny>,
+    const_value: Py<PyAny>,
+    const_basis: Py<PyAny>,
+    complex_t: Py<PyAny>,
+    // ---- the entry
+    a: Py<PyAny>,
+    b_true: Py<PyAny>,
+    b_false: Py<PyAny>,
+    applied: Py<PyAny>,
+    relational: Py<PyAny>,
+    connective: Vec<(Py<PyAny>, Py<PyAny>)>,
+    relation_predicates: Py<PyAny>,
+    opaque_categories: Py<PyAny>,
+    unsupported: Py<PyAny>,
+    py_formula: Py<PyAny>,
+    prefix: Py<PyAny>,
+    kept: Py<PyAny>,
+    converted: Py<PyAny>,
+    // ---- replaced definitions (P1): each name of `_Walk` and of the module as defined, with the items it turns off
+    module: Py<PyAny>,
+    walk_cls: Py<PyAny>,
+    original: Vec<(bool, Py<PyString>, Py<PyAny>, u16)>,
+    py_convert: Py<PyAny>,
+    walk_class: Py<PyAny>,
 }
 
 #[pymethods]
@@ -136,6 +231,26 @@ impl WalkCtx {
         let walk = m.getattr("_Walk")?;
         let builtins = py.import("builtins")?;
         let i64v = m.getattr("_I64")?;
+        let a = m.getattr("A")?;
+        let original_of = m.getattr("_ORIGINAL")?;
+        let mut original = Vec::new();
+        for (name, f) in original_of.cast::<PyDict>()?.iter() {
+            let name = name.cast_into::<PyString>()?;
+            let (on_walk, off) = match name.to_cow()?.as_ref() {
+                "enc" => (true, ENC),
+                "enc_int" => (true, ENC_INT),
+                "walk" => (true, WALK),
+                "klass" => (true, KLASS),
+                "term_row" => (true, TERM_ROW),
+                "power_rows" => (true, POWER_ROWS),
+                "formula" | "default_engine_settings" | "_rel" => (false, ENTRY),
+                "_template_name" | "_structural_class" => (false, KLASS_CALLS),
+                "convert" => continue,
+                n if n == "read" || n.starts_with("_read_") => (true, READ),
+                _ => (true, ALL), // `__init__`, `s`, `term`: every item stands on them
+            };
+            original.push((on_walk, name.unbind(), f.unbind(), off));
+        }
         Ok(WalkCtx {
             basic: g("Basic")?,
             rational: g("Rational")?,
@@ -173,6 +288,38 @@ impl WalkCtx {
             int_t: builtins.getattr("int")?.unbind(),
             i64_lo: i64v.neg()?.unbind(),
             i64_hi: i64v.unbind(),
+            structural: g("_STRUCTURAL")?,
+            integral_transform: g("IntegralTransform")?,
+            euf_basic: m.getattr("_inherits_from_basic")?.getattr("__globals__")?.get_item("Basic")?.unbind(),
+            py_template_name: g("_template_name")?,
+            format: builtins.getattr("format")?.unbind(),
+            py_term_row: walk.getattr("term_row")?.unbind(),
+            py_power_rows: walk.getattr("power_rows")?.unbind(),
+            py_read_own_base: walk.getattr("_read_own_base")?.unbind(),
+            reads: m.getattr("READS")?.cast_into::<PyTuple>()?.unbind(),
+            default_sort_key: g("default_sort_key")?,
+            decompose_power: g("decompose_power")?,
+            const_value: g("const_value")?,
+            const_basis: g("_CONST_BASIS")?,
+            complex_t: builtins.getattr("complex")?.unbind(),
+            b_true: a.getattr("_BTrue")?.unbind(),
+            b_false: a.getattr("_BFalse")?.unbind(),
+            applied: a.getattr("_Applied")?.unbind(),
+            relational: a.getattr("_Relational")?.unbind(),
+            connective: m.getattr("_CONNECTIVE")?.try_iter()?.map(|x| x?.extract::<(Py<PyAny>, Py<PyAny>)>()).collect::<PyResult<_>>()?,
+            relation_predicates: a.getattr("RELATION_PREDICATES")?.unbind(),
+            opaque_categories: a.getattr("OPAQUE_CATEGORIES")?.unbind(),
+            unsupported: a.getattr("Unsupported")?.unbind(),
+            a: a.unbind(),
+            py_formula: g("formula")?,
+            prefix: g("_PREFIX")?,
+            kept: g("Kept")?,
+            converted: g("Converted")?,
+            module: m.clone().unbind(),
+            walk_cls: walk.clone().unbind(),
+            original,
+            py_convert: original_of.get_item("convert")?.unbind(),
+            walk_class: g("_walk_class")?,
         })
     }
 }
@@ -182,13 +329,15 @@ impl WalkCtx {
 #[pyclass(name = "Walk")]
 pub struct Walk {
     ctx: Py<WalkCtx>,
-    mask: u8,
+    mask: u16,
     ids: Option<Py<PyDict>>,
     objects: Option<Py<PyList>>,
     classes: Option<Py<PyDict>>,
     class_rows: Option<Py<PyList>>,
     opaque: Option<Py<PyList>>,
     counts: Option<Py<PyDict>>,
+    /// `_Walk.raised`: only `read` writes it.
+    raised: Option<Py<PyList>>,
     #[pyo3(get, set)]
     strings: Py<PyList>,
     #[pyo3(get, set)]
@@ -207,8 +356,9 @@ struct W<'py> {
     py: Python<'py>,
     slf: Bound<'py, Walk>,
     cx: Bound<'py, WalkCtx>,
-    o: Bound<'py, PyAny>,
-    mask: u8,
+    /// The `_Walk` whose Python methods answer the items that are off. None when every item is on.
+    o: Option<Bound<'py, PyAny>>,
+    mask: u16,
     ids: Bound<'py, PyDict>,
     objects: Bound<'py, PyList>,
     classes: Bound<'py, PyDict>,
@@ -252,14 +402,14 @@ impl Drop for Depth {
 }
 
 impl<'py> W<'py> {
-    fn new(slf: &Bound<'py, Walk>, o: &Bound<'py, PyAny>) -> PyResult<W<'py>> {
+    fn new(slf: &Bound<'py, Walk>, o: Option<&Bound<'py, PyAny>>) -> PyResult<W<'py>> {
         let py = slf.py();
         let b = slf.borrow();
         Ok(W {
             py,
             slf: slf.clone(),
             cx: b.ctx.bind(py).clone(),
-            o: o.clone(),
+            o: o.filter(|x| !x.is_none()).cloned(),
             mask: b.mask,
             ids: b.ids.as_ref().ok_or_else(unbound)?.bind(py).clone(),
             objects: b.objects.as_ref().ok_or_else(unbound)?.bind(py).clone(),
@@ -271,6 +421,11 @@ impl<'py> W<'py> {
             string_ids: b.string_ids.bind(py).clone(),
             reading: b.reading,
         })
+    }
+
+    /// The owner, for an item that is off.
+    fn owner(&self) -> PyResult<&Bound<'py, PyAny>> {
+        self.o.as_ref().ok_or_else(|| PyValueError::new_err("Walk: an item is off and there is no Python walker"))
     }
 
     fn keep<T>(&self, reason: &str, detail: Bound<'py, PyAny>) -> PyResult<T> {
@@ -313,22 +468,32 @@ impl<'py> W<'py> {
 
     fn enc(&self, v: &Bound<'py, PyAny>, out: &Bound<'py, PyList>, key: bool) -> PyResult<()> {
         if self.mask & ENC != 0 { return self.enc_native(v, out, key); } //@call enc
-        self.cx.get().py_enc.bind(self.py).call1((&self.o, v, out, key)).map(drop)
+        self.cx.get().py_enc.bind(self.py).call1((self.owner()?, v, out, key)).map(drop)
     }
 
     fn enc_int(&self, n: &Bound<'py, PyAny>, out: &Bound<'py, PyList>) -> PyResult<()> {
         if self.mask & ENC_INT != 0 { return self.enc_int_native(n, out); } //@call enc_int
-        self.cx.get().py_enc_int.bind(self.py).call1((&self.o, n, out)).map(drop)
+        self.cx.get().py_enc_int.bind(self.py).call1((self.owner()?, n, out)).map(drop)
     }
 
     fn walk(&self, root: &Bound<'py, PyAny>) -> PyResult<()> {
         if self.mask & WALK != 0 { return self.walk_native(root); } //@call walk
-        self.cx.get().py_walk.bind(self.py).call1((&self.o, root)).map(drop)
+        self.cx.get().py_walk.bind(self.py).call1((self.owner()?, root)).map(drop)
     }
 
     fn klass(&self, cls: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
         if self.mask & KLASS != 0 { return self.klass_native(cls); } //@call klass
-        self.cx.get().py_klass.bind(self.py).call1((&self.o, cls))
+        self.cx.get().py_klass.bind(self.py).call1((self.owner()?, cls))
+    }
+
+    fn term_row(&self, t: &Bound<'py, PyAny>, out: &Bound<'py, PyList>) -> PyResult<()> {
+        if self.mask & TERM_ROW != 0 { return self.term_row_native(t, out); } //@call term_row
+        self.cx.get().py_term_row.bind(self.py).call1((self.owner()?, t, out)).map(drop)
+    }
+
+    fn power_rows(&self, n: usize) -> PyResult<Bound<'py, PyAny>> {
+        if self.mask & POWER_ROWS != 0 { return self.power_rows_native(n); } //@call power_rows
+        self.cx.get().py_power_rows.bind(self.py).call1((self.owner()?, n))
     }
 
     //@begin enc
@@ -591,7 +756,7 @@ impl<'py> W<'py> {
         // names = tuple(sorted(_template_name(f) for f in found))
         let names = PyList::empty(py);
         for f in found.try_iter()? {
-            names.append(cx.template_name.bind(py).call1((f?,))?)?;
+            names.append(self.template_name(&f?)?)?;
         }
         names.sort()?;
         let names = names.to_tuple();
@@ -621,7 +786,7 @@ impl<'py> W<'py> {
         out.append(flags)?;
         self.enc(&ckey, out, false)?;
         self.enc(names.as_any(), out, false)?;
-        self.enc(&cx.structural_class.bind(py).call1((cls,))?, out, false)?;
+        self.enc(&self.structural_class(cls)?, out, false)?;
         let hc = intern!(py, "_hashable_content");
         let own = !cls.getattr(hc)?.is(&basic.getattr(hc)?);
         self.enc(PyBool::new(py, own).as_any(), out, false)?;
@@ -717,12 +882,519 @@ impl<'py> W<'py> {
         out.append(nc)
     }
     //@end term_row
+
+    //@begin klass_calls
+    /// `_template_name`: `f'{getattr(f, "__module__", "?")}.{getattr(f, "__qualname__", repr(type(f)))}'`. Python makes
+    /// `repr(type(f))` whether or not it is used; for a class whose metaclass is `type` that repr runs no code of the
+    /// class, so it is made here only when used. Any other metaclass: Python's function, before anything is read.
+    fn template_name(&self, f: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+        let py = self.py;
+        let cx = self.cx.get();
+        if self.mask & KLASS_CALLS == 0 {
+            return cx.template_name.bind(py).call1((f,));
+        }
+        let ty = f.get_type();
+        if !ty.get_type().is(&py.get_type::<PyType>()) {
+            count(C_NAME);
+            return cx.py_template_name.bind(py).call1((f,));
+        }
+        let m = self.getattr3(f, intern!(py, "__module__"), intern!(py, "?").as_any())?;
+        let q = if f.is_exact_instance_of::<PyFunction>() {
+            f.getattr(intern!(py, "__qualname__"))?
+        } else {
+            let d = ty.repr()?;
+            self.getattr3(f, intern!(py, "__qualname__"), d.as_any())?
+        };
+        let text = |x: Bound<'py, PyAny>| -> PyResult<String> {
+            match x.cast_exact::<PyString>() {
+                Ok(s) => Ok(s.to_cow()?.into_owned()),
+                Err(_) => cx.format.bind(py).call1((&x, intern!(py, "")))?.extract(),
+            }
+        };
+        let m = text(m)?;
+        let q = text(q)?;
+        Ok(PyString::new(py, &format!("{m}.{q}")).into_any())
+    }
+
+    /// `euf_adapter._inherits_from_basic`.
+    fn inherits_from_basic(&self, cls: &Bound<'py, PyAny>, name: &Bound<'py, PyString>) -> PyResult<bool> {
+        let py = self.py;
+        for c in cls.getattr(intern!(py, "__mro__"))?.try_iter()? {
+            let c = c?;
+            if c.getattr(intern!(py, "__dict__"))?.contains(name)? {
+                return Ok(c.is(self.cx.get().euf_basic.bind(py)));
+            }
+        }
+        Ok(true)
+    }
+
+    /// `_structural_class`.
+    fn structural_class(&self, cls: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+        let py = self.py;
+        let cx = self.cx.get();
+        if self.mask & KLASS_CALLS == 0 {
+            return cx.structural_class.bind(py).call1((cls,));
+        }
+        let v = is_subclass(cls, &cx.structural)?
+            && !is_subclass(cls, &cx.integral_transform)?
+            && self.inherits_from_basic(cls, intern!(py, "free_symbols"))?
+            && self.inherits_from_basic(cls, intern!(py, "bound_symbols"))?;
+        Ok(PyBool::new(py, v != planted(PLANT_STRUCTURAL)).to_owned().into_any())
+    }
+    //@end klass_calls
+
+    //@begin power_rows
+    /// `_Walk.power_rows`.
+    fn power_rows_native(&self, n: usize) -> PyResult<Bound<'py, PyAny>> {
+        let py = self.py;
+        let cx = self.cx.get();
+        let expr = cx.expr.bind(py);
+        let abe = intern!(py, "as_base_exp");
+        let no = PyBool::new(py, false).to_owned();
+        let out = PyList::empty(py);
+        for i in 0..n {
+            let t = self.objects.get_item(i)?;
+            if !t.is_instance(expr)?
+                || t.getattr(intern!(py, "is_Mul"))?.is_truthy()?
+                || t.getattr(intern!(py, "is_Number"))?.is_truthy()?
+                || t.get_type().getattr(abe)?.is(&expr.getattr(abe)?)
+                || self.getattr3(&t, intern!(py, "is_number"), no.as_any())?.is_truthy()?
+            {
+                continue;
+            }
+            out.append(i)?;
+        }
+        if planted(PLANT_POWER_ROWS) && out.len() > 0 {
+            out.del_item(out.len() - 1)?;
+        }
+        Ok(out.into_any())
+    }
+    //@end power_rows
+
+    //@begin read
+    fn bump(&self, key: &Bound<'py, PyString>) -> PyResult<()> {
+        let n = self.counts.get_item(key)?.ok_or_else(|| PyKeyError::new_err((key.clone().unbind(),)))?;
+        self.counts.set_item(key, n.add(1)?)
+    }
+
+    /// The `_read_*` of `name`, on the original object.
+    fn read_value(&self, name: &str, t: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+        let py = self.py;
+        let cx = self.cx.get();
+        Ok(match name {
+            "key" => cx.default_sort_key.bind(py).call1((t,))?,
+            "finite" => {
+                if !t.is_instance(cx.expr.bind(py))? {
+                    return Ok(py.None().into_bound(py));
+                }
+                t.getattr(intern!(py, "is_finite"))?
+            }
+            "complex" => {
+                if !t.is_instance(cx.expr.bind(py))? {
+                    return Err(PyTypeError::new_err((type_name(t)?.unbind(),)));
+                }
+                // The two doubles as their bit patterns (R17): `struct.unpack('<q', struct.pack('<d', x))`. No float is compared.
+                let z = cx.complex_t.bind(py).call1((t,))?;
+                let z = z.cast::<PyComplex>()?;
+                PyTuple::new(py, [z.real().to_bits() as i64, z.imag().to_bits() as i64])?.into_any()
+            }
+            "power" => {
+                let (base, e) = cx.decompose_power.bind(py).call1((t,))?.extract::<(Bound<'py, PyAny>, Bound<'py, PyAny>)>()?;
+                let b = match self.ids.get_item(&base)? {
+                    Some(b) => b,
+                    None => (-1i64).into_pyobject(py)?.into_any(),
+                };
+                if b.lt(0)? {
+                    self.bump(intern!(py, "pow_base_not_input"))?;
+                }
+                PyTuple::new(py, [b, e])?.into_any()
+            }
+            "commutative" => {
+                let v = t.getattr(intern!(py, "is_commutative"))?.is(&PyBool::new(py, true).to_owned());
+                PyBool::new(py, v != planted(PLANT_READ)).to_owned().into_any()
+            }
+            "symbol" => {
+                let items = t.getattr(intern!(py, "assumptions0"))?.call_method0(intern!(py, "items"))?;
+                PyTuple::new(py, items.try_iter()?.collect::<PyResult<Vec<_>>>()?)?.into_any()
+            }
+            "constant" => {
+                let mut v = Vec::new();
+                for p in cx.const_basis.bind(py).try_iter()? {
+                    v.push(cx.const_value.bind(py).call1((t, p?))?);
+                }
+                PyTuple::new(py, v)?.into_any()
+            }
+            "own_base" => {
+                // `Mul(2, t)`: a construction of the Python input layer (ruling 5), so Python's method makes it.
+                count(C_OWN_BASE);
+                let o = match &self.o {
+                    Some(o) => o.clone(),
+                    None => py.None().into_bound(py),
+                };
+                cx.py_read_own_base.bind(py).call1((o, t))?
+            }
+            _ => return Err(PyKeyError::new_err(format!("_read_{name}"))),
+        })
+    }
+
+    /// `_Walk.read`.
+    fn read_native(slf: &Bound<'py, Walk>, o: Option<&Bound<'py, PyAny>>, kind: &Bound<'py, PyAny>, i: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+        let py = slf.py();
+        count(C_READ);
+        let name = slf.borrow().ctx.bind(py).get().reads.bind(py).as_any().get_item(kind)?;
+        let name = name.cast_into::<PyString>()?;
+        let key = PyString::new(py, &format!("read:{}", name.to_cow()?));
+        {
+            let w = W::new(slf, o)?;
+            w.bump(&key)?;
+        }
+        let objects = slf.borrow().objects.as_ref().ok_or_else(unbound)?.bind(py).clone();
+        let t = objects.as_any().get_item(i)?;
+        {
+            let mut b = slf.borrow_mut();
+            b.reading = true;
+            b.strings = PyList::empty(py).unbind();
+            b.string_ids = PyDict::new(py).unbind();
+        }
+        let w = W::new(slf, o)?;
+        let raised = slf.borrow().raised.as_ref().ok_or_else(unbound)?.bind(py).clone();
+        let note = |e: &PyErr| -> PyResult<Bound<'py, PyAny>> {
+            w.bump(intern!(py, "read_raised"))?;
+            raised.append((&name, i, e.get_type(py).getattr(intern!(py, "__name__"))?))?;
+            Ok(py.None().into_bound(py))
+        };
+        let v = match w.read_value(&name.to_cow()?, &t) {
+            Ok(v) => v,
+            Err(e) if e.is_instance_of::<PyException>(py) => return note(&e),
+            Err(e) => return Err(e),
+        };
+        let out = PyList::empty(py);
+        match w.enc(&v, &out, name.to_cow()? == "key") {
+            Ok(()) => {}
+            Err(e) if e.is_instance(py, w.cx.get().not_in_table.bind(py)) => {
+                w.bump(intern!(py, "read_term_missing"))?;
+                return Ok((PyList::new(py, [T_MISS])?, PyList::empty(py)).into_pyobject(py)?.into_any());
+            }
+            Err(e) if e.is_instance_of::<PyRecursionError>(py) => return note(&e),
+            Err(e) => return Err(e),
+        }
+        Ok((out, &w.strings).into_pyobject(py)?.into_any())
+    }
+    //@end read
+
 }
+
+//@begin entry
+/// `_rel`.
+fn rel_parts<'py>(cx: &Bound<'py, WalkCtx>, parts: &Bound<'py, PyAny>, rel: bool) -> PyResult<Bound<'py, PyAny>> {
+    let py = cx.py();
+    let cxb = cx;
+    let cx = cxb.get();
+    let (name, lhs, rhs) = parts.extract::<(Bound<'py, PyAny>, Bound<'py, PyAny>, Bound<'py, PyAny>)>()?;
+    let scalar = |x: &Bound<'py, PyAny>| -> PyResult<bool> {
+        cx.a.bind(py).getattr(intern!(py, "_is_scalar"))?.call1((x,))?.is_truthy()
+    };
+    if !rel || !(scalar(&lhs)? && scalar(&rhs)?) {
+        return Err(PyErr::from_value(cx.unsupported.bind(py).call1(("relation", "relation"))?));
+    }
+    Ok((intern!(py, "rel"), name, lhs, rhs).into_pyobject(py)?.into_any())
+}
+
+/// `formula`. `deep` is set, and an error returned, when the nesting passes DEPTH: the caller asks Python's.
+fn formula<'py>(cx: &Bound<'py, WalkCtx>, e: &Bound<'py, PyAny>, rel: bool, opq: bool, level: u32, deep: &Cell<bool>) -> PyResult<Bound<'py, PyAny>> {
+    let py = cx.py();
+    let cxb = cx;
+    let cx = cxb.get();
+    if level > DEPTH {
+        deep.set(true);
+        return Err(PyRecursionError::new_err("formula: nesting past the native bound"));
+    }
+    let yes = PyBool::new(py, true).to_owned();
+    let no = PyBool::new(py, false).to_owned();
+    let is_true = |x: &Bound<'py, PyAny>| -> PyResult<bool> { Ok(x.is(&yes) || x.is_instance(cx.b_true.bind(py))?) };
+    let is_false = |x: &Bound<'py, PyAny>| -> PyResult<bool> { Ok(x.is(&no) || x.is_instance(cx.b_false.bind(py))?) };
+    let one = |s: &Bound<'py, PyString>| -> PyResult<Bound<'py, PyAny>> { Ok(PyTuple::new(py, [s])?.into_any()) };
+    if is_true(e)? {
+        return one(intern!(py, "true"));
+    }
+    if is_false(e)? {
+        return one(intern!(py, "false"));
+    }
+    let a = cx.a.bind(py);
+    if e.is_instance(cx.applied.bind(py))? {
+        let arguments = intern!(py, "arguments");
+        let name = e.getattr(intern!(py, "function"))?.getattr(intern!(py, "name"))?.str()?;
+        let named = |s: &str| -> PyResult<bool> {
+            match name.cast_exact::<PyString>() {
+                Ok(n) => Ok(n.to_cow()? == s),
+                Err(_) => PyAnyMethods::eq(name.as_any(), s),
+            }
+        };
+        let truth = named("is_true")?;
+        if truth && e.getattr(arguments)?.len()? == 1 {
+            let x = e.getattr(arguments)?.get_item(0)?;
+            if is_true(&x)? {
+                return one(intern!(py, "true"));
+            }
+            if is_false(&x)? {
+                return one(intern!(py, "false"));
+            }
+        }
+        if cx.relation_predicates.bind(py).contains(&name)? || named("is_true")? {
+            let parts = a.getattr(intern!(py, "relation_parts"))?.call1((e,))?;
+            if !parts.is_none() {
+                return rel_parts(cxb, &parts, rel);
+            }
+        }
+        let c = a.getattr(intern!(py, "_applied_category"))?.call1((e,))?;
+        if !c.is_none() {
+            if opq && cx.opaque_categories.bind(py).contains(&c)? {
+                return Ok((intern!(py, "opaque"), e).into_pyobject(py)?.into_any());
+            }
+            return Err(PyErr::from_value(cx.unsupported.bind(py).call1((&c, &c))?));
+        }
+        let mut v = vec![intern!(py, "atom").clone().into_any(), name.into_any()];
+        for x in e.getattr(arguments)?.try_iter()? {
+            v.push(x?);
+        }
+        return Ok(PyTuple::new(py, v)?.into_any());
+    }
+    for (cls, tag) in &cx.connective {
+        if e.is_instance(cls.bind(py))? {
+            let mut v = vec![tag.bind(py).clone()];
+            if planted(PLANT_FORMULA) && tag.bind(py).eq("and")? {
+                v[0] = intern!(py, "or").clone().into_any();
+            }
+            for x in e.getattr(intern!(py, "args"))?.try_iter()? {
+                v.push(formula(cxb, &x?, rel, opq, level + 1, deep)?);
+            }
+            return Ok(PyTuple::new(py, v)?.into_any());
+        }
+    }
+    if e.is_instance(cx.relational.bind(py))? {
+        return rel_parts(cxb, &a.getattr(intern!(py, "relation_parts"))?.call1((e,))?, rel);
+    }
+    Err(PyErr::from_value(cx.unsupported.bind(py).call1(("other", "other"))?))
+}
+/// `formula`, natively up to DEPTH and by Python's past it (from the top: `formula` only reads).
+/// The items a replaced definition turns off for this query: `_Walk`'s methods and the module's functions, by identity
+/// against `convert._ORIGINAL`. A replacement (a test's plant, an instrument) is then called by name, as Python's walker
+/// calls it (P1).
+fn replaced(cx: &Bound<'_, WalkCtx>) -> PyResult<u16> {
+    let py = cx.py();
+    let c = cx.get();
+    let mut off = 0;
+    if planted(PLANT_REPLACED) {
+        return Ok(off);
+    }
+    for (on_walk, name, f, bits) in &c.original {
+        let now = if *on_walk { c.walk_cls.bind(py) } else { c.module.bind(py) }.getattr(name.bind(py))?;
+        if !now.is(f.bind(py)) {
+            off |= bits;
+        }
+    }
+    Ok(off)
+}
+
+fn formula_top<'py>(cx: &Bound<'py, WalkCtx>, e: &Bound<'py, PyAny>, rel: bool, opq: bool) -> PyResult<Bound<'py, PyAny>> {
+    let py = cx.py();
+    let deep = Cell::new(false);
+    match formula(cx, e, rel, opq, 0, &deep) {
+        Err(_) if deep.get() => {
+            count(C_DEPTH);
+            cx.get().py_formula.bind(py).call1((e, rel, opq))
+        }
+        r => {
+            count(C_FORMULA);
+            r
+        }
+    }
+}
+
+/// `default_engine_settings`.
+fn engine_settings<'py>(cx: &Bound<'py, WalkCtx>, eng: &Bound<'py, PyAny>) -> PyResult<Option<Bound<'py, PyAny>>> {
+    let py = cx.py();
+    let c = cx.get();
+    let default_specs = py.import(intern!(py, "satassume.relations"))?.getattr(intern!(py, "default_specs"))?;
+    if eng.getattr(intern!(py, "_templates"))?.ne(c.registry.bind(py).getattr(intern!(py, "facts_for"))?)? {
+        return Ok(None);
+    }
+    let names = |specs: Bound<'py, PyAny>| -> PyResult<Bound<'py, PyTuple>> {
+        let mut v = Vec::new();
+        for r in specs.try_iter()? {
+            v.push(r?.getattr(intern!(py, "name"))?);
+        }
+        PyTuple::new(py, v)
+    };
+    let ours = names(eng.getattr(intern!(py, "_relation_specs"))?)?;
+    if ours.as_any().ne(names(default_specs.call0()?)?)? {
+        return Ok(None);
+    }
+    Ok(Some(
+        (
+            eng.getattr(intern!(py, "discovery_budget"))?,
+            eng.getattr(intern!(py, "_transfer"))?,
+            eng.getattr(intern!(py, "_uninterpreted"))?,
+            eng.getattr(intern!(py, "_relevance"))?,
+        )
+            .into_pyobject(py)?
+            .into_any(),
+    ))
+}
+
+/// `convert`, for a walker class whose items are `mask`. With every item on, the state is made here and no Python
+/// walker exists for the query. With an item off, for the class or for this query (`replaced`), the Python walker's
+/// class for the items that are on (`convert._walk_class`) is instantiated and its methods answer the rest; with the
+/// entry itself off for this query, Python's `convert` runs with that class.
+#[pyclass(name = "WalkEntry", frozen)]
+pub struct WalkEntry {
+    ctx: Py<WalkCtx>,
+    mask: u16,
+}
+
+#[pymethods]
+impl WalkEntry {
+    #[new]
+    fn new(ctx: Py<WalkCtx>, mask: u16) -> Self {
+        WalkEntry { ctx, mask }
+    }
+
+    fn __call__<'py>(&self, py: Python<'py>, proposition: &Bound<'py, PyAny>, assumptions: &Bound<'py, PyAny>, eng: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+        let cx = self.ctx.bind(py);
+        let c = cx.get();
+        let mask = self.mask & !replaced(cx)?;
+        if mask != self.mask {
+            count(C_PATCHED);
+        }
+        let owner = if mask == ALL { None } else { Some(c.walk_class.bind(py).call1((mask,))?) };
+        if mask & ENTRY == 0 {
+            return c.py_convert.bind(py).call1((proposition, assumptions, eng, owner));
+        }
+        count(C_ENTRY);
+        let yes = PyBool::new(py, true).to_owned();
+        let no = PyBool::new(py, false).to_owned();
+        let kept = |args: Bound<'py, PyTuple>| c.kept.bind(py).call1(args);
+        type Built<'py> = (Bound<'py, PyAny>, Bound<'py, Walk>, Option<Bound<'py, PyAny>>, Bound<'py, PyList>, Bound<'py, PyList>, Bound<'py, PyAny>);
+        let body = || -> PyResult<Result<Built<'py>, Bound<'py, PyAny>>> {
+            let settings = match engine_settings(cx, eng)? {
+                Some(s) => s,
+                None => return Ok(Err(kept(PyTuple::new(py, ["non-default-registry"])?)?)),
+            };
+            let rel = eng.getattr(intern!(py, "relation_specs"))?.is_truthy()?;
+            let formulas = (|| -> PyResult<(Bound<'py, PyAny>, Bound<'py, PyAny>)> {
+                let fp = formula_top(cx, proposition, rel, false)?;
+                let fa = if assumptions.is(&yes) || planted(PLANT_ENTRY) {
+                    py.None().into_bound(py)
+                } else {
+                    formula_top(cx, assumptions, rel, true)?
+                };
+                Ok((fp, fa))
+            })();
+            let (fp, fa) = match formulas {
+                Ok(x) => x,
+                Err(e) if e.is_instance(py, c.unsupported.bind(py)) => return Ok(Err(kept(PyTuple::new(py, ["out-of-scope"])?)?)),
+                Err(e) => return Err(e),
+            };
+            let (slf, o) = match &owner {
+                Some(cls) => {
+                    let o = cls.call0()?;
+                    (o.getattr(intern!(py, "_rs"))?.cast_into::<Walk>()?, Some(o))
+                }
+                None => (Bound::new(py, Walk::fresh(py, cx, mask)?)?, None),
+            };
+            let w = W::new(&slf, o.as_ref())?;
+            for cls in c.prefix.bind(py).try_iter()? {
+                w.klass(&cls?)?;
+            }
+            for x in [proposition, assumptions] {
+                if x.is(&yes) || x.is(&no) {
+                    continue;
+                }
+                w.walk(x)?;
+            }
+            let form = PyList::empty(py);
+            w.enc((fp, fa).into_pyobject(py)?.as_any(), &form, false)?;
+            let rows = PyList::empty(py);
+            let mut i = 0;
+            while i < w.objects.len() {
+                w.term_row(&w.objects.get_item(i)?, &rows)?;
+                i += 1;
+            }
+            let powers = w.power_rows(w.objects.len())?;
+            Ok(Ok((settings, slf, o, form, rows, powers)))
+        };
+        let (settings, slf, o, form, rows, powers) = match body() {
+            Ok(Ok(x)) => x,
+            Ok(Err(k)) => return Ok(k),
+            Err(e) if e.is_instance(py, c.keep.bind(py)) => {
+                let v = e.value(py);
+                return kept(PyTuple::new(py, [v.getattr(intern!(py, "reason"))?, v.getattr(intern!(py, "detail"))?])?);
+            }
+            Err(e) if e.is_instance_of::<PyRecursionError>(py) => return kept(PyTuple::new(py, ["too-deep"])?),
+            Err(e) => return Err(e),
+        };
+        let w = W::new(&slf, o.as_ref())?;
+        let sets = PyList::empty(py);
+        w.enc(&settings, &sets, false)?;
+        // `w.enc` may have added strings; `w.strings` is the list Rust holds, as `_RustWalk.strings` reads it.
+        let reads = match &o {
+            Some(o) => o.getattr(intern!(py, "read"))?,
+            None => slf.getattr(intern!(py, "read_own"))?,
+        };
+        let tables = PyDict::new(py);
+        tables.set_item(intern!(py, "strings"), &w.strings)?;
+        tables.set_item(intern!(py, "classes"), &w.class_rows)?;
+        tables.set_item(intern!(py, "terms"), rows)?;
+        tables.set_item(intern!(py, "powers"), powers)?;
+        tables.set_item(intern!(py, "settings"), sets)?;
+        tables.set_item(intern!(py, "formula"), form)?;
+        tables.set_item(intern!(py, "n_classes"), w.classes.len())?;
+        tables.set_item(intern!(py, "n_terms"), w.objects.len())?;
+        tables.set_item(intern!(py, "n_opaque"), w.opaque.len())?;
+        tables.set_item(intern!(py, "reads"), reads)?;
+        let raised = match &o {
+            Some(o) => o.getattr(intern!(py, "raised"))?,
+            None => slf.borrow().raised.as_ref().ok_or_else(unbound)?.bind(py).clone().into_any(),
+        };
+        c.converted.bind(py).call1((tables, &w.ids, &w.objects, &w.counts, &w.classes, raised))
+    }
+}
+//@end entry
 
 #[pymethods]
 impl Walk {
     #[new]
-    fn new(py: Python<'_>, ctx: Py<WalkCtx>, mask: u8) -> Self {
+    fn new(py: Python<'_>, ctx: Py<WalkCtx>, mask: u16) -> Self {
+        Walk::bare(py, ctx, mask)
+    }
+
+    /// The state `_Walk.__init__` made: Rust fills these same objects.
+    #[pyo3(signature = (ids, objects, classes, class_rows, opaque, counts, raised=None))]
+    #[allow(clippy::too_many_arguments)]
+    fn bind(&mut self, ids: Py<PyDict>, objects: Py<PyList>, classes: Py<PyDict>, class_rows: Py<PyList>, opaque: Py<PyList>, counts: Py<PyDict>, raised: Option<Py<PyList>>) {
+        self.ids = Some(ids);
+        self.objects = Some(objects);
+        self.classes = Some(classes);
+        self.class_rows = Some(class_rows);
+        self.opaque = Some(opaque);
+        self.counts = Some(counts);
+        self.raised = raised;
+    }
+
+    // Each takes the owner first: the `_Walk` whose Python methods answer the items that are off.
+    fn enc<'py>(slf: &Bound<'py, Self>, o: &Bound<'py, PyAny>, v: &Bound<'py, PyAny>, out: &Bound<'py, PyList>, key: bool) -> PyResult<()> { W::new(slf, Some(o))?.enc_native(v, out, key) } //@call enc
+    fn enc_int<'py>(slf: &Bound<'py, Self>, o: &Bound<'py, PyAny>, n: &Bound<'py, PyAny>, out: &Bound<'py, PyList>) -> PyResult<()> { W::new(slf, Some(o))?.enc_int_native(n, out) } //@call enc_int
+    fn walk<'py>(slf: &Bound<'py, Self>, o: &Bound<'py, PyAny>, root: &Bound<'py, PyAny>) -> PyResult<()> { W::new(slf, Some(o))?.walk_native(root) } //@call walk
+    fn klass<'py>(slf: &Bound<'py, Self>, o: &Bound<'py, PyAny>, cls: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> { W::new(slf, Some(o))?.klass_native(cls) } //@call klass
+    fn term_row<'py>(slf: &Bound<'py, Self>, o: &Bound<'py, PyAny>, t: &Bound<'py, PyAny>, out: &Bound<'py, PyList>) -> PyResult<()> { W::new(slf, Some(o))?.term_row_native(t, out) } //@call term_row
+    fn power_rows<'py>(slf: &Bound<'py, Self>, o: &Bound<'py, PyAny>, n: usize) -> PyResult<Bound<'py, PyAny>> { W::new(slf, Some(o))?.power_rows_native(n) } //@call power_rows
+    fn read<'py>(slf: &Bound<'py, Self>, o: &Bound<'py, PyAny>, kind: &Bound<'py, PyAny>, i: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> { W::read_native(slf, Some(o), kind, i) } //@call read
+    /// `read` of a walk with every item on: `tables['reads']` itself, so no Python runs between the table and here.
+    fn read_own<'py>(slf: &Bound<'py, Self>, kind: &Bound<'py, PyAny>, i: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> { W::read_native(slf, None, kind, i) } //@call read
+}
+
+impl Walk {
+    fn bare(py: Python<'_>, ctx: Py<WalkCtx>, mask: u16) -> Self {
         Walk {
             ctx,
             mask,
@@ -732,6 +1404,7 @@ impl Walk {
             class_rows: None,
             opaque: None,
             counts: None,
+            raised: None,
             strings: PyList::empty(py).unbind(),
             string_ids: PyDict::new(py).unbind(),
             reading: false,
@@ -740,27 +1413,33 @@ impl Walk {
         }
     }
 
-    /// The state `_Walk.__init__` made: Rust fills these same objects.
-    fn bind(&mut self, ids: Py<PyDict>, objects: Py<PyList>, classes: Py<PyDict>, class_rows: Py<PyList>, opaque: Py<PyList>, counts: Py<PyDict>) {
-        self.ids = Some(ids);
-        self.objects = Some(objects);
-        self.classes = Some(classes);
-        self.class_rows = Some(class_rows);
-        self.opaque = Some(opaque);
-        self.counts = Some(counts);
+    /// `_Walk.__init__`: the state of one query's walk, made here when no Python walker is.
+    fn fresh<'py>(py: Python<'py>, cx: &Bound<'py, WalkCtx>, mask: u16) -> PyResult<Self> {
+        let mut w = Walk::bare(py, cx.clone().unbind(), mask);
+        let counts = PyDict::new(py);
+        for k in ["pow_base_not_input", "opaque", "read_term_missing", "read_raised"] {
+            counts.set_item(k, 0)?;
+        }
+        for name in cx.get().reads.bind(py).iter() {
+            counts.set_item(format!("read:{}", name.cast::<PyString>()?.to_cow()?), 0)?;
+        }
+        w.ids = Some(PyDict::new(py).unbind());
+        w.objects = Some(PyList::empty(py).unbind());
+        w.classes = Some(PyDict::new(py).unbind());
+        w.class_rows = Some(PyList::empty(py).unbind());
+        w.opaque = Some(PyList::empty(py).unbind());
+        w.counts = Some(counts.unbind());
+        w.raised = Some(PyList::empty(py).unbind());
+        Ok(w)
     }
-
-    // Each takes the owner first: the `_Walk` whose Python methods answer the items that are off.
-    fn enc<'py>(slf: &Bound<'py, Self>, o: &Bound<'py, PyAny>, v: &Bound<'py, PyAny>, out: &Bound<'py, PyList>, key: bool) -> PyResult<()> { W::new(slf, o)?.enc_native(v, out, key) } //@call enc
-    fn enc_int<'py>(slf: &Bound<'py, Self>, o: &Bound<'py, PyAny>, n: &Bound<'py, PyAny>, out: &Bound<'py, PyList>) -> PyResult<()> { W::new(slf, o)?.enc_int_native(n, out) } //@call enc_int
-    fn walk<'py>(slf: &Bound<'py, Self>, o: &Bound<'py, PyAny>, root: &Bound<'py, PyAny>) -> PyResult<()> { W::new(slf, o)?.walk_native(root) } //@call walk
-    fn klass<'py>(slf: &Bound<'py, Self>, o: &Bound<'py, PyAny>, cls: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> { W::new(slf, o)?.klass_native(cls) } //@call klass
-    fn term_row<'py>(slf: &Bound<'py, Self>, o: &Bound<'py, PyAny>, t: &Bound<'py, PyAny>, out: &Bound<'py, PyList>) -> PyResult<()> { W::new(slf, o)?.term_row_native(t, out) } //@call term_row
 }
 
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<WalkCtx>()?;
     m.add_class::<Walk>()?;
+    m.add_class::<WalkEntry>()?;
     m.add_function(wrap_pyfunction!(walk_plant, m)?)?;
+    m.add_function(wrap_pyfunction!(walk_counts, m)?)?;
+    m.add_function(wrap_pyfunction!(walk_counts_reset, m)?)?;
     Ok(())
 }

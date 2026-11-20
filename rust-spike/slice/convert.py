@@ -388,7 +388,10 @@ class _Walk:
 
 
 #: `_Walk`'s items that sa_solver.Walk (solver_rs/src/term/walk.rs) answers, in port order: the bits of its mask.
-RUST_ITEMS = ('enc', 'klass', 'term_row', 'walk', 'enc_int')
+#: `klass_calls`: `_template_name` and `_structural_class`, which Rust's `klass` calls per class (no effect without `klass`). `read`: `_Walk.read` and the
+#: `_read_*` it dispatches to (`_read_own_base`'s `Mul(2, t)` stays here, the input layer's construction). `entry`:
+#: `convert` itself with `default_engine_settings`, `formula` and the state `_Walk.__init__` makes (sa_solver.WalkEntry).
+RUST_ITEMS = ('enc', 'klass', 'term_row', 'walk', 'enc_int', 'klass_calls', 'power_rows', 'read', 'entry')
 #: The walker `convert` uses. None: `_Walk`, the Python reference and the default. `use_rust()` sets Rust's.
 WALK = [None]
 _RUST = {}
@@ -416,7 +419,7 @@ def rust_walk(items=RUST_ITEMS):
         def __init__(self):
             self._rs = new(ctx, mask)
             _Walk.__init__(self)
-            self._rs.bind(self.ids, self.objects, self.classes, self.class_rows, self.opaque, self.counts)
+            self._rs.bind(self.ids, self.objects, self.classes, self.class_rows, self.opaque, self.counts, self.raised)
 
         strings = property(lambda self: self._rs.strings, lambda self, v: setattr(self._rs, 'strings', v))
         string_ids = property(lambda self: self._rs.string_ids, lambda self, v: setattr(self._rs, 'string_ids', v))
@@ -432,8 +435,23 @@ def rust_walk(items=RUST_ITEMS):
         _RustWalk.walk = lambda self, root: self._rs.walk(self, root)
     if 'enc_int' in items:
         _RustWalk.enc_int = lambda self, n, out: self._rs.enc_int(self, n, out)
+    if 'power_rows' in items:
+        _RustWalk.power_rows = lambda self, n: self._rs.power_rows(self, n)
+    if 'read' in items:
+        _RustWalk.read = lambda self, kind, i: self._rs.read(self, kind, i)
+    if 'entry' in items:
+        # With every item on, Rust makes the state too and no `_RustWalk` exists for the query; with one off, for the
+        # class or for one query (a replaced definition, `_ORIGINAL`), it asks `_walk_class` for the class to instantiate.
+        _RustWalk.ENTRY = sa_solver.WalkEntry(ctx, mask)
     _RUST[items] = _RustWalk
     return _RustWalk
+
+
+def _walk_class(mask):
+    """The walker class for a mask of RUST_ITEMS; `_Walk` for none. What sa_solver.WalkEntry instantiates when an item
+    is off."""
+    items = tuple(name for bit, name in enumerate(RUST_ITEMS) if mask >> bit & 1)
+    return rust_walk(items) if items else _Walk
 
 
 def use_rust(items=RUST_ITEMS):
@@ -442,9 +460,11 @@ def use_rust(items=RUST_ITEMS):
 
 
 #: Test plants of the Rust walker, one per item: `SLICE_CONVERT_PLANT`, sa_solver.walk_plant's numbers. (6 to 8 were
-#: plants 746-748 in `term_row`'s F_MAYBE_NAN bit, retired with the bit.)
+#: plants 746-748 in `term_row`'s F_MAYBE_NAN bit, retired with the bit.) 9 to 14 are plants 768-773, of the items past
+#: `enc_int` and of the entry's look for replaced definitions.
 WALK_PLANTS = {'enc-true-as-false': 1, 'klass-no-is-expr': 2, 'term-row-no-number': 3, 'walk-args-unreversed': 4,
-               'enc-int-no-sign': 5}
+               'enc-int-no-sign': 5, 'calls-structural-not': 9, 'power-rows-drop-last': 10, 'read-commutative-not': 11,
+               'entry-no-assumptions': 12, 'formula-and-as-or': 13, 'entry-skip-replaced': 14}
 
 
 def from_env():
@@ -534,8 +554,16 @@ def formula(e, rel, opq=False):
     raise A.Unsupported('other', 'other')
 
 
-def convert(proposition, assumptions, eng):
-    """Tables for this query, or `Kept`."""
+def convert(proposition, assumptions, eng, walk=None):
+    """Tables for this query, or `Kept`. The body below is the reference; a walker class with the `entry` item has it in
+    Rust (its own ENTRY, not an inherited one: a subclass that overrides a method runs the body below). `walk`: the
+    walker class to run the body with, which is how Rust's entry hands a query back (a replaced definition, P1)."""
+    if walk is None:
+        walk = WALK[0]
+        if walk is not None:
+            entry = walk.__dict__.get('ENTRY')
+            if entry is not None:
+                return entry(proposition, assumptions, eng)
     try:
         settings = default_engine_settings(eng)
         if settings is None:
@@ -546,7 +574,7 @@ def convert(proposition, assumptions, eng):
             fa = None if assumptions is True else formula(assumptions, rel, True)
         except A.Unsupported:
             return Kept('out-of-scope')
-        w = (WALK[0] or _Walk)()
+        w = (walk or _Walk)()
         for cls in _PREFIX:
             w.klass(cls)
         for x in (proposition, assumptions):
@@ -570,3 +598,11 @@ def convert(proposition, assumptions, eng):
     tables = dict(strings=w.strings, classes=w.class_rows, terms=rows, powers=powers, settings=sets, formula=form,
                   n_classes=len(w.classes), n_terms=len(w.objects), n_opaque=len(w.opaque), reads=w.read)
     return Converted(tables, w.ids, w.objects, w.counts, w.classes, w.raised)
+
+
+#: `_Walk`'s methods and this module's ported functions, as defined here. sa_solver.WalkEntry compares each with what the
+#: name holds now, per query: one that was replaced (a test's plant, an instrument) turns its item off for that query, so
+#: the replacement is called by name as under Python's walker (P1). `convert` is here to be called, not compared.
+_ORIGINAL = {name: f for name, f in vars(_Walk).items() if callable(f)}
+_ORIGINAL.update({f.__name__: f for f in (formula, default_engine_settings, _rel, _template_name, _structural_class,
+                                          convert)})

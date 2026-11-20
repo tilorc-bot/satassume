@@ -35,8 +35,12 @@ p = Symbol('p', positive=True)
 n = Symbol('n', commutative=False)
 f, g = Function('f'), Function('g')
 ALL_PLANTS = {670: ('enc-true-as-false', 'enc'), 671: ('klass-no-is-expr', 'klass'), 672: ('term-row-no-number', 'term_row'),
-          673: ('walk-args-unreversed', 'walk'), 674: ('enc-int-no-sign', 'enc_int')}
-PLANTS = {k: v for k, v in ALL_PLANTS.items() if v[1] in convert.RUST_ITEMS}      # an item's plant, once it's ported
+          673: ('walk-args-unreversed', 'walk'), 674: ('enc-int-no-sign', 'enc_int'),
+          768: ('calls-structural-not', 'klass,klass_calls'), 769: ('power-rows-drop-last', 'power_rows'),
+          770: ('read-commutative-not', 'read'), 771: ('entry-no-assumptions', 'entry'),
+          772: ('formula-and-as-or', 'entry')}
+# An item's plant, once it's ported. `klass_calls` acts inside Rust's `klass`, so its plant runs with both.
+PLANTS = {k: v for k, v in ALL_PLANTS.items() if all(i in convert.RUST_ITEMS for i in v[1].split(','))}
 
 
 class Content(Expr):
@@ -204,6 +208,158 @@ def test_a_read_past_its_time_stops_both_children_alike(monkeypatch):
     assert seen['slow'].startswith('complex ') and seen['reads'] > 0
     found = diff(outcome(None, pr, asm), outcome(quick, pr, asm))
     assert any(name.startswith('reads stopped ') for name in found)
+
+
+def nested(levels):
+    """A formula of `levels` connectives, one inside the other."""
+    from sympy import And, Or
+    e = Q.positive(x)
+    for _ in range(levels // 2):
+        e = Or(And(e, Q.positive(y), evaluate=False), Q.real(z), evaluate=False)
+    return e
+
+
+def counted(walk, pr, asm):
+    import sa_solver
+    before = sa_solver.walk_counts()
+    c = outcome(walk, pr, asm)
+    return c, {k: v - before[k] for k, v in sa_solver.walk_counts().items() if v != before[k]}
+
+
+def test_the_entry_runs_in_rust_and_its_counters_fire():
+    """Counters 740-742: with every item on, `convert`'s body, both `formula` calls and each read run in Rust, no
+    `_RustWalk` is made, and `tables['reads']` is Rust's method. With an item off, the Python walker is made."""
+    import sa_solver
+    rust = convert.rust_walk(convert.RUST_ITEMS)
+    made = []
+    init = rust.__init__
+    rust.__init__ = lambda self: (made.append(1), init(self))[1]
+    try:
+        c, n = counted(rust, Q.positive(x + y), Q.positive(x) & Q.positive(y))
+        assert n == {'cv:entry': 1, 'cv:formula': 2} and made == []
+        assert type(c.tables['reads'].__self__) is sa_solver.Walk
+        py = outcome(None, Q.positive(x + y), Q.positive(x) & Q.positive(y))
+        assert list(c.counts) == list(py.counts) and c.raised == [] == py.raised
+        before = sa_solver.walk_counts()
+        for kind, name in enumerate(convert.READS):
+            for i in range(len(c.objects)):
+                assert typed_read(c, kind, i) == typed_read(py, kind, i), (name, i)
+        assert c.counts == py.counts and c.raised == py.raised and c.raised and c.counts['read_raised'] == len(c.raised)
+        after = sa_solver.walk_counts()
+        assert after['cv:read'] - before['cv:read'] == len(convert.READS) * len(c.objects)
+        assert after['cv:py:own_base'] - before['cv:py:own_base'] == len(c.objects)
+    finally:
+        del rust.__init__
+    part = convert.rust_walk(('entry', 'walk'))
+    c, n = counted(part, Q.positive(x + y), True)
+    assert n == {'cv:entry': 1, 'cv:formula': 1} and type(c.tables['reads'].__self__) is part
+
+
+def typed_read(c, kind, i):
+    got = c.tables['reads'](kind, i)
+    return None if got is None else (list(got[0]), [type(v) for v in got[0]], list(got[1]))
+
+
+@pytest.mark.parametrize('levels,kept', [(90, None), (130, None), (700, 'too-deep')])
+def test_a_deep_formula_is_pythons(levels, kept):
+    """Counter 743: `formula` nested past the native bound (100) is answered by Python's, so its recursion limit is the
+    one that says 'too-deep'; the outcome is Python's either way."""
+    rust = convert.rust_walk(convert.RUST_ITEMS)
+    for pr, asm in ((nested(levels), Q.positive(x)), (Q.positive(x), nested(levels))):
+        py = outcome(None, pr, asm)
+        c, n = counted(rust, pr, asm)
+        assert diff(py, c) == []
+        assert (py.reason if isinstance(py, convert.Kept) else None) == kept
+        assert n.get('cv:fallback:depth', 0) == (levels > 100)
+
+
+def test_template_names_are_pythons(monkeypatch):
+    """`_template_name` in Rust: a function, an object without `__qualname__` (the name holds `repr(type(f))`), a
+    `__module__` that isn't a str; and counter 744: a template whose class has its own metaclass goes to Python's
+    function, so that metaclass's `__repr__` runs as often as under Python's walker."""
+    import functools
+    reprs = []
+
+    class Meta(type):
+        def __repr__(cls):
+            reprs.append(cls.__name__)
+            return 'meta ' + cls.__name__
+
+    class Plain:
+        __module__ = 'satassume.fake'
+
+    class Odd(metaclass=Meta):
+        __module__ = 'satassume.fake'
+        __qualname__ = 'odd'
+
+    class Mod(str):
+        def __format__(self, spec):
+            return 'satassume.formatted'
+
+    def named(t):
+        return t
+    named.__module__ = Mod('satassume.mod')
+    some = functools.partial(named)
+    some.__module__ = 'satassume.partial'
+    was = convert.TEMPLATES_FOR[0]
+    for found, falls in (([named, Plain(), some], 0), ([Odd(), named], 1)):
+        monkeypatch.setattr(convert, 'TEMPLATES_FOR', convert.TEMPLATES_FOR)    # the same list, restored at the end
+        convert.TEMPLATES_FOR[0] = lambda cls, found=found: found
+        pr, asm = Q.positive(x + y), Q.positive(x)
+        del reprs[:]
+        py = outcome(None, pr, asm)
+        seen = list(reprs)
+        del reprs[:]
+        c, n = counted(convert.rust_walk(convert.RUST_ITEMS), pr, asm)
+        assert isinstance(py, convert.Converted) and diff(py, c, 0) == [] and reprs == seen
+        convert.TEMPLATES_FOR[0] = was
+        assert n.get('cv:fallback:name', 0) == falls * c.tables['n_classes'] and bool(seen) == bool(falls)
+
+
+def test_a_replaced_definition_is_called(monkeypatch):
+    """P1, counter 746 (plant 773 fails this): a `_Walk` method or a function of convert.py that a test or an
+    instrument replaced is called by name under the Rust walker too. Its item is off for that query and the rest stays
+    Rust's; `term`, which every item stands on, gives the query to Python's walker."""
+    rust = convert.rust_walk(convert.RUST_ITEMS)
+    pr, asm = Q.positive(x + y), Q.positive(x)
+    calls = []
+
+    def spy(owner, name):
+        real = getattr(owner, name)
+
+        def f(*a, **k):
+            calls.append((name, a))
+            return real(*a, **k)
+        monkeypatch.setattr(owner, name, f)
+
+    spy(convert._Walk, '_read_commutative')
+    c, n = counted(rust, pr, asm)
+    assert n == {'cv:patched': 1, 'cv:entry': 1, 'cv:formula': 2} and calls == []
+    c.tables['reads'](convert.READS.index('commutative'), 0)
+    assert [(name, a[1]) for name, a in calls] == [('_read_commutative', c.objects[0])]
+    monkeypatch.undo()
+
+    del calls[:]
+    spy(convert._Walk, 'term_row')
+    c, n = counted(rust, pr, asm)
+    assert n == {'cv:patched': 1, 'cv:entry': 1, 'cv:formula': 2} and [a[1] for _, a in calls] == c.objects
+    monkeypatch.undo()
+
+    del calls[:]
+    spy(convert, 'formula')
+    c, n = counted(rust, pr, asm)
+    assert n == {'cv:patched': 1} and [a[0] for _, a in calls] == [pr, asm]
+    assert type(c.tables['reads'].__self__).__name__ == '_RustWalk'
+    monkeypatch.undo()
+
+    del calls[:]
+    spy(convert._Walk, 'term')
+    c, n = counted(rust, pr, asm)
+    assert n == {'cv:patched': 1} and calls and type(c.tables['reads'].__self__) is convert._Walk
+    monkeypatch.undo()
+
+    c, n = counted(rust, pr, asm)
+    assert n == {'cv:entry': 1, 'cv:formula': 2} and diff(outcome(None, pr, asm), c) == []
 
 
 def run(plant=None, items=None):
